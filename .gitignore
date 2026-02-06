@@ -1,0 +1,8 @@
+# Personal AI agent context
+.agent/
+.cursor/
+.cursorrules
+.claude/
+
+# macOS
+.DS_Store
