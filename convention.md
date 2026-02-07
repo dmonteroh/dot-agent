@@ -60,6 +60,7 @@ This is the core of the system. Before marking any task complete, the agent **mu
 
 1. **Update `memory.md`** with new domain knowledge, decisions, or state changes
 2. **Append to `session-log.md`** — what was discussed, decided, implemented
+3. **Update `docs/`** when the project's technology, patterns, or dependencies change — capture project-specific practices for working with them, not just what changed. Prune or update docs for removed technologies.
 
 This is what makes the system self-maintaining. The agent writes context as part of finishing work. The next session reads what was written. Knowledge accumulates without manual effort. Without this contract, it's just documentation that goes stale.
 
