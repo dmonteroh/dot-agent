@@ -29,7 +29,7 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 └── docs/           # Architecture, features, data flows
 ```
 
-The core mechanism is the **self-maintenance contract**: the agent *must* update `memory.md` and `session-log.md` before finishing any task. This is what keeps context alive without manual effort.
+The core mechanism is the **self-maintenance contract**: the agent *must* update `memory.md`, `session-log.md`, and relevant `docs/` before finishing any task. This is what keeps context alive without manual effort.
 
 ## Presets
 
@@ -60,6 +60,19 @@ I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
 ```
 
 15 minutes. One conversation. Your project has persistent memory.
+
+## Update existing .agent/
+
+When the convention evolves, update your project's rules to match:
+
+```
+Read the latest .agent/ convention at https://github.com/jlonardi/dot-agent —
+start with convention.md, then read the presets/ folder.
+
+Now read my current .agent/rules/ and compare against the convention.
+Show me what's changed and update my rules to match.
+Keep everything else in .agent/ as-is.
+```
 
 ## Optional enforcement
 

@@ -27,6 +27,7 @@ Before marking any task or step complete:
 
 1. **Update `.agent/memory.md`** — new domain knowledge, decisions, terminology, or state changes from this session.
 2. **Append to `.agent/session-log.md`** — what was discussed, decided, implemented. Short and factual (2–5 lines).
+3. **Update `.agent/docs/`** when the project's technology, patterns, or dependencies change — capture project-specific practices, not just facts. Prune or update docs for removed technologies.
 
 Do not skip. This is what gives the next session continuity.
 
