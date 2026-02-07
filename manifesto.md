@@ -1,4 +1,4 @@
-# The `.agent/` convention
+# The `.agent/` manifesto
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -28,7 +28,7 @@ Knowledge becomes **cumulative** (grows over sessions), **self-producing** (the 
 
 ---
 
-## The convention
+## The manifesto
 
 ### Directory structure
 
@@ -79,6 +79,16 @@ The contract says "update memory" — but a superficial update is worse than non
 > Good: "Implemented user auth with JWT. Chose bcrypt for hashing (argon2 considered, rejected for deployment simplicity). Login/register endpoints added, tests passing."
 >
 > Bad: "Worked on authentication."
+
+**`session-log.md` — tag entries by tool and project:**
+
+When using a global `~/.agent/` hub, entries from different tools and projects land in the same log. Tag each entry so the log stays scannable:
+
+> `- (Claude Code / my-app) **Added auth**: JWT with bcrypt. Argon2 rejected for deployment simplicity.`
+> `- (Cursor / infra) **Fixed deploy**: k8s readiness probe was hitting wrong port.`
+> `- (Codex / my-app) **Refactored API routes**: split monolithic router into per-resource modules.`
+
+Format: `(Tool / project) **Bold summary**: details`. For project-local `.agent/` logs the project tag is optional since it's implied by the directory.
 
 **What goes where:**
 
@@ -178,11 +188,11 @@ Use the prompt that matches your project type.
 
 #### Bootstrap prompt (code projects)
 
-Copy this prompt into your first message to any agent. The agent reads the convention from GitHub, explores your project, and sets up `.agent/`.
+Copy this prompt into your first message to any agent. The agent reads the manifesto from GitHub, explores your project, and sets up `.agent/`.
 
 ```
-Read the .agent/ convention at https://github.com/jlonardi/dot-agent —
-start with convention.md, then read the presets/ folder.
+Read the .agent/ manifesto at https://github.com/jlonardi/dot-agent —
+start with manifesto.md, then read the presets/ folder.
 
 Now look at this project:
 - Read package.json, README, source files, folder structure, git history
@@ -200,8 +210,8 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 #### Bootstrap prompt (non-code / knowledge projects)
 
 ```
-Read the .agent/ convention at https://github.com/jlonardi/dot-agent —
-start with convention.md, then read the presets/ folder.
+Read the .agent/ manifesto at https://github.com/jlonardi/dot-agent —
+start with manifesto.md, then read the presets/ folder.
 
 Now look at this workspace/domain:
 - Read existing notes/docs/folders and any current agent configs
@@ -219,7 +229,7 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 
 ### What happens during bootstrap
 
-1. **Agent reads this convention** and understands the structure, contract, and philosophy
+1. **Agent reads this manifesto** and understands the structure, contract, and philosophy
 2. **Agent reads the presets** and understands what good rules look like
 3. **Agent explores the project** — package.json, README, source files, git history, existing configs
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
@@ -314,6 +324,70 @@ If multiple agents/sessions touch `.agent/` at the same time:
 
 ---
 
+## Global + local: the hub-and-spoke pattern
+
+A project `.agent/` gives an agent memory within one project. But if you work on multiple projects, a pattern emerges: put a **global** `.agent/` in your home directory (`~/.agent/`) and wire your tools to read it alongside the project-local one.
+
+```
+~/.agent/                          # Hub — knows all your projects
+├── memory.md                      # Cross-project state and decisions
+├── session-log.md                 # Cross-project history
+└── rules/                         # Global behavior rules
+
+~/projects/app/.agent/             # Spoke — knows only this project
+├── memory.md, purpose.md, docs/
+
+~/projects/infra/.agent/           # Spoke — knows only this project
+├── memory.md, purpose.md, docs/
+```
+
+The global `~/.agent/` becomes a **knowledge hub**. It knows what all your projects are, what you decided across them, and how they relate. Each project `.agent/` is a **spoke** — deep context about one project, no awareness of others.
+
+### What this enables
+
+**Cross-project agents.** An agent wired to the hub (Claude Code via `~/.claude/CLAUDE.md`, Codex via `AGENTS.md`) can work across multiple projects in one session. It knows project A uses data that project B generates. It can rename something in one repo and update references in another.
+
+**Focused agents.** An agent wired only to the spoke (Cursor via `.cursorrules`) works deeply on one project without distraction from others. This is usually what you want for focused coding sessions.
+
+**Natural asymmetry.** Hub agents coordinate. Spoke agents specialize. You don't configure this — it emerges from the wiring. The hub accumulates knowledge from every session with every tool. The spokes stay focused.
+
+### How to set it up
+
+```bash
+# Create the global hub
+mkdir -p ~/.agent/rules
+
+# Wire Claude Code globally
+# In ~/.claude/CLAUDE.md:
+#   "Read ~/.agent/ at session start"
+
+# Wire Codex (or any tool) similarly in its global config
+```
+
+The global `~/.agent/rules/` holds your cross-project behavior rules. Each project still has its own `.agent/` for project-specific context. The agent reads both — global first, then local.
+
+### Zero-cost bootstrap
+
+The bootstrap prompts in the "Getting started" section exist for the cold start — a fresh agent that has never seen this manifesto. Once the hub exists, the agent already carries the pattern. It knows the directory structure, the self-maintenance contract, the presets, and every project it has ever worked on.
+
+Adding a new project becomes: point the agent at a folder and say "set it up." The agent:
+
+1. Reads the codebase to understand what it is
+2. Creates `.agent/` with purpose, memory, rules, docs
+3. Wires it into your tools
+4. Gitignores `.agent/`
+5. Updates the hub (`~/.agent/memory.md`) so it knows about this project next time
+
+No prompt to copy. No manifesto URL to paste. No onboarding conversation. The hub already has everything the agent needs to bootstrap a new spoke.
+
+This is where the system compounds. Each project the agent sets up makes the hub smarter. Each session in any project adds to the hub's cross-project knowledge. The agent's understanding of your work — your tools, your preferences, your projects, how they relate — grows with every interaction. You never re-explain.
+
+### Solo vs. team
+
+For solo developers, the hub is personal: `~/.agent/` on your machine, accumulating everything. For teams, each person has their own hub. The spokes (project `.agent/`) are still personal and gitignored — team documentation lives elsewhere (`AGENTS.md`, wiki, etc.).
+
+---
+
 ## Beyond code
 
 The `.agent/` mechanism is domain-agnostic. The directory structure, the self-maintenance contract, and the load order work the same way whether you're writing code, conducting research, managing an organization, or tracking a complex topic.
@@ -353,4 +427,4 @@ What changes between domains is the **rules** — what the agent should prioriti
 
 **Why the agent writes docs from conversations, not the user?** The user explains the project in conversation — that's natural. Asking them to also write structured markdown is busywork. The agent converts conversation into documentation. The user's job is to think and direct, not to format.
 
-**How to keep `.agent/` small over time?** Use lightweight retention: archive older `session-log.md` entries, prune stale items from `memory.md`, and move stable long-form knowledge to `docs/`.
+**How to keep `.agent/` small over time?** Use lightweight retention: archive older `session-log.md` entries when they get long, prune stale items from `memory.md`, and move stable long-form knowledge to `docs/`. Don't over-optimize — a few hundred lines of markdown is negligible context for most LLMs, and the agent work to reorganize files often costs more tokens than just reading a longer file.

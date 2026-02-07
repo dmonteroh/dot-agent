@@ -27,7 +27,7 @@ Before marking any task or step complete:
 Do not skip. This is what gives the next session continuity.
 
 **Housekeeping:**
-- When `session-log.md` exceeds ~100 entries, archive older entries to `.agent/session-log-archive.md`, keeping the header and last ~30 entries in the active file.
+- When `session-log.md` gets long, archive older entries to `.agent/session-log-archive.md`. Don't archive too eagerly — a few hundred lines is negligible context for most LLMs, and the agent work to reorganize costs more tokens than just reading a longer file.
 - Periodically compact `memory.md`: keep current facts/decisions, move stable detailed knowledge to `.agent/docs/`, and mark stale items as superseded.
 
 ## Core rules

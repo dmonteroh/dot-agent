@@ -41,11 +41,11 @@ Rule presets for different domains — pick one during bootstrap or let the agen
 
 ## Get started
 
-Copy the matching bootstrap prompt from `convention.md` into your first message:
+Copy the matching bootstrap prompt from `manifesto.md` into your first message:
 
 ```
-Read the .agent/ convention at https://github.com/jlonardi/dot-agent —
-start with convention.md, then read the presets/ folder.
+Read the .agent/ manifesto at https://github.com/jlonardi/dot-agent —
+start with manifesto.md, then read the presets/ folder.
 
 Now look at this project:
 - Read package.json, README, source files, folder structure, git history
@@ -63,13 +63,13 @@ I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
 
 ## Update existing .agent/
 
-When the convention evolves, update your project's rules to match:
+When the manifesto evolves, update your project's rules to match:
 
 ```
-Read the latest .agent/ convention at https://github.com/jlonardi/dot-agent —
-start with convention.md, then read the presets/ folder.
+Read the latest .agent/ manifesto at https://github.com/jlonardi/dot-agent —
+start with manifesto.md, then read the presets/ folder.
 
-Now read my current .agent/rules/ and compare against the convention.
+Now read my current .agent/rules/ and compare against the manifesto.
 Show me what's changed and update my rules to match.
 Keep everything else in .agent/ as-is.
 ```
@@ -98,6 +98,27 @@ If checks fail and you want minimal scaffolding automatically, run:
 placeholder content with real session details, then rerun verification before
 marking work complete.
 
+## Multi-project: the hub-and-spoke pattern
+
+A project `.agent/` gives one project memory. A **global** `~/.agent/` gives you cross-project memory.
+
+```
+~/.agent/                        # Hub — knows all your projects
+├── memory.md                    # "koetreenit uses Tatoeba data, infra runs on k8s"
+└── rules/
+
+~/projects/app/.agent/           # Spoke — deep context, one project
+~/projects/infra/.agent/         # Spoke — deep context, one project
+```
+
+Wire a tool to the hub (Claude Code via `~/.claude/CLAUDE.md`) and it can work across projects in one session — it knows how they relate. Wire a tool only to the spoke (Cursor via `.cursorrules`) and it focuses deeply on one project without distraction.
+
+Hub agents coordinate. Spoke agents specialize. The asymmetry is the feature.
+
+Once the hub exists, adding a new project is just "set up this folder." The agent already knows the manifesto, the presets, your preferences, and every other project. No bootstrap prompt needed. It reads the codebase, creates `.agent/`, wires your tools, and updates the hub. The system compounds — every project makes the hub smarter, every session adds context, and the agent never needs onboarding again.
+
+See [manifesto.md](manifesto.md) for the full pattern, setup, and team considerations.
+
 ## How it compares
 
 | | AGENTS.md | Tool-specific files | .agent/ |
@@ -109,7 +130,7 @@ marking work complete.
 
 Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context.
 
-Read **[convention.md](convention.md)** for the full convention — philosophy, directory structure, self-maintenance contract, tool wiring, and design decisions.
+Read **[manifesto.md](manifesto.md)** for the full manifesto — philosophy, directory structure, self-maintenance contract, tool wiring, and design decisions.
 
 ## License
 
