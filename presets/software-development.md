@@ -35,6 +35,8 @@ Do not skip. This is what gives the next session continuity.
 - When `session-log.md` exceeds ~100 entries, archive older entries to `.agent/session-log-archive.md`, keeping the header and last ~30 entries in the active file.
 - Periodically compact `memory.md`: keep current truths/decisions, move stable long-form context to `.agent/docs/`, and remove stale superseded notes.
 
+**Context auditing:** When reading `.agent/` at session start, notice and fix stale facts in `memory.md`, outdated `docs/`, and redundancy across files. Keep `.agent/` accurate, not just populated.
+
 ## Code quality
 
 - **Comments:** Only when the code is not self-explanatory. Prefer clear names and structure.

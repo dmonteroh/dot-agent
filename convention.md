@@ -64,6 +64,16 @@ This is the core of the system. Before marking any task complete, the agent **mu
 
 This is what makes the system self-maintaining. The agent writes context as part of finishing work. The next session reads what was written. Knowledge accumulates without manual effort. Without this contract, it's just documentation that goes stale.
 
+### Context auditing
+
+Accumulated context can go stale. When reading `.agent/` at session start, the agent should notice and fix:
+
+- **Stale facts** in `memory.md` — decisions that were reversed, technologies that were replaced, states that changed
+- **Outdated docs** — architecture or practices that no longer match the codebase
+- **Redundancy** — the same information repeated across memory, docs, and session-log
+
+This is not a separate step. It happens naturally during the load order: the agent reads context, notices something is wrong based on what it sees in the codebase, and corrects it as part of the current session's self-maintenance. The goal is that `.agent/` stays accurate, not just populated.
+
 ### Optional enforcement script
 
 For teams or users who want a stricter workflow, add a lightweight verification step before "done". Example script:
