@@ -64,6 +64,33 @@ This is the core of the system. Before marking any task complete, the agent **mu
 
 This is what makes the system self-maintaining. The agent writes context as part of finishing work. The next session reads what was written. Knowledge accumulates without manual effort. Without this contract, it's just documentation that goes stale.
 
+### What good updates look like
+
+The contract says "update memory" — but a superficial update is worse than none, because it creates false confidence that context is being maintained.
+
+**`memory.md` — capture decisions and state, not activity:**
+
+> Good: "Migrated from SQLite to PostgreSQL. Connection pooling via pg-pool, migrations in `db/migrations/`. Decision: no ORM, raw SQL only."
+>
+> Bad: "Updated database stuff."
+
+**`session-log.md` — capture what was discussed, decided, and why:**
+
+> Good: "Implemented user auth with JWT. Chose bcrypt for hashing (argon2 considered, rejected for deployment simplicity). Login/register endpoints added, tests passing."
+>
+> Bad: "Worked on authentication."
+
+**What goes where:**
+
+| | `memory.md` | `session-log.md` | `docs/` |
+|---|---|---|---|
+| **Purpose** | Current truth | Chronological history | Stable reference |
+| **Content** | Active decisions, project state, domain knowledge | What happened each session, 2–5 lines | Architecture, data flows, technology practices |
+| **Lifespan** | Rewritten as state changes | Append-only, archived when long | Updated when structure changes |
+| **Analogy** | A wiki page | Meeting minutes | A technical spec |
+
+If something is true right now, it belongs in `memory.md`. If it happened today, it goes in `session-log.md`. If it's stable knowledge about how the system works, it goes in `docs/`.
+
 ### Context auditing
 
 Accumulated context can go stale. When reading `.agent/` at session start, the agent should notice and fix:
@@ -74,19 +101,29 @@ Accumulated context can go stale. When reading `.agent/` at session start, the a
 
 This is not a separate step. It happens naturally during the load order: the agent reads context, notices something is wrong based on what it sees in the codebase, and corrects it as part of the current session's self-maintenance. The goal is that `.agent/` stays accurate, not just populated.
 
-### Manual completion check (for agents without hooks)
+### Enforcing the contract
 
-For workflows where the agent cannot enforce completion hooks automatically,
-use a lightweight manual verification step before "done":
+The contract works because agents follow instructions reliably. For stronger guarantees, use your tool's native enforcement mechanism.
 
-- `scripts/verify-agent-context.sh`
-- Fails if `.agent/memory.md` or `.agent/session-log.md` is missing/empty
-- Can require a same-day `session-log.md` entry
+**Claude Code** — a stop hook that blocks session end until `.agent/` is updated:
 
-If checks fail, an agent may run `scripts/verify-agent-context.sh --fix` to add
-minimal scaffolding and a clearly marked placeholder entry for today. After
-autofix, the agent must replace placeholders with real session details and
-rerun verification before marking work complete.
+```python
+# ~/.claude/hooks/self-maintenance.py (hook type: stop)
+# Checks that memory.md and session-log.md were modified this session.
+# Claude Code will show the error message and block until the agent complies.
+```
+
+**Cursor** — add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
+
+**Any tool without hooks** — use the verification script as a manual completion check:
+
+```bash
+./scripts/verify-agent-context.sh
+# Fails if memory.md or session-log.md is missing, empty, or has no same-day entry.
+# Run with --fix to add scaffolding, then replace placeholders with real content.
+```
+
+Enforcement is optional but recommended. Without it, compliance depends entirely on the agent following the rules — which works most of the time, but not all of the time.
 
 ### The load order
 
@@ -113,14 +150,23 @@ The entire `.agent/` directory is gitignored. It's personal context — your dec
 .agent/
 ```
 
-### Privacy and sensitive data
+### Security
 
-`.agent/` often contains raw notes and working context. Treat it as sensitive.
+`.agent/` accumulates working context from every session. Treat it as potentially sensitive — write as if it could leak.
 
-- Never store secrets, tokens, passwords, private keys, or full credentials
-- Avoid storing sensitive PII, legal identifiers, or medical data unless necessary
+**Hard rules:**
+
+- Never store secrets, tokens, passwords, API keys, or private keys
+- Never paste terminal output containing credentials or connection strings
+- Sanitize URLs: strip tokens, keys, and auth parameters before recording
+- No customer data, incident specifics, or internal system names unless explicitly needed and redacted
+- If you notice sensitive data in `.agent/`, remove it immediately
+
+**Why this matters:** The `.gitignore` protects against accidental commits, but `.agent/` can still be synced by backup tools, read by other processes, or accidentally included in archives. The gitignore is a safety net, not a security boundary.
+
 - Prefer summaries over raw dumps for confidential materials
 - If sensitive details are needed, redact them and record only the minimum required context
+- Periodically review `.agent/` for accumulated sensitive data — terminal pastes, debug output, and copied error messages are common sources
 
 ---
 
