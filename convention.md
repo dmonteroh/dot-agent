@@ -63,6 +63,16 @@ This is the core of the system. Before marking any task complete, the agent **mu
 
 This is what makes the system self-maintaining. The agent writes context as part of finishing work. The next session reads what was written. Knowledge accumulates without manual effort. Without this contract, it's just documentation that goes stale.
 
+### Optional enforcement script
+
+For teams or users who want a stricter workflow, add a lightweight verification step before "done". Example script:
+
+- `scripts/verify-agent-context.sh`
+- Fails if `.agent/memory.md` or `.agent/session-log.md` is missing/empty
+- Can require a same-day `session-log.md` entry
+
+Run it manually or wire it into your local "done" alias/script.
+
 ### The load order
 
 When an agent starts a session, it reads context before doing anything:
@@ -88,11 +98,24 @@ The entire `.agent/` directory is gitignored. It's personal context — your dec
 .agent/
 ```
 
+### Privacy and sensitive data
+
+`.agent/` often contains raw notes and working context. Treat it as sensitive.
+
+- Never store secrets, tokens, passwords, private keys, or full credentials
+- Avoid storing sensitive PII, legal identifiers, or medical data unless necessary
+- Prefer summaries over raw dumps for confidential materials
+- If sensitive details are needed, redact them and record only the minimum required context
+
 ---
 
 ## Getting started
 
 ### The bootstrap
+
+Use the prompt that matches your project type.
+
+#### Bootstrap prompt (code projects)
 
 Copy this prompt into your first message to any agent. The agent reads the convention from GitHub, explores your project, and sets up `.agent/`.
 
@@ -106,6 +129,26 @@ Now look at this project:
 
 Tell me:
 1. What you think this project is
+2. Which preset fits best (or if none fit)
+3. What you'd put in .agent/
+
+I'll confirm, correct, and fill in what you can't infer. Then create .agent/
+and add it to .gitignore (or .git/info/exclude for team repos).
+```
+
+#### Bootstrap prompt (non-code / knowledge projects)
+
+```
+Read the .agent/ convention at https://github.com/jlonardi/dot-agent —
+start with convention.md, then read the presets/ folder.
+
+Now look at this workspace/domain:
+- Read existing notes/docs/folders and any current agent configs
+  (.cursorrules, CLAUDE.md, AGENTS.md, .cursor/)
+- Infer the topic, goals, constraints, and current state
+
+Tell me:
+1. What you think this workspace/domain is
 2. Which preset fits best (or if none fit)
 3. What you'd put in .agent/
 
@@ -177,9 +220,36 @@ behavior rules, .agent/purpose.md for project context, .agent/memory.md
 for current state. Update memory.md and session-log.md when finishing work.
 ```
 
+### Codex / AGENTS.md
+
+`AGENTS.md` at project root:
+
+```markdown
+This project uses `.agent/` as the source of truth for agent context.
+
+At the start of work, read:
+1. `.agent/rules/`
+2. `.agent/purpose.md`
+3. `.agent/memory.md`
+4. last 5–10 entries in `.agent/session-log.md`
+5. relevant `.agent/docs/`
+
+Before marking work complete, update `.agent/memory.md` and append
+to `.agent/session-log.md`.
+```
+
 ### The pattern
 
 Any tool that reads a config file can point to `.agent/`. The wiring is always a thin entry point that says "read `.agent/`". When a new tool arrives, create its entry point following the same pattern. The agent should be able to wire new tools by understanding this pattern, not just the examples above.
+
+### Parallel sessions and conflict handling
+
+If multiple agents/sessions touch `.agent/` at the same time:
+
+1. Append to `session-log.md` first (append-only by timestamp)
+2. Re-open `memory.md` before writing final updates
+3. If two summaries conflict, keep both statements and mark as `CONFLICT`
+4. Resolve conflicts in the next human-guided pass; do not silently overwrite
 
 ---
 
@@ -221,3 +291,5 @@ What changes between domains is the **rules** — what the agent should prioriti
 **Why not `.cursor/` or `.claude/`?** Tool-specific directories create silos. `.agent/` is neutral — any tool, same context.
 
 **Why the agent writes docs from conversations, not the user?** The user explains the project in conversation — that's natural. Asking them to also write structured markdown is busywork. The agent converts conversation into documentation. The user's job is to think and direct, not to format.
+
+**How to keep `.agent/` small over time?** Use lightweight retention: archive older `session-log.md` entries, prune stale items from `memory.md`, and move stable long-form knowledge to `docs/`.

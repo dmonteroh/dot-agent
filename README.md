@@ -41,7 +41,7 @@ Rule presets for different domains — pick one during bootstrap or let the agen
 
 ## Get started
 
-Copy this into your first message to any agent:
+Copy the matching bootstrap prompt from `convention.md` into your first message:
 
 ```
 Read the .agent/ convention at https://github.com/jlonardi/dot-agent —
@@ -60,6 +60,20 @@ I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
 ```
 
 15 minutes. One conversation. Your project has persistent memory.
+
+## Optional enforcement
+
+If you want stricter self-maintenance, run:
+
+```bash
+./scripts/verify-agent-context.sh
+```
+
+The script verifies that:
+
+- `.agent/memory.md` exists and is non-empty
+- `.agent/session-log.md` exists and is non-empty
+- `session-log.md` has an entry for today's date (`YYYY-MM-DD`)
 
 ## How it compares
 

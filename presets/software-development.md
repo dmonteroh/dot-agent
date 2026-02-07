@@ -30,7 +30,9 @@ Before marking any task or step complete:
 
 Do not skip. This is what gives the next session continuity.
 
-**Housekeeping:** When `session-log.md` exceeds ~100 entries, archive older entries to `.agent/session-log-archive.md`, keeping the header and last ~30 entries in the active file.
+**Housekeeping:**
+- When `session-log.md` exceeds ~100 entries, archive older entries to `.agent/session-log-archive.md`, keeping the header and last ~30 entries in the active file.
+- Periodically compact `memory.md`: keep current truths/decisions, move stable long-form context to `.agent/docs/`, and remove stale superseded notes.
 
 ## Code quality
 
