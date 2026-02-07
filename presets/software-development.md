@@ -37,6 +37,11 @@ Do not skip. This is what gives the next session continuity.
 
 **Context auditing:** When reading `.agent/` at session start, notice and fix stale facts in `memory.md`, outdated `docs/`, and redundancy across files. Keep `.agent/` accurate, not just populated.
 
+**Hookless agent check:** If this project uses `scripts/verify-agent-context.sh`
+as a manual completion check, run it before done. On failure, run with
+`--fix`, replace any placeholders with real session details, then rerun the
+check and only mark done after it passes.
+
 ## Code quality
 
 - **Comments:** Only when the code is not self-explanatory. Prefer clear names and structure.

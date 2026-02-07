@@ -74,9 +74,9 @@ Show me what's changed and update my rules to match.
 Keep everything else in .agent/ as-is.
 ```
 
-## Optional enforcement
+## Manual completion check (for agents without hooks)
 
-If you want stricter self-maintenance, run:
+If your agent cannot enforce completion hooks automatically, run:
 
 ```bash
 ./scripts/verify-agent-context.sh
@@ -87,6 +87,16 @@ The script verifies that:
 - `.agent/memory.md` exists and is non-empty
 - `.agent/session-log.md` exists and is non-empty
 - `session-log.md` has an entry for today's date (`YYYY-MM-DD`)
+
+If checks fail and you want minimal scaffolding automatically, run:
+
+```bash
+./scripts/verify-agent-context.sh --fix
+```
+
+`--fix` creates clearly marked placeholders only. The agent must replace
+placeholder content with real session details, then rerun verification before
+marking work complete.
 
 ## How it compares
 

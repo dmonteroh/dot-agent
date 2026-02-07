@@ -74,15 +74,19 @@ Accumulated context can go stale. When reading `.agent/` at session start, the a
 
 This is not a separate step. It happens naturally during the load order: the agent reads context, notices something is wrong based on what it sees in the codebase, and corrects it as part of the current session's self-maintenance. The goal is that `.agent/` stays accurate, not just populated.
 
-### Optional enforcement script
+### Manual completion check (for agents without hooks)
 
-For teams or users who want a stricter workflow, add a lightweight verification step before "done". Example script:
+For workflows where the agent cannot enforce completion hooks automatically,
+use a lightweight manual verification step before "done":
 
 - `scripts/verify-agent-context.sh`
 - Fails if `.agent/memory.md` or `.agent/session-log.md` is missing/empty
 - Can require a same-day `session-log.md` entry
 
-Run it manually or wire it into your local "done" alias/script.
+If checks fail, an agent may run `scripts/verify-agent-context.sh --fix` to add
+minimal scaffolding and a clearly marked placeholder entry for today. After
+autofix, the agent must replace placeholders with real session details and
+rerun verification before marking work complete.
 
 ### The load order
 
