@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 2 — 2026-02-08**
+> **Version 3 — 2026-02-08**
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -91,6 +91,8 @@ When a root-level `.agent/` collects entries from different tools and projects, 
 > `- (Codex / my-app) **Refactored API routes**: split monolithic router into per-resource modules.`
 
 Format: `(Tool / project) **Bold summary**: details`. For project-local `.agent/` logs the project tag is optional since it's implied by the directory.
+
+**Session log routing:** When working across multiple projects in one session, write to the project you actually worked on, not the directory you were opened in. If a root node exists, its `session-log.md` always gets an entry (it's the master log). If the project you worked on has its own `.agent/`, also write to that project's `session-log.md` and update its `memory.md` with project-specific knowledge. This keeps project-local context current for tools that only see the project level.
 
 **What goes where:**
 
