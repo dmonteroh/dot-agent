@@ -235,12 +235,22 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
 5. **You confirm and correct** — fill in what the agent can't know (purpose, team context, preferences)
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
-7. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
-8. **Agent wires your tools** — creates the entry points for whichever tools you use
+7. **Agent leaves a source reference** in the rules file so the node can be updated later:
+   ```markdown
+   <!-- Source: https://github.com/jlonardi/dot-agent/manifesto.md -->
+   ```
+8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
+9. **Agent wires your tools** — creates the entry points for whichever tools you use
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
 **For migration:** the agent also reads existing `.cursor/`, `AGENTS.md`, etc. and incorporates them into `.agent/`.
+
+### Updating existing nodes
+
+The manifesto evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the manifesto." The agent reads the source reference in the rules file, fetches the current manifesto, identifies gaps, and reconciles — adding new rules, updating terminology, preserving project-specific content. No URL to remember.
+
+This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the manifesto's structure, so reconciliation is natural — it's just a diff between what exists and what the manifesto now says.
 
 ---
 
