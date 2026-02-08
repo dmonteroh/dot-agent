@@ -41,11 +41,11 @@ Rule presets for different domains — pick one during bootstrap or let the agen
 
 ## Get started
 
-Copy the matching bootstrap prompt from `manifesto.md` into your first message:
+Copy the matching bootstrap prompt from `operating-model.md` into your first message:
 
 ```
-Read the .agent/ manifesto at https://github.com/jlonardi/dot-agent —
-start with manifesto.md, then read the presets/ folder.
+Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
+start with operating-model.md, then read the presets/ folder.
 
 Now look at this project:
 - Read package.json, README, source files, folder structure, git history
@@ -63,13 +63,13 @@ I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
 
 ## Update existing .agent/
 
-When the manifesto evolves, update your project's rules to match:
+When the operating model evolves, update your project's rules to match:
 
 ```
-Read the latest .agent/ manifesto at https://github.com/jlonardi/dot-agent —
-start with manifesto.md, then read the presets/ folder.
+Read the latest .agent/ operating model at https://github.com/jlonardi/dot-agent —
+start with operating-model.md, then read the presets/ folder.
 
-Now read my current .agent/rules/ and compare against the manifesto.
+Now read my current .agent/rules/ and compare against the operating model.
 Show me what's changed and update my rules to match.
 Keep everything else in .agent/ as-is.
 ```
@@ -119,7 +119,7 @@ Wire a tool to the root (Claude Code via `~/.claude/CLAUDE.md`) and it works acr
 
 The tree grows as needed. Start with one node. Add a root when you work on a second project. The topology is yours — solo dev with many repos, monorepo with package nodes, or a single project with no root at all.
 
-See [manifesto.md](manifesto.md) for the full pattern, observation, setup, and team considerations.
+See [operating-model.md](operating-model.md) for the full pattern, observation, setup, and team considerations.
 
 ## How it compares
 
@@ -132,7 +132,7 @@ See [manifesto.md](manifesto.md) for the full pattern, observation, setup, and t
 
 Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context.
 
-Read **[manifesto.md](manifesto.md)** for the full manifesto — philosophy, directory structure, self-maintenance contract, tool wiring, and design decisions.
+Read **[operating-model.md](operating-model.md)** for the full operating model — philosophy, directory structure, self-maintenance contract, tool wiring, and design decisions.
 
 ## License
 

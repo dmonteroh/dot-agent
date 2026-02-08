@@ -1,4 +1,4 @@
-# The `.agent/` manifesto
+# The `.agent/` operating model
 
 > **Version 2 — 2026-02-08**
 
@@ -30,7 +30,7 @@ Knowledge becomes **cumulative** (grows over sessions), **self-producing** (the 
 
 ---
 
-## The manifesto
+## The operating model
 
 ### Directory structure
 
@@ -190,11 +190,11 @@ Use the prompt that matches your project type.
 
 #### Bootstrap prompt (code projects)
 
-Copy this prompt into your first message to any agent. The agent reads the manifesto from GitHub, explores your project, and sets up `.agent/`.
+Copy this prompt into your first message to any agent. The agent reads the operating model from GitHub, explores your project, and sets up `.agent/`.
 
 ```
-Read the .agent/ manifesto at https://github.com/jlonardi/dot-agent —
-start with manifesto.md, then read the presets/ folder.
+Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
+start with operating-model.md, then read the presets/ folder.
 
 Now look at this project:
 - Read package.json, README, source files, folder structure, git history
@@ -212,8 +212,8 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 #### Bootstrap prompt (non-code / knowledge projects)
 
 ```
-Read the .agent/ manifesto at https://github.com/jlonardi/dot-agent —
-start with manifesto.md, then read the presets/ folder.
+Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
+start with operating-model.md, then read the presets/ folder.
 
 Now look at this workspace/domain:
 - Read existing notes/docs/folders and any current agent configs
@@ -231,7 +231,7 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 
 ### What happens during bootstrap
 
-1. **Agent reads this manifesto** and understands the structure, contract, and philosophy
+1. **Agent reads this operating model** and understands the structure, contract, and philosophy
 2. **Agent reads the presets** and understands what good rules look like
 3. **Agent explores the project** — package.json, README, source files, git history, existing configs
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
@@ -239,7 +239,7 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
 7. **Agent leaves a source reference** in the rules file so the node can be updated later:
    ```markdown
-   <!-- Source: https://github.com/jlonardi/dot-agent/manifesto.md | Version: 2 -->
+   <!-- Source: https://github.com/jlonardi/dot-agent/operating-model.md | Version: 3 -->
    ```
 8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
 9. **Agent wires your tools** — creates the entry points for whichever tools you use
@@ -250,13 +250,13 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 
 ### Updating existing nodes
 
-The manifesto evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the manifesto." The agent reads the source reference in the rules file, fetches the current manifesto, compares the version number, and reconciles — adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
+The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the source reference in the rules file, fetches the current operating model, compares the version number, and reconciles — adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
 
-This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the manifesto's structure, so reconciliation is natural — it's just a diff between what exists and what the manifesto now says.
+This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the operating model's structure, so reconciliation is natural — it's just a diff between what exists and what the operating model now says.
 
-**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in its `memory.md`). A manifesto change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn.
+**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in its `memory.md`). An operating model change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn.
 
-**Conflict resolution during propagation:** When reconciling a child node, the agent may encounter project-specific customizations that differ from the manifesto defaults. The rule: manifesto additions are always applied (new concepts, new rules), but existing project-specific content is preserved unless it directly contradicts the manifesto. If in doubt, the agent should flag the conflict and let the operator decide rather than silently overwriting.
+**Conflict resolution during propagation:** When reconciling a child node, the agent may encounter project-specific customizations that differ from the operating model defaults. The rule: operating model additions are always applied (new concepts, new rules), but existing project-specific content is preserved unless it directly contradicts the operating model. If in doubt, the agent should flag the conflict and let the operator decide rather than silently overwriting.
 
 ---
 
@@ -381,6 +381,8 @@ The self-maintenance contract says agents must update memory and session-log. Bu
 
 When you correct an agent, express a preference, explain your reasoning, or reveal a working pattern — that's a signal. Agents should notice these signals and record them in the appropriate node's `memory.md`. Not every interaction, but patterns and clear preferences.
 
+Every new observation should include either a concrete trigger (the quote/behavior that caused it) or a confidence tag (`high`/`medium`/`low`) when the trigger is implicit.
+
 This applies at every level of the tree:
 
 | Level | What agents observe |
@@ -415,7 +417,7 @@ Project and package nodes are created through bootstrap — point the agent at a
 
 ### Topology is yours
 
-The manifesto prescribes the node structure (purpose, memory, session-log, rules, docs) and the contract (read at start, write at end). It does not prescribe the tree shape. Examples:
+The operating model prescribes the node structure (purpose, memory, session-log, rules, docs) and the contract (read at start, write at end). It does not prescribe the tree shape. Examples:
 
 - **Solo developer, multiple repos:** root in `~/`, one node per project
 - **Monorepo:** root at repo root, nodes in packages that need their own context
@@ -426,7 +428,7 @@ The tree grows as needed. Start with one node. Add a root when you work on a sec
 
 ### Zero-cost bootstrap
 
-The bootstrap prompts in "Getting started" exist for the cold start — a fresh agent that has never seen this manifesto. Once any node exists, the agent already carries the pattern.
+The bootstrap prompts in "Getting started" exist for the cold start — a fresh agent that has never seen this operating model. Once any node exists, the agent already carries the pattern.
 
 Adding a new node becomes: point the agent at a folder and say "set it up." The agent reads the codebase, creates `.agent/`, wires it into your tools, and updates the parent node so it knows about this child next time.
 
