@@ -252,6 +252,8 @@ The manifesto evolves. Existing `.agent/` setups don't automatically update. Whe
 
 This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the manifesto's structure, so reconciliation is natural — it's just a diff between what exists and what the manifesto now says.
 
+**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in its `memory.md`). A manifesto change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn, preserving project-specific content while applying the new concepts.
+
 ---
 
 ## Wiring your tools
