@@ -26,6 +26,8 @@ Before marking any task or step complete:
 
 Do not skip. This is what gives the next session continuity.
 
+**Observation:** When the user corrects you, expresses a preference, explains how they think, or reveals a working pattern — note it in the appropriate `.agent/memory.md`. Not every interaction, but patterns and clear preferences. This applies at every level of the knowledge tree: project-specific observations stay in the project's memory, cross-project patterns go to the root.
+
 **Housekeeping:**
 - When `session-log.md` gets long, archive older entries to `.agent/session-log-archive.md`. Don't archive too eagerly — a few hundred lines is negligible context for most LLMs, and the agent work to reorganize costs more tokens than just reading a longer file.
 - Periodically compact `memory.md`: keep current facts/decisions, move stable detailed knowledge to `.agent/docs/`, and mark stale items as superseded.

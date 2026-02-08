@@ -1,5 +1,7 @@
 # The `.agent/` manifesto
 
+> **Version 2 — 2026-02-08**
+
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
 ---
@@ -237,7 +239,7 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
 7. **Agent leaves a source reference** in the rules file so the node can be updated later:
    ```markdown
-   <!-- Source: https://github.com/jlonardi/dot-agent/manifesto.md -->
+   <!-- Source: https://github.com/jlonardi/dot-agent/manifesto.md | Version: 2 -->
    ```
 8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
 9. **Agent wires your tools** — creates the entry points for whichever tools you use
@@ -248,11 +250,13 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 
 ### Updating existing nodes
 
-The manifesto evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the manifesto." The agent reads the source reference in the rules file, fetches the current manifesto, identifies gaps, and reconciles — adding new rules, updating terminology, preserving project-specific content. No URL to remember.
+The manifesto evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the manifesto." The agent reads the source reference in the rules file, fetches the current manifesto, compares the version number, and reconciles — adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
 
 This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the manifesto's structure, so reconciliation is natural — it's just a diff between what exists and what the manifesto now says.
 
-**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in its `memory.md`). A manifesto change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn, preserving project-specific content while applying the new concepts.
+**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in its `memory.md`). A manifesto change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn.
+
+**Conflict resolution during propagation:** When reconciling a child node, the agent may encounter project-specific customizations that differ from the manifesto defaults. The rule: manifesto additions are always applied (new concepts, new rules), but existing project-specific content is preserved unless it directly contradicts the manifesto. If in doubt, the agent should flag the conflict and let the operator decide rather than silently overwriting.
 
 ---
 
