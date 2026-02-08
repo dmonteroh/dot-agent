@@ -82,7 +82,7 @@ The contract says "update memory" — but a superficial update is worse than non
 
 **`session-log.md` — tag entries by tool and project:**
 
-When using a global `~/.agent/` hub, entries from different tools and projects land in the same log. Tag each entry so the log stays scannable:
+When a root-level `.agent/` collects entries from different tools and projects, they land in the same log. Tag each entry so the log stays scannable:
 
 > `- (Claude Code / my-app) **Added auth**: JWT with bcrypt. Argon2 rejected for deployment simplicity.`
 > `- (Cursor / infra) **Fixed deploy**: k8s readiness probe was hitting wrong port.`
@@ -324,67 +324,101 @@ If multiple agents/sessions touch `.agent/` at the same time:
 
 ---
 
-## Global + local: the hub-and-spoke pattern
+## The knowledge tree
 
-A project `.agent/` gives an agent memory within one project. But if you work on multiple projects, a pattern emerges: put a **global** `.agent/` in your home directory (`~/.agent/`) and wire your tools to read it alongside the project-local one.
+A single `.agent/` gives an agent memory within one project. But `.agent/` directories can nest. Each node is both a hub for what's below it and a spoke to what's above it. The result is a tree where context flows down and knowledge accumulates up.
 
 ```
-~/.agent/                          # Hub — knows all your projects
-├── memory.md                      # Cross-project state and decisions
-├── session-log.md                 # Cross-project history
-└── rules/                         # Global behavior rules
+~/.agent/                              # Root — documents the person
+├── memory.md                          # Cross-project state, preferences, how you work
+├── session-log.md                     # Cross-project history
+├── docs/                              # Your principles, tools, patterns
+└── rules/                             # Global behavior rules
 
-~/projects/app/.agent/             # Spoke — knows only this project
-├── memory.md, purpose.md, docs/
+~/projects/app/.agent/                 # Branch — documents this project
+├── purpose.md, memory.md, docs/
 
-~/projects/infra/.agent/           # Spoke — knows only this project
-├── memory.md, purpose.md, docs/
+~/projects/platform/.agent/            # Branch — documents the platform
+├── purpose.md, memory.md, docs/
+│
+└── packages/auth/.agent/              # Leaf — documents this package
+    ├── purpose.md, memory.md, docs/
 ```
 
-The global `~/.agent/` becomes a **knowledge hub**. It knows what all your projects are, what you decided across them, and how they relate. Each project `.agent/` is a **spoke** — deep context about one project, no awareness of others.
+Every node follows the same structure: purpose, memory, session-log, rules, docs. A node inherits context from its parent and adds its own specialization. The root knows everything broadly; the leaves know one thing deeply.
+
+### What each level documents
+
+The tree has a natural gradient. Higher nodes document broader, more stable context. Lower nodes document narrower, more technical context.
+
+| Level | Typically documents |
+|---|---|
+| **Root** (`~/.agent/`) | The operator — preferences, working patterns, cross-project decisions, principles |
+| **Project** (`project/.agent/`) | The codebase — architecture, domain, technology choices, project state |
+| **Package / subtree** (`pkg/.agent/`) | A specific area — its API, patterns, gotchas, local decisions |
+
+The root is special because its subject is the person, not a codebase. Agents reading the root learn how you think, communicate, and decide — not just what your projects contain. This is what makes the same agent effective across different projects: it knows the operator, not just the code.
+
+### Observation
+
+The self-maintenance contract says agents must update memory and session-log. But there's a second kind of knowledge that doesn't come from code — it comes from watching how the operator works.
+
+When you correct an agent, express a preference, explain your reasoning, or reveal a working pattern — that's a signal. Agents should notice these signals and record them in the appropriate node's `memory.md`. Not every interaction, but patterns and clear preferences.
+
+This applies at every level of the tree:
+
+| Level | What agents observe |
+|---|---|
+| **Root** | How you think, communicate, and decide. Preferences that apply everywhere. |
+| **Project** | How you work in this codebase. Project-specific conventions and judgments. |
+| **Package** | How you handle this specific area. Local patterns and gotchas. |
+
+An agent at the root learns "prefers simple solutions over configurable ones" — that carries across all projects. An agent at a project node learns "always writes tests before implementation here" — that's scoped to this codebase. Both are observation; the scope differs.
+
+This builds across sessions and tools. Knowledge about the operator lives in the tree, not in any single conversation. The tree remembers what conversations forget.
 
 ### What this enables
 
-**Cross-project agents.** An agent wired to the hub (Claude Code via `~/.claude/CLAUDE.md`, Codex via `AGENTS.md`) can work across multiple projects in one session. It knows project A uses data that project B generates. It can rename something in one repo and update references in another.
+**Cross-project agents.** An agent wired to the root can work across multiple projects in one session. It knows project A uses data that project B generates. It can rename something in one repo and update references in another.
 
-**Focused agents.** An agent wired only to the spoke (Cursor via `.cursorrules`) works deeply on one project without distraction from others. This is usually what you want for focused coding sessions.
+**Focused agents.** An agent wired only to a leaf works deeply on one area without distraction. This is usually what you want for focused coding sessions.
 
-**Natural asymmetry.** Hub agents coordinate. Spoke agents specialize. You don't configure this — it emerges from the wiring. The hub accumulates knowledge from every session with every tool. The spokes stay focused.
+**Natural asymmetry.** Root agents coordinate. Leaf agents specialize. You don't configure this — it emerges from the wiring. The root accumulates knowledge from every session with every tool. The leaves stay focused.
 
 ### How to set it up
 
+The root goes wherever makes sense for your workflow — typically your home directory:
+
 ```bash
-# Create the global hub
-mkdir -p ~/.agent/rules
-
-# Wire Claude Code globally
-# In ~/.claude/CLAUDE.md:
-#   "Read ~/.agent/ at session start"
-
-# Wire Codex (or any tool) similarly in its global config
+mkdir -p ~/.agent/rules ~/.agent/docs
 ```
 
-The global `~/.agent/rules/` holds your cross-project behavior rules. Each project still has its own `.agent/` for project-specific context. The agent reads both — global first, then local.
+Wire your tools to read the root alongside project-level nodes. The agent reads context top-down: root first, then project, then package (if it exists). Each level adds specificity.
+
+Project and package nodes are created through bootstrap — point the agent at a folder and say "set it up." Once the root exists, the agent already knows the pattern and can create new nodes without a bootstrap prompt.
+
+### Topology is yours
+
+The manifesto prescribes the node structure (purpose, memory, session-log, rules, docs) and the contract (read at start, write at end). It does not prescribe the tree shape. Examples:
+
+- **Solo developer, multiple repos:** root in `~/`, one node per project
+- **Monorepo:** root at repo root, nodes in packages that need their own context
+- **Work + personal separation:** two roots (`~/work/.agent/`, `~/personal/.agent/`), or one root with project nodes that carry their own constraints
+- **Single project:** no root needed — just one `.agent/` in the project
+
+The tree grows as needed. Start with one node. Add a root when you work on a second project. Add package nodes when a subtree gets complex enough to need its own memory. Don't create structure you don't need yet.
 
 ### Zero-cost bootstrap
 
-The bootstrap prompts in the "Getting started" section exist for the cold start — a fresh agent that has never seen this manifesto. Once the hub exists, the agent already carries the pattern. It knows the directory structure, the self-maintenance contract, the presets, and every project it has ever worked on.
+The bootstrap prompts in "Getting started" exist for the cold start — a fresh agent that has never seen this manifesto. Once any node exists, the agent already carries the pattern.
 
-Adding a new project becomes: point the agent at a folder and say "set it up." The agent:
+Adding a new node becomes: point the agent at a folder and say "set it up." The agent reads the codebase, creates `.agent/`, wires it into your tools, and updates the parent node so it knows about this child next time.
 
-1. Reads the codebase to understand what it is
-2. Creates `.agent/` with purpose, memory, rules, docs
-3. Wires it into your tools
-4. Gitignores `.agent/`
-5. Updates the hub (`~/.agent/memory.md`) so it knows about this project next time
-
-No prompt to copy. No manifesto URL to paste. No onboarding conversation. The hub already has everything the agent needs to bootstrap a new spoke.
-
-This is where the system compounds. Each project the agent sets up makes the hub smarter. Each session in any project adds to the hub's cross-project knowledge. The agent's understanding of your work — your tools, your preferences, your projects, how they relate — grows with every interaction. You never re-explain.
+This is where the system compounds. Each node the agent sets up makes the tree richer. Each session in any node adds to the accumulated knowledge. The agent's understanding of your work grows with every interaction. You never re-explain.
 
 ### Solo vs. team
 
-For solo developers, the hub is personal: `~/.agent/` on your machine, accumulating everything. For teams, each person has their own hub. The spokes (project `.agent/`) are still personal and gitignored — team documentation lives elsewhere (`AGENTS.md`, wiki, etc.).
+For solo developers, the tree is personal — rooted on your machine, accumulating everything. For teams, each person has their own tree. The nodes are personal and gitignored — team documentation lives elsewhere (`AGENTS.md`, wiki, etc.).
 
 ---
 

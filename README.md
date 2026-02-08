@@ -98,26 +98,28 @@ If checks fail and you want minimal scaffolding automatically, run:
 placeholder content with real session details, then rerun verification before
 marking work complete.
 
-## Multi-project: the hub-and-spoke pattern
+## The knowledge tree
 
-A project `.agent/` gives one project memory. A **global** `~/.agent/` gives you cross-project memory.
+`.agent/` directories can nest. Each node is both a hub for what's below it and a spoke to what's above it — a tree where context flows down and knowledge accumulates up.
 
 ```
-~/.agent/                        # Hub — knows all your projects
-├── memory.md                    # "koetreenit uses Tatoeba data, infra runs on k8s"
-└── rules/
+~/.agent/                              # Root — documents the person
+├── memory.md, rules/, docs/
 
-~/projects/app/.agent/           # Spoke — deep context, one project
-~/projects/infra/.agent/         # Spoke — deep context, one project
+~/projects/app/.agent/                 # Branch — documents this project
+├── purpose.md, memory.md, docs/
+
+~/projects/platform/.agent/            # Branch — documents the platform
+└── packages/auth/.agent/              # Leaf — documents this package
 ```
 
-Wire a tool to the hub (Claude Code via `~/.claude/CLAUDE.md`) and it can work across projects in one session — it knows how they relate. Wire a tool only to the spoke (Cursor via `.cursorrules`) and it focuses deeply on one project without distraction.
+The root documents the operator — preferences, working patterns, cross-project decisions. Branches document codebases. Leaves document specific areas. Agents observe how you work at every level and record patterns in the appropriate node.
 
-Hub agents coordinate. Spoke agents specialize. The asymmetry is the feature.
+Wire a tool to the root (Claude Code via `~/.claude/CLAUDE.md`) and it works across projects — it knows how they relate and how you think. Wire a tool only to a leaf (Cursor via `.cursorrules`) and it focuses deeply without distraction. Root agents coordinate. Leaf agents specialize.
 
-Once the hub exists, adding a new project is just "set up this folder." The agent already knows the manifesto, the presets, your preferences, and every other project. No bootstrap prompt needed. It reads the codebase, creates `.agent/`, wires your tools, and updates the hub. The system compounds — every project makes the hub smarter, every session adds context, and the agent never needs onboarding again.
+The tree grows as needed. Start with one node. Add a root when you work on a second project. The topology is yours — solo dev with many repos, monorepo with package nodes, or a single project with no root at all.
 
-See [manifesto.md](manifesto.md) for the full pattern, setup, and team considerations.
+See [manifesto.md](manifesto.md) for the full pattern, observation, setup, and team considerations.
 
 ## How it compares
 
