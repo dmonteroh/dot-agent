@@ -5,9 +5,10 @@ Enforces the dot-agent operating model's self-maintenance contract:
 the agent cannot stop without updating session-log.md in ALL discovered
 .agent/ directories (dual-write enforcement).
 
-This is the CORE hook. It enforces only the operating model contract.
-For personal assistant extensions (diary nudge, observation prompts),
-see dot-agent-assistant which provides an extended version.
+These hooks are designed to be extended. To add custom behavior (e.g.
+additional file tracking, soft nudges), copy this file and modify it.
+The extension should be a strict superset — include all core behavior
+plus your additions.
 
 Install: ~/.claude/hooks/self-maintenance.py
 Configure: add to PreToolUse and Stop hooks in ~/.claude/settings.json

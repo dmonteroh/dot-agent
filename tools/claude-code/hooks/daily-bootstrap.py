@@ -11,9 +11,10 @@ Required reads:
 3. .agent/memory.md
 4. .agent/session-log.md
 
-This is the CORE hook. It enforces only the operating model contract.
-For personal assistant extensions (inbox, diary, maintenance prompt),
-see dot-agent-assistant which provides an extended version.
+These hooks are designed to be extended. To add custom behavior (e.g.
+inbox enforcement, maintenance prompts), copy this file and modify it.
+The extension should be a strict superset — include all core behavior
+plus your additions.
 
 Install: ~/.claude/hooks/daily-bootstrap.py
 Configure: add to PreToolUse hooks in ~/.claude/settings.json

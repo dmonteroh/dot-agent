@@ -188,7 +188,7 @@ The entire `.agent/` directory is gitignored. It's personal context — your dec
 
 ### The bootstrap
 
-The [README](README.md) has copy-paste prompts for system install, project bootstrap, and updating existing nodes. A human copies the prompt, pastes it into an agent, and the agent reads this operating model to understand what to do.
+The [README](README.md) has a single prompt that covers install, bootstrap, and updates. A human copies it, pastes it into any agent, and the agent reads this operating model to understand what to do.
 
 ### What happens during bootstrap
 

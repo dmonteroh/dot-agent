@@ -30,13 +30,8 @@ ln -sf /path/to/dot-agent/tools/claude-code/hooks/daily-bootstrap.py ~/.claude/h
 ln -sf /path/to/dot-agent/tools/claude-code/hooks/self-maintenance.py ~/.claude/hooks/
 ```
 
-## Extending with dot-agent-assistant
+## Extending
 
-These are the **core** hooks — they enforce only the operating model contract.
+These are **core** hooks — they enforce the operating model contract and nothing more.
 
-[dot-agent-assistant](https://github.com/jlonardi/dot-agent-assistant) provides extended hooks that build on these, adding:
-- Inbox enforcement (message queue for background agents and reminders)
-- Daily maintenance prompt (memory audit, pruning, morning briefing)
-- Diary nudge (prompts anthropological observation at session end)
-
-The assistant hooks are a strict superset — they include all core behavior plus extensions. Installing the assistant replaces the core hooks.
+To add custom behavior (inbox enforcement, maintenance prompts, diary nudges, etc.), copy the hooks and extend them. Extensions should be a strict superset: include all core behavior plus your additions. Installing extended hooks replaces the core ones.

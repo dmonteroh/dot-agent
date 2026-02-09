@@ -41,79 +41,22 @@ Rule presets for different domains — pick one during bootstrap or let the agen
 
 ## Get started
 
-### System install (one time)
-
-Copy this prompt into any capable agent. It reads the operating model, sets up your global `~/.agent/`, and wires your tools.
+Copy this into any capable agent:
 
 ```
-Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
-start with operating-model.md, then read the presets/ folder.
+Read the .agent/ operating model at https://github.com/jlonardi/dot-agent.
 
-Set up my system:
-1. Create ~/.agent/ with the standard structure
-   (rules/, docs/, purpose.md, memory.md, session-log.md)
-2. Ask me about myself — what I do, how I work, my preferences
-3. Adapt rules from the preset that fits best
-4. Wire the tools I use (create the entry points described in the operating model)
-5. Gitignore .agent/ globally
+Look at my current setup and do what makes sense:
+- No ~/.agent/? Set up the system from scratch — ask me about myself first.
+- ~/.agent/ exists but outdated? Check the version and update.
+- In a project without .agent/? Bootstrap it.
 
-When done, tell me what was set up and how to verify it works.
+Ask me anything you need to know.
 ```
 
-If you use **Claude Code**, you can also install enforcement hooks that programmatically enforce the load order and self-maintenance contract. See [`tools/claude-code/`](tools/claude-code/) for hooks and setup instructions.
+One prompt. The agent reads the operating model, figures out what state you're in, and does the right thing.
 
-### Add .agent/ to a project
-
-Once the system is installed, use this to add persistent memory to any project:
-
-```
-Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
-start with operating-model.md, then read the presets/ folder.
-
-Now look at this project:
-- Read package.json, README, source files, folder structure, git history
-- Check for existing agent configs (.cursorrules, CLAUDE.md, AGENTS.md, .cursor/)
-
-Tell me:
-1. What you think this project is
-2. Which preset fits best (or if none fit)
-3. What you'd put in .agent/
-
-I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
-```
-
-15 minutes. One conversation. Your project has persistent memory.
-
-For non-code / knowledge projects, replace the project exploration step:
-
-```
-Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
-start with operating-model.md, then read the presets/ folder.
-
-Now look at this workspace/domain:
-- Read existing notes/docs/folders and any current agent configs
-- Infer the topic, goals, constraints, and current state
-
-Tell me:
-1. What you think this workspace/domain is
-2. Which preset fits best (or if none fit)
-3. What you'd put in .agent/
-
-I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
-```
-
-### Update existing .agent/
-
-When the operating model evolves, update your project's rules to match:
-
-```
-Read the latest .agent/ operating model at https://github.com/jlonardi/dot-agent —
-start with operating-model.md, then read the presets/ folder.
-
-Now read my current .agent/rules/ and compare against the operating model.
-Show me what's changed and update my rules to match.
-Keep everything else in .agent/ as-is.
-```
+If you use **Claude Code**, you can also install enforcement hooks that programmatically enforce the load order and self-maintenance contract. See [`tools/claude-code/`](tools/claude-code/).
 
 ## Manual completion check (for agents without hooks)
 
