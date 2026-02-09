@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**/.agent/**)",
+      "Edit(**/.agent/**)",
+      "Write(**/.agent/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/self-maintenance.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/daily-bootstrap.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/self-maintenance.py"
+          }
+        ]
+      }
+    ]
+  }
+}
