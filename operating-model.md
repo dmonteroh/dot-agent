@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 3 — 2026-02-08**
+> **Version 4 — 2026-02-09**
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -119,12 +119,12 @@ This is not a separate step. It happens naturally during the load order: the age
 
 The contract works because agents follow instructions reliably. For stronger guarantees, use your tool's native enforcement mechanism.
 
-**Claude Code** — a stop hook that blocks session end until `.agent/` is updated:
+**Claude Code** — enforcement hooks that block work until context is loaded (daily bootstrap) and block session end until `.agent/` is updated (self-maintenance). Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
 
-```python
-# ~/.claude/hooks/self-maintenance.py (hook type: stop)
-# Checks that memory.md and session-log.md were modified this session.
-# Claude Code will show the error message and block until the agent complies.
+```bash
+# Install hooks
+cp tools/claude-code/hooks/*.py ~/.claude/hooks/
+# Merge tools/claude-code/settings-example.json into ~/.claude/settings.json
 ```
 
 **Cursor** — add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
@@ -188,48 +188,7 @@ The entire `.agent/` directory is gitignored. It's personal context — your dec
 
 ### The bootstrap
 
-Use the prompt that matches your project type.
-
-#### Bootstrap prompt (code projects)
-
-Copy this prompt into your first message to any agent. The agent reads the operating model from GitHub, explores your project, and sets up `.agent/`.
-
-```
-Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
-start with operating-model.md, then read the presets/ folder.
-
-Now look at this project:
-- Read package.json, README, source files, folder structure, git history
-- Check for existing agent configs (.cursorrules, CLAUDE.md, AGENTS.md, .cursor/)
-
-Tell me:
-1. What you think this project is
-2. Which preset fits best (or if none fit)
-3. What you'd put in .agent/
-
-I'll confirm, correct, and fill in what you can't infer. Then create .agent/
-and add it to .gitignore (or .git/info/exclude for team repos).
-```
-
-#### Bootstrap prompt (non-code / knowledge projects)
-
-```
-Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
-start with operating-model.md, then read the presets/ folder.
-
-Now look at this workspace/domain:
-- Read existing notes/docs/folders and any current agent configs
-  (.cursorrules, CLAUDE.md, AGENTS.md, .cursor/)
-- Infer the topic, goals, constraints, and current state
-
-Tell me:
-1. What you think this workspace/domain is
-2. Which preset fits best (or if none fit)
-3. What you'd put in .agent/
-
-I'll confirm, correct, and fill in what you can't infer. Then create .agent/
-and add it to .gitignore (or .git/info/exclude for team repos).
-```
+The [README](README.md) has copy-paste prompts for system install, project bootstrap, and updating existing nodes. A human copies the prompt, pastes it into an agent, and the agent reads this operating model to understand what to do.
 
 ### What happens during bootstrap
 
@@ -241,7 +200,7 @@ and add it to .gitignore (or .git/info/exclude for team repos).
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
 7. **Agent leaves a source reference** in the rules file so the node can be updated later:
    ```markdown
-   <!-- Source: https://github.com/jlonardi/dot-agent/operating-model.md | Version: 3 -->
+   <!-- Source: https://github.com/jlonardi/dot-agent/operating-model.md | Version: 4 -->
    ```
 8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
 9. **Agent wires your tools** — creates the entry points for whichever tools you use

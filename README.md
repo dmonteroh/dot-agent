@@ -41,7 +41,30 @@ Rule presets for different domains — pick one during bootstrap or let the agen
 
 ## Get started
 
-Copy the matching bootstrap prompt from `operating-model.md` into your first message:
+### System install (one time)
+
+Copy this prompt into any capable agent. It reads the operating model, sets up your global `~/.agent/`, and wires your tools.
+
+```
+Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
+start with operating-model.md, then read the presets/ folder.
+
+Set up my system:
+1. Create ~/.agent/ with the standard structure
+   (rules/, docs/, purpose.md, memory.md, session-log.md)
+2. Ask me about myself — what I do, how I work, my preferences
+3. Adapt rules from the preset that fits best
+4. Wire the tools I use (create the entry points described in the operating model)
+5. Gitignore .agent/ globally
+
+When done, tell me what was set up and how to verify it works.
+```
+
+If you use **Claude Code**, you can also install enforcement hooks that programmatically enforce the load order and self-maintenance contract. See [`tools/claude-code/`](tools/claude-code/) for hooks and setup instructions.
+
+### Add .agent/ to a project
+
+Once the system is installed, use this to add persistent memory to any project:
 
 ```
 Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
@@ -61,7 +84,25 @@ I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
 
 15 minutes. One conversation. Your project has persistent memory.
 
-## Update existing .agent/
+For non-code / knowledge projects, replace the project exploration step:
+
+```
+Read the .agent/ operating model at https://github.com/jlonardi/dot-agent —
+start with operating-model.md, then read the presets/ folder.
+
+Now look at this workspace/domain:
+- Read existing notes/docs/folders and any current agent configs
+- Infer the topic, goals, constraints, and current state
+
+Tell me:
+1. What you think this workspace/domain is
+2. Which preset fits best (or if none fit)
+3. What you'd put in .agent/
+
+I'll confirm, correct, and fill in what you can't infer. Then create .agent/.
+```
+
+### Update existing .agent/
 
 When the operating model evolves, update your project's rules to match:
 
