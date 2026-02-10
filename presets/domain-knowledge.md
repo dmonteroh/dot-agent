@@ -32,6 +32,10 @@ Do not skip. This is what gives the next session continuity.
 - When `session-log.md` gets long, archive older entries to `.agent/session-log-archive.md`. Don't archive too eagerly — a few hundred lines is negligible context for most LLMs, and the agent work to reorganize costs more tokens than just reading a longer file.
 - Periodically compact `memory.md`: keep current facts/decisions, move stable detailed knowledge to `.agent/docs/`, and mark stale items as superseded.
 
+## Ambiguity resolution
+
+When the user references something you don't immediately recognize (a file, project, concept, deliverable), consult your memory files and session log before asking for clarification. The answer is often already in your context.
+
 ## Core rules
 
 ### 1. Catalog everything

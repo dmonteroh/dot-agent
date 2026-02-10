@@ -119,7 +119,7 @@ This is not a separate step. It happens naturally during the load order: the age
 
 The contract works because agents follow instructions reliably. For stronger guarantees, use your tool's native enforcement mechanism.
 
-**Claude Code** — enforcement hooks that block work until context is loaded (daily bootstrap) and block session end until `.agent/` is updated (self-maintenance). Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
+**Claude Code** — enforcement hooks that block session end until `.agent/` is updated (self-maintenance). Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
 
 ```bash
 # Install hooks

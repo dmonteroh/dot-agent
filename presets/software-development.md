@@ -44,6 +44,10 @@ as a manual completion check, run it before done. On failure, run with
 `--fix`, replace any placeholders with real session details, then rerun the
 check and only mark done after it passes.
 
+## Ambiguity resolution
+
+When the user references something you don't immediately recognize (a file, project, concept, deliverable), consult your memory files and session log before asking for clarification. The answer is often already in your context.
+
 ## Code quality
 
 - **Comments:** Only when the code is not self-explanatory. Prefer clear names and structure.
