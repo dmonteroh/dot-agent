@@ -62,6 +62,18 @@ Casual input — conversations, observations, quick notes, unstructured document
 
 The agent produces documents, summaries, agendas, analyses, and other outputs from accumulated material. Every output is grounded in what's actually known. Clearly mark when something is inference vs. established fact.
 
+## Self-learning
+
+After substantial sessions (significant knowledge restructured, user corrections received, or process patterns discovered), evaluate whether behavioral lessons emerged. If so, append a rule to `.agent/rules/learned.md`:
+
+```
+- [YYYY-MM-DD] <rule in imperative form>. Trigger: <what caused this learning>.
+```
+
+Rules should be universal (not session-specific), abstracted from the specific case, and high-impact. Examples: "Always ask for source format before indexing a large document." "When contradictions appear, preserve both versions with dates, don't resolve silently."
+
+If nothing worth recording: proceed without updating.
+
 ## Working with knowledge
 
 - **Accept any input format.** Notes, conversations, documents, screenshots, quick thoughts. The agent structures them.

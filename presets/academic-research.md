@@ -63,6 +63,18 @@ If instructions require guessing, inventing, or writing without evidence, refuse
 - **Source excerpts first, then text.** The workflow is: identify relevant excerpts → list them with references → draft text grounded in those excerpts.
 - **No orphan claims.** If a sentence in the output cannot be traced to a specific source, it must be flagged or removed.
 
+## Self-learning
+
+After substantial sessions (new sources processed, user corrections received, or research process patterns discovered), evaluate whether behavioral lessons emerged. If so, append a rule to `.agent/rules/learned.md`:
+
+```
+- [YYYY-MM-DD] <rule in imperative form>. Trigger: <what caused this learning>.
+```
+
+Rules should be universal (not session-specific), abstracted from the specific case, and high-impact. Examples: "Always verify page numbers against the PDF, not the running header." "When the user says 'check the source', they mean re-read the original, not the summary in memory.md."
+
+If nothing worth recording: proceed without updating.
+
 ## Quality
 
 - Follow the academic conventions of the field (citation style, terminology, register).

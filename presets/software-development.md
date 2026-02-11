@@ -73,6 +73,26 @@ When the user references something you don't immediately recognize (a file, proj
 - **Agent runs the bar:** Run the project's test/lint commands; do not only suggest that the user run them.
 - **Act vs ask:** Act autonomously on small decisions that match project rules. Ask when scope or direction is unclear.
 
+## Correctness
+
+- **Re-read files after editing.** Before marking done, re-read every file you wrote or edited. Catch mistakes, inconsistencies, and leftover artifacts before the user has to.
+- **Run tests after changing source files.** If you changed `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.rs`, `.go`, `.java`, or similar source files, run the project's test suite before finishing.
+- **Verify build after config changes.** If you changed `package.json`, `tsconfig.json`, `*.config.*`, `.env`, or similar config files, run the build to verify nothing broke.
+
+These are separate from the quality bar in "Regression and verification" — that section defines the bar, this section says you must actually check your own work against it.
+
+## Self-learning
+
+After substantial sessions (source files changed, user corrections received, or process patterns discovered), evaluate whether behavioral lessons emerged. If so, append a rule to `.agent/rules/learned.md`:
+
+```
+- [YYYY-MM-DD] <rule in imperative form>. Trigger: <what caused this learning>.
+```
+
+Rules should be universal (not session-specific), abstracted from the specific case, and high-impact. Examples of good rules: "Always check all consuming packages when modifying shared schemas." "Run the linter before committing, not after." "When the user says 'fix those', they mean all items listed, not just the first."
+
+If nothing worth recording: proceed without updating. Most sessions won't produce a rule. That's fine.
+
 ## After big architectural changes
 
 Perform a deep code review in the same work:

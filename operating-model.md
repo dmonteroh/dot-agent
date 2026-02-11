@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 4 — 2026-02-09**
+> **Version 5 — 2026-02-10**
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -38,7 +38,8 @@ Knowledge becomes **cumulative** (grows over sessions), **self-producing** (the 
 project-root/
 ├── .agent/
 │   ├── rules/              # Behavior rules (adapted from a preset or custom)
-│   │   └── *.md
+│   │   ├── *.md            # Human-authored rules (adapted from preset)
+│   │   └── learned.md      # Agent-authored behavioral rules (from retro)
 │   ├── purpose.md          # What the project is, who it's for, constraints
 │   ├── memory.md           # Current state, key decisions (updated every session)
 │   ├── session-log.md      # Meeting notes (appended every session)
@@ -50,11 +51,14 @@ project-root/
 
 | File | What it is | Who writes it |
 |------|------------|---------------|
-| `rules/*.md` | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap. | Agent (from preset, with your input) |
+| `rules/*.md` (except learned) | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap. | Agent (from preset, with your input) |
+| `rules/learned.md` | Behavioral rules accumulated from session retros. Imperative, durable, agent-discovered. | Agent (from retro process) |
 | `purpose.md` | Why this project exists, who it's for, key constraints. Where to change what. | Agent (from conversation with you) |
 | `memory.md` | Current project state, decisions, domain knowledge. A running summary — not history. | Agent (mandatory, every session) |
 | `session-log.md` | Meeting notes. What was discussed, decided, implemented. 2–5 lines per entry. | Agent (mandatory, every session) |
 | `docs/*.md` | Architecture, features, data flows. Expensive-to-infer context the agent produces from scanning the codebase. | Agent (from codebase scan + your input) |
+
+The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
 ### The self-maintenance contract
 
@@ -115,11 +119,48 @@ Accumulated context can go stale. When reading `.agent/` at session start, the a
 
 This is not a separate step. It happens naturally during the load order: the agent reads context, notices something is wrong based on what it sees in the codebase, and corrects it as part of the current session's self-maintenance. The goal is that `.agent/` stays accurate, not just populated.
 
-### Enforcing the contract
+### Behavioral enforcement
 
-The contract works because agents follow instructions reliably. For stronger guarantees, use your tool's native enforcement mechanism.
+The self-maintenance contract covers one phase: completion. But a well-run session has more phases than that, and agents can be held to all of them.
 
-**Claude Code** — enforcement hooks that block session end until `.agent/` is updated (self-maintenance). Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
+#### The trust contract
+
+Each lifecycle phase is a trust contract. Agents should follow these regardless of whether enforcement exists.
+
+| Phase | Trust contract | Enforceable? |
+|-------|---------------|-------------|
+| **Bootstrap** | Load context before working | Yes |
+| **Pre-work** | Load project context before editing project files | Yes |
+| **Correctness** | Re-read files you edited. Run tests after changing source files. Run build after changing config. | Yes |
+| **Completion** | Update session-log and memory before finishing | Yes |
+| **Retro** | After substantial sessions, reflect on behavioral lessons and record durable rules | Yes |
+
+The operating model describes WHAT should happen. Tools implement HOW. Claude Code hooks are the reference implementation. Any agent with a hook-like mechanism can implement the same contracts. Agents without hooks follow the contracts on trust.
+
+#### Self-learning
+
+Agents accumulate behavioral rules across sessions. The retro phase produces them, `rules/learned.md` stores them.
+
+- `rules/learned.md` exists at **every level of the knowledge tree**. Project agents learn project-specific behavioral rules, root agents learn cross-project rules. Same gradient as memory and observation.
+- Distinct from human-authored rules (the contract/operating rules). Human rules define the framework. Learned rules capture what the agent discovered about working effectively within it.
+- Each entry: date, imperative rule, trigger (what caused the learning).
+- Loaded during bootstrap alongside other rules.
+- Versioned via git. Bad rules can be reverted.
+
+The self-learning loop: session produces experience, retro distills rules, next session operates under improved rules, cycle continues. Rules should be universal (not session-specific), abstracted, and high-impact.
+
+Format: `- [YYYY-MM-DD] <imperative rule>. Trigger: <what caused this learning>.`
+
+Example:
+```
+- [2026-02-10] Always check all consuming packages when modifying shared schemas. Trigger: changed a Zod schema in a shared package, broke 3 downstream test files that used the old shape.
+```
+
+#### Enforcement mechanisms
+
+The contracts work because agents follow instructions reliably. For stronger guarantees, use your tool's native enforcement mechanism.
+
+**Claude Code** — enforcement hooks that block the agent when contracts are violated. Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
 
 ```bash
 # Install hooks
@@ -144,7 +185,7 @@ Enforcement is optional but recommended. Without it, compliance depends entirely
 When an agent starts a session, it reads context before doing anything:
 
 1. **Project entry point** (`.cursorrules`, `CLAUDE.md`, etc.) — points to `.agent/`
-2. **`.agent/rules/`** — behavior rules
+2. **`.agent/rules/`** — behavior rules (including `learned.md` if it exists)
 3. **`.agent/purpose.md`** — what the project is and why
 4. **`.agent/memory.md`** — current state and decisions
 5. **Last 5–10 entries of `.agent/session-log.md`** — recent meeting notes
@@ -200,7 +241,7 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
 7. **Agent leaves a source reference** in the rules file so the node can be updated later:
    ```markdown
-   <!-- Source: https://github.com/jlonardi/dot-agent/operating-model.md | Version: 4 -->
+   <!-- Source: https://github.com/jlonardi/dot-agent/operating-model.md | Version: 5 -->
    ```
 8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
 9. **Agent wires your tools** — creates the entry points for whichever tools you use
