@@ -153,6 +153,10 @@ def main():
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
 
+    # Skip when running under the runner (non-interactive, blocking has no benefit)
+    if os.environ.get("AGENT_RUNNER"):
+        return
+
     if event == "PreToolUse":
         handle_pre_tool_use(session_id, tool_name, tool_input)
     elif event == "Stop":

@@ -25,14 +25,15 @@ CHECKPOINT_DIR = Path("/tmp/claude-pre-work")
 
 
 def find_project_agent_dir(filepath: str) -> Path | None:
-    """Find the .agent/ directory for the project containing filepath."""
-    d = Path(filepath).resolve()
+    """Find the .agent/ directory for the project containing filepath.
+    Uses abspath (not resolve) to avoid following symlinks."""
+    d = Path(os.path.abspath(filepath))
     if d.is_file():
         d = d.parent
     while d != d.parent:
         candidate = d / ".agent"
         if candidate.is_dir():
-            return candidate.resolve()
+            return Path(os.path.abspath(str(candidate)))
         d = d.parent
     return None
 
@@ -55,6 +56,11 @@ def main():
     event = data.get("hook_event_name", "")
 
     if event != "PreToolUse":
+        return
+
+    # Skip when running under the runner (non-interactive, blocking has no benefit)
+    import os
+    if os.environ.get("AGENT_RUNNER"):
         return
 
     tool_name = data.get("tool_name", "")
