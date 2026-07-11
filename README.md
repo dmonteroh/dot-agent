@@ -1,6 +1,6 @@
 # .agent/
 
-Persistent, self-maintaining AI context that works across tools and sessions. An adaptation from `jlonardi/dot-agent`.
+Persistent, self-maintaining AI context that works across tools and sessions. An adaptation from [`jlonardi/dot-agent`](https://github.com/jlonardi/dot-agent).
 
 ## The problem
 
