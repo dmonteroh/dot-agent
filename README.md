@@ -48,8 +48,13 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent.
 
 Look at my current setup and do what makes sense:
 - No ~/.agent/? Set up the system from scratch — ask me about myself first.
-- ~/.agent/ exists but outdated? Check the version and update.
-- In a project without .agent/? Bootstrap it.
+- ~/.agent/ exists but outdated? Read the dot-agent manifest on purpose.md
+  and update.
+- In a project without .agent/? Bootstrap it: explore the project, confirm
+  your findings with me, adapt a preset (keep its Kernel intact; fill
+  Project guardrails with exact commands), ask me the tracking mode once
+  (ignore-all / track-shared / track-all), stamp the manifest, and wire my
+  tools from the canonical entry-point template.
 
 Ask me anything you need to know.
 ```

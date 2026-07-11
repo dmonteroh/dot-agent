@@ -60,6 +60,50 @@ project-root/
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
+### File header contracts
+
+Every canonical file opens with a short comment that is its own format contract, written at bootstrap. The rules for writing a file sit at the top of the file itself — in context at the exact moment of writing, for every tool, including ones that never read the preset. A model appending an entry follows the template in front of it instead of recalling a constraint it read thousands of tokens ago.
+
+`session-log.md`:
+
+```markdown
+# Session log
+<!-- One entry per session, newest last:
+- [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a.
+Append the model to the tag when the harness states one — (claude/sonnet) —
+never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
+narrative. -->
+```
+
+`memory.md`:
+
+```markdown
+# Memory
+<!-- Durable current state only: decisions, terminology, preferences, active
+blockers, non-obvious operating facts. Rewrite in place; supersede, don't
+append. No dated narratives, no command output. Target ≤800 words. -->
+```
+
+`rules/learned.md` — its header is the curation law itself:
+
+```markdown
+# Learned rules
+
+Binding rules distilled from operator corrections and failed verifications
+on this project. Append new rules; when updating you may merge or compress
+entries, but never drop operational content. Keep each entry to roughly 40
+words: imperative rule first, cause/trigger only where it adds information.
+Write the rule, not the story — no incident retelling or justification
+narrative; merge near-duplicates instead of appending; move domain detail
+beyond ~40 words into the matching `.agent/docs/` file and keep a pointer
+here (authoring rules: `<preset>.md`, Self-learning). Behavioral rules stay
+here; area gotchas go to the matching `.agent/docs/` file under `## Gotchas`.
+
+<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
+```
+
+The session-log model tag is opt-up, not mandatory: the default shape is `(tool)`, and the model is appended only when the harness states one. A mandatory model slot invites template-completion fabrication from models that cannot resolve their own name — and a wrong tag silently corrupts measurement, where a missing tag is visible and countable.
+
 ### The node manifest
 
 Every node carries its identity as YAML frontmatter on `purpose.md` — the least-rewritten file in the node:
@@ -239,10 +283,10 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 3. **Agent explores the project** — package.json, README, source files, git history, existing configs
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
 5. **You confirm and correct** — fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset. Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints. A guardrail that says "run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is.
+6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints. A guardrail that says "run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is.
 7. **Agent asks the tracking mode once** — `ignore-all`, `track-shared`, or `track-all` — and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest** — `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
-9. **Agent wires your tools** — creates the entry points for whichever tools you use. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
+9. **Agent wires your tools** — writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, preset name, strong-model list, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
@@ -252,7 +296,7 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 
 The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the `dot-agent` frontmatter on `purpose.md`, fetches the current operating model from `source`, compares `version`, and reconciles — adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
 
-An update pass changes only `version` in the manifest — it never removes or rewrites the frontmatter itself. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update.
+An update pass changes only `version` in the manifest — it never removes or rewrites the frontmatter itself. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update. An update pass also refreshes the entry point's strong-model list — models ship faster than nodes update; the family-substring form stales slowly, and when it does stale, degradation is floor-ward: a model not on the list reads the Kernel + guardrails floor, which is safe.
 
 This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the operating model's structure, so reconciliation is natural — it's just a diff between what exists and what the operating model now says.
 
@@ -264,72 +308,53 @@ This works at any level. Update a root to get new cross-project rules. Update a 
 
 ## Wiring your tools
 
-Each AI tool gets a thin entry point — a short file that says "read `.agent/`". The context lives in `.agent/`, the wiring is just a pointer.
+Each AI tool gets a thin entry point — a short file the tool loads automatically. The context lives in `.agent/`; the entry point is the executable bootstrap that loads it. One canonical template serves every tool — per-tool wiring is "put this template in the tool's filename":
 
-### Cursor
+| Tool | Entry point file |
+|---|---|
+| Codex, and anything AGENTS.md-aware | `AGENTS.md` |
+| Claude Code | `CLAUDE.md` (project root, or `~/.claude/CLAUDE.md` for a root node) |
+| Cursor | `.cursorrules` |
+| Copilot | `.github/copilot-instructions.md` |
 
-`.cursorrules` at project root references `.agent/`:
+### The canonical entry point
 
-```markdown
-For agent behaviour and quality rules, see `.agent/rules/`.
-
-## Documentation index
-- `.agent/purpose.md` – what the project is
-- `.agent/memory.md` – current state and decisions
-- `.agent/session-log.md` – recent history
-- `.agent/docs/` – architecture and features
-```
-
-Auto-load rules via symlink:
-
-```bash
-mkdir -p .cursor/rules
-ln -sf ../../.agent/rules/your-rules.md .cursor/rules/your-rules.md
-```
-
-### Claude Code
-
-`CLAUDE.md` at project root (or `~/.claude/CLAUDE.md` globally):
+Written at bootstrap; placeholders in `<…>` filled per project:
 
 ```markdown
-When working on a project:
-1. Read `.agent/rules/`, then `.agent/purpose.md`, `.agent/memory.md`,
-   and last 5–10 entries of `.agent/session-log.md`
-2. Follow the rules in `.agent/rules/`
-3. Update `.agent/memory.md` and `.agent/session-log.md` when done
+# <Project> — Session Bootstrap
+
+<One line: stack, key dirs, package managers.> Binding rules and state load
+in the steps below — do not answer, plan, or edit before completing them.
+
+Execute with tools, in order:
+
+1. Run `bash .agent/scripts/status.sh` — prints recent session-log entries
+   plus any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes; handle flags as
+   part of this session, treat TOOLS: notes as advisory.
+2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
+3. Read the `## Kernel` and `## Project guardrails` sections of
+   `.agent/rules/<preset>.md` — binding. If you are one of: <Opus, Sonnet,
+   GPT-5.5 — the project's strong-model list>, read the full file instead.
+4. Read `.agent/purpose.md` — scope and boundaries.
+5. Read `.agent/memory.md` — durable state.
+6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
+   read only what the task needs.>
+
+Exception — subagents: if dispatched by an orchestrator with a task brief
+and role prompt, execute steps 2–3 and 6 only; do not edit `.agent/` unless
+explicitly assigned.
+
+Keep this file and AGENTS.md identical; when editing one, mirror the other.
 ```
 
-### Copilot
+Template mechanics:
 
-`.github/copilot-instructions.md`:
+- **The status check runs first, not last.** Step-skipping concentrates at the tail of numbered lists, and REPAIR: flags should surface before a read fails confusingly.
+- **Step 3 is an inverted-default conditional.** The default load is the safe floor (Kernel + Project guardrails); only models on the project's strong-model list opt *up* to the full preset. Model identity is a lookup against the name the harness states in its system prompt, not self-knowledge — a model that cannot resolve its name does nothing extra and lands on the safe floor. Match the list on family substrings (`claude`, `gpt-5`), not versioned names — it stales slower, and when it stales, degradation is floor-ward. There is no separate small-model setup: one preset, one marked section, entry-point choice of how much to read.
+- **The mirror rule.** Every entry point is an identical copy of the same template; editing one means mirroring the others. This is what keeps N tools on one contract.
 
-```markdown
-This project uses .agent/ for persistent context. Read .agent/rules/ for
-behavior rules, .agent/purpose.md for project context, .agent/memory.md
-for current state. Update memory.md and session-log.md when finishing work.
-```
-
-### Codex / AGENTS.md
-
-`AGENTS.md` at project root:
-
-```markdown
-This project uses `.agent/` as the source of truth for agent context.
-
-At the start of work, read:
-1. `.agent/rules/`
-2. `.agent/purpose.md`
-3. `.agent/memory.md`
-4. last 5–10 entries in `.agent/session-log.md`
-5. relevant `.agent/docs/`
-
-Before marking work complete, update `.agent/memory.md` and append
-to `.agent/session-log.md`.
-```
-
-### The pattern
-
-Any tool that reads a config file can point to `.agent/`. The wiring is always a thin entry point that says "read `.agent/`". When a new tool arrives, create its entry point following the same pattern. The agent should be able to wire new tools by understanding this pattern, not just the examples above.
+When a new tool arrives, put the same template in its filename and add it to the mirror set — no per-tool interpretation needed.
 
 ### Parallel sessions and conflict handling
 
