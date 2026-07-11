@@ -4,11 +4,13 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
-## V6 — 2026-07-11 — Fork lineage + consistency pass
+## V6 — 2026-07-11 — Fork lineage + harvest
 
 ### Why
 
 This fork (`dmonteroh/dot-agent`) diverges from upstream (`jlonardi/dot-agent`, through V5) based on five months of field data from four production instances. Before the larger V6 harvest changes land, the shipped files contradicted each other in small but costly ways: the spec's own session-log example failed the verify script's date check, the presets and the field named different archive locations, the housekeeping advice argued against the grooming the field proved necessary, and the enforcement claims oversold hooks the reference deployments don't run.
+
+On top of the consistency pass, the harvest ships what use already built: node identity that survives rewrites, tracking modes matching how the four instances actually use git, and a mechanical answer to tool-native memory.
 
 ### What changed
 
@@ -18,6 +20,9 @@ This fork (`dmonteroh/dot-agent`) diverges from upstream (`jlonardi/dot-agent`, 
 - **Grooming thresholds replace anti-grooming advice** — "a few hundred lines is negligible / reorganizing costs more tokens than reading a longer file" is deleted from the operating model and all three presets. It was wrong in the field: one instance lost its pre-June history to an unarchived 5,834-word log; another hit 15,303 words. Replaced with numbers: session-log over ~80 entries or ~5,000 words → archive entries older than 30 days; memory.md over ~800 words → compact; learned.md over ~25 rules → merge near-duplicates.
 - **Honesty pass on compliance claims** — the comparison-table row "Can be enforced" is now "Has a compliance mechanism"; the enforcement-mechanisms section moved to an appendix labeled optional, Claude-Code-only, unused in the reference deployments. The trust contract is the primary compliance story — it is the one with months of field evidence.
 - **Rules filename** — the human rules file keeps the preset name (e.g. `software-development.md`); that is what exists in every field instance. V5's `contract.md` rename never shipped in practice.
+- **Node manifest** — node identity moves to `dot-agent` YAML frontmatter on `purpose.md` (source, version, preset, mode, children). Root cause of the lost version stamps: an HTML comment in a rules file survives only as long as an updating agent deems it important — both mature instances lost theirs. Frontmatter on the least-rewritten file, protected by an explicit negative constraint (update passes may change only `version`), doesn't depend on that judgment. Retires the `<!-- Source: URL | Version: N -->` comment convention; child nodes are listed in the manifest's `children`, not `memory.md`.
+- **Tracking modes** — `ignore-all` / `track-shared` / `track-all` replace "always gitignored". The four observed usages collapse onto three gitignore configurations; the mode is asked once at bootstrap and recorded in the manifest. In `track-shared`, a PR that touches `learned.md` gets human review — an accept/edit/reject gate on every rule the agent taught itself. Security rule rewritten to match real practice: dev-only values already hardcoded in the repo may be cached; tracked files are published to everyone with repo access and reviewed like code.
+- **Native tool memory disabled by setting** — `.agent/` is the sole durable memory. Tool-native memory is turned off via the tool's setting (Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in tracked modes), not via instructions — prose overrides of built-in memory features are documented-unreliable. At retro, anything a tool auto-collected is harvested into `.agent/` and the silo deleted.
 
 ---
 

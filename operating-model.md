@@ -60,6 +60,23 @@ project-root/
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
+### The node manifest
+
+Every node carries its identity as YAML frontmatter on `purpose.md` — the least-rewritten file in the node:
+
+```yaml
+---
+dot-agent:
+  source: https://github.com/dmonteroh/dot-agent
+  version: 6
+  preset: software-development
+  mode: track-shared        # ignore-all | track-shared | track-all
+  children: []              # repo-relative paths to child .agent/ nodes
+---
+```
+
+**Never remove or rewrite the `dot-agent` frontmatter on `purpose.md`; update passes may change only `version`.** This replaces the V5-era `<!-- Source: URL | Version: N -->` comment in the rules file, which survived only as long as an updating agent deemed it important — both mature field instances lost theirs.
+
 ### The self-maintenance contract
 
 This is the core of the system. Before marking any task complete, the agent **must**:
@@ -169,35 +186,43 @@ When an agent starts a session, it reads context before doing anything:
 
 Scale to the task: a typo fix needs only the entry point and the one file. A new feature needs purpose + memory + area doc.
 
-### Always gitignored
+### Tracking modes
 
-The entire `.agent/` directory is gitignored. It's personal context — your decisions, your session history, your way of working with AI. Not team documentation. Never committed. Different team members may use different agents or none at all.
+How much of `.agent/` enters git is a per-node choice — made once at bootstrap, recorded in the manifest (`mode`):
 
-```bash
-# Personal repos — add to .gitignore:
-.agent/
+| Mode | Git behavior | When |
+|---|---|---|
+| `ignore-all` | `.agent/` fully ignored (`.gitignore` or `.git/info/exclude`) | Public repos; teams where the tree is personal |
+| `track-shared` | Track `purpose.md`, `rules/` (incl. `learned.md`), `docs/`; ignore `memory.md`, `session-log.md`, `archive/`, everything else | Multi-dev teams sharing knowledge, keeping personal state private |
+| `track-all` | Everything committed | Solo private repos — full history, free backup |
 
-# Team repos — add to .git/info/exclude:
-.agent/
+The `track-shared` gitignore the bootstrap writes:
+
+```gitignore
+.agent/*
+!.agent/purpose.md
+!.agent/rules/
+!.agent/docs/
 ```
+
+In `track-shared`, a PR that touches `learned.md` gets human review — every rule the agent taught itself passes an accept/edit/reject gate before it binds anyone else's sessions.
+
+### Native tool memory
+
+`.agent/` is the sole durable memory. Disable tool-native memory via the tool's *setting*, not via instructions — prose overrides of built-in memory features are documented-unreliable. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json` — committed in `track-shared`/`track-all` modes so it holds for every developer. During retro, harvest anything a tool auto-collected into `.agent/` and delete the silo.
 
 ### Security
 
 `.agent/` accumulates working context from every session. Treat it as potentially sensitive — write as if it could leak.
 
-**Hard rules:**
+**The rule:** Never write into `.agent/` anything that is not already in the repo or is environment-sensitive: real secrets, production tokens, customer or personal data, unredacted incident details. Dev-only values already hardcoded in the repo may be cached — that's a feature. In `track-shared`/`track-all` modes, tracked files are published to everyone with repo access; review them like code.
 
-- Never store secrets, tokens, passwords, API keys, or private keys
-- Never paste terminal output containing credentials or connection strings
 - Sanitize URLs: strip tokens, keys, and auth parameters before recording
-- No customer data, incident specifics, or internal system names unless explicitly needed and redacted
+- Prefer summaries over raw dumps for confidential materials; if sensitive details are needed, redact to the minimum required context
 - If you notice sensitive data in `.agent/`, remove it immediately
+- Terminal pastes, debug output, and copied error messages are common sources — review periodically
 
-**Why this matters:** The `.gitignore` protects against accidental commits, but `.agent/` can still be synced by backup tools, read by other processes, or accidentally included in archives. The gitignore is a safety net, not a security boundary.
-
-- Prefer summaries over raw dumps for confidential materials
-- If sensitive details are needed, redact them and record only the minimum required context
-- Periodically review `.agent/` for accumulated sensitive data — terminal pastes, debug output, and copied error messages are common sources
+Even in `ignore-all` mode the gitignore is a safety net, not a security boundary: `.agent/` can still be synced by backup tools, read by other processes, or included in archives.
 
 ---
 
@@ -215,12 +240,9 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
 5. **You confirm and correct** — fill in what the agent can't know (purpose, team context, preferences)
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
-7. **Agent leaves a source reference** in the rules file so the node can be updated later:
-   ```markdown
-   <!-- Source: https://github.com/dmonteroh/dot-agent/operating-model.md | Version: 6 -->
-   ```
-8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
-9. **Agent wires your tools** — creates the entry points for whichever tools you use
+7. **Agent asks the tracking mode once** — `ignore-all`, `track-shared`, or `track-all` — and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
+8. **Agent stamps the manifest** — `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
+9. **Agent wires your tools** — creates the entry points for whichever tools you use. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
@@ -228,11 +250,13 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 
 ### Updating existing nodes
 
-The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the source reference in the rules file, fetches the current operating model, compares the version number, and reconciles — adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
+The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the `dot-agent` frontmatter on `purpose.md`, fetches the current operating model from `source`, compares `version`, and reconciles — adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
+
+An update pass changes only `version` in the manifest — it never removes or rewrites the frontmatter itself. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update.
 
 This works at any level. Update a root to get new cross-project rules. Update a project node to get new self-maintenance practices. The agent already understands the operating model's structure, so reconciliation is natural — it's just a diff between what exists and what the operating model now says.
 
-**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in its `memory.md`). An operating model change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn.
+**Propagation:** When a node updates itself, it should also update the child nodes it knows about (listed in the manifest's `children`). An operating model change at the root that adds a new rule to the self-maintenance contract needs to reach every project node, not just the root. The agent walks the tree — updates the current node first, then each child node in turn.
 
 **Conflict resolution during propagation:** When reconciling a child node, the agent may encounter project-specific customizations that differ from the operating model defaults. The rule: operating model additions are always applied (new concepts, new rules), but existing project-specific content is preserved unless it directly contradicts the operating model. If in doubt, the agent should flag the conflict and let the operator decide rather than silently overwriting.
 
@@ -408,13 +432,13 @@ The tree grows as needed. Start with one node. Add a root when you work on a sec
 
 The bootstrap prompts in "Getting started" exist for the cold start — a fresh agent that has never seen this operating model. Once any node exists, the agent already carries the pattern.
 
-Adding a new node becomes: point the agent at a folder and say "set it up." The agent reads the codebase, creates `.agent/`, wires it into your tools, and updates the parent node so it knows about this child next time.
+Adding a new node becomes: point the agent at a folder and say "set it up." The agent reads the codebase, creates `.agent/`, wires it into your tools, and adds the new node to the parent manifest's `children` so the parent knows about it next time.
 
 This is where the system compounds. Each node the agent sets up makes the tree richer. Each session in any node adds to the accumulated knowledge. The agent's understanding of your work grows with every interaction. You never re-explain.
 
 ### Solo vs. team
 
-For solo developers, the tree is personal — rooted on your machine, accumulating everything. For teams, each person has their own tree. The nodes are personal and gitignored — team documentation lives elsewhere (`AGENTS.md`, wiki, etc.).
+For solo developers, the tree is personal — rooted on your machine, accumulating everything. For teams, each person has their own tree, and each repo node picks a tracking mode: `ignore-all` keeps the node personal (team documentation lives elsewhere — `AGENTS.md`, wiki, etc.); `track-shared` publishes `purpose.md`, `rules/`, and `docs/` as shared, reviewable team knowledge while memory and logs stay private.
 
 ---
 
@@ -445,7 +469,7 @@ What changes between domains is the **rules** — what the agent should prioriti
 
 ## Design decisions
 
-**Why gitignored?** `.agent/` is personal context — your decisions, your session history, your way of working with AI. Not team documentation. Never committed. Different team members may use different agents or none at all. If you need shared docs, those go elsewhere.
+**Why tracking modes instead of always-gitignored?** Early versions gitignored `.agent/` unconditionally. The field split three ways: public repos and personal trees want `ignore-all`, multi-dev teams get real value from `track-shared` (accumulated knowledge flows through PR review, personal state stays private), and solo private repos from `track-all` (full history, free backup). The mode is a one-time bootstrap choice recorded in the manifest, not a per-session judgment.
 
 **Why markdown?** Every agent can read it. No parser, no schema, no dependencies. Humans can read and edit it too.
 
