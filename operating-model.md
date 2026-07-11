@@ -341,10 +341,9 @@ Execute with tools, in order:
 6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
    read only what the task needs.>
 
-Exception — subagents: if dispatched by an orchestrator with a task brief
-and role prompt, execute steps 2–4 and 6 only; roles whose output is
-decisions rather than diffs (architect, reviewer) also execute step 5.
-Do not edit `.agent/` unless explicitly assigned.
+Exception — subagents: skip step 1 (flags are the orchestrator's to
+handle); read everything else. Never edit `.agent/` unless explicitly
+assigned — the orchestrator is the single session-log writer.
 
 Keep this file and AGENTS.md identical; when editing one, mirror the other.
 ```
@@ -353,7 +352,7 @@ Template mechanics:
 
 - **The status check runs first, not last.** Step-skipping concentrates at the tail of numbered lists, and REPAIR: flags should surface before a read fails confusingly.
 - **Step 3 is an inverted-default conditional.** The default load is the safe floor (Kernel + Project guardrails); only models on the project's strong-model list opt *up* to the full preset. Model identity is a lookup against the name the harness states in its system prompt, not self-knowledge — a model that cannot resolve its name does nothing extra and lands on the safe floor. Match the list on family substrings (`claude`, `gpt-5`), not versioned names — it stales slower, and when it stales, degradation is floor-ward. There is no separate small-model setup: one preset, one marked section, entry-point choice of how much to read.
-- **The subagent exception.** Implementers get their state through the task brief: the orchestrator reads memory and distills the task-relevant slice — one scoper, one writer. Roles that produce decisions rather than diffs (architect, reviewer) read `memory.md` directly: their job is to extend the decision record coherently, and a brief cannot carry all of it. Purpose rides along for every worker because it is small, near-static, and carries the boundaries that hedge an imperfect brief. The only hard prohibition is the edit ban; a brief may always point a worker at more.
+- **The subagent exception is about write authority, not reads.** Subagents load context like any session; what they never do is edit `.agent/`. One writer — the orchestrator — is what prevents duplicate log entries when parallel workers finish the same task.
 - **The mirror rule.** Every entry point is an identical copy of the same template; editing one means mirroring the others. This is what keeps N tools on one contract.
 
 When a new tool arrives, put the same template in its filename and add it to the mirror set — no per-tool interpretation needed.
