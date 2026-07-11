@@ -342,7 +342,7 @@ Execute with tools, in order:
    read only what the task needs.>
 
 Exception — subagents: if dispatched by an orchestrator with a task brief
-and role prompt, execute steps 2–3 and 6 only; do not edit `.agent/` unless
+and role prompt, execute steps 2–4 and 6 only; do not edit `.agent/` unless
 explicitly assigned.
 
 Keep this file and AGENTS.md identical; when editing one, mirror the other.
@@ -352,6 +352,7 @@ Template mechanics:
 
 - **The status check runs first, not last.** Step-skipping concentrates at the tail of numbered lists, and REPAIR: flags should surface before a read fails confusingly.
 - **Step 3 is an inverted-default conditional.** The default load is the safe floor (Kernel + Project guardrails); only models on the project's strong-model list opt *up* to the full preset. Model identity is a lookup against the name the harness states in its system prompt, not self-knowledge — a model that cannot resolve its name does nothing extra and lands on the safe floor. Match the list on family substrings (`claude`, `gpt-5`), not versioned names — it stales slower, and when it stales, degradation is floor-ward. There is no separate small-model setup: one preset, one marked section, entry-point choice of how much to read.
+- **The subagent exception.** Workers load rules, purpose, and their routed docs; memory stays with the orchestrator, which distills the task-relevant slice into the brief — one scoper, one writer. Purpose rides along because it is small, near-static, and carries the boundaries that hedge an imperfect brief. The only hard prohibition is the edit ban; a brief may always point a worker at more.
 - **The mirror rule.** Every entry point is an identical copy of the same template; editing one means mirroring the others. This is what keeps N tools on one contract.
 
 When a new tool arrives, put the same template in its filename and add it to the mirror set — no per-tool interpretation needed.
