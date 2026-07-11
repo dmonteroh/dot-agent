@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
+# DEPRECATED (V6): retired from routine use. The status check now rides the
+# load path — the entry point's first step runs `.agent/scripts/status.sh`
+# (see scripts/status.sh), which checks artifacts and prints GROOM:/REPAIR:/
+# INDEX: flags; there is no completion-time gate. This file is kept only
+# because existing instance rule files reference its path. Do not wire it
+# into new nodes.
 set -euo pipefail
+
+echo "DEPRECATED: verify-agent-context.sh is retired from routine use;" \
+  "the entry point runs .agent/scripts/status.sh instead." >&2
 
 usage() {
   cat <<'EOF'

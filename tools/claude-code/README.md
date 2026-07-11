@@ -1,8 +1,12 @@
-# Claude Code enforcement hooks
+# Claude Code compliance hooks
 
-Programmatic enforcement of the [dot-agent operating model](../../operating-model.md) for Claude Code.
+Optional compliance tooling for the [dot-agent operating model](../../operating-model.md), Claude-Code-only.
 
-Without these hooks, the operating model's trust contracts are convention — the agent follows them because the rules say to. With these hooks, they're enforced — the agent literally cannot skip them.
+Without these hooks, the operating model's trust contracts are convention: the agent follows them because the rules say to. These hooks add a mechanical check on top: they block the session when a contract is violated. They are optional and unused in the reference deployments, where the trust contract carries compliance.
+
+**V5-era note:** two hook checks predate the V6 contracts and block on behavior V6 relaxed. `self-maintenance.py` requires a `memory.md` update in every discovered node (V6: update memory only if durable facts changed, and the orchestrator is the single session-log writer), and `correctness.py` requires full-file re-reads (V6 presets: re-read edited regions with context; full file only after large rewrites). Align them before relying on them.
+
+`settings-example.json` also ships `"autoMemoryEnabled": false`. Independent of the hooks, this is the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
 
 ## What's enforced
 
@@ -23,7 +27,7 @@ Order matters for Stop: correctness checks your work, self-maintenance checks yo
 
 ## Prerequisites
 
-- **Python 3.10+** — hooks use modern type syntax (`Path | None`) that requires 3.10 or later. Check with `python3 --version`.
+- **Python 3.10+**: hooks use modern type syntax (`Path | None`) that requires 3.10 or later. Check with `python3 --version`.
 
 ## Install
 
@@ -62,6 +66,6 @@ Checkpoints are per-session (keyed by session ID) and auto-cleaned after 24 hour
 
 ## Extending
 
-These are **core** hooks — they enforce the operating model contract and nothing more.
+These are **core** hooks: they enforce the operating model contract and nothing more.
 
 To add custom behavior (daily bootstrap, inbox enforcement, maintenance prompts, diary nudges, etc.), copy the hooks and extend them. Extensions should be a strict superset: include all core behavior plus your additions. Installing extended hooks replaces the core ones.
