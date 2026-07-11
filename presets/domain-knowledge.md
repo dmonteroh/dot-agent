@@ -1,83 +1,80 @@
-# Domain knowledge preset
+# Domain knowledge rules
 
-Behavior rules for AI agents that help accumulate, organize, and produce outputs from a growing body of knowledge. Use this for any project where you build understanding over time: managing an organization, onboarding to a new role, running a side project, tracking a complex topic.
+Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it. Be concise. Each sentence must carry operational weight. The domain itself goes in `purpose.md`. Adapt during bootstrap: fill Project guardrails with exact locations and commands; keep the Kernel intact.
 
-The preset describes the **method** of working with accumulated knowledge. The specific domain goes in `purpose.md`.
+## Kernel
 
----
+1. Do not fabricate. If it is not in the accumulated material, say it is not known — a gap is a finding, not a problem to hide.
+2. Do not restructure or rewrite stored knowledge when asked a question — answer first; change the store only on explicit direction.
+3. Never record or output a fact without its source; provenance survives every rewrite.
+4. Never silently overwrite on contradiction — keep both versions, dated, flag it, and let the human decide.
+5. Never ingest material without adding its catalog entry in the same session.
+6. Never present inference as established fact; mark which is which in every output.
+7. Never delete knowledge — mark it superseded with a date, or move it to `archive/`.
+8. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
+9. No narrative, transcripts, or command output in `.agent/` files.
+10. Never write secrets, tokens, or customer/personal data into `.agent/`.
 
-## Context first (load order)
+## Context loading
 
-At the start of any new conversation or task, read context before doing anything:
+- Scale reads: quick lookup = entry point + the catalog's target doc; producing an output = purpose + memory + the docs the catalog routes to; restructuring or convention change = purpose + memory + all affected docs.
+- Check `.agent/` context before asking about unknown terms, sources, or deliverables.
 
-1. `.agent/purpose.md` (domain, scope, what kind of knowledge)
-2. `.agent/memory.md` (what's known, what's indexed, key facts)
-3. Last 5–10 entries of `.agent/session-log.md` (recent work)
-4. Relevant `.agent/docs/` (catalogs, summaries, structured knowledge)
+## Scope control
 
-Do not advise or produce outputs until you understand what's already known.
+- Handle small clear requests directly.
+- For work spanning several docs or outputs, give a 3–5 step plan before editing.
+- For high-risk or ambiguous work, ask one focused question or propose a narrow first slice.
+- Do not give task time estimates unless explicitly asked.
+- Accuracy over agreement. Update views only on evidence; push back on flawed premises.
 
-## Self-maintenance (MANDATORY)
+## Knowledge discipline
 
-Before marking any task or step complete:
+- Catalog format: source, date, type, one-line summary — one entry per ingested item, in the catalog file named in Project guardrails. Catalogs live in `.agent/docs/`, never in `memory.md`.
+- Structure from chaos: convert casual input (notes, conversations, screenshots, quick thoughts) into the node's standard format before storing it.
+- Surface connections: when new material relates to existing knowledge, note the connection where the knowledge lives.
+- Every output names what it draws on and states what is missing.
+- Knowledge levels: project-specific facts stay in the project node; cross-project patterns go to the root node (see manifest `children`).
 
-1. **Update `.agent/memory.md`** — new knowledge, sources, decisions, terminology.
-2. **Append to `.agent/session-log.md`** — what was discussed, decided, produced. Short and factual (2–5 lines).
+## Verification contract
 
-Do not skip. This is what gives the next session continuity.
+- Before completion: internal links resolve, catalogs and indexes are updated in the same change, no placeholders remain.
+- Verify external citations against the primary source before they leave the node; a stored summary is not a substitute.
+- When a doc is renamed or removed, find and update every reference in the same change.
+- Re-read each edited region with surrounding context before completion.
+- If a check fails, classify: caused-by-change, pre-existing, or unknown. Investigate unknown before reporting.
 
-**Observation:** When the user corrects you, expresses a preference, explains how they think, or reveals a working pattern — note it in the appropriate `.agent/memory.md`. Not every interaction, but patterns and clear preferences. Every new observation should include either a concrete trigger (quote/behavior) or a confidence tag (`high`/`medium`/`low`) when the trigger is implicit. This applies at every level of the knowledge tree: project-specific observations stay in the project's memory, cross-project patterns go to the root.
+## Continuity contract
 
-**Housekeeping:**
-- When `session-log.md` exceeds ~80 entries or ~5,000 words, move entries older than 30 days to `.agent/archive/session-log-archive.md`.
-- When `memory.md` exceeds ~800 words, compact it: keep current facts/decisions, move stable detailed knowledge to `.agent/docs/`, and mark stale items as superseded.
-
-## Ambiguity resolution
-
-When the user references something you don't immediately recognize (a file, project, concept, deliverable), consult your memory files and session log before asking for clarification. The answer is often already in your context.
-
-## Core rules
-
-### 1. Catalog everything
-
-Every ingested document, note, or piece of information gets indexed: source, date, type, brief summary. The catalog lives in `.agent/docs/` or `memory.md`.
-
-### 2. Provenance always
-
-Facts and information are always tied to where they came from. When producing outputs, cite sources. When recording knowledge, record its origin.
-
-### 3. No fabrication
-
-If it's not in the accumulated material, it's not known. Say so. Do not fill gaps with plausible-sounding information. Missing knowledge is a finding, not a problem to hide.
-
-### 4. Accumulation, not replacement
-
-New information adds to existing knowledge. When new information contradicts existing knowledge, flag the contradiction explicitly — don't silently overwrite. Let the human decide which is correct.
-
-### 5. Structure from chaos
-
-Casual input — conversations, observations, quick notes, unstructured documents — gets structured and stored in a consistent format. The agent's job is to turn messy input into organized, retrievable knowledge.
-
-### 6. Output production
-
-The agent produces documents, summaries, agendas, analyses, and other outputs from accumulated material. Every output is grounded in what's actually known. Clearly mark when something is inference vs. established fact.
+- Subagents: report continuity facts to the orchestrator; never edit `.agent/` unless explicitly assigned. The orchestrator is the single session-log writer.
+- Before marking work complete, update `.agent/` per each file's header contract:
+  - `memory.md`: durable working state, decisions, terminology, preferences, active blockers only. If nothing durable changed, leave it unchanged and say so in the log entry.
+  - `session-log.md`: one index entry, ~25 words — date, tool (model-tagged when the harness states one, never guessed), task, area, outcome, verification status.
+  - `docs/`: catalogs and structured knowledge update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a catalog row.
+- When an existing entry exceeds the ceiling, trim it to the template on sight, preserving task, outcome, and verification status.
+- Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
+- Fix stale memory, outdated docs, and duplication when encountered.
+- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session.
 
 ## Self-learning
 
-After substantial sessions (significant knowledge restructured, user corrections received, or process patterns discovered), evaluate whether behavioral lessons emerged. If so, append a rule to `.agent/rules/learned.md`:
+- After a user correction or a failed verification that needed a non-obvious fix, record the lesson:
 
-```
-- [YYYY-MM-DD] <rule in imperative form>. Trigger: <what caused this learning>.
-```
+  `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 
-Rules should be universal (not session-specific), abstracted from the specific case, and high-impact. Examples: "Always ask for source format before indexing a large document." "When contradictions appear, preserve both versions with dates, don't resolve silently."
+- Write the rule, not the story: imperative, ≤40 words, no incident retelling. Merge near-duplicates instead of appending.
+- Route by scope: behavioral rules (scoping, verification, communication, workflow) stay in `rules/learned.md`. Source or format mechanics go to the matching `.agent/docs/` file under `## Gotchas`, same format; keep at most a one-line pointer here for cross-area hazards.
 
-If nothing worth recording: proceed without updating.
+## Git and commits
 
-## Working with knowledge
+- Before committing, inspect status and diff; include only intended files. Messages: technical, concise, what and why. Never add yourself as co-author. <!-- Delete this section at bootstrap if the node is not in a git repository. -->
 
-- **Accept any input format.** Notes, conversations, documents, screenshots, quick thoughts. The agent structures them.
-- **Maintain a living index.** Keep an up-to-date catalog of all accumulated material in `.agent/docs/`.
-- **Surface connections.** When new information relates to existing knowledge, note the connection.
-- **Identify gaps.** When asked to produce an output, explicitly note what information is missing.
-- **Versioning through history.** The session log tracks how knowledge evolved. Memory.md reflects current state. Don't delete old knowledge — archive it or note that it was superseded.
+## Project guardrails
+
+<!-- Bootstrap MUST fill this section with exact locations and commands. "Keep an index" is not filled in; "catalog: docs/sources.md, one row per item" is. -->
+
+- Catalog: <file path + entry format; the file's header carries the format contract>
+- Docs layout: <areas, routing hints, where structured knowledge lives>
+- Tooling: <exact index/audit/regeneration commands if any; generated files are never hand-edited>
+- Output conventions: <formats, templates, citation style>
+- Boundaries: <what this node does not cover; root/child node locations>

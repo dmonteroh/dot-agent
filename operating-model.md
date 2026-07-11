@@ -239,7 +239,7 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 3. **Agent explores the project** — package.json, README, source files, git history, existing configs
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
 5. **You confirm and correct** — fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
+6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset. Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints. A guardrail that says "run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is.
 7. **Agent asks the tracking mode once** — `ignore-all`, `track-shared`, or `track-all` — and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest** — `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
 9. **Agent wires your tools** — creates the entry points for whichever tools you use. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
