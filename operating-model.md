@@ -57,11 +57,13 @@ project-root/
 | `rules/*.md` (except learned) | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap. | Agent (from preset, with your input) |
 | `rules/learned.md` | Behavioral rules accumulated from session retros. Imperative, durable, agent-discovered. | Agent (from retro process) |
 | `purpose.md` | Why this project exists, who it's for, key constraints. Where to change what. | Agent (from conversation with you) |
-| `memory.md` | Current project state, decisions, domain knowledge. A running summary — not history. | Agent (mandatory, every session) |
-| `session-log.md` | Meeting notes. What was discussed, decided, implemented. 2–5 lines per entry. | Agent (mandatory, every session) |
+| `memory.md` | Current project state, decisions, domain knowledge. A running summary — not history. | Agent (when durable facts change) |
+| `session-log.md` | Meeting notes. One index entry per session — format in the file's header contract. | Agent (mandatory, every session) |
 | `docs/*.md` | Architecture, features, data flows. Expensive-to-infer context the agent produces from scanning the codebase. | Agent (from codebase scan + your input) |
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
+
+Between the state files: if something is true right now, it belongs in `memory.md`. If it happened today, it goes in `session-log.md`. If it's stable knowledge about how the system works, it goes in `docs/`.
 
 ### File header contracts
 
@@ -126,62 +128,11 @@ dot-agent:
 
 ### The self-maintenance contract
 
-This is the core of the system. Before marking any task complete, the agent **must**:
+This is the core of the system: the agent writes context back as part of finishing work — a session-log entry every session, `memory.md` when durable facts changed, `docs/` when architecture, dependencies, or practices changed. The next session reads what was written. Knowledge accumulates without manual effort; without this contract, it's just documentation that goes stale.
 
-1. **Update `memory.md`** with new domain knowledge, decisions, or state changes
-2. **Append to `session-log.md`** — what was discussed, decided, implemented
-3. **Update `docs/`** when the project's technology, patterns, or dependencies change — capture project-specific practices for working with them, not just what changed. Prune or update docs for removed technologies.
+The binding rules — what to update, when a file may be left untouched, and the exact entry formats with good/bad examples — live in one place: the preset's **Continuity contract**, plus each file's own [header contract](#file-header-contracts). The operating model deliberately does not restate them. One rule, one home: the operating model describes the mechanism and files, presets carry the only copy of behavioral rules, entry points carry only wiring.
 
-This is what makes the system self-maintaining. The agent writes context as part of finishing work. The next session reads what was written. Knowledge accumulates without manual effort. Without this contract, it's just documentation that goes stale.
-
-### What good updates look like
-
-The contract says "update memory" — but a superficial update is worse than none, because it creates false confidence that context is being maintained.
-
-**`memory.md` — capture decisions and state, not activity:**
-
-> Good: "Migrated from SQLite to PostgreSQL. Connection pooling via pg-pool, migrations in `db/migrations/`. Decision: no ORM, raw SQL only."
->
-> Bad: "Updated database stuff."
-
-**`session-log.md` — capture what was discussed, decided, and why:**
-
-> Good: "- [2026-02-10] (claude) Implemented user auth with JWT. Chose bcrypt for hashing (argon2 considered, rejected for deployment simplicity). Login/register endpoints added, tests passing."
->
-> Bad: "Worked on authentication."
-
-**`session-log.md` — date and tag every entry:**
-
-Every entry starts with the date and the tool that wrote it. When a root-level `.agent/` collects entries from different tools and projects, they land in the same log — add the project so the log stays scannable:
-
-> `- [2026-02-10] (claude / my-app) Added auth: JWT with bcrypt. Argon2 rejected for deployment simplicity.`
-> `- [2026-02-10] (cursor / infra) Fixed deploy: k8s readiness probe was hitting wrong port.`
-> `- [2026-02-10] (codex / my-app) Refactored API routes: split monolithic router into per-resource modules.`
-
-Format: `- [YYYY-MM-DD] (tool / project) details`. Append the model to the tool tag when the harness states one — `(claude/sonnet / my-app)` — never guess it. For project-local `.agent/` logs the project tag is optional since it's implied by the directory.
-
-**Session log routing:** When working across multiple projects in one session, write to the project you actually worked on, not the directory you were opened in. If a root node exists, its `session-log.md` always gets an entry (it's the master log). If the project you worked on has its own `.agent/`, also write to that project's `session-log.md` and update its `memory.md` with project-specific knowledge. This keeps project-local context current for tools that only see the project level.
-
-**What goes where:**
-
-| | `memory.md` | `session-log.md` | `docs/` |
-|---|---|---|---|
-| **Purpose** | Current truth | Chronological history | Stable reference |
-| **Content** | Active decisions, project state, domain knowledge | What happened each session, 2–5 lines | Architecture, data flows, technology practices |
-| **Lifespan** | Rewritten as state changes | Append-only, archived when long | Updated when structure changes |
-| **Analogy** | A wiki page | Meeting minutes | A technical spec |
-
-If something is true right now, it belongs in `memory.md`. If it happened today, it goes in `session-log.md`. If it's stable knowledge about how the system works, it goes in `docs/`.
-
-### Context auditing
-
-Accumulated context can go stale. When reading `.agent/` at session start, the agent should notice and fix:
-
-- **Stale facts** in `memory.md` — decisions that were reversed, technologies that were replaced, states that changed
-- **Outdated docs** — architecture or practices that no longer match the codebase
-- **Redundancy** — the same information repeated across memory, docs, and session-log
-
-This is not a separate step. It happens naturally during the load order: the agent reads context, notices something is wrong based on what it sees in the codebase, and corrects it as part of the current session's self-maintenance. The goal is that `.agent/` stays accurate, not just populated.
+Auditing is part of the same contract, not a separate step: while loading context, the agent notices stale facts, outdated docs, and redundancy against what it sees in the codebase, and fixes them as part of the current session. The goal is that `.agent/` stays accurate, not just populated.
 
 ### Behavioral enforcement
 
@@ -191,47 +142,28 @@ The self-maintenance contract covers one phase: completion. But a well-run sessi
 
 Each lifecycle phase is a trust contract. Agents follow these on trust — that is the system's primary compliance story, and how the reference deployments run.
 
-| Phase | Trust contract |
-|-------|---------------|
-| **Bootstrap** | Load context before working |
-| **Pre-work** | Load project context before editing project files |
-| **Correctness** | Re-read files you edited. Run tests after changing source files. Run build after changing config. |
-| **Completion** | Update session-log and memory before finishing |
-| **Retro** | After substantial sessions, reflect on behavioral lessons and record durable rules |
+| Phase | Trust contract | The rules live in |
+|-------|---------------|-------------------|
+| **Bootstrap** | Load context before working | The entry point's numbered steps |
+| **Pre-work** | Load project context before editing project files | Preset: Context loading |
+| **Correctness** | Verify before claiming | Preset: Verification contract |
+| **Completion** | Update `.agent/` before finishing | Preset: Continuity contract + file header contracts |
+| **Retro** | Distill durable behavioral rules | Preset: Self-learning |
 
-The operating model describes WHAT should happen. Optional tooling that adds a mechanical compliance check on top exists for some tools — see the [appendix](#appendix-compliance-tooling).
+The operating model names the phases; the preset carries each phase's rules. Optional tooling that adds a mechanical compliance check on top exists for some tools — see the [appendix](#appendix-compliance-tooling).
 
 #### Self-learning
 
-Agents accumulate behavioral rules across sessions. The retro phase produces them, `rules/learned.md` stores them.
+Agents accumulate behavioral rules across sessions. The retro phase produces them, `rules/learned.md` stores them, the next bootstrap loads them alongside the other rules: session produces experience, retro distills rules, next session operates under improved rules.
 
 - `rules/learned.md` exists at **every level of the knowledge tree**. Project agents learn project-specific behavioral rules, root agents learn cross-project rules. Same gradient as memory and observation.
-- Distinct from human-authored rules (the contract/operating rules). Human rules define the framework. Learned rules capture what the agent discovered about working effectively within it.
-- Each entry: date, imperative rule, trigger (what caused the learning).
-- Loaded during bootstrap alongside other rules.
-- Versioned via git. Bad rules can be reverted.
-
-The self-learning loop: session produces experience, retro distills rules, next session operates under improved rules, cycle continues. Rules should be universal (not session-specific), abstracted, and high-impact.
-
-Format: `- [YYYY-MM-DD] <imperative rule>. Trigger: <what caused this learning>.`
-
-Example:
-```
-- [2026-02-10] Always check all consuming packages when modifying shared schemas. Trigger: changed a Zod schema in a shared package, broke 3 downstream test files that used the old shape.
-```
+- Distinct from human-authored rules (the preset). Human rules define the framework. Learned rules capture what the agent discovered about working effectively within it.
+- Versioned via git — bad rules can be reverted. In `track-shared` mode, new rules pass PR review before they bind anyone else's sessions.
+- The entry format, curation law, and routing rule (behavioral rules stay here; area gotchas go to their area doc) live in the file's own header and the preset's **Self-learning** section.
 
 ### The load order
 
-When an agent starts a session, it reads context before doing anything:
-
-1. **Project entry point** (`.cursorrules`, `CLAUDE.md`, etc.) — points to `.agent/`
-2. **`.agent/rules/`** — behavior rules (including `learned.md` if it exists)
-3. **`.agent/purpose.md`** — what the project is and why
-4. **`.agent/memory.md`** — current state and decisions
-5. **Last 5–10 entries of `.agent/session-log.md`** — recent meeting notes
-6. **Relevant `.agent/docs/`** — area-specific documentation
-
-Scale to the task: a typo fix needs only the entry point and the one file. A new feature needs purpose + memory + area doc.
+A session loads context before doing anything else. The load order is executable, not prose — it is the numbered steps of the [canonical entry point](#the-canonical-entry-point): status check, learned rules, preset, purpose, memory, routed docs. How far to scale the reads for a given task is the preset's **Context loading** section.
 
 ### Tracking modes
 
@@ -286,7 +218,7 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 3. **Agent explores the project** — package.json, README, source files, git history, existing configs
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
 5. **You confirm and correct** — fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset, and `scripts/status.sh` copied from the source repo (the entry point runs it as its first step); each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints. A guardrail that says "run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is.
+6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset, and `scripts/status.sh` copied from the source repo (the entry point runs it as its first step); each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints — per the section's own template comment.
 7. **Agent asks the tracking mode once** — `ignore-all`, `track-shared`, or `track-all` — and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest** — `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
 9. **Agent wires your tools** — writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, preset name, strong-model list, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
@@ -355,19 +287,15 @@ Template mechanics:
 
 - **The status check runs first, not last.** Step-skipping concentrates at the tail of numbered lists, and REPAIR: flags should surface before a read fails confusingly.
 - **Step 3 is an inverted-default conditional.** The default load is the safe floor (Kernel + Project guardrails); only models on the project's strong-model list opt *up* to the full preset. Model identity is a lookup against the name the harness states in its system prompt, not self-knowledge — a model that cannot resolve its name does nothing extra and lands on the safe floor. Match the list on family substrings (`claude`, `gpt-5`), not versioned names — it stales slower, and when it stales, degradation is floor-ward. There is no separate small-model setup: one preset, one marked section, entry-point choice of how much to read.
-- **The subagent exception is about write authority, not reads.** Subagents load context like any session; what they never do is edit `.agent/`. One writer — the orchestrator — is what prevents duplicate log entries when parallel workers finish the same task.
 - **The mirror rule.** Every entry point is an identical copy of the same template; editing one means mirroring the others. This is what keeps N tools on one contract.
 
-When a new tool arrives, put the same template in its filename and add it to the mirror set — no per-tool interpretation needed.
+When a new tool arrives, put the same template in its filename and add it to the mirror set — no per-tool interpretation needed. The template's subagent exception is the next section's contract.
 
-### Parallel sessions and conflict handling
+### Subagents and parallel sessions
 
-If multiple agents/sessions touch `.agent/` at the same time:
+**Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads: workers read context like any session (skipping only the status check — flags are the orchestrator's to handle) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer — one writer is what prevents duplicate log entries when parallel workers finish the same task. `workflows/` and `agents/` directories hold role prompts and process definitions; they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, skill payloads) are outside the model: never loaded, never groomed, ignored in every tracking mode.
 
-1. Append to `session-log.md` first (append-only by timestamp)
-2. Re-open `memory.md` before writing final updates
-3. If two summaries conflict, keep both statements and mark as `CONFLICT`
-4. Resolve conflicts in the next human-guided pass; do not silently overwrite
+**Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp); re-open `memory.md` before writing final updates; if two summaries conflict, keep both statements marked `CONFLICT` and resolve them in the next human-guided pass — never silently overwrite.
 
 ---
 
@@ -406,13 +334,13 @@ The tree has a natural gradient. Higher nodes document broader, more stable cont
 
 The root is special because its subject is the person, not a codebase. Agents reading the root learn how you think, communicate, and decide — not just what your projects contain. This is what makes the same agent effective across different projects: it knows the operator, not just the code.
 
+Continuity follows the work, not the directory the session was opened in. A session that spans projects logs to the node of the project it actually touched; if a root node exists, the root's `session-log.md` always gets an entry — it is the master log. Root-level entries add the project to the tag — `(tool / project)` — so a log fed by many tools and projects stays scannable.
+
 ### Observation
 
 The self-maintenance contract says agents must update memory and session-log. But there's a second kind of knowledge that doesn't come from code — it comes from watching how the operator works.
 
-When you correct an agent, express a preference, explain your reasoning, or reveal a working pattern — that's a signal. Agents should notice these signals and record them in the appropriate node's `memory.md`. Not every interaction, but patterns and clear preferences.
-
-Every new observation should include either a concrete trigger (the quote/behavior that caused it) or a confidence tag (`high`/`medium`/`low`) when the trigger is implicit.
+When you correct an agent, express a preference, explain your reasoning, or reveal a working pattern — that's a signal. Agents should notice these signals and record them in the appropriate node's `memory.md`. Not every interaction, but patterns and clear preferences — the recording rule (trigger or confidence tag) is the preset's Continuity contract.
 
 This applies at every level of the tree:
 

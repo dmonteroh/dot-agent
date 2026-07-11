@@ -24,14 +24,14 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 .agent/
 ├── rules/          # Behavior rules (adapted from a preset)
 ├── purpose.md      # What this project is, who it's for + the dot-agent manifest
-├── memory.md       # Current state, decisions (updated every session)
+├── memory.md       # Current state, decisions (updated when durable facts change)
 ├── session-log.md  # Meeting notes (appended every session)
 ├── docs/           # Architecture, features, data flows
 ├── archive/        # Groomed history — archived session-log entries
 └── scripts/        # status.sh — the status check the entry point runs first
 ```
 
-The core mechanism is the **self-maintenance contract**: the agent *must* update `memory.md`, `session-log.md`, and relevant `docs/` before finishing any task. This is what keeps context alive without manual effort.
+The core mechanism is the **self-maintenance contract**: before finishing any task, the agent writes context back — a session-log entry every session, memory and docs when what they hold changed. This is what keeps context alive without manual effort. The binding rules live in the preset; each file's header carries its own format contract.
 
 ## Presets
 
