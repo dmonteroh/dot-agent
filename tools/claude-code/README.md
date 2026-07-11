@@ -4,6 +4,10 @@ Optional compliance tooling for the [dot-agent operating model](../../operating-
 
 Without these hooks, the operating model's trust contracts are convention — the agent follows them because the rules say to. These hooks add a mechanical check on top: they block the session when a contract is violated. They are optional and unused in the reference deployments, where the trust contract carries compliance.
 
+**V5-era note:** two hook checks predate the V6 contracts and block on behavior V6 relaxed — `self-maintenance.py` requires a `memory.md` update in every discovered node (V6: update memory only if durable facts changed, and the orchestrator is the single session-log writer), and `correctness.py` requires full-file re-reads (V6 presets: re-read edited regions with context; full file only after large rewrites). Align them before relying on them.
+
+`settings-example.json` also ships `"autoMemoryEnabled": false` — independent of the hooks, this is the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
+
 ## What's enforced
 
 | Hook | Events | What it does |

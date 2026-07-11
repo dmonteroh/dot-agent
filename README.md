@@ -23,10 +23,12 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 ```
 .agent/
 ├── rules/          # Behavior rules (adapted from a preset)
-├── purpose.md      # What this project is, who it's for
+├── purpose.md      # What this project is, who it's for + the dot-agent manifest
 ├── memory.md       # Current state, decisions (updated every session)
 ├── session-log.md  # Meeting notes (appended every session)
-└── docs/           # Architecture, features, data flows
+├── docs/           # Architecture, features, data flows
+├── archive/        # Groomed history — archived session-log entries
+└── scripts/        # status.sh — the status check the entry point runs first
 ```
 
 The core mechanism is the **self-maintenance contract**: the agent *must* update `memory.md`, `session-log.md`, and relevant `docs/` before finishing any task. This is what keeps context alive without manual effort.
@@ -61,31 +63,9 @@ Ask me anything you need to know.
 
 One prompt. The agent reads the operating model, figures out what state you're in, and does the right thing.
 
+Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries plus `GROOM:`/`REPAIR:`/`INDEX:` flags when files breach their grooming thresholds, and the agent handles the flags as part of the session. There is no completion-time gate — grooming rides the load path.
+
 If you use **Claude Code**, optional hooks can add a mechanical compliance check for the load order and self-maintenance contract — the trust contract is the primary compliance story, and the reference deployments run without them. See [`tools/claude-code/`](tools/claude-code/).
-
-## Manual completion check (for agents without hooks)
-
-If your agent cannot enforce completion hooks automatically, run:
-
-```bash
-./scripts/verify-agent-context.sh
-```
-
-The script verifies that:
-
-- `.agent/memory.md` exists and is non-empty
-- `.agent/session-log.md` exists and is non-empty
-- `session-log.md` has an entry for today's date (`YYYY-MM-DD`)
-
-If checks fail and you want minimal scaffolding automatically, run:
-
-```bash
-./scripts/verify-agent-context.sh --fix
-```
-
-`--fix` creates clearly marked placeholders only. The agent must replace
-placeholder content with real session details, then rerun verification before
-marking work complete.
 
 ## The knowledge tree
 

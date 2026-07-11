@@ -43,8 +43,11 @@ project-root/
 │   ├── purpose.md          # What the project is, who it's for, constraints
 │   ├── memory.md           # Current state, key decisions (updated every session)
 │   ├── session-log.md      # Meeting notes (appended every session)
-│   └── docs/               # (Optional) Architecture, features, data flows
-│       └── *.md
+│   ├── docs/               # (Optional) Architecture, features, data flows
+│   │   └── *.md
+│   ├── archive/            # Groomed history — archived session-log entries
+│   └── scripts/
+│       └── status.sh       # Status check the entry point runs first
 ```
 
 ### File purposes
@@ -283,7 +286,7 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 3. **Agent explores the project** — package.json, README, source files, git history, existing configs
 4. **Agent presents its findings** — "Here's what I think this project is, here's the tech stack, here's which preset I'd start from..."
 5. **You confirm and correct** — fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints. A guardrail that says "run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is.
+6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset, and `scripts/status.sh` copied from the source repo (the entry point runs it as its first step); each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** — build, test, lint per area; package managers; generated-file regeneration; serial-execution constraints. A guardrail that says "run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is.
 7. **Agent asks the tracking mode once** — `ignore-all`, `track-shared`, or `track-all` — and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest** — `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
 9. **Agent wires your tools** — writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, preset name, strong-model list, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
@@ -507,7 +510,9 @@ What changes between domains is the **rules** — what the agent should prioriti
 
 **Why the agent writes docs from conversations, not the user?** The user explains the project in conversation — that's natural. Asking them to also write structured markdown is busywork. The agent converts conversation into documentation. The user's job is to think and direct, not to format.
 
-**How to keep `.agent/` small over time?** Groom by thresholds, not judgment: when `session-log.md` exceeds ~80 entries or ~5,000 words, move entries older than 30 days to `archive/session-log-archive.md`; when `memory.md` exceeds ~800 words, compact it to durable state only; when `rules/learned.md` exceeds ~25 rules, merge near-duplicates. Move stable long-form knowledge to `docs/`. Ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context.
+**How to keep `.agent/` small over time?** Groom by thresholds, not judgment: when `session-log.md` exceeds ~80 entries or ~5,000 words, move entries older than 30 days to `archive/session-log-archive.md`; when `memory.md` exceeds ~800 words, compact it to durable state only; when `rules/learned.md` exceeds ~25 rules, merge near-duplicates. Move stable long-form knowledge to `docs/`. Ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. `scripts/status.sh` measures these thresholds at session start and prints the matching `GROOM:` flags.
+
+**Why a status check on the load path instead of a completion gate?** The field demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. `scripts/status.sh` rides the load path instead — the entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims (file sizes, entry counts, missing headers), and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` availability notes — nothing on pass. It always exits 0: it is information on the load path, not a gate; the binding instruction ("handle flags as part of this session") lives in the entry point. Thresholds are variables at the top of the script; projects tune them. There is no `--fix` scaffolding — placeholder scaffolds are phantom-compliance bait; repair is a bootstrap-time conversation, not a sed job.
 
 ---
 
@@ -515,7 +520,7 @@ What changes between domains is the **rules** — what the agent should prioriti
 
 Optional, and unused in the reference deployments — compliance there rests on the trust contract. Install these only if you want a mechanical check on top of it. The hooks are Claude-Code-only.
 
-**Claude Code** — hooks that block the agent when contracts are violated. Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
+**Claude Code** — V5-era hooks that block the agent when contracts are violated. Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
 
 ```bash
 # Install hooks
@@ -523,14 +528,10 @@ cp tools/claude-code/hooks/*.py ~/.claude/hooks/
 # Merge tools/claude-code/settings-example.json into ~/.claude/settings.json
 ```
 
+Two of their checks predate V6 contracts — align them before relying on them: `self-maintenance.py` blocks until `memory.md` is updated in every discovered node, but V6 makes the memory update conditional (only if durable facts changed) and the orchestrator the single session-log writer; `correctness.py` enforces full-file re-reads, but the presets calibrate to re-reading edited regions with context.
+
 **Cursor** — add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
 
-**Any tool without hooks** — use the verification script as a manual completion check:
-
-```bash
-./scripts/verify-agent-context.sh
-# Fails if memory.md or session-log.md is missing, empty, or has no same-day entry.
-# Run with --fix to add scaffolding, then replace placeholders with real content.
-```
+**`verify-agent-context.sh` (deprecated)** — the V5-era manual completion check. Retired from routine use: the status check now rides the load path (`scripts/status.sh`, run as the entry point's first step), and completion-time gates are what the field demoted. The file is kept only because existing instance rule files reference its path; do not wire it into new nodes.
 
 Without tooling, compliance depends on the agent following the rules — which works most of the time, but not all of the time. The trust contract carries the reference deployments.
