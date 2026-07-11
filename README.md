@@ -59,8 +59,8 @@ then set up my root node at ~/.agent/. Its subject is me, not a codebase.
 2. Create ~/.agent/ — purpose, memory, session-log, rules, docs, and
    scripts/status.sh copied from the source repo. Each canonical file
    opens with its header contract from the operating model.
-3. Adapt the preset that matches my work into rules/; keep its Kernel
-   intact.
+3. Adapt the preset that matches my work into rules/contract.md; keep
+   its Kernel intact.
 4. Stamp the dot-agent manifest on purpose.md, listing any existing
    project nodes in children.
 5. Wire my tools at the root from the canonical entry-point template
@@ -84,9 +84,9 @@ then bootstrap .agent/ for this project.
 2. Create .agent/ — purpose, memory, session-log, docs, and
    scripts/status.sh copied from the source repo. Each canonical file
    opens with its header contract from the operating model.
-3. Adapt the chosen preset into rules/: keep its Kernel intact and fill
-   Project guardrails with exact commands ("run the tests" is not filled
-   in; the real test command is).
+3. Adapt the chosen preset into rules/contract.md: keep its Kernel
+   intact and fill Project guardrails with exact commands ("run the
+   tests" is not filled in; the real test command is).
 4. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored),
    track-shared (purpose/rules/docs shared, memory and logs ignored), or
    track-all (everything committed) — and write the matching gitignore

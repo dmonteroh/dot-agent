@@ -29,7 +29,7 @@ Knowledge becomes **cumulative** (grows over sessions), **self-producing** (the 
 ```
 project-root/
 ├── .agent/
-│   ├── rules/              # Human-authored rules (from a preset) + learned.md
+│   ├── rules/              # contract.md (adapted from a preset) + learned.md
 │   ├── purpose.md
 │   ├── memory.md
 │   ├── session-log.md
@@ -43,7 +43,7 @@ project-root/
 
 | File | What it is | Who writes it |
 |------|------------|---------------|
-| `rules/*.md` (except learned) | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap. | Agent (from preset, with your input) |
+| `rules/contract.md` | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap; the manifest's `preset` field records which one. | Agent (from preset, with your input) |
 | `rules/learned.md` | Behavioral rules accumulated from session retros. Imperative, durable, agent-discovered. | Agent (from retro process) |
 | `purpose.md` | Why this project exists, who it's for, key constraints. Where to change what. | Agent (from conversation with you) |
 | `memory.md` | Current project state, decisions, domain knowledge. A running summary, not history. | Agent (when durable facts change) |
@@ -90,7 +90,7 @@ words: imperative rule first, cause/trigger only where it adds information.
 Write the rule, not the story — no incident retelling or justification
 narrative; merge near-duplicates instead of appending; move domain detail
 beyond ~40 words into the matching `.agent/docs/` file and keep a pointer
-here (authoring rules: `<preset>.md`, Self-learning). Behavioral rules stay
+here (authoring rules: `contract.md`, Self-learning). Behavioral rules stay
 here; area gotchas go to the matching `.agent/docs/` file under `## Gotchas`.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
@@ -206,10 +206,10 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`**: purpose.md, memory.md, session-log.md, rules adapted from the chosen preset, and `scripts/status.sh` copied from the source repo; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** per the section's own template comment.
+6. **Agent creates `.agent/`**: purpose.md, memory.md, session-log.md, the chosen preset adapted into `rules/contract.md`, and `scripts/status.sh` copied from the source repo; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** per the section's own template comment.
 7. **Agent asks the tracking mode once** (`ignore-all`, `track-shared`, or `track-all`) and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest**: `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
-9. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, preset name, strong-model list, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
+9. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, strong-model list, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
@@ -257,7 +257,7 @@ Execute with tools, in order:
    part of this session, treat TOOLS: notes as advisory.
 2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
 3. Read the `## Kernel` and `## Project guardrails` sections of
-   `.agent/rules/<preset>.md` — binding. If you are one of: <Opus, Sonnet,
+   `.agent/rules/contract.md` — binding. If you are one of: <Opus, Sonnet,
    GPT-5.5 — the project's strong-model list>, read the full file instead.
 4. Read `.agent/purpose.md` — scope and boundaries.
 5. Read `.agent/memory.md` — durable state.
