@@ -1,8 +1,8 @@
-# Claude Code enforcement hooks
+# Claude Code compliance hooks
 
-Programmatic enforcement of the [dot-agent operating model](../../operating-model.md) for Claude Code.
+Optional compliance tooling for the [dot-agent operating model](../../operating-model.md), Claude-Code-only.
 
-Without these hooks, the operating model's trust contracts are convention — the agent follows them because the rules say to. With these hooks, they're enforced — the agent literally cannot skip them.
+Without these hooks, the operating model's trust contracts are convention — the agent follows them because the rules say to. These hooks add a mechanical check on top: they block the session when a contract is violated. They are optional and unused in the reference deployments, where the trust contract carries compliance.
 
 ## What's enforced
 

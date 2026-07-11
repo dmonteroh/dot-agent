@@ -44,7 +44,7 @@ Rule presets for different domains — pick one during bootstrap or let the agen
 Copy this into any capable agent:
 
 ```
-Read the .agent/ operating model at https://github.com/jlonardi/dot-agent.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent.
 
 Look at my current setup and do what makes sense:
 - No ~/.agent/? Set up the system from scratch — ask me about myself first.
@@ -56,7 +56,7 @@ Ask me anything you need to know.
 
 One prompt. The agent reads the operating model, figures out what state you're in, and does the right thing.
 
-If you use **Claude Code**, you can also install enforcement hooks that programmatically enforce the load order and self-maintenance contract. See [`tools/claude-code/`](tools/claude-code/).
+If you use **Claude Code**, optional hooks can add a mechanical compliance check for the load order and self-maintenance contract — the trust contract is the primary compliance story, and the reference deployments run without them. See [`tools/claude-code/`](tools/claude-code/).
 
 ## Manual completion check (for agents without hooks)
 

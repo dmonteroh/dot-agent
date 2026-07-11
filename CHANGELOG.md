@@ -4,6 +4,23 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
+## V6 — 2026-07-11 — Fork lineage + consistency pass
+
+### Why
+
+This fork (`dmonteroh/dot-agent`) diverges from upstream (`jlonardi/dot-agent`, through V5) based on five months of field data from four production instances. Before the larger V6 harvest changes land, the shipped files contradicted each other in small but costly ways: the spec's own session-log example failed the verify script's date check, the presets and the field named different archive locations, the housekeeping advice argued against the grooming the field proved necessary, and the enforcement claims oversold hooks the reference deployments don't run.
+
+### What changed
+
+- **Fork lineage** — the version line forks here: this is V6 of `dmonteroh/dot-agent`; upstream lineage is V1–V5 (`jlonardi/dot-agent`). Source references and the bootstrap prompt now point at this fork.
+- **Dated log entries** — the session-log entry template is `- [YYYY-MM-DD] (tool) …` everywhere, matching what the verify script checks and what the field instances converged on. The model is appended to the tool tag only when the harness states one — `(claude/sonnet)` — never guessed.
+- **One archive location** — `archive/session-log-archive.md`. A directory keeps future archives (memory snapshots, superseded docs) out of the node root. Presets previously said `.agent/session-log-archive.md`.
+- **Grooming thresholds replace anti-grooming advice** — "a few hundred lines is negligible / reorganizing costs more tokens than reading a longer file" is deleted from the operating model and all three presets. It was wrong in the field: one instance lost its pre-June history to an unarchived 5,834-word log; another hit 15,303 words. Replaced with numbers: session-log over ~80 entries or ~5,000 words → archive entries older than 30 days; memory.md over ~800 words → compact; learned.md over ~25 rules → merge near-duplicates.
+- **Honesty pass on compliance claims** — the comparison-table row "Can be enforced" is now "Has a compliance mechanism"; the enforcement-mechanisms section moved to an appendix labeled optional, Claude-Code-only, unused in the reference deployments. The trust contract is the primary compliance story — it is the one with months of field evidence.
+- **Rules filename** — the human rules file keeps the preset name (e.g. `software-development.md`); that is what exists in every field instance. V5's `contract.md` rename never shipped in practice.
+
+---
+
 ## V5 — 2026-02-10 — Behavioral architecture + self-learning
 
 ### Why

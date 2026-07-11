@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 5 — 2026-02-10**
+> **Version 6 — 2026-07-11** — fork lineage (`dmonteroh/dot-agent`); upstream V1–V5: `jlonardi/dot-agent`
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -82,19 +82,19 @@ The contract says "update memory" — but a superficial update is worse than non
 
 **`session-log.md` — capture what was discussed, decided, and why:**
 
-> Good: "Implemented user auth with JWT. Chose bcrypt for hashing (argon2 considered, rejected for deployment simplicity). Login/register endpoints added, tests passing."
+> Good: "- [2026-02-10] (claude) Implemented user auth with JWT. Chose bcrypt for hashing (argon2 considered, rejected for deployment simplicity). Login/register endpoints added, tests passing."
 >
 > Bad: "Worked on authentication."
 
-**`session-log.md` — tag entries by tool and project:**
+**`session-log.md` — date and tag every entry:**
 
-When a root-level `.agent/` collects entries from different tools and projects, they land in the same log. Tag each entry so the log stays scannable:
+Every entry starts with the date and the tool that wrote it. When a root-level `.agent/` collects entries from different tools and projects, they land in the same log — add the project so the log stays scannable:
 
-> `- (Claude Code / my-app) **Added auth**: JWT with bcrypt. Argon2 rejected for deployment simplicity.`
-> `- (Cursor / infra) **Fixed deploy**: k8s readiness probe was hitting wrong port.`
-> `- (Codex / my-app) **Refactored API routes**: split monolithic router into per-resource modules.`
+> `- [2026-02-10] (claude / my-app) Added auth: JWT with bcrypt. Argon2 rejected for deployment simplicity.`
+> `- [2026-02-10] (cursor / infra) Fixed deploy: k8s readiness probe was hitting wrong port.`
+> `- [2026-02-10] (codex / my-app) Refactored API routes: split monolithic router into per-resource modules.`
 
-Format: `(Tool / project) **Bold summary**: details`. For project-local `.agent/` logs the project tag is optional since it's implied by the directory.
+Format: `- [YYYY-MM-DD] (tool / project) details`. Append the model to the tool tag when the harness states one — `(claude/sonnet / my-app)` — never guess it. For project-local `.agent/` logs the project tag is optional since it's implied by the directory.
 
 **Session log routing:** When working across multiple projects in one session, write to the project you actually worked on, not the directory you were opened in. If a root node exists, its `session-log.md` always gets an entry (it's the master log). If the project you worked on has its own `.agent/`, also write to that project's `session-log.md` and update its `memory.md` with project-specific knowledge. This keeps project-local context current for tools that only see the project level.
 
@@ -125,17 +125,17 @@ The self-maintenance contract covers one phase: completion. But a well-run sessi
 
 #### The trust contract
 
-Each lifecycle phase is a trust contract. Agents should follow these regardless of whether enforcement exists.
+Each lifecycle phase is a trust contract. Agents follow these on trust — that is the system's primary compliance story, and how the reference deployments run.
 
-| Phase | Trust contract | Enforceable? |
-|-------|---------------|-------------|
-| **Bootstrap** | Load context before working | Yes |
-| **Pre-work** | Load project context before editing project files | Yes |
-| **Correctness** | Re-read files you edited. Run tests after changing source files. Run build after changing config. | Yes |
-| **Completion** | Update session-log and memory before finishing | Yes |
-| **Retro** | After substantial sessions, reflect on behavioral lessons and record durable rules | Yes |
+| Phase | Trust contract |
+|-------|---------------|
+| **Bootstrap** | Load context before working |
+| **Pre-work** | Load project context before editing project files |
+| **Correctness** | Re-read files you edited. Run tests after changing source files. Run build after changing config. |
+| **Completion** | Update session-log and memory before finishing |
+| **Retro** | After substantial sessions, reflect on behavioral lessons and record durable rules |
 
-The operating model describes WHAT should happen. Tools implement HOW. Claude Code hooks are the reference implementation. Any agent with a hook-like mechanism can implement the same contracts. Agents without hooks follow the contracts on trust.
+The operating model describes WHAT should happen. Optional tooling that adds a mechanical compliance check on top exists for some tools — see the [appendix](#appendix-compliance-tooling).
 
 #### Self-learning
 
@@ -155,30 +155,6 @@ Example:
 ```
 - [2026-02-10] Always check all consuming packages when modifying shared schemas. Trigger: changed a Zod schema in a shared package, broke 3 downstream test files that used the old shape.
 ```
-
-#### Enforcement mechanisms
-
-The contracts work because agents follow instructions reliably. For stronger guarantees, use your tool's native enforcement mechanism.
-
-**Claude Code** — enforcement hooks that block the agent when contracts are violated. Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
-
-```bash
-# Install hooks
-cp tools/claude-code/hooks/*.py ~/.claude/hooks/
-# Merge tools/claude-code/settings-example.json into ~/.claude/settings.json
-```
-
-**Cursor** — add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
-
-**Any tool without hooks** — use the verification script as a manual completion check:
-
-```bash
-./scripts/verify-agent-context.sh
-# Fails if memory.md or session-log.md is missing, empty, or has no same-day entry.
-# Run with --fix to add scaffolding, then replace placeholders with real content.
-```
-
-Enforcement is optional but recommended. Without it, compliance depends entirely on the agent following the rules — which works most of the time, but not all of the time.
 
 ### The load order
 
@@ -241,7 +217,7 @@ The [README](README.md) has a single prompt that covers install, bootstrap, and 
 6. **Agent creates `.agent/`** — purpose.md, memory.md, session-log.md, rules adapted from the chosen preset
 7. **Agent leaves a source reference** in the rules file so the node can be updated later:
    ```markdown
-   <!-- Source: https://github.com/jlonardi/dot-agent/operating-model.md | Version: 5 -->
+   <!-- Source: https://github.com/dmonteroh/dot-agent/operating-model.md | Version: 6 -->
    ```
 8. **Agent gitignores `.agent/`** — adds it to `.gitignore` (personal repos) or `.git/info/exclude` (team repos)
 9. **Agent wires your tools** — creates the entry points for whichever tools you use
@@ -460,7 +436,7 @@ What changes between domains is the **rules** — what the agent should prioriti
 | Agent writes back | No | No | **Yes** |
 | Survives tool switch | Partially | No | **Yes** |
 | Memory across sessions | No | No | **Yes** |
-| Can be enforced | No | No | **Yes** |
+| Has a compliance mechanism | No | No | **Yes** |
 | Dependencies | None | None | None |
 
 `AGENTS.md` and `.agent/` are complementary. Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context that grows over time.
@@ -481,4 +457,30 @@ What changes between domains is the **rules** — what the agent should prioriti
 
 **Why the agent writes docs from conversations, not the user?** The user explains the project in conversation — that's natural. Asking them to also write structured markdown is busywork. The agent converts conversation into documentation. The user's job is to think and direct, not to format.
 
-**How to keep `.agent/` small over time?** Use lightweight retention: archive older `session-log.md` entries when they get long, prune stale items from `memory.md`, and move stable long-form knowledge to `docs/`. Don't over-optimize — a few hundred lines of markdown is negligible context for most LLMs, and the agent work to reorganize files often costs more tokens than just reading a longer file.
+**How to keep `.agent/` small over time?** Groom by thresholds, not judgment: when `session-log.md` exceeds ~80 entries or ~5,000 words, move entries older than 30 days to `archive/session-log-archive.md`; when `memory.md` exceeds ~800 words, compact it to durable state only; when `rules/learned.md` exceeds ~25 rules, merge near-duplicates. Move stable long-form knowledge to `docs/`. Ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context.
+
+---
+
+## Appendix: compliance tooling
+
+Optional, and unused in the reference deployments — compliance there rests on the trust contract. Install these only if you want a mechanical check on top of it. The hooks are Claude-Code-only.
+
+**Claude Code** — hooks that block the agent when contracts are violated. Ready-to-install hooks are in [`tools/claude-code/`](tools/claude-code/):
+
+```bash
+# Install hooks
+cp tools/claude-code/hooks/*.py ~/.claude/hooks/
+# Merge tools/claude-code/settings-example.json into ~/.claude/settings.json
+```
+
+**Cursor** — add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
+
+**Any tool without hooks** — use the verification script as a manual completion check:
+
+```bash
+./scripts/verify-agent-context.sh
+# Fails if memory.md or session-log.md is missing, empty, or has no same-day entry.
+# Run with --fix to add scaffolding, then replace placeholders with real content.
+```
+
+Without tooling, compliance depends on the agent following the rules — which works most of the time, but not all of the time. The trust contract carries the reference deployments.

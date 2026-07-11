@@ -27,8 +27,8 @@ Do not skip. This is what gives the next session continuity.
 **Observation:** When the user corrects you, expresses a preference, explains how they think, or reveals a working pattern — note it in the appropriate `.agent/memory.md`. Not every interaction, but patterns and clear preferences. Every new observation should include either a concrete trigger (quote/behavior) or a confidence tag (`high`/`medium`/`low`) when the trigger is implicit. This applies at every level of the knowledge tree: project-specific observations stay in the project's memory, cross-project patterns go to the root.
 
 **Housekeeping:**
-- When `session-log.md` gets long, archive older entries to `.agent/session-log-archive.md`. Don't archive too eagerly — a few hundred lines is negligible context for most LLMs, and the agent work to reorganize costs more tokens than just reading a longer file.
-- Periodically compact `memory.md`: keep current claims/findings and source index pointers; move stable long-form syntheses to `.agent/docs/`.
+- When `session-log.md` exceeds ~80 entries or ~5,000 words, move entries older than 30 days to `.agent/archive/session-log-archive.md`.
+- When `memory.md` exceeds ~800 words, compact it: keep current claims/findings and source index pointers; move stable long-form syntheses to `.agent/docs/`.
 
 ## Ambiguity resolution
 
