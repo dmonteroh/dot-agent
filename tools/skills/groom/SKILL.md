@@ -20,31 +20,38 @@ below, then re-run `status.sh` to confirm it's clear.
 
 ## `session-log.md` over threshold
 
-Entries are newest-last, one per line. Compute the cutoff (today minus 30
-days). Working from the top of the file (oldest first), move every entry
-older than the cutoff, in original order, into
-`.agent/archive/session-log-archive.md` — create it with a one-line header
-comment if it doesn't exist yet — then delete those lines from
-`session-log.md`. Leave entries inside the 30-day window alone even if the
-file is still over the entry-count threshold; the cutoff is time-based, not
-count-based.
+Entries are newest-last, one per line. Grooming is size-based, not
+time-based: the dates inside entries are context for when something
+happened, nothing else. Working from the top of the file (oldest first),
+move the oldest entries, in original order, into
+`.agent/archive/session-log-archive.md` — create it with a one-line
+header comment if it doesn't exist yet — then delete those lines from
+`session-log.md`. Keep roughly the newest half of the entry threshold in
+place (the flag names the number) so the flag doesn't fire again next
+session.
 
-## A `memory/<slug>.md` fact file over its word ceiling
+## A `memory/<slug>.md` fact file over the outlier threshold
 
-Re-read the file's own header contract first: one fact per file. If it
-genuinely holds one fact that grew wordy, rewrite it tighter in place — same
-filename, refreshed date, under the ceiling. If it holds two facts that
+The threshold is a review trigger, not a cap: a file this size likely
+holds more than one fact. Re-read the file's own header contract first:
+one fact per file. If it holds one fact that grew wordy, rewrite it
+tighter in place: same filename, refreshed date. If it holds two facts
+that
 would be superseded at different times, split it: run
 `.agent/scripts/memory.sh new` for the second fact under a new slug, then
 trim the original down to just the first fact. Both slugs end up indexed in
-`memory.md`.
+`memory.md`. If the fact cannot shrink without losing detail a future
+session needs, move that detail to the matching `.agent/docs/` file and
+cut the fact down to the decision plus a pointer.
 
-## `memory.md` index over its entry ceiling
+## `memory.md` index over its review threshold
 
 Read every index line. For facts that are stale, superseded, or no longer
 true, delete the line and its fact file — groom by deletion, not by
 rewriting. Where two lines describe the same underlying fact, consolidate
-into one `memory/<slug>.md`, then delete the redundant line and file.
+into one `memory/<slug>.md`, then delete the redundant line and file. If
+every line is live and true, nothing is wrong: raise the threshold at the
+top of the node's `status.sh` instead of deleting good memory.
 
 ## `rules/learned.md` over its rule ceiling
 

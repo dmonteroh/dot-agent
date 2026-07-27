@@ -13,8 +13,9 @@ obligation beyond what those two sources already state.
 
 ## When to distill a rule
 
-After a user correction or a failed verification that needed a non-obvious
-fix, ask what check or behavior would have prevented it. If the answer
+After a user correction, a failed verification that needed a non-obvious
+fix, or a mid-task deviation from an agreed plan, ask what check or
+behavior would have prevented it (for a deviation: what the plan missed). If the answer
 generalizes past this one session, draft a rule; if it doesn't, the outcome
 belongs in the session log, not `learned.md`. A useful test: try to state
 the rule in one imperative sentence before writing anything down — if it

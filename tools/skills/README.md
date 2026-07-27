@@ -1,41 +1,53 @@
 # `.agent/` skills
 
 Claude Code [skills](https://docs.claude.com/en/docs/claude-code/skills) for
-the rare-but-detailed `.agent/` procedures: grooming, bootstrap, update,
+the rare-but-detailed procedures that arise mid-session: grooming and
 retro. Each is plain markdown with a YAML frontmatter block, so anything
 that can read a file can read one — the auto-loading mechanism (matching a
 task to a skill's `description`) is Claude Code's, but the content itself
 is tool-neutral.
 
-These are optional and additive, the same status as the hooks in
-[`tools/claude-code/`](../claude-code/). A node works fully with none of
-them installed: the binding rules live in `.agent/rules/contract.md`
-(adapted from a `presets/` file at bootstrap) and in `operating-model.md`.
-Each skill only expands *how* to carry out a procedure the contract already
+These are optional and additive. A node works fully with none of them
+installed: the binding rules live in `.agent/rules/contract.md` (adapted
+from a `presets/` file at bootstrap) and in `operating-model.md`. Each
+skill only expands *how* to carry out a procedure the contract already
 names — it introduces no new obligation and duplicates no rule text from
 the presets.
 
+Only in-session procedures ship as skills. Bootstrap and update are
+operator ceremonies driven by the README prompts, which run with the
+operating model and this repo already in context; a skill adds nothing
+there, so none exists (V6.1 decision).
+
 ## Install
 
-Copy or symlink the directories you want into a location Claude Code reads
-for skills:
+Skills live inside the node at `.agent/skills/` — one reviewable,
+tool-neutral location — and each tool reads them through a symlink:
 
 ```bash
-# User-level, every project
-cp -r tools/skills/* ~/.claude/skills/
+# Project node, from the project root
+mkdir -p .agent/skills .claude
+cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro .agent/skills/
+ln -s ../.agent/skills .claude/skills   # Claude Code
+ln -s ../.agent/skills .codex/skills    # Codex, if used
 
-# Project-level, this repo only
-cp -r tools/skills/* .claude/skills/
+# Root node
+mkdir -p ~/.agent/skills ~/.claude
+cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro ~/.agent/skills/
+ln -s ../.agent/skills ~/.claude/skills
 ```
 
-Symlink instead of copy if you want them to track this source repo as it
-updates.
+If the tool's skills directory already exists with other content, symlink
+the individual skill directories into it instead of replacing it. To track
+this source repo as it updates, symlink from the clone rather than copying.
+
+`.agent/skills/` is ignored by every tracking mode's gitignore by default
+(in `track-shared` the allowlist never negates it); negate it
+explicitly if the team wants to share installed skills through git.
 
 ## Skills
 
 | Skill | Use when |
 |---|---|
 | [`groom/`](groom/) | `status.sh` prints a `GROOM:` flag |
-| [`bootstrap/`](bootstrap/) | setting up a new `.agent/` node |
-| [`update/`](update/) | bringing an existing node up to date |
 | [`retro/`](retro/) | deciding whether to distill a learned rule, end of session |
