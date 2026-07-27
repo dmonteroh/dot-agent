@@ -17,7 +17,8 @@ set -u
 # Tunable per project.
 LOG_MAX_ENTRIES=80
 LOG_MAX_WORDS=5000
-MEMORY_MAX_WORDS=800
+MEMORY_MAX_WORDS=120
+MEMORY_MAX_ENTRIES=30
 LEARNED_MAX_RULES=25
 TAIL_LINES=10
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
@@ -26,6 +27,7 @@ root="${1:-.}"
 agent="$root/.agent"
 log="$agent/session-log.md"
 memory="$agent/memory.md"
+memdir="$agent/memory"
 learned="$agent/rules/learned.md"
 purpose="$agent/purpose.md"
 docs="$agent/docs"
@@ -54,8 +56,22 @@ if [[ -s "$log" ]]; then
     echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move entries older than 30 days to archive/session-log-archive.md"
   fi
 fi
-if [[ -s "$memory" && "$(words "$memory")" -gt "$MEMORY_MAX_WORDS" ]]; then
-  echo "GROOM: memory.md > $MEMORY_MAX_WORDS words — compact to durable state only"
+if [[ -d "$memdir" ]]; then
+  for f in "$memdir"/*.md; do
+    [[ -e "$f" ]] || continue
+    if [[ "$(words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
+      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS words — split into two facts or compact to one"
+    fi
+  done
+fi
+if [[ -s "$memory" ]]; then
+  mem_entries=$(grep -c '^- \[' "$memory")
+  if [[ "$mem_entries" -gt "$MEMORY_MAX_ENTRIES" ]]; then
+    echo "GROOM: memory.md > $MEMORY_MAX_ENTRIES index entries — groom stale or superseded facts"
+  fi
+fi
+if [[ -e "$memdir/legacy.md" ]]; then
+  echo "GROOM: memory/legacy.md exists — split legacy.md into fact files"
 fi
 if [[ -s "$learned" && "$(grep -c '^- ' "$learned")" -gt "$LEARNED_MAX_RULES" ]]; then
   echo "GROOM: learned.md > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
@@ -72,6 +88,24 @@ if [[ -d "$docs" ]]; then
     fi
     if [[ -s "$arch" ]] && ! grep -qF "$name" "$arch"; then
       echo "INDEX: docs/$name not in the architecture.md routing table — add a row from its \"Read when:\" header"
+    fi
+  done
+fi
+
+# REPAIR: memory.md index and memory/ fact files agree.
+if [[ -s "$memory" ]]; then
+  for target in $(grep -oE '\(memory/[^)]+\)' "$memory" | tr -d '()'); do
+    if [[ ! -e "$agent/$target" ]]; then
+      echo "REPAIR: memory.md indexes $target — file missing"
+    fi
+  done
+fi
+if [[ -d "$memdir" ]]; then
+  for f in "$memdir"/*.md; do
+    [[ -e "$f" ]] || continue
+    name="memory/$(basename "$f")"
+    if [[ ! -s "$memory" ]] || ! grep -qF "($name)" "$memory"; then
+      echo "REPAIR: $name has no index line in memory.md"
     fi
   done
 fi

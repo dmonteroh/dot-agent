@@ -51,7 +51,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 
 - Subagents: report continuity facts to the orchestrator; never edit `.agent/` unless explicitly assigned. The orchestrator is the single session-log writer.
 - Before marking work complete, update `.agent/` per each file's header contract:
-  - `memory.md`: durable state, decisions, terminology, preferences, active blockers only. If nothing durable changed, leave it unchanged and say so in the log entry.
+  - `memory/`: write the fact to `memory/<slug>.md` — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: one index entry, ~25 words — date, tool (model-tagged when the harness states one, never guessed), task, area, outcome, verification status. Reference task briefs by ID.
   - `docs/`: update when architecture, operations, behavior, dependencies, or workflows change. New area docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row.
 - Bad (transcript): "Added page at /x. 5 new files: a.ts (loader), b.svelte…; reviewer pass; 6 tests; commit 47feccc." Good: "- [2026-06-23] (claude/sonnet) S197 invitation acceptance page (frontend). verify: pass."

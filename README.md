@@ -10,10 +10,10 @@ Every AI coding session starts with amnesia. The agent doesn't know what your pr
 
 A `.agent/` directory at the project root. Any agent reads from it, any agent writes to it.
 
-You explain the project once. The agent writes it down. Before finishing any task, the agent updates what it learned: decisions go into `memory.md`, session notes into `session-log.md`. The next session reads what the previous one wrote.
+You explain the project once. The agent writes it down. Before finishing any task, the agent updates what it learned: decisions go into `memory/` as one fact file each, indexed from `memory.md`; session notes into `session-log.md`. The next session reads what the previous one wrote.
 
 ```
-Session 1:  You explain → agent writes purpose.md, memory.md
+Session 1:  You explain → agent writes purpose.md, memory.md, memory/
 Session 2:  Agent reads → works → updates memory + session log
 Session 3:  Different tool → reads same .agent/ → full continuity
 ```
@@ -24,7 +24,8 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 .agent/
 ├── rules/          # Behavior rules (adapted from a preset)
 ├── purpose.md      # What this project is, who it's for + the dot-agent manifest
-├── memory.md       # Current state, decisions (updated when durable facts change)
+├── memory.md       # Index of durable facts — one line per file in memory/
+├── memory/         # One durable fact per file (decision, preference, constraint)
 ├── session-log.md  # Meeting notes (appended every session)
 ├── docs/           # Architecture, features, data flows
 ├── archive/        # Groomed history — archived session-log entries
@@ -88,9 +89,9 @@ then bootstrap .agent/ for this project.
    intact and fill Project guardrails with exact commands ("run the
    tests" is not filled in; the real test command is).
 4. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored),
-   track-shared (purpose/rules/docs shared, memory and logs ignored), or
-   track-all (everything committed) — and write the matching gitignore
-   entries before anything is committed.
+   track-shared (purpose/rules/docs shared, memory.md/memory/ and logs
+   ignored), or track-all (everything committed) — and write the
+   matching gitignore entries before anything is committed.
 5. Stamp the dot-agent manifest on purpose.md (source, version, preset,
    mode, children).
 6. Wire my tools from the canonical entry-point template (CLAUDE.md,
@@ -140,10 +141,10 @@ If you use **Claude Code**, optional hooks can add a mechanical compliance check
 
 ```
 ~/.agent/                              # Root — documents the person
-├── memory.md, rules/, docs/
+├── memory.md, memory/, rules/, docs/
 
 ~/projects/app/.agent/                 # Branch — documents this project
-├── purpose.md, memory.md, docs/
+├── purpose.md, memory.md, memory/, docs/
 
 ~/projects/platform/.agent/            # Branch — documents the platform
 └── packages/auth/.agent/              # Leaf — documents this package

@@ -11,7 +11,7 @@ You explain your project once in a conversation. The agent writes it down. From 
 One directory. Markdown files. The agent reads them at the start of every session and writes to them at the end.
 
 ```
-Session 1:  You explain the project → agent writes purpose.md, memory.md
+Session 1:  You explain the project → agent writes purpose.md, memory.md, memory/
 Session 2:  Agent reads context → works → updates memory, appends session log
 Session 3:  Different tool → reads same .agent/ → full continuity
 ...
@@ -31,7 +31,8 @@ project-root/
 ├── .agent/
 │   ├── rules/              # contract.md (adapted from a preset) + learned.md
 │   ├── purpose.md
-│   ├── memory.md
+│   ├── memory.md           # Index: one line per file in memory/
+│   ├── memory/              # One durable fact per file
 │   ├── session-log.md
 │   ├── docs/
 │   ├── archive/            # Groomed history — archived session-log entries
@@ -46,13 +47,14 @@ project-root/
 | `rules/contract.md` | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap; the manifest's `preset` field records which one. | Agent (from preset, with your input) |
 | `rules/learned.md` | Behavioral rules accumulated from session retros. Imperative, durable, agent-discovered. | Agent (from retro process) |
 | `purpose.md` | Why this project exists, who it's for, key constraints. Where to change what. | Agent (from conversation with you) |
-| `memory.md` | Current project state, decisions, domain knowledge. A running summary, not history. | Agent (when durable facts change) |
+| `memory.md` | Index of durable facts: one line per file in `memory/`, no facts inline. | Agent (when a fact file is added, superseded, or removed) |
+| `memory/*.md` | One durable fact per file — a decision, preference, or constraint, not a running summary. | Agent (when durable facts change) |
 | `session-log.md` | Meeting notes. One index entry per session; format in the file's header contract. | Agent (mandatory, every session) |
 | `docs/*.md` | Architecture, features, data flows. Expensive-to-infer context the agent produces from scanning the codebase. | Agent (from codebase scan + your input) |
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
-Between the state files: if something is true right now, it belongs in `memory.md`. If it happened today, it goes in `session-log.md`. If it's stable knowledge about how the system works, it goes in `docs/`.
+Between the state files: if something is true right now, it belongs in a `memory/` fact file, indexed from `memory.md`. If it happened today, it goes in `session-log.md`. If it's stable knowledge about how the system works, it goes in `docs/`.
 
 ### File header contracts
 
@@ -69,13 +71,28 @@ never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
 narrative. -->
 ```
 
-`memory.md`:
+`memory.md` — the index, not a fact store:
 
 ```markdown
 # Memory
-<!-- Durable current state only: decisions, terminology, preferences, active
-blockers, non-obvious operating facts. Rewrite in place; supersede, don't
-append. No dated narratives, no command output. Target ≤800 words. -->
+<!-- Index only: one line per fact file, newest or most-relevant first —
+- [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that
+lives only as a line here and not as its own file under memory/ is not
+recorded. Delete the line when its file is deleted. -->
+```
+
+`memory/<slug>.md` — one fact file:
+
+```markdown
+---
+date: YYYY-MM-DD
+scope: <project | package | root>
+---
+<!-- One durable fact per file: one decision, one preference, one
+constraint — non-obvious operating facts. If two halves of this file
+would be superseded at different times, they are two files. Supersede in
+place: rewrite the fact and the date, keep the filename; no dated
+narratives, no command output, no history. Target ≤120 words. -->
 ```
 
 `rules/learned.md`, whose header is the curation law itself:
@@ -118,7 +135,7 @@ dot-agent:
 
 ### The self-maintenance contract
 
-This is the core of the system. The agent writes context back as part of finishing work: a session-log entry every session, `memory.md` when durable facts changed, `docs/` when architecture, dependencies, or practices changed. The next session reads what was written.
+This is the core of the system. The agent writes context back as part of finishing work: a session-log entry every session, a `memory/` fact file plus its `memory.md` index line when durable facts changed, `docs/` when architecture, dependencies, or practices changed. The next session reads what was written.
 
 The binding rules (what to update, when a file may be left untouched, and the exact entry formats with good/bad examples) live in one place: the preset's **Continuity contract**, plus each file's own [header contract](#file-header-contracts). The operating model deliberately does not restate them. One rule, one home: the operating model describes the mechanism and files, presets carry the only copy of behavioral rules, entry points carry only wiring.
 
@@ -150,6 +167,7 @@ The retro phase produces behavioral rules, `rules/learned.md` stores them, the n
 - Distinct from human-authored rules (the preset): human rules define the framework, learned rules capture what the agent discovered working within it.
 - Versioned via git, so bad rules can be reverted; in `track-shared` mode they pass PR review before binding anyone else's sessions (see [Tracking modes](#tracking-modes)).
 - The entry format, curation law, and routing rule (behavioral rules stay here; area gotchas go to their area doc) live in the file's own header and the preset's **Self-learning** section.
+- Unlike `memory.md`, `learned.md` stays a single file: it is the artifact that passes PR review in `track-shared`, and a rule set reviewed as one diff is reviewable in a way that many small files are not.
 
 ### The load order
 
@@ -161,9 +179,9 @@ How much of `.agent/` enters git is a per-node choice, made once at bootstrap an
 
 | Mode | Git behavior | When |
 |---|---|---|
-| `ignore-all` | `.agent/` fully ignored (`.gitignore` or `.git/info/exclude`) | Public repos; teams where the tree is personal |
-| `track-shared` | Track `purpose.md`, `rules/` (incl. `learned.md`), `docs/`; ignore `memory.md`, `session-log.md`, `archive/`, everything else | Multi-dev teams sharing knowledge, keeping personal state private |
-| `track-all` | Everything committed | Solo private repos: full history, free backup |
+| `ignore-all` | `.agent/` fully ignored, including `memory.md` and `memory/` (`.gitignore` or `.git/info/exclude`) | Public repos; teams where the tree is personal |
+| `track-shared` | Track `purpose.md`, `rules/` (incl. `learned.md`), `docs/`; ignore `memory.md`, `memory/`, `session-log.md`, `archive/`, everything else | Multi-dev teams sharing knowledge, keeping personal state private |
+| `track-all` | Everything committed, including `memory.md` and `memory/` | Solo private repos: full history, free backup |
 
 The `track-shared` gitignore the bootstrap writes:
 
@@ -173,6 +191,8 @@ The `track-shared` gitignore the bootstrap writes:
 !.agent/rules/
 !.agent/docs/
 ```
+
+This is an allowlist: `.agent/*` ignores everything, and only the negated lines are un-ignored. `memory/` needs no negation of its own — a directory nobody negates is ignored by default, the same way `memory.md` already is. The design fails safe: a new file or directory stays private until someone explicitly tracks it.
 
 In `track-shared`, a PR that touches `learned.md` gets human review: every rule the agent taught itself passes an accept/edit/reject gate before it binds anyone else's sessions.
 
@@ -208,7 +228,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`**: purpose.md, memory.md, session-log.md, the chosen preset adapted into `rules/contract.md`, and `scripts/status.sh` copied from the source repo; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** per the section's own template comment.
+6. **Agent creates `.agent/`**: purpose.md, memory.md (the index, initially empty), memory/, session-log.md, the chosen preset adapted into `rules/contract.md`, and `scripts/status.sh` copied from the source repo; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** per the section's own template comment.
 7. **Agent asks the tracking mode once** (`ignore-all`, `track-shared`, or `track-all`) and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest**: `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
 9. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
@@ -277,7 +297,7 @@ Template mechanics: the status check runs first because step-skipping concentrat
 
 **Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads: workers read context like any session (skipping only the status check; flags are the orchestrator's to handle) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. `workflows/` and `agents/` directories hold role prompts and process definitions; they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, skill payloads) are outside the model: never loaded, never groomed, ignored in every tracking mode.
 
-**Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp); re-open `memory.md` before writing final updates; if two summaries conflict, keep both statements marked `CONFLICT` and resolve them in the next human-guided pass. Never silently overwrite.
+**Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp). The memory split makes the rest simpler than one shared file: two sessions writing different facts write different files under `memory/` and never collide. `CONFLICT` marking narrows to the case where two sessions write the *same* fact file (or both edit the same `memory.md` index line) in the same window — keep both statements, tag them `CONFLICT`, and resolve in the next human-guided pass. Never silently overwrite.
 
 ---
 
@@ -287,19 +307,20 @@ A single `.agent/` gives memory within one project, but nodes can nest. Each is 
 
 ```
 ~/.agent/                              # Root — documents the person
-├── memory.md                          # Cross-project state, preferences, how you work
+├── memory.md                          # Index: cross-project state, preferences, how you work
+├── memory/                            # One fact per file
 ├── session-log.md                     # Cross-project history
 ├── docs/                              # Your principles, tools, patterns
 └── rules/                             # Global behavior rules
 
 ~/projects/app/.agent/                 # Branch — documents this project
-├── purpose.md, memory.md, docs/
+├── purpose.md, memory.md, memory/, docs/
 
 ~/projects/platform/.agent/            # Branch — documents the platform
-├── purpose.md, memory.md, docs/
+├── purpose.md, memory.md, memory/, docs/
 │
 └── packages/auth/.agent/              # Leaf — documents this package
-    ├── purpose.md, memory.md, docs/
+    ├── purpose.md, memory.md, memory/, docs/
 ```
 
 Every node follows the same structure: purpose, memory, session-log, rules, docs. A node inherits context from its parent and adds its own specialization. The root knows everything broadly; the leaves know one thing deeply.
@@ -320,7 +341,7 @@ Continuity follows the work, not the directory the session was opened in. A sess
 
 ### Observation
 
-A second kind of knowledge doesn't come from code; it comes from watching how the operator works. When you correct an agent, express a preference, or reveal a working pattern, that's a signal: agents record it in the appropriate node's `memory.md`. Not every interaction, but patterns and clear preferences; the recording rule (trigger or confidence tag) is the preset's Continuity contract.
+A second kind of knowledge doesn't come from code; it comes from watching how the operator works. When you correct an agent, express a preference, or reveal a working pattern, that's a signal: agents record it as a fact file in the appropriate node's `memory/`, indexed from `memory.md`. Not every interaction, but patterns and clear preferences; the recording rule (trigger or confidence tag) is the preset's Continuity contract.
 
 Scope follows the tree: the root learns "prefers simple solutions over configurable ones" and carries it everywhere; a project node learns "always writes tests before implementation here" and keeps it scoped. This builds across sessions and tools — the tree remembers what conversations forget.
 
@@ -385,7 +406,7 @@ The `presets/` folder demonstrates this with seeds for software development, aca
 
 **Why does the agent write the docs, not the user?** The user explains the project in conversation; the agent converts it into documentation. The user's job is to think and direct, not to format.
 
-**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point. Thresholds (session-log ~80 entries or ~5,000 words → archive entries older than 30 days; memory ~800 words → compact; learned ~25 rules → merge) are variables at the top of the script; projects tune them. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
+**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point. Thresholds (session-log ~80 entries or ~5,000 words → archive entries older than 30 days; each memory fact file ~120 words → split or compact; memory index ~30 entries → groom stale facts; learned ~25 rules → merge) are variables at the top of the script; projects tune them. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
 
 ---
 

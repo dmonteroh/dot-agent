@@ -46,7 +46,7 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 
 - Subagents: report continuity facts to the orchestrator; never edit `.agent/` unless explicitly assigned. The orchestrator is the single session-log writer.
 - Before marking work complete, update `.agent/` per each file's header contract:
-  - `memory.md`: durable working state, decisions, terminology, preferences, active blockers only. If nothing durable changed, leave it unchanged and say so in the log entry.
+  - `memory/`: write the fact to `memory/<slug>.md` — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: one index entry, ~25 words — date, tool (model-tagged when the harness states one, never guessed), task, area, outcome, verification status.
   - `docs/`: catalogs and structured knowledge update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a catalog row.
 - When an existing entry exceeds the ceiling, trim it to the template on sight, preserving task, outcome, and verification status.
