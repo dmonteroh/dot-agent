@@ -36,8 +36,10 @@ project-root/
 │   ├── session-log.md
 │   ├── docs/
 │   ├── archive/            # Groomed history — archived session-log entries
-│   └── scripts/            # status.sh (the load-path check) + log.sh,
-│                           # memory.sh, docs.sh — the typed writers
+│   ├── scripts/            # status.sh (the load-path check) + log.sh,
+│   │                       # memory.sh, docs.sh — the typed writers
+│   └── skills/             # Optional — installed skill payloads; tools
+│                           # read them via symlink (.claude/skills → here)
 ```
 
 ### File purposes
@@ -96,7 +98,8 @@ scope: <project | package | root>
 constraint — non-obvious operating facts. If two halves of this file
 would be superseded at different times, they are two files. Supersede in
 place: rewrite the fact and the date, keep the filename; no dated
-narratives, no command output, no history. Target ≤120 words. -->
+narratives, no command output, no history. As small as the fact allows;
+expansive detail goes to docs/ with a pointer fact here. -->
 ```
 
 `rules/learned.md`, whose header is the curation law itself:
@@ -141,7 +144,7 @@ dot-agent:
 
 This is the core of the system. The agent writes context back as part of finishing work: a session-log entry every session, a `memory/` fact file plus its `memory.md` index line when durable facts changed, `docs/` when architecture, dependencies, or practices changed. The next session reads what was written.
 
-The binding rules (what to update, when a file may be left untouched, and the exact entry formats with good/bad examples) live in one place: the preset's **Continuity contract**, plus each file's own [header contract](#file-header-contracts). The operating model deliberately does not restate them. One rule, one home: the operating model describes the mechanism and files, presets carry the only copy of behavioral rules, entry points carry only wiring.
+The binding rules (what to update, when a file may be left untouched, and the exact entry formats with good/bad examples) live in one place: the preset's **Continuity contract**, plus each file's own [header contract](#file-header-contracts). The operating model does not restate them. One rule, one home: the operating model describes the mechanism and files, presets carry the only copy of behavioral rules, entry points carry only wiring.
 
 Auditing is part of the same contract, not a separate step: while loading context, the agent notices stale facts, outdated docs, and redundancy against what it sees in the codebase, and fixes them as part of the current session. The goal is that `.agent/` stays accurate, not just populated.
 
@@ -161,7 +164,7 @@ Agents follow these on trust. That is the system's primary compliance story, and
 | **Completion** | Update `.agent/` before finishing | Preset: Continuity contract + file header contracts |
 | **Retro** | Distill durable behavioral rules | Preset: Self-learning |
 
-The operating model names the phases; the preset carries each phase's rules. Optional tooling that adds a mechanical compliance check on top exists for some tools; see the [appendix](#appendix-compliance-tooling).
+The operating model names the phases; the preset carries each phase's rules. Optional tool-specific packaging for the rare procedures exists; see the [appendix](#appendix-optional-tooling).
 
 #### Self-learning
 
@@ -285,7 +288,8 @@ Execute with tools, in order:
 2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
 3. Read `.agent/rules/contract.md` — binding.
 4. Read `.agent/purpose.md` — scope and boundaries.
-5. Read `.agent/memory.md` — durable state.
+5. Read `.agent/memory.md` — the fact index; open the `memory/` fact
+   files whose hooks match the task.
 6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
    read only what the task needs.>
 
@@ -296,11 +300,11 @@ assigned — the orchestrator is the single session-log writer.
 Keep this file and AGENTS.md identical; when editing one, mirror the other.
 ```
 
-Template mechanics: the status check runs first because step-skipping concentrates at the tail of numbered lists. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
+Template mechanics: a root node wired through a user-level file (`~/.claude/CLAUDE.md`) writes every path absolute — `bash ~/.agent/scripts/status.sh`, `~/.agent/rules/…` — because the session's working directory is the project, not `~`, and the relative paths would resolve against the project's node or nothing. The status check runs first because step-skipping concentrates at the tail of numbered lists. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
 
 ### Subagents and parallel sessions
 
-**Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads: workers read context like any session (skipping only the status check; flags are the orchestrator's to handle) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, the same write ban as any other worker. `workflows/` and `agents/` directories hold role prompts and process definitions; they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, skill payloads) are outside the model: never loaded, never groomed, ignored in every tracking mode.
+**Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads: workers read context like any session (skipping only the status check; flags are the orchestrator's to handle) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, the same write ban as any other worker. `workflows/` and `agents/` directories hold role prompts and process definitions; they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, installed skill payloads under `skills/`) are outside the model: never loaded by the load order, never groomed, ignored in every tracking mode.
 
 **Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp). The memory split makes the rest simpler than one shared file: two sessions writing different facts write different files under `memory/` and never collide. `CONFLICT` marking narrows to the case where two sessions write the *same* fact file (or both edit the same `memory.md` index line) in the same window — keep both statements, tag them `CONFLICT`, and resolve in the next human-guided pass. Never silently overwrite.
 
@@ -413,17 +417,19 @@ The `presets/` folder demonstrates this with seeds for software development, aca
 
 **Why does the agent write the docs, not the user?** The user explains the project in conversation; the agent converts it into documentation. The user's job is to think and direct, not to format.
 
-**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point. Thresholds (session-log ~80 entries or ~5,000 words → archive entries older than 30 days; each memory fact file ~120 words → split or compact; memory index ~30 entries → groom stale facts; learned ~25 rules → merge) are variables at the top of the script; projects tune them. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
+**Provenance over rationalization.** Every constant in the system — grooming thresholds, ceilings, defaults — states its provenance where it lives: field data from the instances, a real incident, or an explicit chosen-default note. A number that turns out to have none is replaced with a sourced one, not defended because it ships. V6.1 replaced its own implementation-time limits this way after they flagged the field's healthiest artifacts.
+
+**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point. Thresholds (session-log over ~120 entries or ~5,000 words → archive the oldest entries; a memory fact file over ~300 body words → likely two facts, split or route detail to docs/; memory index ~100 entries → review for stale lines; learned ~60 rules → merge) are variables at the top of the script; projects tune them. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is calibrated against the field instances, so a healthy node rarely sees a flag. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
 
 ---
 
-## Appendix: compliance tooling
+## Appendix: optional tooling
 
-Optional, and unused in the reference deployments; compliance there rests on the trust contract. Install these only if you want a mechanical check on top of it. The hooks are Claude-Code-only.
+Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check; there is no mechanical enforcement layer. The V4/V5-era Claude Code compliance hooks were removed in V6.1 — a Stop-time file-diff check cannot tell whether durable facts changed this session, and the field demoted completion-time gates in favor of the status check; see `CHANGELOG.md` for the removal rationale.
 
-**Claude Code:** V5-era hooks that block the agent when contracts are violated. Ready-to-install hooks and instructions are in [`tools/claude-code/`](tools/claude-code/). `pre-work.py` and `retro.py` hold up unchanged under V6.1. The other two needed realignment: `self-maintenance.py` blocked Stop until `memory.md` was modified in every discovered node — wrong once memory updates became conditional and the orchestrator became the single session-log writer, and wronger once `memory.md` became an index rather than a fact store. No mechanical check replaces it: a hook cannot tell from a file diff whether durable facts changed this session, so it ships marked unsupported in its own header and unwired in `settings-example.json`. `correctness.py`'s re-read check only ever required *a* re-read (full or partial) of each edited file, not a full-file one — the presets' calibration ("re-read a file in full only after large-scale rewrites") was never violated in code, only overstated in this doc and the tools README; both are now corrected to describe the check as written.
+**Claude Code settings:** [`tools/claude-code/`](tools/claude-code/) ships `settings-example.json` — `"autoMemoryEnabled": false` (see [Native tool memory](#native-tool-memory)) plus a permissions allowlist for `.agent/**` writes.
 
-**Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed procedures — grooming, bootstrap, update, retro — as Claude Code skills: optional, tool-specific, additive, the same status as the hooks above. `rules/contract.md` (from the preset) keeps every binding rule; a skill only expands the *how* for a tool that reads skills (decision 5). A node with none of them installed works exactly the same.
+**Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live in the node at `.agent/skills/`, and each tool reads them through a symlink (`.claude/skills` → `.agent/skills`): one reviewable, tool-neutral location. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule; a skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
 
 **Cursor:** add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
 

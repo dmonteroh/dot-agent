@@ -29,7 +29,8 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 ├── session-log.md  # Meeting notes (appended every session)
 ├── docs/           # Architecture, features, data flows
 ├── archive/        # Groomed history — archived session-log entries
-└── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
+├── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
+└── skills/         # Optional — installed skills, symlinked into tool dirs
 ```
 
 The core mechanism is the **self-maintenance contract**: before finishing any task, the agent writes context back (a session-log entry every session; memory and docs when what they hold changed). This is what keeps context alive without manual effort. The binding rules live in the preset; each file's header carries its own format contract.
@@ -54,10 +55,12 @@ Copy this into any capable agent:
 Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
 then set up my root node at ~/.agent/. Its subject is me, not a codebase.
 
-1. Interview me first: role, active projects, how I work and communicate,
-   preferences that should hold across every project, and the tracking
-   mode — ignore-all, track-shared, or track-all (see Tracking modes in
-   the operating model). Don't invent facts about me.
+1. Interview me first, one question at a time, prioritizing questions
+   whose answers change what you'll write: role, active projects, how I
+   work and communicate, preferences that should hold across every
+   project, and the tracking mode — ignore-all, track-shared, or
+   track-all (see Tracking modes in the operating model). Don't invent
+   facts about me.
 2. Clone the source repo. Choose the preset that matches my work, then
    from the clone run `bash scripts/node.sh init --preset <name> --mode
    <mode> ~` to create ~/.agent/, stamp its manifest, and copy the
@@ -66,8 +69,9 @@ then set up my root node at ~/.agent/. Its subject is me, not a codebase.
    intact.
 4. List any existing project nodes in the manifest's children.
 5. Wire my tools at the root from the canonical entry-point template
-   (Claude Code: ~/.claude/CLAUDE.md) and disable Claude Code's native
-   memory in .claude/settings.json.
+   (Claude Code: ~/.claude/CLAUDE.md), with every path absolute
+   (~/.agent/...) since sessions run from project directories, and
+   disable Claude Code's native memory in .claude/settings.json.
 
 Ask me anything you can't infer.
 ```
@@ -81,8 +85,8 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
 then bootstrap .agent/ for this project.
 
 1. Explore the project (README, configs, source, git history) and confirm
-   your findings with me — including which preset fits — before writing
-   anything.
+   your findings with me — including which preset fits, and what you
+   could not infer — before writing anything.
 2. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored),
    track-shared (purpose/rules/docs shared, memory.md/memory/ and logs
    ignored), or track-all (everything committed).
@@ -132,7 +136,7 @@ then update this project's existing .agent/ node to match it.
 
 Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries plus `GROOM:`/`REPAIR:`/`INDEX:` flags when files breach their grooming thresholds, and the agent handles the flags as part of the session. There is no completion-time gate; grooming rides the load path.
 
-If you use **Claude Code**, optional hooks can add a mechanical compliance check for the load order and self-maintenance contract, and optional [skills](tools/skills/) package the rare procedures (grooming, bootstrap, update, retro) for on-demand loading. The trust contract is the primary compliance story, and the reference deployments run without either. See [`tools/claude-code/`](tools/claude-code/).
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading — installed into `.agent/skills/` and read through a symlink — and [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 
