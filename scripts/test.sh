@@ -289,6 +289,19 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: invalid slug rejected" || fail "memory.sh new: invalid slug rejected"
 [ ! -e "$memroot/.agent/memory/Bad_Slug.md" ] && pass "memory.sh new: invalid slug creates no file" || fail "memory.sh new: invalid slug creates no file"
 
+# title/hook flow into the one-line index entry; brackets and newlines
+# there would corrupt its format
+"$memcopy" new --slug bad-title --title "Bad [Title]" --hook "ok" --fact "bracketed title attempt" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "memory.sh new: bracketed title rejected" || fail "memory.sh new: bracketed title rejected"
+[ ! -e "$memroot/.agent/memory/bad-title.md" ] && pass "memory.sh new: bracketed title creates no file" || fail "memory.sh new: bracketed title creates no file"
+
+"$memcopy" new --slug bad-hook --title "Ok" --hook "line one
+line two" --fact "multiline hook attempt" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "memory.sh new: multiline hook rejected" || fail "memory.sh new: multiline hook rejected"
+[ ! -e "$memroot/.agent/memory/bad-hook.md" ] && pass "memory.sh new: multiline hook creates no file" || fail "memory.sh new: multiline hook creates no file"
+
 # field-size fact (130 words, the scale of the largest fact observed in a
 # mature field instance): accepted, and GROOM-clean on the load path —
 # status.sh counts body words only, and its threshold sits above real

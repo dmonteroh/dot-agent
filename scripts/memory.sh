@@ -74,6 +74,21 @@ new)
     exit 1 ;;
   esac
 
+  # Title and hook become the one-line index entry `- [title](…) — hook`;
+  # brackets or newlines in them would corrupt that line's format.
+  case "$title" in
+  *\[* | *\]*)
+    echo "memory.sh: --title must not contain [ or ] — it becomes the index link text" >&2
+    exit 1 ;;
+  esac
+  nl='
+'
+  case "$title$hook" in
+  *"$nl"*)
+    echo "memory.sh: --title and --hook must be single-line" >&2
+    exit 1 ;;
+  esac
+
   case "$scope" in
   project | package | root) ;;
   *)
