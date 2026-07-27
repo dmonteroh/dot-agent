@@ -53,19 +53,57 @@ new)
     exit 1
   fi
 
+  # --read-when lands in two one-line formats: the `<!-- Read when: … -->`
+  # header and a `| file | hook |` routing-table row.
+  nl='
+'
+  case "$readwhen" in
+  *"$nl"*)
+    echo "docs.sh: --read-when must be single-line" >&2
+    exit 1 ;;
+  *"|"*)
+    echo "docs.sh: --read-when must not contain | — it becomes a routing-table cell" >&2
+    exit 1 ;;
+  *"-->"*)
+    echo "docs.sh: --read-when must not contain --> — it would close the \"Read when:\" header comment early" >&2
+    exit 1 ;;
+  esac
+
   case "$name" in
   *.md) base="${name%.md}" ;;
   *) base="$name" ;;
   esac
   filename="$base.md"
 
+  # One folder of nesting at most: an area that outgrew one file becomes
+  # docs/<area>/<sub-doc>.md, and status.sh walks exactly one sublevel.
   case "$base" in
+  */*/*)
+    echo "docs.sh: --name may nest at most one folder deep (got '$name')" >&2
+    exit 1 ;;
+  */*)
+    subdir="${base%%/*}"
+    leaf="${base##*/}"
+    if [ -z "$subdir" ]; then
+      echo "docs.sh: --name parts must match [a-z0-9-]+ (got '$name')" >&2
+      exit 1
+    fi ;;
+  *)
+    subdir=""
+    leaf="$base" ;;
+  esac
+  case "$subdir" in
+  *[!a-z0-9-]*)
+    echo "docs.sh: --name parts must match [a-z0-9-]+ (got '$name')" >&2
+    exit 1 ;;
+  esac
+  case "$leaf" in
   *[!a-z0-9-]* | "")
-    echo "docs.sh: --name must match [a-z0-9-]+(.md) (got '$name')" >&2
+    echo "docs.sh: --name parts must match [a-z0-9-]+ (got '$name')" >&2
     exit 1 ;;
   esac
 
-  if [ "$base" = "architecture" ]; then
+  if [ "$leaf" = "architecture" ]; then
     echo "docs.sh: 'architecture' is the routing table itself, not a scaffoldable doc" >&2
     exit 1
   fi
@@ -84,9 +122,9 @@ new)
     exit 1
   fi
 
-  mkdir -p "$docs"
+  mkdir -p "$(dirname "$doc")"
 
-  title=$(printf '%s' "$base" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)} print}')
+  title=$(printf '%s' "$leaf" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)} print}')
 
   cat >"$doc" <<EOF
 <!-- Read when: $readwhen -->

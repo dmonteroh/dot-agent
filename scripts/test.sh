@@ -44,10 +44,12 @@ words_n() {
 
 today() { date +%Y-%m-%d; }
 
-# V6-style fixture: manifest version 6 (unquoted), mode ignore-all,
-# old-style memory.md with a prose body under the header comment.
+# V6-style fixture: manifest version 6 (unquoted), mode ignore-all unless
+# a second argument overrides it, old-style memory.md with a prose body
+# under the header comment.
 make_v6_fixture() {
   fx="$1"
+  fxmode="${2:-ignore-all}"
   mkdir -p "$fx/.agent/rules" "$fx/.agent/docs"
   cat >"$fx/.agent/purpose.md" <<'EOF'
 ---
@@ -78,6 +80,10 @@ EOF
 
 - [2026-01-01] (claude) fixture bootstrap for smoke tests (testing). verify: pass.
 EOF
+  if [ "$fxmode" != "ignore-all" ]; then
+    sed "s/^  mode: ignore-all/  mode: $fxmode/" "$fx/.agent/purpose.md" >"$fx/.agent/purpose.md.tmp"
+    mv "$fx/.agent/purpose.md.tmp" "$fx/.agent/purpose.md"
+  fi
 }
 
 # ---- 1. init x 3 presets x 3 modes ----
@@ -346,6 +352,190 @@ rc=$?
 after10=$(cat "$archfile")
 [ "$rc" -ne 0 ] && pass "docs.sh new: duplicate doc rejected" || fail "docs.sh new: duplicate doc rejected"
 [ "$before10" = "$after10" ] && pass "docs.sh new: duplicate doc leaves architecture.md unchanged" || fail "docs.sh new: duplicate doc leaves architecture.md unchanged"
+
+# ---- 11. init: a gitignore without a trailing newline is not spliced ----
+nlroot="$WORK/gitignore-no-newline"
+mkdir -p "$nlroot"
+printf 'node_modules' >"$nlroot/.gitignore"
+"$NODE" init --preset software-development --mode ignore-all "$nlroot" >/dev/null 2>&1
+expected_nl=$(printf 'node_modules\n.agent/')
+[ "$(cat "$nlroot/.gitignore" 2>/dev/null)" = "$expected_nl" ] && pass "init: no-trailing-newline gitignore keeps its pattern and gains .agent/ on its own line" || fail "init: no-trailing-newline gitignore keeps its pattern and gains .agent/ on its own line"
+
+# ---- 12. init at \$HOME writes no gitignore ----
+fakehome="$WORK/fake-home"
+mkdir -p "$fakehome"
+HOME="$fakehome" "$NODE" init --preset software-development --mode ignore-all "$fakehome" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && [ -d "$fakehome/.agent" ] && pass "init at \$HOME exits 0 and creates the node" || fail "init at \$HOME exits 0 and creates the node"
+[ ! -e "$fakehome/.gitignore" ] && pass "init at \$HOME skips the gitignore" || fail "init at \$HOME skips the gitignore"
+
+# same guard through mismatched symlink forms of the same directory
+realhome="$WORK/real-home"
+mkdir -p "$realhome"
+ln -s "$realhome" "$WORK/link-home"
+HOME="$WORK/link-home" "$NODE" init --preset software-development --mode ignore-all "$realhome" >/dev/null 2>&1
+[ ! -e "$realhome/.gitignore" ] && pass "init at \$HOME skips the gitignore through a symlinked HOME" || fail "init at \$HOME skips the gitignore through a symlinked HOME"
+
+# ---- 13. update: track-shared nodes are backed up too ----
+tsroot="$WORK/update-v6-track-shared"
+mkdir -p "$tsroot"
+make_v6_fixture "$tsroot" track-shared
+"$NODE" update "$tsroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "update on a track-shared V6 fixture exits 0" || fail "update on a track-shared V6 fixture exits 0 (rc=$rc)"
+[ -d "$tsroot/.agent.backup-v6" ] && grep -q "custom auth flow" "$tsroot/.agent.backup-v6/memory.md" 2>/dev/null && pass "update: track-shared node backed up before the migration" || fail "update: track-shared node backed up before the migration"
+
+# ---- 14. update: header-less memory.md with --> in the body loses nothing ----
+arrowroot="$WORK/update-arrow-body"
+mkdir -p "$arrowroot"
+make_v6_fixture "$arrowroot"
+cat >"$arrowroot/.agent/memory.md" <<'EOF'
+# Memory
+
+Fact one: deploys flow build --> stage --> prod, never direct.
+Fact two: staging resets nightly.
+EOF
+"$NODE" update "$arrowroot" >/dev/null 2>&1
+legacy_arrow="$arrowroot/.agent/memory/legacy.md"
+if grep -q "Fact one" "$legacy_arrow" 2>/dev/null && grep -q "Fact two" "$legacy_arrow" 2>/dev/null; then
+  pass "update: --> in a header-less body loses no facts"
+else
+  fail "update: --> in a header-less body loses no facts"
+fi
+grep -q '^# Memory' "$legacy_arrow" 2>/dev/null && fail "update: legacy.md does not inherit the # Memory heading" || pass "update: legacy.md does not inherit the # Memory heading"
+
+# a custom heading is content, not scaffolding — it must survive the split
+headroot="$WORK/update-custom-heading"
+mkdir -p "$headroot"
+make_v6_fixture "$headroot"
+cat >"$headroot/.agent/memory.md" <<'EOF'
+# Deploy facts
+
+Deploys go through the internal release tool only.
+EOF
+"$NODE" update "$headroot" >/dev/null 2>&1
+grep -q '^# Deploy facts' "$headroot/.agent/memory/legacy.md" 2>/dev/null && pass "update: a custom first-line heading survives into legacy.md" || fail "update: a custom first-line heading survives into legacy.md"
+
+# ---- 15. update: a failed backup aborts before touching the node ----
+if [ "$(id -u)" -eq 0 ]; then
+  pass "update: failed backup exits nonzero (skipped: running as root)"
+  pass "update: failed backup leaves memory.md untouched (skipped: running as root)"
+else
+  roroot="$WORK/update-backup-fails"
+  mkdir -p "$roroot"
+  make_v6_fixture "$roroot"
+  before_ro=$(cat "$roroot/.agent/memory.md")
+  chmod 555 "$roroot"
+  "$NODE" update "$roroot" >/dev/null 2>&1
+  rc=$?
+  chmod 755 "$roroot"
+  [ "$rc" -ne 0 ] && pass "update: failed backup exits nonzero" || fail "update: failed backup exits nonzero"
+  [ "$(cat "$roroot/.agent/memory.md")" = "$before_ro" ] && pass "update: failed backup leaves memory.md untouched" || fail "update: failed backup leaves memory.md untouched"
+fi
+
+# ---- 16. update: version guardrails ----
+malroot="$WORK/update-bad-version"
+mkdir -p "$malroot"
+make_v6_fixture "$malroot"
+sed 's/^  version: 6$/  version: unknown/' "$malroot/.agent/purpose.md" >"$malroot/.agent/purpose.md.tmp"
+mv "$malroot/.agent/purpose.md.tmp" "$malroot/.agent/purpose.md"
+cp -R "$malroot/.agent" "$WORK/malroot-snapshot"
+"$NODE" update "$malroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "update: non-numeric version exits nonzero" || fail "update: non-numeric version exits nonzero"
+diff -r "$WORK/malroot-snapshot" "$malroot/.agent" >/dev/null 2>&1 && pass "update: non-numeric version leaves the node untouched" || fail "update: non-numeric version leaves the node untouched"
+
+futroot="$WORK/update-future-version"
+mkdir -p "$futroot"
+make_v6_fixture "$futroot"
+sed 's/^  version: 6$/  version: "6.10"/' "$futroot/.agent/purpose.md" >"$futroot/.agent/purpose.md.tmp"
+mv "$futroot/.agent/purpose.md.tmp" "$futroot/.agent/purpose.md"
+cp -R "$futroot/.agent" "$WORK/futroot-snapshot"
+"$NODE" update "$futroot" >"$WORK/update-fut.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && grep -q "current" "$WORK/update-fut.out" && pass "update: newer node (6.10 vs 6.1) is a 'current' no-op" || fail "update: newer node (6.10 vs 6.1) is a 'current' no-op"
+diff -r "$WORK/futroot-snapshot" "$futroot/.agent" >/dev/null 2>&1 && pass "update: newer node left untouched" || fail "update: newer node left untouched"
+
+# ---- 17. writers: one-line format guards ----
+before17=$(cat "$sessionlog")
+"$logcopy" --tool claude --area testing --verify pass --summary "line one
+line two" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ "$(cat "$sessionlog")" = "$before17" ] && pass "log.sh: multiline summary rejected, nothing written" || fail "log.sh: multiline summary rejected, nothing written"
+
+"$logcopy" --tool claude --area testing --verify pass --summary "   " "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "log.sh: blank summary rejected" || fail "log.sh: blank summary rejected"
+
+"$logcopy" --tool claude --area "test(ing)" --verify pass --summary "parens in area" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "log.sh: parentheses in --area rejected" || fail "log.sh: parentheses in --area rejected"
+
+"$logcopy" --tool claude --area testing --verify pass --summary "$(words_n 24) — w25" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "log.sh: free-standing em dash does not spend the word ceiling" || fail "log.sh: free-standing em dash does not spend the word ceiling"
+
+before17d=$(cat "$archfile")
+"$doccopy" new --name pipe-doc --read-when "a | b" "$docroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$docroot/.agent/docs/pipe-doc.md" ] && [ "$(cat "$archfile")" = "$before17d" ] && pass "docs.sh: pipe in --read-when rejected, nothing written" || fail "docs.sh: pipe in --read-when rejected, nothing written"
+
+"$doccopy" new --name arrow-doc --read-when "before --> after" "$docroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$docroot/.agent/docs/arrow-doc.md" ] && pass "docs.sh: --> in --read-when rejected" || fail "docs.sh: --> in --read-when rejected"
+
+# ---- 18. memory index parsing is anchored to the line's own link ----
+"$memcopy" new --slug pointer-fact --title "Pointer" --hook "detail lives in (memory/expanded-detail.md)" --fact "pointer fact for the anchor regression" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "memory.sh: hook naming another memory path accepted" || fail "memory.sh: hook naming another memory path accepted"
+flags18=$(status_flags "$memroot" | grep '^REPAIR:')
+[ -z "$flags18" ] && pass "status.sh: hook-mentioned path draws no phantom REPAIR" || fail "status.sh: hook-mentioned path draws no phantom REPAIR ($flags18)"
+"$memcopy" new --slug expanded-detail --title "Expanded Detail" --hook "the detail itself" --fact "detail body for the anchor regression" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "memory.sh: slug mentioned in a prior hook still creatable" || fail "memory.sh: slug mentioned in a prior hook still creatable"
+flags18b=$(status_flags "$memroot" | grep '^REPAIR:')
+[ -z "$flags18b" ] && pass "status.sh: index and fact files agree after the anchor regression" || fail "status.sh: index and fact files agree after the anchor regression ($flags18b)"
+
+# hand-written fact file whose name carries a regex metacharacter
+printf -- '---\ndate: 2026-01-01\nscope: project\n---\n\ncpp notes fact body\n' >"$memroot/.agent/memory/c++notes.md"
+printf -- '- [Cpp notes](memory/c++notes.md) — cpp gotchas\n' >>"$memroot/.agent/memory.md"
+flags18c=$(status_flags "$memroot" | grep '^REPAIR:')
+[ -z "$flags18c" ] && pass "status.sh: regex metacharacters in a fact filename draw no phantom REPAIR" || fail "status.sh: regex metacharacters in a fact filename draw no phantom REPAIR ($flags18c)"
+
+# ---- 19. docs: sub-docs and the size trigger ----
+subroot="$WORK/docs-subdocs"
+mkdir -p "$subroot"
+"$NODE" init --preset software-development --mode track-all "$subroot" >/dev/null 2>&1
+subdocs="$subroot/.agent/scripts/docs.sh"
+
+"$subdocs" new --name frontend/grids --read-when "grid layouts and gridstack" "$subroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "docs.sh: one-level sub-doc path accepted" || fail "docs.sh: one-level sub-doc path accepted (rc=$rc)"
+[ -f "$subroot/.agent/docs/frontend/grids.md" ] && pass "docs.sh: sub-doc file created under docs/frontend/" || fail "docs.sh: sub-doc file created under docs/frontend/"
+grep -qF "| frontend/grids.md | grid layouts and gridstack |" "$subroot/.agent/docs/architecture.md" 2>/dev/null && pass "docs.sh: routing row carries the relative path" || fail "docs.sh: routing row carries the relative path"
+flags19=$(status_flags "$subroot")
+[ -z "$flags19" ] && pass "status.sh: routed sub-doc is INDEX-clean" || fail "status.sh: routed sub-doc is INDEX-clean ($flags19)"
+
+"$subdocs" new --name a/b/c --read-when "too deep" "$subroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$subroot/.agent/docs/a" ] && pass "docs.sh: two-level nesting rejected" || fail "docs.sh: two-level nesting rejected"
+
+printf 'no routing header here\n' >"$subroot/.agent/docs/frontend/loose.md"
+flags19b=$(status_flags "$subroot")
+printf '%s\n' "$flags19b" | grep -qF 'INDEX: docs/frontend/loose.md missing its "Read when:" header' && pass "status.sh: unrouted sub-doc draws the header INDEX flag with its relative path" || fail "status.sh: unrouted sub-doc draws the header INDEX flag with its relative path ($flags19b)"
+printf '%s\n' "$flags19b" | grep -qF "INDEX: docs/frontend/loose.md not in the architecture.md routing table" && pass "status.sh: unrouted sub-doc draws the routing INDEX flag" || fail "status.sh: unrouted sub-doc draws the routing INDEX flag"
+rm -f "$subroot/.agent/docs/frontend/loose.md"
+
+"$subdocs" new --name huge --read-when "docs size-trigger fixture" "$subroot" >/dev/null 2>&1
+printf '%s\n' "$(words_n 2100)" >>"$subroot/.agent/docs/huge.md"
+flags19c=$(status_flags "$subroot")
+printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/huge\.md' && pass "status.sh: oversized area doc draws a GROOM flag" || fail "status.sh: oversized area doc draws a GROOM flag ($flags19c)"
+printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/frontend/grids\.md' && fail "status.sh: small sub-doc stays GROOM-clean" || pass "status.sh: small sub-doc stays GROOM-clean"
+
+# ---- 20. status.sh is fully silent on a fresh node ----
+fresh19="$WORK/init-academic-research-track-all"
+out19=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
+[ -z "$out19" ] && pass "status.sh: fresh node prints nothing (no stray blank line)" || fail "status.sh: fresh node prints nothing (no stray blank line)"
 
 # ---- summary ----
 total=$((PASS + FAIL))
