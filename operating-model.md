@@ -68,7 +68,8 @@ Every canonical file opens with a short comment that is its own format contract,
 Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a.
 Append the model to the tag when the harness states one — (claude/sonnet) —
 never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
-narrative. -->
+narrative. Preferred writer: .agent/scripts/log.sh (stamps date, enforces
+the ceiling). -->
 ```
 
 `memory.md` — the index, not a fact store:
@@ -78,7 +79,9 @@ narrative. -->
 <!-- Index only, one line per fact file, newest or most-relevant first.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
-memory/ is not recorded. Delete the line when its file is deleted. -->
+memory/ is not recorded. Delete the line when its file is deleted.
+Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
+and its index line together). -->
 ```
 
 `memory/<slug>.md` — one fact file:
@@ -230,7 +233,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
-6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode>`**: creates the skeleton, stamps the manifest, writes the matching gitignore entries (see [Tracking modes](#tracking-modes)), copies `status.sh`, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
+6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode>`**: creates the skeleton, stamps the manifest, writes the matching gitignore entries (see [Tracking modes](#tracking-modes)), copies `status.sh`, `log.sh`, `memory.sh`, and `docs.sh`, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
 7. **Agent adapts the preset** `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment
 8. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
@@ -240,7 +243,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 
 ### Updating existing nodes
 
-The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." Run `scripts/node.sh update`: it reads the `dot-agent` frontmatter on `purpose.md`, compares `version` against the script's target by version-sort (`sort -V` semantics), backs up untracked (`ignore-all`) nodes before touching them, applies the mechanical migrations for the version gap (e.g. the memory-split baseline: `memory/` created, `memory.md`'s prior body moved verbatim to `memory/legacy.md`, a fresh index written), and bumps `version` — nothing else in the frontmatter changes. A node whose version already matches or exceeds the script's target is left untouched. A node missing its manifest entirely (bootstrapped pre-V6, or the stamp was lost) is not something the script restores mechanically: read `CHANGELOG.md`, the pre-V6 migration checklist, and update the node by hand.
+The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." Run `scripts/node.sh update`: it reads the `dot-agent` frontmatter on `purpose.md`, compares `version` against the script's target by version-sort (`sort -V` semantics), backs up untracked (`ignore-all`) nodes before touching them, refreshes `status.sh`, `log.sh`, `memory.sh`, and `docs.sh` from the source repo, applies the mechanical migrations for the version gap (e.g. the memory-split baseline: `memory/` created, `memory.md`'s prior body moved verbatim to `memory/legacy.md`, a fresh index written), and bumps `version` — nothing else in the frontmatter changes. A node whose version already matches or exceeds the script's target is left untouched. A node missing its manifest entirely (bootstrapped pre-V6, or the stamp was lost) is not something the script restores mechanically: read `CHANGELOG.md`, the pre-V6 migration checklist, and update the node by hand.
 
 After the script runs, the agent reconciles what mechanics can't: splitting `memory/legacy.md` into fact files (flagged by `status.sh`'s `GROOM:` line), adding new rules, updating terminology, preserving project-specific content.
 

@@ -86,7 +86,8 @@ init)
 Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a.
 Append the model to the tag when the harness states one — (claude/sonnet) —
 never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
-narrative. -->
+narrative. Preferred writer: .agent/scripts/log.sh (stamps date, enforces
+the ceiling). -->
 EOF
 
   cat >"$agent/memory.md" <<'EOF'
@@ -94,7 +95,9 @@ EOF
 <!-- Index only, one line per fact file, newest or most-relevant first.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
-memory/ is not recorded. Delete the line when its file is deleted. -->
+memory/ is not recorded. Delete the line when its file is deleted.
+Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
+and its index line together). -->
 EOF
 
   cat >"$agent/rules/learned.md" <<'EOF'
@@ -132,8 +135,10 @@ EOF
 
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md"
 
-  cp "$srcroot/scripts/status.sh" "$agent/scripts/status.sh"
-  chmod +x "$agent/scripts/status.sh"
+  for script in status.sh log.sh memory.sh docs.sh; do
+    cp "$srcroot/scripts/$script" "$agent/scripts/$script"
+    chmod +x "$agent/scripts/$script"
+  done
 
   case "$mode" in
   ignore-all)
@@ -224,7 +229,9 @@ EOF
 <!-- Index only, one line per fact file, newest or most-relevant first.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
-memory/ is not recorded. Delete the line when its file is deleted. -->
+memory/ is not recorded. Delete the line when its file is deleted.
+Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
+and its index line together). -->
 
 - [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag
 EOF
@@ -235,17 +242,21 @@ EOF
 <!-- Index only, one line per fact file, newest or most-relevant first.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
-memory/ is not recorded. Delete the line when its file is deleted. -->
+memory/ is not recorded. Delete the line when its file is deleted.
+Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
+and its index line together). -->
 EOF
       split_note="memory.md was empty/header-only — replaced with the index header, no legacy file"
     fi
     rm -f "$body_tmp"
   fi
 
-  # Refresh status.sh from the source repo.
+  # Refresh the scripts from the source repo.
   mkdir -p "$agent/scripts"
-  cp "$srcroot/scripts/status.sh" "$agent/scripts/status.sh"
-  chmod +x "$agent/scripts/status.sh"
+  for script in status.sh log.sh memory.sh docs.sh; do
+    cp "$srcroot/scripts/$script" "$agent/scripts/$script"
+    chmod +x "$agent/scripts/$script"
+  done
 
   # Bump version — nothing else in the frontmatter changes.
   purpose_new="$agent/.purpose.md.new"
@@ -254,7 +265,7 @@ EOF
 
   echo "node.sh: updated $agent from version $oldversion to $TARGET_VERSION"
   echo "node.sh: $split_note"
-  echo "node.sh: status.sh refreshed from source repo"
+  echo "node.sh: status.sh, log.sh, memory.sh, and docs.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model"
   exit 0
   ;;
