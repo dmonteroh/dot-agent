@@ -17,6 +17,7 @@
 # nothing a header contract doesn't already describe.
 
 set -u
+unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
 
 TARGET_VERSION="6.1"
 SOURCE_URL="https://github.com/dmonteroh/dot-agent"
@@ -78,7 +79,8 @@ init)
     exit 1
   fi
 
-  mkdir -p "$agent/rules" "$agent/memory" "$agent/docs" "$agent/archive" "$agent/scripts"
+  mkdir -p "$agent/rules" "$agent/memory" "$agent/docs" "$agent/archive" "$agent/scripts" \
+    || { echo "node.sh: could not create the node skeleton under $agent" >&2; exit 1; }
 
   cat >"$agent/session-log.md" <<'EOF'
 # Session log
@@ -92,7 +94,8 @@ EOF
 
   cat >"$agent/memory.md" <<'EOF'
 # Memory
-<!-- Index only, one line per fact file, newest or most-relevant first.
+<!-- Index only, one line per fact file, newest last; reorder by
+relevance only when grooming.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
@@ -133,17 +136,27 @@ dot-agent:
 it's for, key constraints, and where to change what. -->
 EOF
 
-  cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md"
+  cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
+    || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
   for script in status.sh log.sh memory.sh docs.sh; do
-    cp "$srcroot/scripts/$script" "$agent/scripts/$script"
+    cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
+      || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
   done
 
+  # A gitignore at $HOME is commonly git's global core.excludesFile; a
+  # `.agent/` pattern there would ignore every project node in every repo.
+  if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
+    [ "$mode" = "track-all" ] \
+      || echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
+  else
   case "$mode" in
   ignore-all)
     gitignore="$root/.gitignore"
     if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/" "$gitignore"; then
+      # A missing final newline would splice ".agent/" onto the last pattern.
+      [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
       printf '.agent/\n' >>"$gitignore"
     fi
     ;;
@@ -161,6 +174,7 @@ EOF
     ;;
   track-all) ;;
   esac
+  fi
 
   echo "node.sh: initialized $agent (preset=$preset, mode=$mode)"
   exit 0
@@ -170,6 +184,11 @@ update)
   root="${1:-.}"
   agent="$root/.agent"
   purpose="$agent/purpose.md"
+
+  if [ ! -d "$agent" ]; then
+    echo "node.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+    exit 1
+  fi
 
   if [ ! -f "$purpose" ] || ! head -n 10 "$purpose" | grep -qF "dot-agent:"; then
     cat >&2 <<EOF
@@ -191,6 +210,11 @@ EOF
     echo "node.sh: could not read a version from $purpose — not touching the node" >&2
     exit 1
   fi
+  case "$oldversion" in
+  *[!0-9.]* | *..* | .* | *.)
+    echo "node.sh: manifest version '$oldversion' is not a dotted number — not touching the node" >&2
+    exit 1 ;;
+  esac
 
   lowest=$(printf '%s\n%s\n' "$oldversion" "$TARGET_VERSION" | sort -V | head -n1)
   if [ "$oldversion" = "$TARGET_VERSION" ] || [ "$lowest" != "$oldversion" ]; then
@@ -198,14 +222,18 @@ EOF
     exit 0
   fi
 
-  if [ "$mode" = "ignore-all" ]; then
+  # memory.md and memory/ are untracked in every mode except track-all, so
+  # git holds no copy of what the migration below rewrites: back up first,
+  # and never proceed on a failed backup.
+  if [ "$mode" != "track-all" ]; then
     backup="$root/.agent.backup-v$oldversion"
     if [ -e "$backup" ]; then
       echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
       exit 1
     fi
-    cp -R "$agent" "$backup"
-    echo "node.sh: backed up untracked node to $backup"
+    cp -R "$agent" "$backup" \
+      || { echo "node.sh: backup to $backup failed — aborting before touching the node" >&2; exit 1; }
+    echo "node.sh: backed up node to $backup"
   fi
 
   # Memory split baseline (guarded by memory/ absence — safe to re-run).
@@ -216,9 +244,16 @@ EOF
     mkdir -p "$memdir"
     body_tmp="$agent/.memory-body.tmp"
     if [ -f "$memory" ]; then
-      header_end=$(grep -n -- '-->' "$memory" | head -n1 | cut -d: -f1)
+      # Honor a closing --> only when a header comment actually opens near
+      # the top; keying on the first --> alone would silently drop every
+      # fact above an arrow token in the body of a header-less file.
+      header_end=""
+      if head -n 5 "$memory" | grep -qF '<!--'; then
+        header_end=$(grep -n -- '-->' "$memory" | head -n1 | cut -d: -f1)
+      fi
       header_end=${header_end:-0}
-      tail -n +"$((header_end + 1))" "$memory" >"$body_tmp"
+      tail -n +"$((header_end + 1))" "$memory" \
+        | awk 'NR == 1 && /^# Memory[[:space:]]*$/ { next } { print }' >"$body_tmp"
     else
       : >"$body_tmp"
     fi
@@ -226,7 +261,8 @@ EOF
       sed -e '/./,$!d' "$body_tmp" >"$memdir/legacy.md"
       cat >"$memory" <<'EOF'
 # Memory
-<!-- Index only, one line per fact file, newest or most-relevant first.
+<!-- Index only, one line per fact file, newest last; reorder by
+relevance only when grooming.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
@@ -239,7 +275,8 @@ EOF
     else
       cat >"$memory" <<'EOF'
 # Memory
-<!-- Index only, one line per fact file, newest or most-relevant first.
+<!-- Index only, one line per fact file, newest last; reorder by
+relevance only when grooming.
 Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
@@ -258,9 +295,12 @@ EOF
     chmod +x "$agent/scripts/$script"
   done
 
-  # Bump version — nothing else in the frontmatter changes.
+  # Bump version — nothing else in the frontmatter changes. Rewrite exactly
+  # the line the version was read from, so the read and the write can never
+  # disagree about where the version lives.
+  vline=$(grep -n -m1 '^  version:' "$purpose" | cut -d: -f1)
   purpose_new="$agent/.purpose.md.new"
-  sed -E '1,10s/^(  version:).*/\1 "'"$TARGET_VERSION"'"/' "$purpose" >"$purpose_new"
+  sed -E "${vline}s/^(  version:).*/\1 \"$TARGET_VERSION\"/" "$purpose" >"$purpose_new"
   mv "$purpose_new" "$purpose"
 
   echo "node.sh: updated $agent from version $oldversion to $TARGET_VERSION"

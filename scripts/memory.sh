@@ -109,7 +109,9 @@ new)
     echo "memory.sh: $factfile already exists — refusing to overwrite; supersede in place by hand, or pick a new slug" >&2
     exit 1
   fi
-  if grep -qF "(memory/$slug.md)" "$memory" 2>/dev/null; then
+  # Anchor to the index line's own link, not the whole line: a hook that
+  # merely mentions this path must not block a legitimately new slug.
+  if grep -qE "^- \[[^]]*\]\(memory/$slug\.md\)" "$memory" 2>/dev/null; then
     echo "memory.sh: $memory already indexes memory/$slug.md — refusing to add a duplicate index line" >&2
     exit 1
   fi

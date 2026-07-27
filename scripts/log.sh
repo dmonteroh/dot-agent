@@ -10,7 +10,9 @@
 
 set -u
 
-# Tunable per project.
+# Tunable per project. 25 words is the field presets' entry ceiling
+# (V6 harvest); at that length a 120-entry log stays near the 5,000-word
+# grooming trigger (see status.sh).
 SUMMARY_MAX_WORDS=25
 
 usage() {
@@ -63,7 +65,32 @@ pass | fail | n/a) ;;
   exit 1 ;;
 esac
 
-summary_words=$(printf '%s' "$summary" | wc -w | tr -d '[:space:]')
+# The entry is one line: `- [date] (tool) summary (area). verify: …` —
+# newlines would forge extra entries, and parentheses in the tags would
+# corrupt the (tool)/(area) delimiters.
+nl='
+'
+case "$tool$area$summary" in
+*"$nl"*)
+  echo "log.sh: --tool, --area, and --summary must be single-line" >&2
+  exit 1 ;;
+esac
+case "$tool$area" in
+*"("* | *")"*)
+  echo "log.sh: --tool and --area must not contain parentheses — they become the (tool) and (area) tags" >&2
+  exit 1 ;;
+esac
+case "$summary" in
+*[![:space:]]*) ;;
+*)
+  echo "log.sh: --summary must not be blank" >&2
+  exit 1 ;;
+esac
+
+# Count words, not punctuation: a free-standing separator (an em dash,
+# a lone hyphen) does not spend the ceiling.
+summary_words=$(printf '%s' "$summary" \
+  | awk '{ n = 0; for (i = 1; i <= NF; i++) if ($i ~ /[[:alnum:]]/) n++; print n }')
 if [ "$summary_words" -gt "$SUMMARY_MAX_WORDS" ]; then
   echo "log.sh: --summary is $summary_words words, over the $SUMMARY_MAX_WORDS-word ceiling" >&2
   exit 1
