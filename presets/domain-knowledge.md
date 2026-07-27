@@ -33,6 +33,7 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 - Surface connections: when new material relates to existing knowledge, note the connection where the knowledge lives.
 - Every output names what it draws on and states what is missing.
 - Knowledge levels: project-specific facts stay in the project node; cross-project patterns go to the root node (see manifest `children`).
+- Numbers, defaults, and thresholds carry stated provenance — measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
 
 ## Verification contract
 
@@ -70,7 +71,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 
 ## Self-learning
 
-- After a user correction or a failed verification that needed a non-obvious fix, record the lesson:
+- After a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan, record the lesson:
 
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 

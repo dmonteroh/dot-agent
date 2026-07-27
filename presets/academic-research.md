@@ -32,6 +32,7 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 - Source catalog: one entry per source — key, author, year, type, location read, one-line relevance — in the catalog file named in Project guardrails. Catalogs live in `.agent/docs/`, never in `memory.md`.
 - Per-source quirks (pagination offsets, edition differences, OCR errors) live with that source's notes under `## Gotchas`, not in learned.md.
 - No orphan claims: any sentence not traceable to a source is flagged or removed before completion.
+- Numbers, defaults, and thresholds carry stated provenance — measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
 
 ## Verification contract
 
@@ -68,7 +69,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 
 ## Self-learning
 
-- After a user correction or a failed verification that needed a non-obvious fix, record the lesson:
+- After a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan, record the lesson:
 
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 

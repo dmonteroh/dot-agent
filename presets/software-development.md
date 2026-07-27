@@ -35,6 +35,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 - New or changed observable behavior requires test coverage. Pure refactors may rely on existing coverage.
 - Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration; cite the code or test path that pins a behavior instead of restating it in prose — prose stays for the *why*.
 - Carry documented design decisions through all dependent briefs, contracts, docs, and implementation scope immediately.
+- Numbers, defaults, and thresholds carry stated provenance — measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
 - After major architecture changes: remove dead code, align layout and naming, update docs and references, remove unused dependencies, run the full verification suite.
 
 ## Verification contract
@@ -75,7 +76,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 
 ## Self-learning
 
-- After a user correction or a failed verification that needed a non-obvious fix, record the lesson:
+- After a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan, record the lesson:
 
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 
