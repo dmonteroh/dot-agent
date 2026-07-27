@@ -28,7 +28,7 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 ├── memory/         # One durable fact per file (decision, preference, constraint)
 ├── session-log.md  # Meeting notes (appended every session)
 ├── docs/           # Architecture, features, data flows
-├── archive/        # Groomed history — archived session-log entries
+├── archive/        # Groomed history — archived log entries, retired facts
 ├── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
 └── skills/         # Optional — installed skills, symlinked into tool dirs
 ```
@@ -71,7 +71,7 @@ then set up my root node at ~/.agent/. Its subject is me, not a codebase.
 5. Wire my tools at the root from the canonical entry-point template
    (Claude Code: ~/.claude/CLAUDE.md), with every path absolute
    (~/.agent/...) since sessions run from project directories, and
-   disable Claude Code's native memory in .claude/settings.json.
+   disable Claude Code's native memory in ~/.claude/settings.json.
 
 Ask me anything you can't infer.
 ```
@@ -105,7 +105,7 @@ then bootstrap .agent/ for this project.
 Ask me anything you can't infer; don't guess.
 ```
 
-The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap — `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
+The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap; `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
 
 ### Updating an existing node
 
@@ -117,11 +117,13 @@ then update this project's existing .agent/ node to match it.
 
 1. Clone the source repo, then from the clone run `bash scripts/node.sh
    update <this node's path>` — it reads the manifest, compares version,
-   backs up the node first if its mode is ignore-all, and applies the
-   mechanical migration baseline. Read its output: if it says the node
-   is current, stop here. If it reports no manifest (a pre-V6 node),
-   read the newest CHANGELOG.md entry as the migration checklist,
-   restore the manifest by hand, then re-run the script.
+   backs up the node first unless its mode is track-all, and applies
+   the mechanical migration baseline. Read its output: if it says the
+   node is current, stop here. If it reports no manifest (a pre-V6
+   node), update the node by hand instead: work through CHANGELOG.md
+   from the V6 entry forward as the migration checklist, and if you
+   restore the manifest, stamp it with the node's real prior version
+   before re-running the script.
 2. Reconcile: apply what the operating model adds — including splitting
    `memory/legacy.md` into fact files per its GROOM flag — while
    preserving accumulated content: memory, learned rules,
@@ -134,9 +136,9 @@ then update this project's existing .agent/ node to match it.
 5. Report what changed, what was preserved, and anything flagged.
 ```
 
-Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries plus `GROOM:`/`REPAIR:`/`INDEX:` flags when files breach their grooming thresholds, and the agent handles the flags as part of the session. There is no completion-time gate; grooming rides the load path.
+Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps or index/file drift, `INDEX:` flags for doc-routing drift, and advisory `TOOLS:` notes; the agent handles the flags as part of the session. There is no completion-time gate; grooming rides the load path.
 
-If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading — installed into `.agent/skills/` and read through a symlink — and [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading; they are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 
@@ -174,6 +176,10 @@ See [operating-model.md](operating-model.md) for the full pattern, observation, 
 Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context.
 
 Read **[operating-model.md](operating-model.md)** for the full operating model: philosophy, directory structure, self-maintenance contract, tool wiring, and design decisions.
+
+## Working on this repo
+
+Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, and `docs.sh`. It must pass before a change ships.
 
 ## License
 

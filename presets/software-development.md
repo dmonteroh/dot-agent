@@ -5,9 +5,9 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 ## Kernel
 
 1. Do not change code unrelated to the task.
-2. Do not change product code when asked a question — answer first; edit only on explicit direction.
+2. Do not change product code when asked a question: answer first; edit only on explicit direction.
 3. Never claim done, fixed, or passing without freshly running the exact commands in Project guardrails.
-4. Do not ignore a failing command — fix it or report the exact failure.
+4. Do not ignore a failing command: fix it or report the exact failure.
 5. Never hand-edit generated sources or lockfiles.
 6. Check `git status --short` before editing; never revert or overwrite work you did not do.
 7. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
@@ -28,19 +28,19 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 - For investigation or unclear implementation permission, diagnose first; do not change product code until direction is explicit.
 - For high-risk or ambiguous work, ask one focused question or propose a narrow first slice.
 - Act on small rule-aligned decisions. Ask only when scope, risk, product behavior, or user intent changes.
-- Do not ship knowingly partial fixes to stay small — surface the gap.
+- Do not ship knowingly partial fixes to stay small; surface the gap.
 
 ## Implementation
 
 - New or changed observable behavior requires test coverage. Pure refactors may rely on existing coverage.
-- Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration; cite the code or test path that pins a behavior instead of restating it in prose — prose stays for the *why*.
+- Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration; cite the code or test path that pins a behavior instead of restating it in prose. Prose stays for the *why*.
 - Carry documented design decisions through all dependent briefs, contracts, docs, and implementation scope immediately.
-- Numbers, defaults, and thresholds carry stated provenance — measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
+- Numbers, defaults, and thresholds carry stated provenance: measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
 - After major architecture changes: remove dead code, align layout and naming, update docs and references, remove unused dependencies, run the full verification suite.
 
 ## Verification contract
 
-- Run the verification suite for changed scope: tests, lint, typecheck, build as applicable — exact commands in Project guardrails.
+- Run the verification suite for changed scope: tests, lint, typecheck, build as applicable (exact commands in Project guardrails).
 - If a required tool is unavailable, state the gap instead of silently skipping.
 - If verification fails, classify: caused-by-change, pre-existing, environmental, or unknown. Investigate unknown before reporting.
 - Fix failures within task scope. For unrelated baseline failures, report command, status, blocker, and residual risk.
@@ -52,7 +52,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 
 <!-- Bootstrap splits this section out into `.agent/rules/quality-bar.md`. -->
 
-This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules — run the commands, classify failures, report honestly — stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
+This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules (run the commands, classify failures, report honestly) stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
 
 - Changed observable behavior is covered by a test that fails without the change; pure refactors rely on existing coverage.
 - No unrelated diffs: every changed file traces to the task.
@@ -69,6 +69,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Before marking work complete, update `.agent/` per each file's header contract:
   - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: append via `.agent/scripts/log.sh --tool <tool, model-tagged when the harness states one, never guessed> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"`; reference task briefs by ID in the summary. If the script cannot run, follow the file's header contract by hand.
+    - Bad (transcript): "Added page at /x. 5 new files: a.ts (loader), b.svelte…; reviewer pass; 6 tests; commit 47feccc." Good: `- [2026-06-23] (claude/sonnet) S197 invitation acceptance page (frontend). verify: pass.`
   - `docs/`: update when architecture, operations, behavior, dependencies, or workflows change. New area docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row.
 - Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
 - Fix stale memory, outdated docs, and duplication when encountered.
