@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 6 (2026-07-11).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
+> **Version 6.1 (2026-07-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -105,12 +105,14 @@ Every node carries its identity as YAML frontmatter on `purpose.md`, the least-r
 # Do not remove or rewrite this block; update passes may change only `version`.
 dot-agent:
   source: https://github.com/dmonteroh/dot-agent
-  version: 6
+  version: "6.1"
   preset: software-development
   mode: track-shared        # ignore-all | track-shared | track-all
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 ```
+
+`version` is always a quoted string. Bare YAML `6.1` parses as a float, and once there's a tenth minor, `6.10` and `6.1` become ambiguous as numbers.
 
 **Never remove or rewrite the `dot-agent` frontmatter on `purpose.md`; update passes may change only `version`.** The comment inside the block restates the constraint at the point of writing (the header-contract pattern applied to the manifest), and `scripts/status.sh` prints a `REPAIR:` flag when it is missing. This replaces the V5-era `<!-- Source: URL | Version: N -->` comment convention, which survived only as long as an updating agent deemed it important.
 
@@ -217,7 +219,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 
 ### Updating existing nodes
 
-The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the `dot-agent` frontmatter on `purpose.md`, fetches the current operating model from `source`, compares `version`, and reconciles: adding new rules, updating terminology, preserving project-specific content. If the versions match, the node is already current.
+The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the `dot-agent` frontmatter on `purpose.md`, fetches the current operating model from `source`, and compares `version` by version-sort (`sort -V` semantics): a node whose version sorts below the operating model's is behind. If the versions match, the node is already current. Otherwise the agent reconciles: adding new rules, updating terminology, preserving project-specific content.
 
 An update pass changes only `version` in the manifest, never the frontmatter itself. If the node is not tracked in git (`ignore-all`), copy `.agent/` aside first: an update rewrites accumulated context, and untracked context has no undo. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update. The pass also refreshes the entry point's strong-model list; a stale list degrades safely, since a model not on it reads the Kernel + guardrails floor.
 
