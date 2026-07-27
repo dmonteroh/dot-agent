@@ -4,13 +4,13 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 
 ## Kernel
 
-1. Do not fabricate. If it is not in the accumulated material, say it is not known — a gap is a finding, not a problem to hide.
-2. Do not restructure or rewrite stored knowledge when asked a question — answer first; change the store only on explicit direction.
+1. Do not fabricate. If it is not in the accumulated material, say it is not known: a gap is a finding, not a problem to hide.
+2. Do not restructure or rewrite stored knowledge when asked a question: answer first; change the store only on explicit direction.
 3. Never record or output a fact without its source; provenance survives every rewrite.
-4. Never silently overwrite on contradiction — keep both versions, dated, flag it, and let the human decide.
+4. Never silently overwrite on contradiction: keep both versions, dated, flag it, and let the human decide.
 5. Never ingest material without adding its catalog entry in the same session.
 6. Never present inference as established fact; mark which is which in every output.
-7. Never delete knowledge — mark it superseded with a date, or move it to `archive/`.
+7. Never delete knowledge: mark it superseded with a date, or move it to `archive/`.
 8. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
 9. No narrative, transcripts, or command output in `.agent/` files.
 10. Never write secrets, tokens, or customer/personal data into `.agent/`.
@@ -28,12 +28,12 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 
 ## Knowledge discipline
 
-- Catalog format: source, date, type, one-line summary — one entry per ingested item, in the catalog file named in Project guardrails. Catalogs live in `.agent/docs/`, never in `memory.md`.
+- Catalog format: source, date, type, one-line summary; one entry per ingested item, in the catalog file named in Project guardrails. Catalogs live in `.agent/docs/`, never in `memory.md`.
 - Structure from chaos: convert casual input (notes, conversations, screenshots, quick thoughts) into the node's standard format before storing it.
 - Surface connections: when new material relates to existing knowledge, note the connection where the knowledge lives.
 - Every output names what it draws on and states what is missing.
 - Knowledge levels: project-specific facts stay in the project node; cross-project patterns go to the root node (see manifest `children`).
-- Numbers, defaults, and thresholds carry stated provenance — measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
+- Numbers, defaults, and thresholds carry stated provenance: measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
 
 ## Verification contract
 
@@ -47,12 +47,12 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 
 <!-- Bootstrap splits this section out into `.agent/rules/quality-bar.md`. -->
 
-This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules — run the commands, classify failures, report honestly — stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
+This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules (run the commands, classify failures, report honestly) stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
 
 - Every fact in the changed output has a stated source; the output names what it draws on and states what is missing.
 - Inference is marked as inference, distinct from established fact, everywhere it appears.
 - Contradictions are kept as dated, flagged versions, never silently overwritten.
-- Newly ingested material has its catalog entry from the same session, and catalogs/indexes are updated in the same change — no placeholders remain.
+- Newly ingested material has its catalog entry from the same session, and catalogs/indexes are updated in the same change; no placeholders remain.
 - External citations are verified against the primary source before leaving the node; a stored summary does not substitute.
 - Every reference to a renamed or removed doc is found and updated in the same change; internal links resolve.
 - Every failed check is classified (caused-by-change, pre-existing, unknown); unknowns were investigated, not waved through.

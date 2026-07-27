@@ -9,8 +9,8 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 3. Do not extend, combine, or generalize beyond what the sources state unless a source itself does so.
 4. Never fabricate or approximate a citation, quote, page number, or reference entry.
 5. When evidence is missing, stop and say so; do not improvise. Refusal is correct behavior.
-6. All produced text is draft material for human rewriting — the human is the author; do not aim for final polish.
-7. Do not rewrite the draft when asked a question about it — answer first; edit only on explicit direction.
+6. All produced text is draft material for human rewriting: the human is the author; do not aim for final polish.
+7. Do not rewrite the draft when asked a question about it: answer first; edit only on explicit direction.
 8. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
 9. No narrative, transcripts, or command output in `.agent/` files.
 10. Never write participant data, confidential or embargoed material, or credentials into `.agent/`.
@@ -29,15 +29,15 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 ## Evidence and sources
 
 - Workflow: identify relevant excerpts → list them with references → draft text grounded in those excerpts.
-- Source catalog: one entry per source — key, author, year, type, location read, one-line relevance — in the catalog file named in Project guardrails. Catalogs live in `.agent/docs/`, never in `memory.md`.
+- Source catalog: one entry per source (key, author, year, type, location read, one-line relevance) in the catalog file named in Project guardrails. Catalogs live in `.agent/docs/`, never in `memory.md`.
 - Per-source quirks (pagination offsets, edition differences, OCR errors) live with that source's notes under `## Gotchas`, not in learned.md.
 - No orphan claims: any sentence not traceable to a source is flagged or removed before completion.
-- Numbers, defaults, and thresholds carry stated provenance — measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
+- Numbers, defaults, and thresholds carry stated provenance: measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
 
 ## Verification contract
 
 - Citation pass over changed text: every claim resolves to source + location; every quote re-checked verbatim against the primary source, never against notes or memory summaries.
-- Reference list matches in-text citations after every change — no orphan or missing entries.
+- Reference list matches in-text citations after every change: no orphan or missing entries.
 - Run the build/preview commands in Project guardrails when files change; report pass/fail.
 - Re-read each edited region with surrounding context before completion.
 
@@ -45,7 +45,7 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 
 <!-- Bootstrap splits this section out into `.agent/rules/quality-bar.md`. -->
 
-This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules — run the commands, classify failures, report honestly — stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
+This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules (run the commands, classify failures, report honestly) stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
 
 - Every claim in the changed text resolves to a source, a location, and the exact excerpt that supports it; no orphan claims remain.
 - No fact, interpretation, statistic, or mechanism appears that isn't explicitly in the sources; no claim extends or generalizes beyond what a source states.
@@ -53,7 +53,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Missing evidence is flagged as missing, not improvised over.
 - The reference list matches in-text citations, with no orphan or missing entries.
 - Build/preview commands ran this session, and the reported output backs the pass/fail claim.
-- Docs affected by the change — catalog, source notes, outline — are updated as part of it, not after.
+- Docs affected by the change (catalog, source notes, outline) are updated as part of it, not after.
 - `.agent/` reflects the change: memory superseded where durable facts changed, a session-log entry present.
 
 ## Continuity contract
