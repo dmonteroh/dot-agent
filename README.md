@@ -69,7 +69,8 @@ then set up my root node at ~/.agent/. Its subject is me, not a codebase.
    intact.
 4. List any existing project nodes in the manifest's children.
 5. Wire my tools at the root from the canonical entry-point template
-   (Claude Code: ~/.claude/CLAUDE.md), with every path absolute
+   (templates/entry-point.md in the clone; Claude Code:
+   ~/.claude/CLAUDE.md), with every path absolute
    (~/.agent/...) since sessions run from project directories, and
    disable Claude Code's native memory in ~/.claude/settings.json.
 
@@ -97,9 +98,10 @@ then bootstrap .agent/ for this project.
 4. Adapt the preset copied into rules/contract.md: keep its Kernel
    intact and fill Project guardrails with exact commands ("run the
    tests" is not filled in; the real test command is).
-5. Wire my tools from the canonical entry-point template (CLAUDE.md,
-   AGENTS.md, …), keep every entry point identical, and disable Claude
-   Code's native memory in .claude/settings.json.
+5. Wire my tools from the canonical entry-point template
+   (templates/entry-point.md in the clone) into CLAUDE.md, AGENTS.md, …;
+   keep every entry point identical, and disable Claude Code's native
+   memory in .claude/settings.json.
 6. If I have a root ~/.agent/, add this node to its manifest's children.
 
 Ask me anything you can't infer; don't guess.
@@ -129,8 +131,8 @@ then update this project's existing .agent/ node to match it.
    preserving accumulated content: memory, learned rules,
    project-specific adaptations. If existing content directly conflicts,
    flag it and let me decide; never silently overwrite.
-3. Refresh the entry points against the canonical template, and keep
-   them identical.
+3. Refresh the entry points against the canonical template
+   (templates/entry-point.md in the clone), and keep them identical.
 4. Repeat this process for each child node listed in the manifest's
    children.
 5. Report what changed, what was preserved, and anything flagged.

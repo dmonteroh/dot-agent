@@ -273,33 +273,7 @@ Each AI tool gets a thin entry point: a short file the tool loads automatically;
 
 ### The canonical entry point
 
-Written at bootstrap; placeholders in `<…>` filled per project:
-
-```markdown
-# <Project> — Session Bootstrap
-
-<One line: stack, key dirs, package managers.> Binding rules and state load
-in the steps below — do not answer, plan, or edit before completing them.
-
-Execute with tools, in order:
-
-1. Run `bash .agent/scripts/status.sh` — prints recent session-log entries
-   plus any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes; handle flags as
-   part of this session, treat TOOLS: notes as advisory.
-2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
-3. Read `.agent/rules/contract.md` — binding.
-4. Read `.agent/purpose.md` — scope and boundaries.
-5. Read `.agent/memory.md` — the fact index; open the `memory/` fact
-   files whose hooks match the task.
-6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
-   read only what the task needs.>
-
-Exception — subagents: skip step 1 (flags are the orchestrator's to
-handle); read everything else. Never edit `.agent/` unless explicitly
-assigned — the orchestrator is the single session-log writer.
-
-Keep this file and AGENTS.md identical; when editing one, mirror the other.
-```
+The template is a file, not prose: [`templates/entry-point.md`](templates/entry-point.md) — one canonical copy in the source repo. At bootstrap, copy it into each tool's filename and fill the `<…>` placeholders (project line, doc routing); its own header comment carries the copying instructions, the header-contract pattern applied to the template itself.
 
 Template mechanics: a root node wired through a user-level file (`~/.claude/CLAUDE.md`) writes every path absolute — `bash ~/.agent/scripts/status.sh ~`, `~/.agent/rules/…` — because the session's working directory is the project, not `~`, and the relative paths would resolve against the project's node or nothing. The `~` argument matters: status.sh checks the node it is handed (default `.`), not the one it lives in. The status check runs first because step-skipping concentrates at the tail of numbered lists. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
 
