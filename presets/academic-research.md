@@ -40,6 +40,21 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 - Run the build/preview commands in Project guardrails when files change; report pass/fail.
 - Re-read each edited region with surrounding context before completion.
 
+## Quality bar
+
+<!-- Bootstrap splits this section out into `.agent/rules/quality-bar.md`. -->
+
+This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules — run the commands, classify failures, report honestly — stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
+
+- Every claim in the changed text resolves to a source, a location, and the exact excerpt that supports it; no orphan claims remain.
+- No fact, interpretation, statistic, or mechanism appears that isn't explicitly in the sources; no claim extends or generalizes beyond what a source states.
+- Every quote is re-checked verbatim against the primary source, never against notes or memory summaries.
+- Missing evidence is flagged as missing, not improvised over.
+- The reference list matches in-text citations, with no orphan or missing entries.
+- Build/preview commands ran this session, and the reported output backs the pass/fail claim.
+- Docs affected by the change — catalog, source notes, outline — are updated as part of it, not after.
+- `.agent/` reflects the change: memory superseded where durable facts changed, a session-log entry present.
+
 ## Continuity contract
 
 - Subagents: report continuity facts to the orchestrator; never edit `.agent/` unless explicitly assigned. The orchestrator is the single session-log writer.

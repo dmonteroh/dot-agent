@@ -33,19 +33,34 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 ## Implementation
 
 - New or changed observable behavior requires test coverage. Pure refactors may rely on existing coverage.
-- Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration.
+- Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration; cite the code or test path that pins a behavior instead of restating it in prose — prose stays for the *why*.
 - Carry documented design decisions through all dependent briefs, contracts, docs, and implementation scope immediately.
-- After major architecture changes: remove dead code, align layout and naming, update docs and references, remove unused dependencies, run the full quality bar.
+- After major architecture changes: remove dead code, align layout and naming, update docs and references, remove unused dependencies, run the full verification suite.
 
 ## Verification contract
 
-- Run the quality bar for changed scope: tests, lint, typecheck, build as applicable — exact commands in Project guardrails.
+- Run the verification suite for changed scope: tests, lint, typecheck, build as applicable — exact commands in Project guardrails.
 - If a required tool is unavailable, state the gap instead of silently skipping.
 - If verification fails, classify: caused-by-change, pre-existing, environmental, or unknown. Investigate unknown before reporting.
 - Fix failures within task scope. For unrelated baseline failures, report command, status, blocker, and residual risk.
 - Report exact commands and pass/fail status. Quote error excerpts; never dump full logs.
 - Before completion, re-read each edited region with surrounding context; re-read a file in full only after large-scale rewrites.
 - Self-review: tests covered, docs synced, `.agent/` updated, no unrelated changes.
+
+## Quality bar
+
+<!-- Bootstrap splits this section out into `.agent/rules/quality-bar.md`. -->
+
+This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules — run the commands, classify failures, report honestly — stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
+
+- Changed observable behavior is covered by a test that fails without the change; pure refactors rely on existing coverage.
+- No unrelated diffs: every changed file traces to the task.
+- Docs are updated wherever behavior, flows, dependencies, architecture, or practices changed, citing the code or test path rather than paraphrasing it.
+- Verification commands ran this session against the current diff, and the reported output backs the pass/fail claim.
+- Every failure is classified (caused-by-change, pre-existing, environmental, unknown); unknowns were investigated, not waved through.
+- Unrelated baseline failures are reported with command, status, blocker, and residual risk, not silently absorbed.
+- `.agent/` reflects the change: memory superseded where durable facts changed, a session-log entry present.
+- No generated file or lockfile was hand-edited.
 
 ## Continuity contract
 

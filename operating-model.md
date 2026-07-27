@@ -29,7 +29,7 @@ Knowledge becomes **cumulative** (grows over sessions), **self-producing** (the 
 ```
 project-root/
 ├── .agent/
-│   ├── rules/              # contract.md (adapted from a preset) + learned.md
+│   ├── rules/              # contract.md (adapted from a preset) + learned.md + quality-bar.md (loads on demand)
 │   ├── purpose.md
 │   ├── memory.md           # Index: one line per file in memory/
 │   ├── memory/              # One durable fact per file
@@ -44,13 +44,14 @@ project-root/
 
 | File | What it is | Who writes it |
 |------|------------|---------------|
-| `rules/contract.md` | How the agent should behave: load order, self-maintenance contract, quality bar, autonomy. Adapted from a preset during bootstrap; the manifest's `preset` field records which one. | Agent (from preset, with your input) |
+| `rules/contract.md` | How the agent should behave: load order, self-maintenance contract, verification, autonomy. Adapted from a preset during bootstrap; the manifest's `preset` field records which one. | Agent (from preset, with your input) |
 | `rules/learned.md` | Behavioral rules accumulated from session retros. Imperative, durable, agent-discovered. | Agent (from retro process) |
+| `rules/quality-bar.md` | The verifier's rubric: judgement criteria, split from the preset's Quality bar section at bootstrap. Loads on demand, not every session — see [Subagents and parallel sessions](#subagents-and-parallel-sessions). | Agent (from preset, at bootstrap) |
 | `purpose.md` | Why this project exists, who it's for, key constraints. Where to change what. | Agent (from conversation with you) |
 | `memory.md` | Index of durable facts: one line per file in `memory/`, no facts inline. | Agent (when a fact file is added, superseded, or removed) |
 | `memory/*.md` | One durable fact per file — a decision, preference, or constraint, not a running summary. | Agent (when durable facts change) |
 | `session-log.md` | Meeting notes. One index entry per session; format in the file's header contract. | Agent (mandatory, every session) |
-| `docs/*.md` | Architecture, features, data flows. Expensive-to-infer context the agent produces from scanning the codebase. | Agent (from codebase scan + your input) |
+| `docs/*.md` | Architecture, features, data flows — cites the code/test path that pins each behavior rather than paraphrasing it; a path is checkable, prose isn't. Expensive-to-infer context the agent produces from scanning the codebase. | Agent (from codebase scan + your input) |
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
@@ -156,7 +157,7 @@ Agents follow these on trust. That is the system's primary compliance story, and
 |-------|---------------|-------------------|
 | **Bootstrap** | Load context before working | The entry point's numbered steps |
 | **Pre-work** | Load project context before editing project files | Preset: Context loading |
-| **Correctness** | Verify before claiming | Preset: Verification contract |
+| **Correctness** | Verify before claiming | Preset: Verification contract, judged against the Quality bar rubric |
 | **Completion** | Update `.agent/` before finishing | Preset: Continuity contract + file header contracts |
 | **Retro** | Distill durable behavioral rules | Preset: Self-learning |
 
@@ -234,7 +235,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
 6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode>`**: creates the skeleton, stamps the manifest, writes the matching gitignore entries (see [Tracking modes](#tracking-modes)), copies `status.sh`, `log.sh`, `memory.sh`, and `docs.sh`, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
-7. **Agent adapts the preset** `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment
+7. **Agent adapts the preset** `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment; split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
 8. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
@@ -299,7 +300,7 @@ Template mechanics: the status check runs first because step-skipping concentrat
 
 ### Subagents and parallel sessions
 
-**Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads: workers read context like any session (skipping only the status check; flags are the orchestrator's to handle) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. `workflows/` and `agents/` directories hold role prompts and process definitions; they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, skill payloads) are outside the model: never loaded, never groomed, ignored in every tracking mode.
+**Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads: workers read context like any session (skipping only the status check; flags are the orchestrator's to handle) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, the same write ban as any other worker. `workflows/` and `agents/` directories hold role prompts and process definitions; they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, skill payloads) are outside the model: never loaded, never groomed, ignored in every tracking mode.
 
 **Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp). The memory split makes the rest simpler than one shared file: two sessions writing different facts write different files under `memory/` and never collide. `CONFLICT` marking narrows to the case where two sessions write the *same* fact file (or both edit the same `memory.md` index line) in the same window — keep both statements, tag them `CONFLICT`, and resolve in the next human-guided pass. Never silently overwrite.
 

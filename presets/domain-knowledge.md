@@ -42,6 +42,21 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 - Re-read each edited region with surrounding context before completion.
 - If a check fails, classify: caused-by-change, pre-existing, or unknown. Investigate unknown before reporting.
 
+## Quality bar
+
+<!-- Bootstrap splits this section out into `.agent/rules/quality-bar.md`. -->
+
+This rubric is the judgement layer on top of the Verification contract above: that contract's behavioral rules — run the commands, classify failures, report honestly — stay always-loaded, every session. This rubric loads on demand: verifier subagents always, the main session only for substantial work. A verifier judges the result against:
+
+- Every fact in the changed output has a stated source; the output names what it draws on and states what is missing.
+- Inference is marked as inference, distinct from established fact, everywhere it appears.
+- Contradictions are kept as dated, flagged versions, never silently overwritten.
+- Newly ingested material has its catalog entry from the same session, and catalogs/indexes are updated in the same change — no placeholders remain.
+- External citations are verified against the primary source before leaving the node; a stored summary does not substitute.
+- Every reference to a renamed or removed doc is found and updated in the same change; internal links resolve.
+- Every failed check is classified (caused-by-change, pre-existing, unknown); unknowns were investigated, not waved through.
+- `.agent/` reflects the change: memory superseded where durable facts changed, a session-log entry present.
+
 ## Continuity contract
 
 - Subagents: report continuity facts to the orchestrator; never edit `.agent/` unless explicitly assigned. The orchestrator is the single session-log writer.
