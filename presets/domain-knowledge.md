@@ -1,6 +1,6 @@
 # Domain knowledge rules
 
-Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it. Be concise. Each sentence must carry operational weight. The domain itself goes in `purpose.md`. Adapt during bootstrap: fill Project guardrails with exact locations and commands; keep the Kernel intact.
+Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it. Be concise. Each sentence must carry operational weight. The domain itself goes in `purpose.md`. Adapt during bootstrap: fill Project guardrails with exact locations and commands; keep the Kernel intact. Retention test for every rule below: would a competent engineer joining this project already do this? Cut it. Is it specific to this project, this operating model, or a mistake this project actually made? Keep it at full strength.
 
 ## Kernel
 
@@ -25,8 +25,6 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 - Handle small clear requests directly.
 - For work spanning several docs or outputs, give a 3–5 step plan before editing.
 - For high-risk or ambiguous work, ask one focused question or propose a narrow first slice.
-- Do not give task time estimates unless explicitly asked.
-- Accuracy over agreement. Update views only on evidence; push back on flawed premises.
 
 ## Knowledge discipline
 

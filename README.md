@@ -122,8 +122,8 @@ then update this project's existing .agent/ node to match it.
    content — memory, learned rules, project-specific adaptations. If
    existing content directly conflicts, flag it and let me decide; never
    silently overwrite.
-4. Refresh the entry points against the canonical template, including the
-   strong-model list, and keep them identical.
+4. Refresh the entry points against the canonical template, and keep them
+   identical.
 5. Update version in the manifest — change nothing else in the
    frontmatter — then update each child node listed in children the same
    way.

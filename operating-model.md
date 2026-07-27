@@ -211,7 +211,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 6. **Agent creates `.agent/`**: purpose.md, memory.md, session-log.md, the chosen preset adapted into `rules/contract.md`, and `scripts/status.sh` copied from the source repo; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** per the section's own template comment.
 7. **Agent asks the tracking mode once** (`ignore-all`, `track-shared`, or `track-all`) and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
 8. **Agent stamps the manifest**: `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
-9. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, strong-model list, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
+9. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
@@ -221,7 +221,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 
 The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the `dot-agent` frontmatter on `purpose.md`, fetches the current operating model from `source`, and compares `version` by version-sort (`sort -V` semantics): a node whose version sorts below the operating model's is behind. If the versions match, the node is already current. Otherwise the agent reconciles: adding new rules, updating terminology, preserving project-specific content.
 
-An update pass changes only `version` in the manifest, never the frontmatter itself. If the node is not tracked in git (`ignore-all`), copy `.agent/` aside first: an update rewrites accumulated context, and untracked context has no undo. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update. The pass also refreshes the entry point's strong-model list; a stale list degrades safely, since a model not on it reads the Kernel + guardrails floor.
+An update pass changes only `version` in the manifest, never the frontmatter itself. If the node is not tracked in git (`ignore-all`), copy `.agent/` aside first: an update rewrites accumulated context, and untracked context has no undo. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update.
 
 This works at any level, root or project node. Reconciliation is a diff between what exists and what the operating model now says.
 
@@ -258,9 +258,7 @@ Execute with tools, in order:
    plus any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes; handle flags as
    part of this session, treat TOOLS: notes as advisory.
 2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
-3. Read the `## Kernel` and `## Project guardrails` sections of
-   `.agent/rules/contract.md` — binding. If you are one of: <Opus, Sonnet,
-   GPT-5.5 — the project's strong-model list>, read the full file instead.
+3. Read `.agent/rules/contract.md` — binding.
 4. Read `.agent/purpose.md` — scope and boundaries.
 5. Read `.agent/memory.md` — durable state.
 6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
@@ -273,7 +271,7 @@ assigned — the orchestrator is the single session-log writer.
 Keep this file and AGENTS.md identical; when editing one, mirror the other.
 ```
 
-Template mechanics: the status check runs first because step-skipping concentrates at the tail of numbered lists. Step 3's default load is the safe floor (Kernel + Project guardrails); only models on the project's strong-model list opt *up* to the full preset; a model that cannot resolve the harness-stated name reads the floor. Fill the list with family substrings (`claude`, `gpt-5`), not versioned names: it stales slower, and stales floor-ward. When a new tool arrives, put the same template in its filename and add it to the mirror set.
+Template mechanics: the status check runs first because step-skipping concentrates at the tail of numbered lists. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
 
 ### Subagents and parallel sessions
 

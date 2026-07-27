@@ -1,6 +1,6 @@
 # Academic research rules
 
-Goal: correct, traceable, evidence-grounded research support. Correctness and provenance override helpfulness and fluency. Adapt during bootstrap: fill Project guardrails with the field's exact conventions and commands; keep the Kernel intact.
+Goal: correct, traceable, evidence-grounded research support. Correctness and provenance override helpfulness and fluency. Adapt during bootstrap: fill Project guardrails with the field's exact conventions and commands; keep the Kernel intact. Retention test for every rule below: would a competent engineer joining this project already do this? Cut it. Is it specific to this project, this operating model, or a mistake this project actually made? Keep it at full strength.
 
 ## Kernel
 
@@ -25,8 +25,6 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 - Handle small clear requests directly.
 - For work spanning sections or documents, give a 3–5 step plan before editing.
 - For high-risk or ambiguous work (restructuring an argument, cutting content), ask one focused question or propose a narrow first slice.
-- Do not give task time estimates unless explicitly asked.
-- Accuracy over agreement. Update views only on evidence; push back on flawed premises.
 
 ## Evidence and sources
 

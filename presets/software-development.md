@@ -1,6 +1,6 @@
 # Software development rules
 
-Goal: correct, useful, auditable changes. Be concise. Each sentence must carry operational weight. Adapt during bootstrap: fill Project guardrails with exact commands; keep the Kernel intact.
+Goal: correct, useful, auditable changes. Be concise. Each sentence must carry operational weight. Adapt during bootstrap: fill Project guardrails with exact commands; keep the Kernel intact. Retention test for every rule below: would a competent engineer joining this project already do this? Cut it. Is it specific to this project, this operating model, or a mistake this project actually made? Keep it at full strength.
 
 ## Kernel
 
@@ -13,7 +13,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 7. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
 8. No narrative, logs, file lists, or SHAs in `.agent/` files.
 9. Never write secrets, tokens, or customer/personal data into `.agent/`.
-10. Do not fabricate; say when uncertain; push back on flawed premises.
+10. Do not fabricate; say when uncertain.
 
 ## Context loading
 
@@ -29,13 +29,9 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 - For high-risk or ambiguous work, ask one focused question or propose a narrow first slice.
 - Act on small rule-aligned decisions. Ask only when scope, risk, product behavior, or user intent changes.
 - Do not ship knowingly partial fixes to stay small — surface the gap.
-- Do not give task time estimates unless explicitly asked.
-- Accuracy over agreement. Update views only on evidence.
 
 ## Implementation
 
-- Follow existing style, structure, patterns, helper APIs, and ownership boundaries.
-- Prefer clear names and structure over comments; comment only non-obvious logic.
 - New or changed observable behavior requires test coverage. Pure refactors may rely on existing coverage.
 - Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration.
 - Carry documented design decisions through all dependent briefs, contracts, docs, and implementation scope immediately.
@@ -78,7 +74,6 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 ## Git and commits
 
 - Before committing, inspect status and diff; include only intended files.
-- Commit messages: technical, concise, what and why.
 - Never add yourself as a co-author to commits.
 
 ## Project guardrails
