@@ -94,7 +94,7 @@ fi
 
 # REPAIR: memory.md index and memory/ fact files agree.
 if [[ -s "$memory" ]]; then
-  for target in $(grep -oE '\(memory/[^)]+\)' "$memory" | tr -d '()'); do
+  for target in $(grep '^- \[' "$memory" | grep -oE '\(memory/[^)]+\)' | tr -d '()'); do
     if [[ ! -e "$agent/$target" ]]; then
       echo "REPAIR: memory.md indexes $target — file missing"
     fi
@@ -104,7 +104,7 @@ if [[ -d "$memdir" ]]; then
   for f in "$memdir"/*.md; do
     [[ -e "$f" ]] || continue
     name="memory/$(basename "$f")"
-    if [[ ! -s "$memory" ]] || ! grep -qF "($name)" "$memory"; then
+    if [[ ! -s "$memory" ]] || ! grep '^- \[' "$memory" | grep -qF "($name)"; then
       echo "REPAIR: $name has no index line in memory.md"
     fi
   done

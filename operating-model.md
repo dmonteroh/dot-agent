@@ -64,8 +64,8 @@ Every canonical file opens with a short comment that is its own format contract,
 
 ```markdown
 # Session log
-<!-- One entry per session, newest last:
-- [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a.
+<!-- One entry per session, newest last.
+Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a.
 Append the model to the tag when the harness states one — (claude/sonnet) —
 never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
 narrative. -->
@@ -75,10 +75,10 @@ narrative. -->
 
 ```markdown
 # Memory
-<!-- Index only: one line per fact file, newest or most-relevant first —
-- [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that
-lives only as a line here and not as its own file under memory/ is not
-recorded. Delete the line when its file is deleted. -->
+<!-- Index only, one line per fact file, newest or most-relevant first.
+Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
+fact that lives only as a line here and not as its own file under
+memory/ is not recorded. Delete the line when its file is deleted. -->
 ```
 
 `memory/<slug>.md` — one fact file:
@@ -229,11 +229,10 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 2. **Agent reads the presets** and understands what good rules look like
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
-5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences)
-6. **Agent creates `.agent/`**: purpose.md, memory.md (the index, initially empty), memory/, session-log.md, the chosen preset adapted into `rules/contract.md`, and `scripts/status.sh` copied from the source repo; each canonical file opens with its header contract (see [File header contracts](#file-header-contracts)). Keep the preset's `## Kernel` intact, and fill `## Project guardrails` with **exact commands** per the section's own template comment.
-7. **Agent asks the tracking mode once** (`ignore-all`, `track-shared`, or `track-all`) and writes the matching gitignore entries (see [Tracking modes](#tracking-modes))
-8. **Agent stamps the manifest**: `dot-agent` frontmatter on `purpose.md` (source, version, preset, mode, children) so the node can be identified and updated later
-9. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
+5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
+6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode>`**: creates the skeleton, stamps the manifest, writes the matching gitignore entries (see [Tracking modes](#tracking-modes)), copies `status.sh`, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
+7. **Agent adapts the preset** `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment
+8. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
@@ -241,9 +240,9 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 
 ### Updating existing nodes
 
-The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." The agent reads the `dot-agent` frontmatter on `purpose.md`, fetches the current operating model from `source`, and compares `version` by version-sort (`sort -V` semantics): a node whose version sorts below the operating model's is behind. If the versions match, the node is already current. Otherwise the agent reconciles: adding new rules, updating terminology, preserving project-specific content.
+The operating model evolves. Existing `.agent/` setups don't automatically update. When new concepts are added (like observation, or a restructured tree), tell the agent "update this node to match the operating model." Run `scripts/node.sh update`: it reads the `dot-agent` frontmatter on `purpose.md`, compares `version` against the script's target by version-sort (`sort -V` semantics), backs up untracked (`ignore-all`) nodes before touching them, applies the mechanical migrations for the version gap (e.g. the memory-split baseline: `memory/` created, `memory.md`'s prior body moved verbatim to `memory/legacy.md`, a fresh index written), and bumps `version` — nothing else in the frontmatter changes. A node whose version already matches or exceeds the script's target is left untouched. A node missing its manifest entirely (bootstrapped pre-V6, or the stamp was lost) is not something the script restores mechanically: read `CHANGELOG.md`, the pre-V6 migration checklist, and update the node by hand.
 
-An update pass changes only `version` in the manifest, never the frontmatter itself. If the node is not tracked in git (`ignore-all`), copy `.agent/` aside first: an update rewrites accumulated context, and untracked context has no undo. A node missing its manifest (bootstrapped pre-V6, or the stamp was lost) gets it restored as part of the update.
+After the script runs, the agent reconciles what mechanics can't: splitting `memory/legacy.md` into fact files (flagged by `status.sh`'s `GROOM:` line), adding new rules, updating terminology, preserving project-specific content.
 
 This works at any level, root or project node. Reconciliation is a diff between what exists and what the operating model now says.
 
