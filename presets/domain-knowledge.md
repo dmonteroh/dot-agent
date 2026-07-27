@@ -63,7 +63,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Before marking work complete, update `.agent/` per each file's header contract:
   - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: append via `.agent/scripts/log.sh --tool <tool, model-tagged when the harness states one, never guessed> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"`. If the script cannot run, follow the file's header contract by hand.
-  - `docs/`: catalogs and structured knowledge update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a catalog row.
+  - `docs/`: catalogs and structured knowledge update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row.
 - Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
 - Fix stale memory, outdated docs, and duplication when encountered.
 - Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session.

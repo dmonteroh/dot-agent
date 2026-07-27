@@ -32,12 +32,12 @@ project-root/
 │   ├── rules/              # contract.md (adapted from a preset) + learned.md + quality-bar.md (loads on demand)
 │   ├── purpose.md
 │   ├── memory.md           # Index: one line per file in memory/
-│   ├── memory/              # One durable fact per file
+│   ├── memory/             # One durable fact per file
 │   ├── session-log.md
 │   ├── docs/
 │   ├── archive/            # Groomed history — archived session-log entries
-│   └── scripts/
-│       └── status.sh       # Status check the entry point runs first
+│   └── scripts/            # status.sh (the load-path check) + log.sh,
+│                           # memory.sh, docs.sh — the typed writers
 ```
 
 ### File purposes
@@ -235,7 +235,7 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
 6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode>`**: creates the skeleton, stamps the manifest, writes the matching gitignore entries (see [Tracking modes](#tracking-modes)), copies `status.sh`, `log.sh`, `memory.sh`, and `docs.sh`, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
-7. **Agent adapts the preset** `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment; split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
+7. **Agent adapts the preset** that `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment; split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
 8. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
@@ -421,7 +421,7 @@ The `presets/` folder demonstrates this with seeds for software development, aca
 
 Optional, and unused in the reference deployments; compliance there rests on the trust contract. Install these only if you want a mechanical check on top of it. The hooks are Claude-Code-only.
 
-**Claude Code:** V5-era hooks that block the agent when contracts are violated. Ready-to-install hooks and instructions are in [`tools/claude-code/`](tools/claude-code/). `pre-work.py` and `retro.py` hold up unchanged under V6.1. The other two needed realignment: `self-maintenance.py` blocked Stop until `memory.md` was modified in every discovered node — wrong once memory updates became conditional and the orchestrator became the single session-log writer, and wronger once `memory.md` became an index rather than a fact store. No mechanical check replaces it: a hook cannot tell from a file diff whether durable facts changed this session, so it ships marked unsupported in its own header and unwired in `settings-example.json`. `correctness.py`'s re-read check only ever required *a* re-read (full or partial) of each edited file, not a full-file one — the presets' "full file only after large rewrites" calibration was never violated in code, only overstated in this doc and the tools README; both are now corrected to describe the check as written.
+**Claude Code:** V5-era hooks that block the agent when contracts are violated. Ready-to-install hooks and instructions are in [`tools/claude-code/`](tools/claude-code/). `pre-work.py` and `retro.py` hold up unchanged under V6.1. The other two needed realignment: `self-maintenance.py` blocked Stop until `memory.md` was modified in every discovered node — wrong once memory updates became conditional and the orchestrator became the single session-log writer, and wronger once `memory.md` became an index rather than a fact store. No mechanical check replaces it: a hook cannot tell from a file diff whether durable facts changed this session, so it ships marked unsupported in its own header and unwired in `settings-example.json`. `correctness.py`'s re-read check only ever required *a* re-read (full or partial) of each edited file, not a full-file one — the presets' calibration ("re-read a file in full only after large-scale rewrites") was never violated in code, only overstated in this doc and the tools README; both are now corrected to describe the check as written.
 
 **Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed procedures — grooming, bootstrap, update, retro — as Claude Code skills: optional, tool-specific, additive, the same status as the hooks above. `rules/contract.md` (from the preset) keeps every binding rule; a skill only expands the *how* for a tool that reads skills (decision 5). A node with none of them installed works exactly the same.
 

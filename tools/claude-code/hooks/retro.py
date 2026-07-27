@@ -5,7 +5,7 @@ Enforces the dot-agent operating model's retro contract:
 after substantial sessions, prompts the agent to reflect on
 behavioral lessons and record durable rules to rules/learned.md.
 
-Runs on Stop (after self-maintenance passes). Fires only when
+Runs on Stop (after correctness passes). Fires only when
 the session was substantial (source files edited, safety valve
 fired in correctness, or session ran for a while).
 
@@ -16,7 +16,7 @@ These hooks are designed to be extended. To add custom behavior
 The extension should be a strict superset.
 
 Install: ~/.claude/hooks/retro.py
-Configure: add to Stop hooks in ~/.claude/settings.json (after self-maintenance)
+Configure: add to Stop hooks in ~/.claude/settings.json (after correctness)
 """
 
 import sys
