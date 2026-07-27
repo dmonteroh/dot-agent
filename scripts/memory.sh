@@ -3,6 +3,8 @@
 # operation. This is a two-place write that drifts if done by hand; the
 # point of the script is to make that drift impossible, not just detect it
 # (status.sh's REPAIR check does the detecting for facts written by hand).
+# No size gate: writes are never refused for length; status.sh flags
+# outliers on the load path for grooming.
 #
 # Usage:
 #   memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [root]
@@ -13,9 +15,6 @@
 # write happens.
 
 set -u
-
-# Tunable per project; matches status.sh's per-fact-file MEMORY_MAX_WORDS.
-FACT_MAX_WORDS=120
 
 usage() {
   cat <<'EOF'
@@ -100,12 +99,6 @@ new)
     exit 1
   fi
 
-  fact_words=$(printf '%s' "$fact" | wc -w | tr -d '[:space:]')
-  if [ "$fact_words" -gt "$FACT_MAX_WORDS" ]; then
-    echo "memory.sh: --fact is $fact_words words, over the $FACT_MAX_WORDS-word ceiling" >&2
-    exit 1
-  fi
-
   mkdir -p "$memdir"
   date_stamp=$(date +%Y-%m-%d)
 
@@ -118,7 +111,8 @@ scope: $scope
 constraint — non-obvious operating facts. If two halves of this file
 would be superseded at different times, they are two files. Supersede in
 place: rewrite the fact and the date, keep the filename; no dated
-narratives, no command output, no history. Target ≤120 words. -->
+narratives, no command output, no history. As small as the fact allows;
+expansive detail goes to docs/ with a pointer fact here. -->
 
 $fact
 EOF

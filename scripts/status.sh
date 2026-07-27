@@ -14,13 +14,20 @@
 
 set -u
 
-# Tunable per project.
-LOG_MAX_ENTRIES=80
+# Tunable per project. Thresholds are review triggers, not caps: nothing
+# refuses a write, and each number comes from this system's own field
+# instances. Log: a heavy week at the field's pace (~20 entries/day)
+# fills ~120 entries; 5,000 words is the lost-history incident number.
+# Memory: 300 sits well above the largest field fact (~130 words), so a
+# flag means "probably more than one fact". Learned: the healthiest
+# instances run 31-44 rules. Tail: covers the busiest logged day (23
+# entries).
+LOG_MAX_ENTRIES=120
 LOG_MAX_WORDS=5000
-MEMORY_MAX_WORDS=120
-MEMORY_MAX_ENTRIES=30
-LEARNED_MAX_RULES=25
-TAIL_LINES=10
+MEMORY_MAX_WORDS=300
+MEMORY_MAX_ENTRIES=100
+LEARNED_MAX_RULES=60
+TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
 root="${1:-.}"
@@ -35,9 +42,21 @@ arch="$docs/architecture.md"
 
 words() { wc -w <"$1" | tr -d '[:space:]'; }
 
+# Word count of a file's body: YAML frontmatter and <!-- --> header
+# comments excluded, so fixed per-file overhead never eats the fact budget.
+body_words() {
+  awk '
+    NR == 1 && $0 == "---" { infm = 1; next }
+    infm { if ($0 == "---") infm = 0; next }
+    /<!--/ { incm = 1 }
+    incm { if (/-->/) incm = 0; next }
+    { print }
+  ' "$1" | wc -w | tr -d '[:space:]'
+}
+
 # Recent session-log entries — printed even when every check passes.
 if [[ -s "$log" ]]; then
-  tail -n "$TAIL_LINES" "$log"
+  grep '^- \[' "$log" | tail -n "$TAIL_LINES"
   echo
 fi
 
@@ -53,21 +72,21 @@ fi
 if [[ -s "$log" ]]; then
   entries=$(grep -c '^- \[' "$log")
   if [[ "$entries" -gt "$LOG_MAX_ENTRIES" || "$(words "$log")" -gt "$LOG_MAX_WORDS" ]]; then
-    echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move entries older than 30 days to archive/session-log-archive.md"
+    echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))"
   fi
 fi
 if [[ -d "$memdir" ]]; then
   for f in "$memdir"/*.md; do
     [[ -e "$f" ]] || continue
-    if [[ "$(words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
-      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS words — split into two facts or compact to one"
+    if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
+      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split it, or move detail to a docs/ file and keep a pointer fact"
     fi
   done
 fi
 if [[ -s "$memory" ]]; then
   mem_entries=$(grep -c '^- \[' "$memory")
   if [[ "$mem_entries" -gt "$MEMORY_MAX_ENTRIES" ]]; then
-    echo "GROOM: memory.md > $MEMORY_MAX_ENTRIES index entries — groom stale or superseded facts"
+    echo "GROOM: memory.md > $MEMORY_MAX_ENTRIES index entries — review for stale or superseded lines; delete what no longer holds, raise the threshold if all are live"
   fi
 fi
 if [[ -e "$memdir/legacy.md" ]]; then

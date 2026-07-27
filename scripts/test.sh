@@ -231,6 +231,14 @@ rc=$?
 expected_line="- [$(today)] (claude) smoke test entry for the log script (testing). verify: pass."
 grep -qxF -- "$expected_line" "$sessionlog" && pass "log.sh: appended entry matches the expected line exactly" || fail "log.sh: appended entry matches the expected line exactly"
 
+# status.sh's recent-entries block shows entries only, never the header comment
+recent=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
+if printf '%s\n' "$recent" | grep -qF -- "$expected_line" && ! printf '%s\n' "$recent" | grep -qF "<!--"; then
+  pass "status.sh: recent entries exclude the header comment"
+else
+  fail "status.sh: recent entries exclude the header comment"
+fi
+
 before8=$(cat "$sessionlog")
 "$logcopy" --tool claude --area testing --verify pass --summary "$(words_n 26)" "$logroot" >/dev/null 2>&1
 rc=$?
@@ -281,13 +289,23 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: invalid slug rejected" || fail "memory.sh new: invalid slug rejected"
 [ ! -e "$memroot/.agent/memory/Bad_Slug.md" ] && pass "memory.sh new: invalid slug creates no file" || fail "memory.sh new: invalid slug creates no file"
 
-before9b=$(cat "$memroot/.agent/memory.md")
-"$memcopy" new --slug over-ceiling --title "Over" --hook "over" --fact "$(words_n 121)" "$memroot" >/dev/null 2>&1
+# field-size fact (130 words, the scale of the largest fact observed in a
+# mature field instance): accepted, and GROOM-clean on the load path —
+# status.sh counts body words only, and its threshold sits above real
+# field facts, not below them.
+"$memcopy" new --slug field-size --title "Field Size" --hook "field regression case" --fact "$(words_n 130)" "$memroot" >/dev/null 2>&1
 rc=$?
-after9b=$(cat "$memroot/.agent/memory.md")
-[ "$rc" -ne 0 ] && pass "memory.sh new: over-ceiling fact (121 words) rejected" || fail "memory.sh new: over-ceiling fact (121 words) rejected"
-[ ! -e "$memroot/.agent/memory/over-ceiling.md" ] && pass "memory.sh new: over-ceiling fact writes no file" || fail "memory.sh new: over-ceiling fact writes no file"
-[ "$before9b" = "$after9b" ] && pass "memory.sh new: over-ceiling fact writes no index line" || fail "memory.sh new: over-ceiling fact writes no index line"
+[ "$rc" -eq 0 ] && pass "memory.sh new: field-size fact (130 words) accepted" || fail "memory.sh new: field-size fact (130 words) accepted"
+flags9b=$(status_flags "$memroot")
+[ -z "$flags9b" ] && pass "memory.sh new: field-size fact stays GROOM-clean" || fail "memory.sh new: field-size fact stays GROOM-clean ($flags9b)"
+
+# outlier fact (well past the review threshold): the write still succeeds
+# — no size gate on writes — and status.sh flags it for grooming.
+"$memcopy" new --slug outlier --title "Outlier" --hook "outlier alarm case" --fact "$(words_n 320)" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "memory.sh new: outlier fact (320 words) still writes" || fail "memory.sh new: outlier fact (320 words) still writes"
+flags9c=$(status_flags "$memroot")
+printf '%s\n' "$flags9c" | grep -q '^GROOM: memory/outlier\.md' && pass "memory.sh new: outlier fact draws a GROOM flag" || fail "memory.sh new: outlier fact draws a GROOM flag ($flags9c)"
 
 # ---- 10. docs.sh new ----
 docroot="$WORK/docs-tests"
