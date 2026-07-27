@@ -163,9 +163,9 @@ See [operating-model.md](operating-model.md) for the full pattern, observation, 
 | | AGENTS.md | Tool-specific files | .agent/ |
 |---|---|---|---|
 | Agent reads context | Yes | Yes | Yes |
-| Agent writes back | No | No | **Yes** |
+| Agent-maintained memory lives in the repo | No | No | **Yes** |
 | Survives tool switch | Partially | No | **Yes** |
-| Memory across sessions | No | No | **Yes** |
+| Memory across sessions | No | Partially | **Yes** |
 | Has a compliance mechanism | No | No | **Yes** |
 
 Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context.

@@ -198,7 +198,9 @@ In `track-shared`, a PR that touches `learned.md` gets human review: every rule 
 
 ### Native tool memory
 
-`.agent/` is the sole durable memory. Disable tool-native memory via the tool's *setting*, not via instructions: prose overrides of built-in memory features are unreliable. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer. During retro, harvest anything a tool auto-collected into `.agent/` and delete the silo.
+`.agent/` is the sole durable memory. Disable tool-native memory via the tool's *setting*, not via instructions. Four reasons, all architectural: `~` is ephemeral in devcontainers, so home-directory memory dies with the container; repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store; solo projects still want their memory versioned; and agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer.
+
+This is a blast-radius stance, not a claim that native memory is unreliable. The harvest step is a repair path, not a routine one: if a node reaches retro with a tool-collected silo — because the setting wasn't applied to that node, or another tool populated one of its own — fold what's there into `.agent/` and delete the silo. A node with the setting applied has no silo to harvest.
 
 ### Security
 
@@ -383,9 +385,9 @@ The `presets/` folder demonstrates this with seeds for software development, aca
 | | AGENTS.md | Tool-specific files | .agent/ |
 |---|---|---|---|
 | Agent reads context | Yes | Yes | Yes |
-| Agent writes back | No | No | **Yes** |
+| Agent-maintained memory lives in the repo | No | No | **Yes** |
 | Survives tool switch | Partially | No | **Yes** |
-| Memory across sessions | No | No | **Yes** |
+| Memory across sessions | No | Partially | **Yes** |
 | Has a compliance mechanism | No | No | **Yes** |
 
 `AGENTS.md` and `.agent/` are complementary: shared team instructions vs personal persistent context.
@@ -403,6 +405,8 @@ The `presets/` folder demonstrates this with seeds for software development, aca
 **Why presets over templates?** Presets are seeds, not rigid templates: they show what good rules look like (expected depth, format, topics), and the agent adapts them for the specific project.
 
 **Why not `.cursor/` or `.claude/`?** Tool-specific directories create silos. `.agent/` is neutral: any tool, same context.
+
+**Why disable tool-native memory?** Four architectural reasons, not a claim that it's unreliable: home-directory memory is ephemeral in devcontainers, repo knowledge needs to travel through git with the repo, solo projects still want memory versioned, and agents should not write outside the project directory. `.agent/` stays the sole durable store either way.
 
 **Why does the agent write the docs, not the user?** The user explains the project in conversation; the agent converts it into documentation. The user's job is to think and direct, not to format.
 
