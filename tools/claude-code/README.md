@@ -4,26 +4,29 @@ Optional compliance tooling for the [dot-agent operating model](../../operating-
 
 Without these hooks, the operating model's trust contracts are convention: the agent follows them because the rules say to. These hooks add a mechanical check on top: they block the session when a contract is violated. They are optional and unused in the reference deployments, where the trust contract carries compliance.
 
-**V5-era note:** two hook checks predate the V6 contracts and block on behavior V6 relaxed. `self-maintenance.py` requires a `memory.md` update in every discovered node (V6: update memory only if durable facts changed, and the orchestrator is the single session-log writer), and `correctness.py` requires full-file re-reads (V6 presets: re-read edited regions with context; full file only after large rewrites). Align them before relying on them.
+**V6.1 realignment:** `pre-work.py` and `retro.py` hold up unchanged. Two hooks predated the V6 contracts and needed a decision, not just an align-in-place:
+
+- `self-maintenance.py` is **unsupported** and not wired in `settings-example.json`. It blocked Stop until `memory.md` changed checksum in every discovered node — wrong once V6 made the memory update conditional (write it only if durable facts changed) and made the orchestrator the single session-log writer, and wronger once V6.1 turned `memory.md` into an index rather than a fact store. No mechanical check replaces it: whether "durable facts changed" is true this session is a judgement call a file diff can't make. The file stays in the repo with a header explaining this; do not install it without rewriting it.
+- `correctness.py` is **supported**, unchanged in behavior. Its re-read check only ever required *a* re-read of an edited file's path, full or partial — it never actually enforced full-file re-reads. This README previously described it as if it did; that description is now corrected to match the code, which already matched the presets' "re-read edited regions with context" calibration.
 
 `settings-example.json` also ships `"autoMemoryEnabled": false`. Independent of the hooks, this is the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
 
 ## What's enforced
 
-| Hook | Events | What it does |
-|------|--------|-------------|
-| `pre-work.py` | PreToolUse | Blocks edits to project files until that project's `.agent/purpose.md` and `.agent/memory.md` have been read. Only triggers for projects with `.agent/`. |
-| `correctness.py` | PreToolUse + Stop | Tracks file edits, re-reads, and test/build commands during the session. On Stop, blocks if edited files weren't re-read or if source files changed without tests being run. |
-| `self-maintenance.py` | PreToolUse + Stop | Blocks session end until `session-log.md` is updated in ALL discovered `.agent/` dirs. Enforces dual-write (project + global). |
-| `retro.py` | Stop | After substantial sessions (source files changed, hooks caught mistakes, or long session), prompts the agent to reflect on behavioral lessons and write rules to `rules/learned.md`. |
+| Hook | Status | Events | What it does |
+|------|--------|--------|-------------|
+| `pre-work.py` | Supported | PreToolUse | Blocks edits to project files until that project's `.agent/purpose.md` and `.agent/memory.md` have been read. Only triggers for projects with `.agent/`. |
+| `correctness.py` | Supported | PreToolUse + Stop | Tracks file edits, re-reads, and test/build commands during the session. On Stop, blocks if edited files weren't read again or if source files changed without tests being run. |
+| `self-maintenance.py` | **Unsupported — not wired by default** | PreToolUse + Stop | V5-era: blocked session end until `session-log.md` and `memory.md` both changed checksum in every discovered `.agent/` dir. See the V6.1 realignment note above; kept for reference only. |
+| `retro.py` | Supported | Stop | After substantial sessions (source files changed, hooks caught mistakes, or long session), prompts the agent to reflect on behavioral lessons and write rules to `rules/learned.md`. |
 
 ### Hook execution order
 
-**PreToolUse:** pre-work → correctness → self-maintenance
+**PreToolUse:** pre-work → correctness
 
-**Stop:** correctness → self-maintenance → retro
+**Stop:** correctness → retro
 
-Order matters for Stop: correctness checks your work, self-maintenance checks your documentation, retro reflects on the whole session. Retro reads correctness's checkpoint to know if the safety valve fired.
+Order matters for Stop: correctness checks your work, retro reflects on the whole session — it reads correctness's checkpoint to know if the safety valve fired. `self-maintenance.py` is not wired; if you install it anyway after rewriting it, it was designed to run between the two.
 
 ## Prerequisites
 
@@ -33,7 +36,7 @@ Order matters for Stop: correctness checks your work, self-maintenance checks yo
 
 ```bash
 mkdir -p ~/.claude/hooks
-cp hooks/*.py ~/.claude/hooks/
+cp hooks/pre-work.py hooks/correctness.py hooks/retro.py ~/.claude/hooks/
 
 # Merge settings-example.json into your ~/.claude/settings.json
 # (add the hooks and permissions sections)
@@ -42,10 +45,12 @@ cp hooks/*.py ~/.claude/hooks/
 Or symlink for auto-updates:
 
 ```bash
-for hook in pre-work.py correctness.py self-maintenance.py retro.py; do
+for hook in pre-work.py correctness.py retro.py; do
     ln -sf /path/to/dot-agent/tools/claude-code/hooks/$hook ~/.claude/hooks/$hook
 done
 ```
+
+`self-maintenance.py` is excluded from both: it's unsupported (see above) and `settings-example.json` doesn't wire it. It's still readable in `hooks/` if you want to rewrite it yourself.
 
 ## Safety valves
 
@@ -59,8 +64,9 @@ Each hook stores session state in `/tmp/`:
 |------|---------------|
 | `pre-work.py` | `/tmp/claude-pre-work/` |
 | `correctness.py` | `/tmp/claude-correctness/` |
-| `self-maintenance.py` | `/tmp/claude-self-maintenance/` |
 | `retro.py` | `/tmp/claude-retro/` |
+
+(`self-maintenance.py` still has a checkpoint dir, `/tmp/claude-self-maintenance/`, in its own code — moot while it's unwired.)
 
 Checkpoints are per-session (keyed by session ID) and auto-cleaned after 24 hours.
 

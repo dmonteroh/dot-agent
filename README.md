@@ -132,7 +132,7 @@ then update this project's existing .agent/ node to match it.
 
 Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries plus `GROOM:`/`REPAIR:`/`INDEX:` flags when files breach their grooming thresholds, and the agent handles the flags as part of the session. There is no completion-time gate; grooming rides the load path.
 
-If you use **Claude Code**, optional hooks can add a mechanical compliance check for the load order and self-maintenance contract. The trust contract is the primary compliance story, and the reference deployments run without them. See [`tools/claude-code/`](tools/claude-code/).
+If you use **Claude Code**, optional hooks can add a mechanical compliance check for the load order and self-maintenance contract, and optional [skills](tools/skills/) package the rare procedures (grooming, bootstrap, update, retro) for on-demand loading. The trust contract is the primary compliance story, and the reference deployments run without either. See [`tools/claude-code/`](tools/claude-code/).
 
 ## The knowledge tree
 

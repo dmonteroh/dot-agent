@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 """Self-maintenance enforcement hook for Claude Code.
 
+STATUS: UNSUPPORTED under V6.1. Not wired in settings-example.json. Kept
+in the repo for reference only — do not install without rewriting it.
+
+Why: this hook blocks Stop until BOTH session-log.md and memory.md change
+checksum in every discovered .agent/ directory. Two of those premises are
+gone. (1) V6 made the memory update conditional — write memory.md only
+when durable facts changed — so blocking on "memory.md unchanged" punishes
+a session that correctly left it alone. (2) V6.1's memory-index split made
+memory.md an index of one-line pointers into memory/*.md; even a session
+that did add a durable fact may leave memory.md's checksum identical to
+the wrong content, or change it for reasons unrelated to facts. No small
+patch fixes this: whether "durable facts changed" is a judgement call a
+file diff cannot make. Swapping the memory.md check for a
+"session-log has an entry for today" check would still miss that V6 makes
+the orchestrator the single session-log writer — a dispatched subagent
+correctly writes nothing, and this hook has no way to distinguish that
+from a session that skipped its contract. See tools/claude-code/README.md
+and operating-model.md's compliance-tooling appendix for the full story.
+
+The original (pre-V6.1) docstring, kept for context:
 Enforces the dot-agent operating model's self-maintenance contract:
 the agent cannot stop without updating session-log.md in ALL discovered
 .agent/ directories (dual-write enforcement).

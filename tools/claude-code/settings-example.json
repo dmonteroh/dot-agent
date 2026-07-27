@@ -19,10 +19,6 @@
           {
             "type": "command",
             "command": "python3 $HOME/.claude/hooks/correctness.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 $HOME/.claude/hooks/self-maintenance.py"
           }
         ]
       }
@@ -33,10 +29,6 @@
           {
             "type": "command",
             "command": "python3 $HOME/.claude/hooks/correctness.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 $HOME/.claude/hooks/self-maintenance.py"
           },
           {
             "type": "command",

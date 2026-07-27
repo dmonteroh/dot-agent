@@ -2,9 +2,21 @@
 """Correctness enforcement hook for Claude Code.
 
 Enforces the dot-agent operating model's correctness contract:
-- Files that were edited must be re-read before finishing
+- Files that were edited must be read again before finishing
 - Source files changed must be followed by test execution
 - Config files changed must be followed by build execution
+
+STATUS (V6.1): supported, checked against the current presets and
+confirmed to already match. The re-read check below only requires a
+matching Read tool call on an edited file's path — it does not inspect
+offset/limit, so a partial re-read of the edited region satisfies it just
+as a full-file read would. That has always matched the presets'
+calibration ("re-read each edited region with surrounding context;
+re-read a file in full only after large-scale rewrites"); this docstring
+and tools/claude-code/README.md previously described the check as
+requiring a full-file re-read, which overstated what the code does. Both
+are corrected to describe the check as implemented, not as a behavior
+change.
 
 Runs on PreToolUse (tracking) and Stop (enforcement).
 Safety valve: blocks once, then lets through on second attempt.
