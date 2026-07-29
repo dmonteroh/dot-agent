@@ -33,6 +33,8 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 ## Implementation
 
 - New or changed observable behavior requires test coverage. Pure refactors may rely on existing coverage.
+- A comment must state a constraint the code cannot express and name its external cause, in about two lines (chosen default). Never write change narration, rejected alternatives, bug post-mortems, or citations of artifacts a fresh clone cannot open: task briefs, ticket IDs, commit SHAs. Public API doc comments stay descriptive and are exempt from the cap.
+- Durable *why* is documentation, not a comment: behavior, flows, and architecture go to `docs/`; agent-facing traps go to the matching `.agent/docs/` file under `## Gotchas`.
 - Update docs only when behavior, flows, dependencies, architecture, or practices change. Write docs as timeless descriptions, never change narration; cite the code or test path that pins a behavior instead of restating it in prose. Prose stays for the *why*.
 - Carry documented design decisions through all dependent briefs, contracts, docs, and implementation scope immediately.
 - Numbers, defaults, and thresholds carry stated provenance: measured data, a named source, or an explicit chosen-default note. Fix an unjustified one when found; never defend it because it ships.
@@ -57,6 +59,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Changed observable behavior is covered by a test that fails without the change; pure refactors rely on existing coverage.
 - No unrelated diffs: every changed file traces to the task.
 - Docs are updated wherever behavior, flows, dependencies, architecture, or practices changed, citing the code or test path rather than paraphrasing it.
+- No comment in the diff narrates the change or cites an artifact a fresh clone cannot open; durable *why* landed in docs, not inline.
 - Verification commands ran this session against the current diff, and the reported output backs the pass/fail claim.
 - Every failure is classified (caused-by-change, pre-existing, environmental, unknown); unknowns were investigated, not waved through.
 - Unrelated baseline failures are reported with command, status, blocker, and residual risk, not silently absorbed.
