@@ -12,7 +12,9 @@ Execute with tools, in order:
 
 1. Run `bash .agent/scripts/status.sh` — prints recent session-log entries
    plus any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes; handle flags as
-   part of this session, treat TOOLS: notes as advisory.
+   part of this session, treat TOOLS: notes as advisory. GROOM: work may
+   go to one dispatched subagent (a small model is fine) explicitly
+   assigned to write only the flagged files; re-run status.sh to confirm.
 2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
 3. Read `.agent/rules/contract.md` — binding.
 4. Read `.agent/purpose.md` — scope and boundaries.

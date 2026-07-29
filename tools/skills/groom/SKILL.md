@@ -15,6 +15,13 @@ walkthrough of *how* to clear each flag; it adds no obligation beyond
 what those two sources already state, and a node with no skills
 installed grooms fine without it.
 
+This skill also works as a subagent brief. Per the contract's subagent
+rule, a session may delegate its `GROOM:` flags to one dispatched worker
+(a small model such as Haiku is fine; the scripts do the exacting parts)
+explicitly assigned to write only the flagged files. Pass the worker the
+`GROOM:` lines and this file, then re-run `status.sh` yourself: the
+cleared flag is the confirmation, not the worker's report.
+
 Start by running `.agent/scripts/status.sh` and reading the exact `GROOM:`
 line: it names the file and the threshold it crossed. Handle each flag
 below, then re-run `status.sh` to confirm it's clear.

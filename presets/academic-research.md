@@ -65,7 +65,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
   - `docs/`: source catalog, source notes, and outline update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row.
 - Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
 - Fix stale memory, outdated docs, and duplication when encountered.
-- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session.
+- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files; re-run status.sh to confirm it cleared. REPAIR: stays in the main session.
 
 ## Self-learning
 
