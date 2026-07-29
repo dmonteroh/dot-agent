@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # The scripts claim bash 3.2 / BSD portability in their headers; the
+    # macOS leg checks the BSD side, the Ubuntu leg the GNU side.
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/test.sh
+
+  shellcheck:
+    # Gated at warning severity: the info-level findings (SC2015 pass/fail
+    # idiom in test.sh, SC2329/SC2094 trap and redirect false positives)
+    # are deliberate.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck --severity=warning scripts/*.sh

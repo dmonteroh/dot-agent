@@ -1,5 +1,7 @@
 # .agent/
 
+[![CI](https://github.com/dmonteroh/dot-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/dmonteroh/dot-agent/actions/workflows/ci.yml)
+
 Persistent, self-maintaining AI context that works across tools and sessions. An adaptation from [`jlonardi/dot-agent`](https://github.com/jlonardi/dot-agent).
 
 ## The problem
