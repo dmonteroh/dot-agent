@@ -7,9 +7,9 @@
 # outliers on the load path for grooming.
 #
 # Usage:
-#   memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [root]
+#   memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [--type <fact|reference>] [root]
 #
-# root defaults to . ; scope defaults to project. Writes
+# root defaults to . ; scope defaults to project, type to fact. Writes
 # <root>/.agent/memory/<slug>.md and appends its index line to
 # <root>/.agent/memory.md — both or neither: every check runs before any
 # write happens.
@@ -18,9 +18,9 @@ set -u
 
 usage() {
   cat <<'EOF'
-Usage: memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [root]
+Usage: memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [--type <fact|reference>] [root]
 
-root defaults to . ; scope defaults to project. Writes
+root defaults to . ; scope defaults to project, type to fact. Writes
 <root>/.agent/memory/<slug>.md and indexes it in <root>/.agent/memory.md.
 EOF
 }
@@ -35,6 +35,7 @@ new)
   hook=""
   fact=""
   scope="project"
+  type="fact"
   root="."
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -53,6 +54,9 @@ new)
     --scope)
       [ $# -ge 2 ] || { echo "memory.sh: --scope needs a value" >&2; usage >&2; exit 1; }
       scope="$2"; shift 2 ;;
+    --type)
+      [ $# -ge 2 ] || { echo "memory.sh: --type needs a value" >&2; usage >&2; exit 1; }
+      type="$2"; shift 2 ;;
     -h | --help)
       usage; exit 0 ;;
     --*)
@@ -96,6 +100,13 @@ new)
     exit 1 ;;
   esac
 
+  case "$type" in
+  fact | reference) ;;
+  *)
+    echo "memory.sh: --type must be fact or reference (got '$type')" >&2
+    exit 1 ;;
+  esac
+
   agent="$root/.agent"
   memory="$agent/memory.md"
   memdir="$agent/memory"
@@ -123,13 +134,16 @@ new)
 ---
 date: $date_stamp
 scope: $scope
+type: $type
 ---
 <!-- One durable fact per file: one decision, one preference, one
 constraint — non-obvious operating facts. If two halves of this file
 would be superseded at different times, they are two files. Supersede in
 place: rewrite the fact and the date, keep the filename; no dated
 narratives, no command output, no history. As small as the fact allows;
-expansive detail goes to docs/ with a pointer fact here. -->
+expansive detail goes to docs/ with a pointer fact here. type: reference
+marks a pointer outward — a URL, dashboard, ticket, or spec the node does
+not own; it is checked for reachability, not superseded like a fact. -->
 
 $fact
 EOF

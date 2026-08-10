@@ -40,6 +40,15 @@ orders its own priorities — so only the text is shared:
 Before finishing: append one session-log entry per its header template; add or update a `memory/` fact file and its index line only if durable facts changed.
 ```
 
+## Context loading
+
+The recall rule. What a task *scales* its reads to is domain-specific, so
+only the memory-index rule is shared:
+
+```
+- `memory.md`'s index stays in context all session, but opening a fact file is a per-task decision, not a per-session one: when the work moves to a new area or a new task begins, re-scan the hooks and open what now matches.
+```
+
 ## The domain section
 
 `Implementation` / `Evidence and sources` / `Knowledge discipline` — one
@@ -91,7 +100,7 @@ The shared tail of the `docs/` bullet — each preset writes its own lead-in
 clause naming what triggers a docs update in that domain, then joins here:
 
 ```
-Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha. When a doc's headings or scope change, refresh its `architecture.md` entry — the hook and the `Sections:` list both — in the same change; `status.sh` flags either one drifting.
+Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha. When a doc's headings or scope change, refresh its `architecture.md` entry — the hook and the `Sections:` list both — in the same change; `status.sh` flags either one drifting. Depth that will not fit under the doc's size trigger — long tables, full schemas, worked examples — goes to `docs/<area>/references/<name>.md` and is cited by path from the area doc: never routed, never auto-loaded, opened only when a doc sends you there.
 ```
 
 ```
@@ -117,4 +126,15 @@ The retro trigger and the entry format. What each preset routes *to* differs
 
 ```
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
+```
+
+The two curation rules. `learned.md` is always-loaded with no disclosure
+tier, so what gets written and how tightly is the whole cost control:
+
+```
+- Ask what check or behavior would have prevented it, and record that. A one-off outcome belongs in the session log, not here.
+```
+
+```
+- Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet. Merge near-duplicates instead of appending.
 ```

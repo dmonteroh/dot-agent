@@ -23,6 +23,10 @@ Execute with tools, in order:
 6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
    read only what the task needs.>
 
+After a context compaction or handoff, re-run steps 1–5 before continuing.
+These steps run once at session start, so a compacted session is a session
+operating without them; re-route step 6 only if the work moved.
+
 Exception — subagents: skip step 1 (flags are the orchestrator's to
 handle); read everything else. Never edit `.agent/` unless explicitly
 assigned — the orchestrator is the single session-log writer.

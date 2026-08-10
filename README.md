@@ -2,23 +2,37 @@
 
 [![CI](https://github.com/dmonteroh/dot-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/dmonteroh/dot-agent/actions/workflows/ci.yml)
 
-Persistent, self-maintaining AI context that works across tools and sessions. An adaptation from [`jlonardi/dot-agent`](https://github.com/jlonardi/dot-agent).
+Agent memory that lives in the repo: portable across LLM providers, shareable across a team, and checked so it doesn't drift. An adaptation from [`jlonardi/dot-agent`](https://github.com/jlonardi/dot-agent).
 
 ## The problem
 
-Every AI coding session starts with amnesia. The agent doesn't know what your project is for, what you decided last week, or why things are the way they are. You re-explain. Every time. Switch tools and you start from zero.
+Agent memory is per-tool and stays there. Claude Code keeps its own store, Cursor keeps another, Copilot another again. None of them read each other, so what an agent learned on Monday in one tool is unavailable on Tuesday in a different one, and a developer running two tools runs two disconnected memories.
+
+Teams get less than that. Those stores sit on one machine, outside the repo, so what your agent learned never reaches anyone else's. The options for fixing it are roughly nothing, or adopting a platform.
+
+Two costs follow the knowledge that does get written down. It drifts, because a rule or a doc that no longer matches the code looks exactly like one that does. And it is paid for on every session, because whatever an agent loads at the start of a task it loads again on the next one.
 
 ## The idea
 
-A `.agent/` directory at the project root. Any agent reads from it, any agent writes to it.
+A `.agent/` directory of markdown at the project root. Any agent reads it, any agent writes it, and it travels with the code through git.
 
-You explain the project once. The agent writes it down. Before finishing any task, the agent updates what it learned: decisions go into `memory/` as one fact file each, indexed from `memory.md`; session notes into `session-log.md`. The next session reads what the previous one wrote.
+**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. Each tool's native memory gets switched off at the setting, leaving one store instead of several.
+
+**Shareable without a platform.** A tracking mode, chosen once, decides what enters git. `track-shared` publishes purpose, rules, and docs for the team to review in a pull request, while memory and session logs stay personal to each developer.
+
+**Checked, so it drifts less.** The agent writes context back as part of finishing work, and a check on the load path reads the node's files rather than the agent's claims: files past their grooming thresholds, a routing table that disagrees with the docs it routes, an index out of sync with its facts, bootstrap steps left half-done, native memory still switched on.
+
+**Bounded at load.** What every session reads is a small fixed set: the rules and the indexes. A memory fact opens when its hook matches the task, an area doc when the routing table sends the session there, and reference material only when a doc hands out the path.
 
 ```
-Session 1:  You explain → agent writes purpose.md, memory.md, memory/
-Session 2:  Agent reads → works → updates memory + session log
-Session 3:  Different tool → reads same .agent/ → full continuity
+Monday     Claude Code finishes a task and writes what it learned to .agent/
+Tuesday    Cursor reads the same .agent/ and picks up where that left off
+Thursday   A teammate pulls the repo; purpose, rules, and docs came with it
 ```
+
+The design takes what native tool memory gets right, an index over one fact per file with write-back at the end of a task, and adds what a shared repository needs: review, version history, and a format no vendor owns.
+
+It stops there on purpose. Working agreements, team methodology, and how people decide things are not `.agent/`'s to hold. The goal is a harness that stays out of their way.
 
 ## What's inside
 
@@ -29,13 +43,15 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 ├── memory.md       # Index of durable facts — one line per file in memory/
 ├── memory/         # One durable fact per file (decision, preference, constraint)
 ├── session-log.md  # Meeting notes (appended every session)
-├── docs/           # Architecture, features, data flows
+├── docs/           # Architecture, features, data flows; docs/<area>/references/
+│                   # holds depth that is never routed or auto-loaded
 ├── archive/        # Groomed history — archived log entries, retired facts
 ├── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
+│                   # + links.sh, the on-demand orphan/broken-link audit
 └── skills/         # Optional — installed skills, symlinked into tool dirs
 ```
 
-The core mechanism is the **self-maintenance contract**: before finishing any task, the agent writes context back (a session-log entry every session; memory and docs when what they hold changed). This is what keeps context alive without manual effort. The binding rules live in the preset; each file's header carries its own format contract.
+Two contracts hold it together. The self-maintenance contract covers what gets written: before finishing any task, the agent writes context back, a session-log entry every session, memory and docs when what they hold changed. The load contract covers what gets read, and keeps the always-loaded set small enough that a session opening does not cost more than the task. The binding rules live in the preset, and each file's header carries its own format contract.
 
 ## Presets
 
@@ -142,7 +158,9 @@ then update this project's existing .agent/ node to match it.
 5. Report what changed, what was preserved, and anything flagged.
 ```
 
-Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps or index/file drift, `INDEX:` flags for doc-routing drift, and advisory `TOOLS:` notes; the agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate; grooming rides the load path.
+Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, native memory still enabled), `INDEX:` flags for doc-routing drift, and advisory `TOOLS:` notes; the agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate; grooming rides the load path.
+
+One check is deliberately not on that path: `.agent/scripts/links.sh` audits the node's own link graph on demand, reporting `ORPHAN:` (a file nothing cites) and `BROKEN:` (a cited node path that doesn't exist). Run it when grooming or after a restructuring pass. It matters most for `docs/<area>/references/`, which carries no routing entry by design, so an uncited reference file is unreachable and nothing on the load path can tell.
 
 If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading; they are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
@@ -177,6 +195,8 @@ See [operating-model.md](operating-model.md) for the full pattern, observation, 
 | Agent-maintained memory lives in the repo | No | No | **Yes** |
 | Survives tool switch | Partially | No | **Yes** |
 | Memory across sessions | No | Partially | **Yes** |
+| Shareable with a team through review | Yes | No | **Yes** |
+| Loads only what the task needs | No | No | **Yes** |
 | Has a compliance mechanism | No | No | **Yes** |
 
 Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context.
@@ -185,7 +205,7 @@ Read **[operating-model.md](operating-model.md)** for the full operating model: 
 
 ## Working on this repo
 
-Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, and `docs.sh`. It must pass before a change ships.
+Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, and `links.sh`. It must pass before a change ships.
 
 ## License
 

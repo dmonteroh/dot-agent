@@ -34,10 +34,12 @@ project-root/
 │   ├── memory.md           # Index: one line per file in memory/
 │   ├── memory/             # One durable fact per file
 │   ├── session-log.md
-│   ├── docs/
+│   ├── docs/               # Routed area docs; docs/<area>/references/ holds
+│   │                       # depth that is never routed or auto-loaded
 │   ├── archive/            # Groomed history — archived log entries, retired facts
 │   ├── scripts/            # status.sh (the load-path check) + log.sh,
-│   │                       # memory.sh, docs.sh — the typed writers
+│   │                       # memory.sh, docs.sh — the typed writers —
+│   │                       # + links.sh, the on-demand link audit
 │   └── skills/             # Optional — installed skill payloads; tools
 │                           # read them via symlink (.claude/skills → here)
 ```
@@ -53,7 +55,7 @@ project-root/
 | `memory.md` | Index of durable facts: one line per file in `memory/`, no facts inline. | Agent (when a fact file is added, superseded, or removed) |
 | `memory/*.md` | One durable fact per file — a decision, preference, or constraint, not a running summary. | Agent (when durable facts change) |
 | `session-log.md` | Meeting notes. One index entry per session; format in the file's header contract. | Agent (mandatory, every session) |
-| `docs/*.md` | Architecture, features, data flows — cites the code/test path that pins each behavior rather than paraphrasing it; a path is checkable, prose isn't. Expensive-to-infer context the agent produces from scanning the codebase. An area that outgrows one file splits into `docs/<area>/` sub-docs, routed from the same `architecture.md` table. One kind earns an unconditional hook: a **catalog**, the area's index of what already exists (building blocks, sources, ingested material) plus the recipes for adding another — it loads for every task in its area, because its job is to be read *before* something new gets built. | Agent (from codebase scan + your input) |
+| `docs/*.md` | Architecture, features, data flows — cites the code/test path that pins each behavior rather than paraphrasing it; a path is checkable, prose isn't. Expensive-to-infer context the agent produces from scanning the codebase. An area that outgrows one file splits into `docs/<area>/` sub-docs, routed from the same `architecture.md` table; depth that no routed doc should carry goes to `docs/<area>/references/` (see [The reference tier](#the-reference-tier)). One kind earns an unconditional hook: a **catalog**, the area's index of what already exists (building blocks, sources, ingested material) plus the recipes for adding another — it loads for every task in its area, because its job is to be read *before* something new gets built. | Agent (from codebase scan + your input) |
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
@@ -94,14 +96,23 @@ and its index line together). -->
 ---
 date: YYYY-MM-DD
 scope: <project | package | root>
+type: <fact | reference>
 ---
 <!-- One durable fact per file: one decision, one preference, one
 constraint — non-obvious operating facts. If two halves of this file
 would be superseded at different times, they are two files. Supersede in
 place: rewrite the fact and the date, keep the filename; no dated
 narratives, no command output, no history. As small as the fact allows;
-expansive detail goes to docs/ with a pointer fact here. -->
+expansive detail goes to docs/ with a pointer fact here. type: reference
+marks a pointer outward — a URL, dashboard, ticket, or spec the node does
+not own; it is checked for reachability, not superseded like a fact. -->
 ```
+
+`type` separates the two things an index line can be. A `fact` is
+something the node knows and supersedes as the project changes. A
+`reference` points outward at material the node does not own and cannot
+supersede — it goes stale by disappearing, not by becoming wrong. Both
+route through the same index; only the maintenance they need differs.
 
 `rules/learned.md`, whose header is the curation law itself:
 
@@ -109,17 +120,22 @@ expansive detail goes to docs/ with a pointer fact here. -->
 # Learned rules
 
 Binding rules distilled from operator corrections and failed verifications
-on this project. Append new rules; when updating you may merge or compress
-entries, but never drop operational content. Keep each entry to roughly 40
-words: imperative rule first, cause/trigger only where it adds information.
-Write the rule, not the story — no incident retelling or justification
-narrative; merge near-duplicates instead of appending; move domain detail
-beyond ~40 words into the matching `.agent/docs/` file and keep a pointer
-here (authoring rules: `contract.md`, Self-learning). Behavioral rules stay
-here; area gotchas go to the matching `.agent/docs/` file under `## Gotchas`.
+on this project. Merging and compressing entries is allowed; dropping
+operational content is not. Behavioral rules stay here; area gotchas go to
+the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation
+rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 ```
+
+This header is the one that pays rent on every session: `learned.md` is
+always-loaded and has no disclosure tier below it, so anything stated here
+is stated in every session's context. What survives is what a session
+needs at the moment it *writes* the file and cannot get elsewhere — the
+no-fact-loss invariant and the routing rule. The entry-length target, the
+curation law, and the merge rule moved out to the preset's **Self-learning**
+section, which is always loaded anyway: keeping both copies meant paying
+twice for one rule.
 
 `docs/<area>.md`, the node's largest and fastest-growing file type, whose header carries its shape rules — the `Read when:` hook stays on the first line, where `status.sh` reads it:
 
@@ -157,6 +173,39 @@ for every task in its area, not only when a hook matches. -->
 ```
 
 Two fields because they answer different questions. The hook decides whether to open the doc at all; it goes stale in the one direction that matters, since it is written when the doc is new and rarely revisited. The section list is what finds a doc whose hook never names the topic you need — and unlike the hook it is anchored to something checkable, because every `## ` heading must appear in it.
+
+### The reference tier
+
+Routing has a floor: every doc in the table is a doc some task will load whole. That makes the routed layer the wrong home for material whose value is in being *complete* rather than in being read — a full schema, an exhaustive option table, a worked example, a vendor's error-code list. Kept in an area doc, it pushes the doc past its size trigger and gets restructured away; kept out, the knowledge leaves the node.
+
+`docs/<area>/references/<name>.md` is the third tier: **never routed, never auto-loaded, opened only by explicit path from the area doc that cites it.**
+
+| Tier | Loads when | Governed by |
+|---|---|---|
+| `docs/architecture.md` | every session | routing contract |
+| `docs/<area>.md`, `docs/<area>/<sub>.md` | its hook matches the task (a catalog: any task of its kind) | `Read when:` + size trigger |
+| `docs/<area>/references/*.md` | an area doc sends the session there, by path | nothing — it is depth, and depth is the point |
+
+It carries no `Read when:` header and gets no routing row, so `status.sh` skips it in both the `INDEX:` and `GROOM:` walks: a reference file has no size trigger, because a size trigger on it would recreate the problem it exists to solve. Cite it from the area doc in the same change that creates it, exactly as a catalog entry is written in the same change as the building block it lists — an uncited reference is unreachable, and the load path cannot see it.
+
+What can see it is `scripts/links.sh`, the audit that is deliberately *not* on the load path (see [The link audit](#the-link-audit)).
+
+This is the tier that lets the size trigger stay honest. Before it, a doc over threshold had two moves, tighten or split, and both are shape changes; material that was genuinely 4,000 words of irreducible reference had nowhere to go but out of the node. Now it has somewhere to go that isn't a routed doc.
+
+### The link audit
+
+`scripts/links.sh` walks the node's internal link graph on demand and reports two directions:
+
+| Finding | Means |
+|---|---|
+| `ORPHAN:` | a file in the node that nothing cites |
+| `BROKEN:` | a node path a node file cites that does not exist |
+
+It exists because the reference tier removed the last mechanism that could notice an unreachable file, and it is off the load path on purpose: an orphan is a review trigger with a slow clock — sometimes a file that should be cited, sometimes one that should be retired, occasionally neither — and nothing about it needs deciding before this session's first edit. Run it when grooming, before a restructuring pass, or when a node has been through enough hands to have drifted. It always exits 0; the report is the product.
+
+Three genres of file are excluded as citation *sources*, because naming a file is not always citing it: `session-log.md` and `archive/` are historical records, where an entry naming a since-deleted brief is doing its job rather than rotting, and `rules/` is instruction, naming the node's furniture prescriptively whether or not the node has grown that file yet. Header contracts are skipped for the same reason at a smaller scale — they state formats *by example*, so `memory.md`'s own `- [Title](memory/slug.md)` is a spec, not a link. Paths that leave the node are out of scope entirely: a source file or a task brief under `temp/` belongs to the project, whose lifecycle the node does not manage.
+
+Those exclusions are what makes the output readable, and they were derived rather than designed. The first run against a field instance produced 117 findings, of which all but a handful were session-log entries citing task briefs that had legitimately been archived months earlier. The same run, once scoped, found six genuine dangling doc references and an entry point still pointing at `rules/software-development.md` — the V5-era filename, left behind by a rename the node had otherwise completed.
 
 ### The node manifest
 
@@ -245,6 +294,8 @@ In `track-shared`, a PR that touches `learned.md` gets human review: every rule 
 
 `.agent/` is the sole durable memory. Disable tool-native memory via the tool's *setting*, not via instructions. Four reasons, all architectural: `~` is ephemeral in devcontainers, so home-directory memory dies with the container; repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store; solo projects still want their memory versioned; and agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer.
 
+The setting is the whole mechanism, so `status.sh` checks it: `autoMemoryEnabled` set true, or set nowhere the node can inherit it from, is a `REPAIR:` line. A claim that `.agent/` is the sole durable store is only as good as one line of JSON, and that line is exactly the kind of artifact a load-path check exists to verify.
+
 This is a blast-radius stance, not a claim that native memory is unreliable. The harvest step is a repair path, not a routine one: if a node reaches retro with a tool-collected silo — because the setting wasn't applied to that node, or another tool populated one of its own — fold what's there into `.agent/` and delete the silo. A node with the setting applied has no silo to harvest.
 
 ### Security
@@ -312,7 +363,7 @@ Each AI tool gets a thin entry point: a short file the tool loads automatically;
 
 The template is a file, not prose: [`templates/entry-point.md`](templates/entry-point.md) — one canonical copy in the source repo. At bootstrap, copy it into each tool's filename and fill the `<…>` placeholders (project line, doc routing); its own header comment carries the copying instructions, the header-contract pattern applied to the template itself.
 
-Template mechanics: a root node wired through a user-level file (`~/.claude/CLAUDE.md`) writes every path absolute — `bash ~/.agent/scripts/status.sh ~`, `~/.agent/rules/…` — because the session's working directory is the project, not `~`, and the relative paths would resolve against the project's node or nothing. The `~` argument matters: status.sh checks the node it is handed (default `.`), not the one it lives in. The status check runs first because step-skipping concentrates at the tail of numbered lists. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
+Template mechanics: a root node wired through a user-level file (`~/.claude/CLAUDE.md`) writes every path absolute — `bash ~/.agent/scripts/status.sh ~`, `~/.agent/rules/…` — because the session's working directory is the project, not `~`, and the relative paths would resolve against the project's node or nothing. The `~` argument matters: status.sh checks the node it is handed (default `.`), not the one it lives in. The status check runs first because step-skipping concentrates at the tail of numbered lists. The template also carries the one instruction that has to survive its own reading: the load steps run once, at session start, so a session that compacts is a session operating without them — after a compaction or handoff, steps 1–5 run again. That instruction lives in the entry point rather than the preset because the entry point is the file a harness keeps resident; a rule about recovering lost context is worthless in a file the compaction discarded. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
 
 ### Subagents and parallel sessions
 
@@ -433,9 +484,11 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 
 **Why do some docs load unconditionally?** Files split along load-condition boundaries, not topic boundaries — the same rule that makes `memory.md` an index and `memory/` the facts. Most `docs/` routing is *conditional* and scales with task size: a typo reads the target file, a feature reads its area doc. A catalog is routed by task *kind* instead: any task that creates something new needs to know what already exists, however small the task is. Splitting the catalog out from the area doc is what lets the deep-dive stay conditional while the inventory stays mandatory; merged, one of the two gets the wrong load condition. The failure it prevents — an agent building a second copy of something the project already has, or inventing a pattern beside an established one — passes tests, passes lint, and survives review, so nothing else in the model catches it.
 
+**Why does the status check verify the bootstrap?** Bootstrap's mechanical half is a script and its judgement half is a conversation, and until now only the mechanical half left evidence. The judgement half produces the node's most load-bearing artifacts — `Project guardrails` filled with this project's exact commands, the Quality bar split into `rules/quality-bar.md`, identical entry points in each tool's filename, native memory turned off — and a node that skipped any of them looked, to every check the system had, exactly like a finished one. Each is now a `REPAIR:` line: template placeholders still in the guardrails, `## Quality bar` still inside `contract.md`, two entry points that no longer match, `autoMemoryEnabled` unset or true. They are checks on artifacts, not claims, which is the same standard the rest of `status.sh` holds to; they simply cover the phase that previously ran on trust alone. The entry-point comparison only considers files that reference `status.sh`, so a hand-written `AGENTS.md` of team instructions is never mistaken for a drifted mirror.
+
 **Provenance over rationalization.** Every constant in the system — grooming thresholds, ceilings, defaults — states its provenance where it lives: field data from the instances, a real incident, or an explicit chosen-default note. A number that turns out to have none is replaced with a sourced one, not defended because it ships. V6.1 replaced its own implementation-time limits this way after they flagged the field's healthiest artifacts.
 
-**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents). Thresholds (session-log over ~120 entries or ~5,000 words → archive the oldest entries; a memory fact file over ~300 body words → likely two facts, split or route detail to docs/; memory index ~100 entries → review for stale lines; learned ~60 rules → merge; an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel) are variables at the top of the script; projects tune them. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is calibrated against the field instances, so a healthy node rarely sees a flag. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
+**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents). Thresholds (session-log over ~120 entries or ~5,000 words → archive the oldest entries; a memory fact file over ~300 body words → likely two facts, split or route detail to docs/; memory index ~100 entries → review for stale lines; learned ~60 rules, or ~2,400 words under that count → merge or compress; an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel) are variables at the top of the script; projects tune them. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is calibrated against the field instances, so a healthy node rarely sees a flag. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
 
 ---
 

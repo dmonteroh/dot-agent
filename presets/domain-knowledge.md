@@ -18,6 +18,7 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 ## Context loading
 
 - Scale reads: quick lookup = entry point + the catalog's target doc; producing an output = purpose + memory + the docs the catalog routes to; restructuring or convention change = purpose + memory + all affected docs.
+- `memory.md`'s index stays in context all session, but opening a fact file is a per-task decision, not a per-session one: when the work moves to a new area or a new task begins, re-scan the hooks and open what now matches.
 - Check `.agent/` context before asking about unknown terms, sources, or deliverables.
 
 ## Scope control
@@ -65,7 +66,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Before marking work complete, update `.agent/` per each file's header contract:
   - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: append via `.agent/scripts/log.sh --tool <tool, model-tagged when the harness states one, never guessed> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"`. If the script cannot run, follow the file's header contract by hand.
-  - `docs/`: catalogs and structured knowledge update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row (prefer `.agent/scripts/docs.sh new`). Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha. When a doc's headings or scope change, refresh its `architecture.md` entry — the hook and the `Sections:` list both — in the same change; `status.sh` flags either one drifting.
+  - `docs/`: catalogs and structured knowledge update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row (prefer `.agent/scripts/docs.sh new`). Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha. When a doc's headings or scope change, refresh its `architecture.md` entry — the hook and the `Sections:` list both — in the same change; `status.sh` flags either one drifting. Depth that will not fit under the doc's size trigger — long tables, full schemas, worked examples — goes to `docs/<area>/references/<name>.md` and is cited by path from the area doc: never routed, never auto-loaded, opened only when a doc sends you there.
 - Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
 - Fix stale memory, outdated docs, and duplication when encountered.
 - Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files; re-run status.sh to confirm it cleared. REPAIR: stays in the main session.
@@ -76,7 +77,8 @@ This rubric is the judgement layer on top of the Verification contract above: th
 
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 
-- Write the rule, not the story: imperative, ≤40 words, no incident retelling. Merge near-duplicates instead of appending.
+- Ask what check or behavior would have prevented it, and record that. A one-off outcome belongs in the session log, not here.
+- Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet. Merge near-duplicates instead of appending.
 - Route by scope: behavioral rules (scoping, verification, communication, workflow) stay in `rules/learned.md`. Source or format mechanics go to the matching `.agent/docs/` file under `## Gotchas`, same format; keep at most a one-line pointer here for cross-area hazards.
 
 ## Git and commits

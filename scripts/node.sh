@@ -116,14 +116,10 @@ EOF
 # Learned rules
 
 Binding rules distilled from operator corrections and failed verifications
-on this project. Append new rules; when updating you may merge or compress
-entries, but never drop operational content. Keep each entry to roughly 40
-words: imperative rule first, cause/trigger only where it adds information.
-Write the rule, not the story — no incident retelling or justification
-narrative; merge near-duplicates instead of appending; move domain detail
-beyond ~40 words into the matching `.agent/docs/` file and keep a pointer
-here (authoring rules: `contract.md`, Self-learning). Behavioral rules stay
-here; area gotchas go to the matching `.agent/docs/` file under `## Gotchas`.
+on this project. Merging and compressing entries is allowed; dropping
+operational content is not. Behavioral rules stay here; area gotchas go to
+the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation
+rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 EOF
@@ -148,7 +144,7 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
       || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
@@ -299,7 +295,7 @@ EOF
 
   # Refresh the scripts from the source repo.
   mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script"
     chmod +x "$agent/scripts/$script"
   done

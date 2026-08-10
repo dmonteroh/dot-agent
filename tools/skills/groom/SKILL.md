@@ -1,6 +1,6 @@
 ---
 name: groom
-description: Use when .agent/scripts/status.sh prints a GROOM: line (session-log.md, a memory/*.md fact file, the memory.md index, rules/learned.md, or memory/legacy.md over its threshold) and you need the procedure for clearing it.
+description: Use when .agent/scripts/status.sh prints a GROOM: line (session-log.md, a memory/*.md fact file, the memory.md index, rules/learned.md, an oversized docs/ file, or memory/legacy.md over its threshold) and you need the procedure for clearing it, or when auditing a node for orphaned and broken links.
 ---
 
 # Grooming `.agent/`
@@ -63,7 +63,7 @@ redundant line and archive its file. If every line is live and true,
 nothing is wrong: raise the threshold at the top of the node's `status.sh`
 instead of retiring good memory.
 
-## `rules/learned.md` over its rule ceiling
+## `rules/learned.md` over its rule ceiling or word trigger
 
 The file's own header comment is the curation law; read it before editing.
 Look for near-duplicate rules and fold them into one entry instead of
@@ -73,6 +73,14 @@ mechanic (a library, API, SQL, or CSS gotcha rather than a behavioral rule),
 move it to the matching `.agent/docs/<area>.md` file under a `## Gotchas`
 heading, in the same entry format, and leave at most a one-line pointer
 behind if it's a cross-area hazard.
+
+The word trigger fires under the rule ceiling and means something
+different: the entries themselves are over the file's ~40-word target.
+Compress them in place rather than retiring rules — an entry that needs
+its incident retold is not distilled yet, and domain detail past the
+target belongs in the matching `.agent/docs/` file with a pointer left
+here. This file is always-loaded with no tier below it, so every word
+here is paid in every session on the project.
 
 ## A `docs/` area doc over its size threshold
 
@@ -96,6 +104,15 @@ file in full before editing it; work the two moves in this order:
    original file and its routing entry once every section has a home.
    Routing stays in the single `docs/architecture.md` table; a sub-doc
    loads only when its hook matches the task.
+
+3. Move irreducible depth out of the routed layer. Material whose value
+   is in being complete rather than in being read — a full schema, an
+   exhaustive option or error-code table, a worked example — goes to
+   `docs/<area>/references/<name>.md`, cited by path from the area doc
+   in the same edit. Reference files carry no `Read when:` header, get
+   no routing entry, and have no size trigger; `status.sh` skips them.
+   Use this move when tightening would cost facts and splitting would
+   only spread the same bulk across more routed docs.
 
 Split only what covers several *areas*. A doc covering one area in many
 facets — where the sections share invariants and get read together —
@@ -126,6 +143,27 @@ A doc whose facts genuinely no longer fit under the threshold splits
 (move 2); it does not get trimmed to fit.
 
 Re-run `status.sh` after either move.
+
+## The link audit, when you have the node open anyway
+
+`status.sh` never reports orphans: an uncited file costs nothing to load,
+so it has no place on the load path. Grooming is when it is worth knowing.
+Run `.agent/scripts/links.sh` and read the two findings it prints:
+
+- `ORPHAN:` — nothing in the node cites this file. For a
+  `docs/<area>/references/` file this is the failure the tier is exposed
+  to: it carries no routing entry, so uncited means unreachable. Cite it
+  from its area doc, or retire it to `archive/` if the area no longer
+  needs it. Elsewhere, an orphan is a question rather than a defect —
+  decide, don't reflexively delete.
+- `BROKEN:` — this file cites a node path that does not exist. Usually a
+  rename that missed a reference, or a doc split whose old path survived
+  in a sibling. Fix the citation; if the target is genuinely gone, remove
+  the sentence that points at it rather than leaving a dead path.
+
+It is advisory and always exits 0. Paths outside `.agent/` are out of
+scope, and the session log, `archive/`, and `rules/` are not read as
+citation sources, so what it prints is the node's own graph.
 
 ## `memory/legacy.md` exists
 

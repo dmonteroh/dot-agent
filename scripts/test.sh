@@ -50,6 +50,22 @@ words_n() {
 
 today() { date +%Y-%m-%d; }
 
+# root -> complete the judgement half of bootstrap that node.sh cannot do:
+# split `## Quality bar` out of contract.md and fill Project guardrails with
+# real commands. `node.sh init` deliberately leaves both undone, and
+# status.sh REPAIR-flags a node in that state, so every test that expects a
+# quiet node runs this first — the same two steps the bootstrap prompt asks
+# an agent to perform.
+finish_bootstrap() {
+  fb_contract="$1/.agent/rules/contract.md"
+  awk '/^## Quality bar/ { inq = 1 } inq && /^## / && !/^## Quality bar/ { inq = 0 } !inq' \
+    "$fb_contract" >"$fb_contract.body"
+  awk '/^## Quality bar/ { inq = 1 } inq && /^## / && !/^## Quality bar/ { inq = 0 } inq' \
+    "$fb_contract" >"$1/.agent/rules/quality-bar.md"
+  mv "$fb_contract.body" "$fb_contract"
+  subst "$fb_contract" 's/^\(- [A-Za-z][^:]*:\) <.*>$/\1 filled at bootstrap/'
+}
+
 # V6-style fixture: manifest version 6 (unquoted), mode ignore-all unless
 # a second argument overrides it, old-style memory.md with a prose body
 # under the header comment.
@@ -104,11 +120,19 @@ for preset in $PRESETS; do
     rc=$?
     [ "$rc" -eq 0 ] && pass "init $preset/$mode exits 0" || fail "init $preset/$mode exits 0 (rc=$rc)"
 
+    # node.sh does the mechanical half of bootstrap; the judgement half
+    # (guardrails, quality-bar split) is the agent's, and a node with it
+    # still undone is not a finished node — status.sh says so.
     flags=$(status_flags "$root")
-    [ -z "$flags" ] && pass "init $preset/$mode: status.sh clean" || fail "init $preset/$mode: status.sh clean ($flags)"
+    printf '%s\n' "$flags" | grep -qF 'Project guardrails still holds template placeholders' && pass "init $preset/$mode: unfilled guardrails draw a REPAIR flag" || fail "init $preset/$mode: unfilled guardrails draw a REPAIR flag ($flags)"
+    printf '%s\n' "$flags" | grep -qF 'still contains ## Quality bar' && pass "init $preset/$mode: unsplit quality bar draws a REPAIR flag" || fail "init $preset/$mode: unsplit quality bar draws a REPAIR flag ($flags)"
+
+    finish_bootstrap "$root"
+    flags=$(status_flags "$root")
+    [ -z "$flags" ] && pass "init $preset/$mode: status.sh clean once bootstrap completes" || fail "init $preset/$mode: status.sh clean once bootstrap completes ($flags)"
 
     scriptsok=true
-    for f in status.sh log.sh memory.sh docs.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh; do
       [ -x "$root/.agent/scripts/$f" ] || scriptsok=false
     done
     $scriptsok && pass "init $preset/$mode: scripts present and executable" || fail "init $preset/$mode: scripts present and executable"
@@ -276,6 +300,7 @@ rc=$?
 memroot="$WORK/memory-tests"
 mkdir -p "$memroot"
 "$NODE" init --preset domain-knowledge --mode track-all "$memroot" >/dev/null 2>&1
+finish_bootstrap "$memroot"
 memcopy="$memroot/.agent/scripts/memory.sh"
 
 "$memcopy" new --slug test-fact --title "Test Fact" --hook "why it matters for tests" --fact "This is a short durable fact used only for the smoke test suite." "$memroot" >/dev/null 2>&1
@@ -336,6 +361,7 @@ printf '%s\n' "$flags9c" | grep -q '^GROOM: memory/outlier\.md' && pass "memory.
 docroot="$WORK/docs-tests"
 mkdir -p "$docroot"
 "$NODE" init --preset academic-research --mode track-all "$docroot" >/dev/null 2>&1
+finish_bootstrap "$docroot"
 doccopy="$docroot/.agent/scripts/docs.sh"
 
 "$doccopy" new --name auth-flow --read-when "working on authentication" "$docroot" >/dev/null 2>&1
@@ -519,6 +545,7 @@ flags18c=$(status_flags "$memroot" | grep '^REPAIR:')
 subroot="$WORK/docs-subdocs"
 mkdir -p "$subroot"
 "$NODE" init --preset software-development --mode track-all "$subroot" >/dev/null 2>&1
+finish_bootstrap "$subroot"
 subdocs="$subroot/.agent/scripts/docs.sh"
 
 "$subdocs" new --name frontend/grids --read-when "grid layouts and gridstack" "$subroot" >/dev/null 2>&1
@@ -562,6 +589,7 @@ rm -f "$subroot/.agent/docs/budget.md"
 rt="$WORK/routing"
 mkdir -p "$rt"
 "$NODE" init --preset software-development --mode track-all "$rt" >/dev/null 2>&1
+finish_bootstrap "$rt"
 rtdocs="$rt/.agent/scripts/docs.sh"
 rtarch="$rt/.agent/docs/architecture.md"
 "$rtdocs" new --name payments --read-when "payment flows and webhooks" "$rt" >/dev/null 2>&1
@@ -584,10 +612,126 @@ printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with it
 subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: refreshing both sides clears the hook flag" || fail "routing: refreshing both sides clears the hook flag ($(status_flags "$rt"))"
 
-# ---- 20. status.sh is fully silent on a fresh node ----
+# ---- 20. status.sh is fully silent on a bootstrapped node ----
 fresh19="$WORK/init-academic-research-track-all"
 out19=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
-[ -z "$out19" ] && pass "status.sh: fresh node prints nothing (no stray blank line)" || fail "status.sh: fresh node prints nothing (no stray blank line)"
+[ -z "$out19" ] && pass "status.sh: bootstrapped node prints nothing (no stray blank line)" || fail "status.sh: bootstrapped node prints nothing (no stray blank line)"
+
+# ---- 23. bootstrap-completion checks: guardrails and entry-point mirror ----
+# The judgement half of bootstrap left no evidence before these checks, so a
+# half-done node was indistinguishable from a finished one.
+bc="$WORK/bootstrap-checks"
+mkdir -p "$bc"
+"$NODE" init --preset software-development --mode track-all "$bc" >/dev/null 2>&1
+finish_bootstrap "$bc"
+[ -z "$(status_flags "$bc")" ] && pass "bootstrap: a completed node is clean" || fail "bootstrap: a completed node is clean ($(status_flags "$bc"))"
+
+# A filled guardrail whose command carries its own <placeholder> token is
+# not a stub: the shipped placeholders are multi-word, real flags are not.
+printf -- '- Test: `pytest -k <name>`\n' >>"$bc/.agent/rules/contract.md"
+f23=$(status_flags "$bc")
+printf '%s\n' "$f23" | grep -qF 'template placeholders' && fail "bootstrap: a single-token <name> in a real command is not a placeholder" || pass "bootstrap: a single-token <name> in a real command is not a placeholder"
+
+# Entry points must stay identical, and only real entry points are compared.
+cp "$reporoot/templates/entry-point.md" "$bc/CLAUDE.md"
+cp "$reporoot/templates/entry-point.md" "$bc/AGENTS.md"
+[ -z "$(status_flags "$bc")" ] && pass "entry points: identical mirrors draw no flag" || fail "entry points: identical mirrors draw no flag ($(status_flags "$bc"))"
+
+printf '\nAn extra line only this tool sees.\n' >>"$bc/AGENTS.md"
+f23b=$(status_flags "$bc")
+printf '%s\n' "$f23b" | grep -qF 'REPAIR: AGENTS.md differs from CLAUDE.md' && pass "entry points: drift draws a REPAIR flag" || fail "entry points: drift draws a REPAIR flag ($f23b)"
+
+cp "$reporoot/templates/entry-point.md" "$bc/AGENTS.md"
+mkdir -p "$bc/.github"
+printf '# Team conventions\n\nUse conventional commits.\n' >"$bc/.github/copilot-instructions.md"
+[ -z "$(status_flags "$bc")" ] && pass "entry points: a file that never references status.sh is not a mirror" || fail "entry points: a file that never references status.sh is not a mirror ($(status_flags "$bc"))"
+
+# ---- 24. native memory: the setting the sole-durable-store claim rests on ----
+nm="$WORK/native-memory"
+mkdir -p "$nm/.claude"
+"$NODE" init --preset software-development --mode track-all "$nm" >/dev/null 2>&1
+finish_bootstrap "$nm"
+f24=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
+printf '%s\n' "$f24" | grep -qF 'autoMemoryEnabled is set nowhere' && pass "native memory: an unconfigured .claude/ draws a REPAIR flag" || fail "native memory: an unconfigured .claude/ draws a REPAIR flag ($f24)"
+
+printf '{ "autoMemoryEnabled": true }\n' >"$nm/.claude/settings.json"
+f24b=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
+printf '%s\n' "$f24b" | grep -qF 'sets autoMemoryEnabled true' && pass "native memory: an enabled store draws a REPAIR flag" || fail "native memory: an enabled store draws a REPAIR flag ($f24b)"
+
+printf '{ "autoMemoryEnabled": false }\n' >"$nm/.claude/settings.json"
+f24c=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
+[ -z "$f24c" ] && pass "native memory: disabled clears the flag" || fail "native memory: disabled clears the flag ($f24c)"
+
+# A node that carries no setting of its own inherits the user-level one.
+rm -f "$nm/.claude/settings.json"
+mkdir -p "$WORK/nm-home/.claude"
+printf '{ "autoMemoryEnabled": false }\n' >"$WORK/nm-home/.claude/settings.json"
+f24d=$(HOME="$WORK/nm-home" status_flags "$nm")
+[ -z "$f24d" ] && pass "native memory: a user-level setting is inherited, not re-flagged" || fail "native memory: a user-level setting is inherited, not re-flagged ($f24d)"
+
+# ---- 25. learned.md: the word trigger fires under the rule ceiling ----
+lr="$WORK/learned-words"
+mkdir -p "$lr"
+"$NODE" init --preset software-development --mode track-all "$lr" >/dev/null 2>&1
+finish_bootstrap "$lr"
+i=1
+while [ "$i" -le 40 ]; do
+  printf -- '- [2026-01-01] %s\n' "$(words_n 70)" >>"$lr/.agent/rules/learned.md"
+  i=$((i + 1))
+done
+f25=$(status_flags "$lr")
+printf '%s\n' "$f25" | grep -qF 'GROOM: learned.md > 2400 words under the rule count' && pass "learned: 40 bloated rules trip the word trigger below the 60-rule ceiling" || fail "learned: 40 bloated rules trip the word trigger below the 60-rule ceiling ($f25)"
+
+lr2="$WORK/learned-lean"
+mkdir -p "$lr2"
+"$NODE" init --preset software-development --mode track-all "$lr2" >/dev/null 2>&1
+finish_bootstrap "$lr2"
+i=1
+while [ "$i" -le 40 ]; do
+  printf -- '- [2026-01-01] %s\n' "$(words_n 40)" >>"$lr2/.agent/rules/learned.md"
+  i=$((i + 1))
+done
+[ -z "$(status_flags "$lr2")" ] && pass "learned: 40 on-target rules stay clean" || fail "learned: 40 on-target rules stay clean ($(status_flags "$lr2"))"
+
+# ---- 26. the reference tier is never routed and never size-triggered ----
+rf="$WORK/references"
+mkdir -p "$rf"
+"$NODE" init --preset software-development --mode track-all "$rf" >/dev/null 2>&1
+finish_bootstrap "$rf"
+"$rf/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$rf" >/dev/null 2>&1
+mkdir -p "$rf/.agent/docs/backend/references"
+printf '# Full error-code table\n\n%s\n' "$(words_n 4000)" >"$rf/.agent/docs/backend/references/error-codes.md"
+f26=$(status_flags "$rf")
+[ -z "$f26" ] && pass "references: an unrouted, oversized reference file draws no flag" || fail "references: an unrouted, oversized reference file draws no flag ($f26)"
+
+# The exclusion is the path segment, not the depth: docs/references/ too.
+mkdir -p "$rf/.agent/docs/references"
+printf '# Vendor spec dump\n\n%s\n' "$(words_n 4000)" >"$rf/.agent/docs/references/vendor.md"
+f26b=$(status_flags "$rf")
+[ -z "$f26b" ] && pass "references: docs/references/ is excluded too" || fail "references: docs/references/ is excluded too ($f26b)"
+
+# A normal sub-doc in the same area is still checked, so the exclusion is
+# scoped rather than a hole in the docs walk.
+printf 'no routing header\n' >"$rf/.agent/docs/backend/queues.md"
+f26c=$(status_flags "$rf")
+printf '%s\n' "$f26c" | grep -qF 'INDEX: docs/backend/queues.md' && pass "references: a real sub-doc beside references/ is still checked" || fail "references: a real sub-doc beside references/ is still checked ($f26c)"
+
+# ---- 27. memory.sh --type ----
+mt="$WORK/memory-type"
+mkdir -p "$mt"
+"$NODE" init --preset software-development --mode track-all "$mt" >/dev/null 2>&1
+finish_bootstrap "$mt"
+mtsh="$mt/.agent/scripts/memory.sh"
+"$mtsh" new --slug api-docs --title "Vendor API docs" --hook "integrating the vendor API" --fact "https://example.invalid/docs" --type reference "$mt" >/dev/null 2>&1
+grep -q '^type: reference' "$mt/.agent/memory/api-docs.md" 2>/dev/null && pass "memory.sh: --type reference lands in the frontmatter" || fail "memory.sh: --type reference lands in the frontmatter"
+
+"$mtsh" new --slug plain --title "Plain" --hook "default type" --fact "a durable decision" "$mt" >/dev/null 2>&1
+grep -q '^type: fact' "$mt/.agent/memory/plain.md" 2>/dev/null && pass "memory.sh: type defaults to fact" || fail "memory.sh: type defaults to fact"
+
+"$mtsh" new --slug bogus --title "Bogus" --hook "bad type" --fact "x" --type notes "$mt" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$mt/.agent/memory/bogus.md" ] && pass "memory.sh: an unknown --type is rejected, nothing written" || fail "memory.sh: an unknown --type is rejected, nothing written"
+[ -z "$(status_flags "$mt")" ] && pass "memory.sh: typed facts leave the node clean" || fail "memory.sh: typed facts leave the node clean ($(status_flags "$mt"))"
 
 # ---- 22. cross-preset invariants, driven by presets/_shared.md ----
 # The presets stay three separate seeds — a node adapts exactly one — but
@@ -631,6 +775,91 @@ for p in "$reporoot"/presets/*.md; do
   grep -qF "update memory.md only if" "$p" && memstale=1
 done
 [ "$memstale" -eq 0 ] && pass "presets: no preset still writes facts to memory.md" || fail "presets: no preset still writes facts to memory.md"
+
+# ---- 28. links.sh: the orphan and broken-link audit ----
+# The reference tier's stated weakness is that an uncited reference is
+# unreachable and nothing on the load path can see it. This is the thing
+# that sees it — off the load path, run on demand.
+lk="$WORK/links"
+mkdir -p "$lk"
+"$NODE" init --preset software-development --mode track-all "$lk" >/dev/null 2>&1
+finish_bootstrap "$lk"
+LINKS="$lk/.agent/scripts/links.sh"
+"$LINKS" "$lk" >"$WORK/links-clean.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "links.sh: exits 0" || fail "links.sh: exits 0 (rc=$rc)"
+grep -q 'no orphans or broken links' "$WORK/links-clean.out" && pass "links.sh: a fresh node reports clean" || fail "links.sh: a fresh node reports clean ($(cat "$WORK/links-clean.out"))"
+
+"$lk/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$lk" >/dev/null 2>&1
+mkdir -p "$lk/.agent/docs/backend/references"
+printf '# Error codes\n\nthe full table\n' >"$lk/.agent/docs/backend/references/error-codes.md"
+out28=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28" | grep -qF 'ORPHAN: docs/backend/references/error-codes.md' && pass "links.sh: an uncited reference file is reported" || fail "links.sh: an uncited reference file is reported ($out28)"
+printf '%s\n' "$out28" | grep -qF 'unreachable' && pass "links.sh: the reference orphan explains why it matters" || fail "links.sh: the reference orphan explains why it matters"
+
+printf '\nFull table: `docs/backend/references/error-codes.md`\n' >>"$lk/.agent/docs/backend.md"
+out28b=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28b" | grep -q '^ORPHAN:' && fail "links.sh: citing the reference clears the orphan" || pass "links.sh: citing the reference clears the orphan"
+
+# A routed doc that cites a node path which does not exist.
+printf '\nSee `docs/backend/queues.md` for the queue design.\n' >>"$lk/.agent/docs/backend.md"
+out28c=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28c" | grep -qF 'BROKEN: .agent/docs/backend.md cites docs/backend/queues.md' && pass "links.sh: a dangling node path is reported" || fail "links.sh: a dangling node path is reported ($out28c)"
+
+# Project paths are out of scope: the node does not manage their lifecycle,
+# and treating them as findings buried the real ones in the field run.
+printf '\nBrief: `temp/some-task-board.md`, source `src/app/main.md`.\n' >>"$lk/.agent/docs/backend.md"
+out28d=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28d" | grep -qF 'temp/some-task-board.md' && fail "links.sh: paths outside the node are out of scope" || pass "links.sh: paths outside the node are out of scope"
+
+# A loose basename resolves against the whole node: docs cite `learned.md`,
+# not `rules/learned.md`.
+printf '\nSee `learned.md` for the accumulated corrections.\n' >>"$lk/.agent/docs/backend.md"
+out28e=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28e" | grep -qF 'cites learned.md' && fail "links.sh: a loose basename resolves against the node" || pass "links.sh: a loose basename resolves against the node"
+
+# session-log.md is a historical record: an entry naming a brief that has
+# since been archived is doing its job.
+printf -- '- [2026-01-01] (claude) worked from `docs/gone-forever.md` (backend). verify: pass.\n' >>"$lk/.agent/session-log.md"
+out28f=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28f" | grep -qF 'gone-forever' && fail "links.sh: the session log is not audited as a citation source" || pass "links.sh: the session log is not audited as a citation source"
+
+# Canonical files are never orphans — the entry point loads them by name.
+out28g=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28g" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' && fail "links.sh: canonical files are exempt from the orphan check" || pass "links.sh: canonical files are exempt from the orphan check"
+
+"$LINKS" "$WORK/no-such-root" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "links.sh: a missing node is an error, not a clean report" || fail "links.sh: a missing node is an error, not a clean report"
+
+# A node whose .agent holds no markdown at all: an empty array expands to an
+# unbound variable under `set -u` in the bash 3.2 macOS ships.
+lkempty="$WORK/links-empty"
+mkdir -p "$lkempty/.agent/docs"
+printf 'entry point citing .agent/scripts/status.sh\n' >"$lkempty/CLAUDE.md"
+out28h=$("$LINKS" "$lkempty" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && printf '%s\n' "$out28h" | grep -qF 'no markdown files to audit' && pass "links.sh: an empty node reports cleanly instead of erroring" || fail "links.sh: an empty node reports cleanly instead of erroring (rc=$rc, $out28h)"
+
+# ---- 29. links.sh under a path containing spaces ----
+# Word-splitting turned every path list into fragments here: exemptions were
+# bypassed, canonical files were reported as orphans, and awk was handed the
+# leading fragment as a filename. Nothing else in the suite uses a path with
+# a space, which is why it went unnoticed.
+spaceroot="$WORK/space dir/my node"
+mkdir -p "$spaceroot"
+"$NODE" init --preset software-development --mode track-all "$spaceroot" >/dev/null 2>&1
+finish_bootstrap "$spaceroot"
+LINKSSP="$spaceroot/.agent/scripts/links.sh"
+out29=$("$LINKSSP" "$spaceroot" 2>&1)
+printf '%s\n' "$out29" | grep -q 'no orphans or broken links' && pass "links.sh: a node under a path with spaces reports clean" || fail "links.sh: a node under a path with spaces reports clean ($out29)"
+
+mkdir -p "$spaceroot/.agent/docs/back end/references"
+printf '# Deep dive\n\ndetail\n' >"$spaceroot/.agent/docs/back end/references/deep dive.md"
+out29b=$("$LINKSSP" "$spaceroot" 2>&1)
+printf '%s\n' "$out29b" | grep -qF 'ORPHAN: docs/back end/references/deep dive.md' && pass "links.sh: a filename with spaces is reported whole, not in fragments" || fail "links.sh: a filename with spaces is reported whole, not in fragments ($out29b)"
+printf '%s\n' "$out29b" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' && fail "links.sh: exemptions survive a path with spaces" || pass "links.sh: exemptions survive a path with spaces"
+printf '%s\n' "$out29b" | grep -qi 'awk:' && fail "links.sh: no tool is handed a path fragment" || pass "links.sh: no tool is handed a path fragment"
 
 # ---- summary ----
 total=$((PASS + FAIL))
