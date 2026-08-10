@@ -589,6 +589,47 @@ fresh19="$WORK/init-academic-research-track-all"
 out19=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
 [ -z "$out19" ] && pass "status.sh: fresh node prints nothing (no stray blank line)" || fail "status.sh: fresh node prints nothing (no stray blank line)"
 
+# ---- 22. cross-preset invariants ----
+# The presets are three separate seeds on purpose — a node adapts exactly
+# one — but the lines that carry .agent/ mechanics rather than domain
+# rules must stay word-for-word identical, or the same rule drifts three
+# ways. V6.1 kept that in lockstep by hand; this is the check. Leading
+# Comparison starts at the anchor, so a shared sentence may sit after
+# domain-specific lead-in text without counting as drift.
+shared_line() { # file, anchor -> the matching line from the anchor onward
+  grep -F -- "$2" "$1" | head -n 1 |
+    awk -v a="$2" '{ i = index($0, a); if (i) print substr($0, i) }'
+}
+INVARIANTS="Retention_test_for_every_rule_below
+Numbers,_defaults,_and_thresholds_carry_stated_provenance
+Subagents:_report_continuity_facts
+Act_on_GROOM:/REPAIR:/INDEX:_flags
+Before_finishing:_append_one_session-log_entry
+Area_docs_are_agent-facing_reference
+If_a_doc_was_tightened_or_split
+This_rubric_is_the_judgement_layer"
+for enc in $INVARIANTS; do
+  anchor=$(printf '%s' "$enc" | tr '_' ' ')
+  a=$(shared_line "$reporoot/presets/software-development.md" "$anchor")
+  b=$(shared_line "$reporoot/presets/academic-research.md" "$anchor")
+  c=$(shared_line "$reporoot/presets/domain-knowledge.md" "$anchor")
+  if [ -z "$a" ] || [ -z "$b" ] || [ -z "$c" ]; then
+    fail "presets: \"$anchor\" present in all three"
+  elif [ "$a" = "$b" ] && [ "$b" = "$c" ]; then
+    pass "presets: \"$anchor\" identical across all three"
+  else
+    fail "presets: \"$anchor\" identical across all three (drifted)"
+  fi
+done
+
+# The memory split made memory.md an index; no preset may still instruct
+# writing facts into it.
+memstale=0
+for p in "$reporoot"/presets/*.md; do
+  grep -qF "update memory.md only if" "$p" && memstale=1
+done
+[ "$memstale" -eq 0 ] && pass "presets: no preset still writes facts to memory.md" || fail "presets: no preset still writes facts to memory.md"
+
 # ---- summary ----
 total=$((PASS + FAIL))
 printf '\n%d/%d checks passed (%d failed)\n' "$PASS" "$total" "$FAIL"

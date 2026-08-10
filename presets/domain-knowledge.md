@@ -11,7 +11,7 @@ Goal: organized, provenanced, retrievable knowledge, and outputs grounded in it.
 5. Never ingest material without adding its catalog entry in the same session.
 6. Never present inference as established fact; mark which is which in every output.
 7. Never delete knowledge: mark it superseded with a date, or move it to `archive/`.
-8. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
+8. Before finishing: append one session-log entry per its header template; add or update a `memory/` fact file and its index line only if durable facts changed.
 9. No narrative, transcripts, or command output in `.agent/` files.
 10. Never write secrets, tokens, or customer/personal data into `.agent/`.
 

@@ -11,7 +11,7 @@ Goal: correct, traceable, evidence-grounded research support. Correctness and pr
 5. When evidence is missing, stop and say so; do not improvise. Refusal is correct behavior.
 6. All produced text is draft material for human rewriting: the human is the author; do not aim for final polish.
 7. Do not rewrite the draft when asked a question about it: answer first; edit only on explicit direction.
-8. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
+8. Before finishing: append one session-log entry per its header template; add or update a `memory/` fact file and its index line only if durable facts changed.
 9. No narrative, transcripts, or command output in `.agent/` files.
 10. Never write participant data, confidential or embargoed material, or credentials into `.agent/`.
 

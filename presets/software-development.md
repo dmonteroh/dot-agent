@@ -10,7 +10,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 4. Do not ignore a failing command: fix it or report the exact failure.
 5. Never hand-edit generated sources or lockfiles.
 6. Check `git status --short` before editing; never revert or overwrite work you did not do.
-7. Before finishing: append one session-log entry per its header template; update memory.md only if durable facts changed.
+7. Before finishing: append one session-log entry per its header template; add or update a `memory/` fact file and its index line only if durable facts changed.
 8. No narrative, logs, file lists, or SHAs in `.agent/` files.
 9. Never write secrets, tokens, or customer/personal data into `.agent/`.
 10. Do not fabricate; say when uncertain.
