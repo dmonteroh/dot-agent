@@ -54,6 +54,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - The reference list matches in-text citations, with no orphan or missing entries.
 - Build/preview commands ran this session, and the reported output backs the pass/fail claim.
 - Docs affected by the change (catalog, source notes, outline) are updated as part of it, not after.
+- If a doc was tightened or split, the pass changed shape only: every name, value, command, path, and gotcha in the pre-edit version is still present, and the word count is backed by that check rather than standing in for it.
 - `.agent/` reflects the change: memory superseded where durable facts changed, a session-log entry present.
 
 ## Continuity contract
@@ -62,7 +63,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Before marking work complete, update `.agent/` per each file's header contract:
   - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: append via `.agent/scripts/log.sh --tool <tool, model-tagged when the harness states one, never guessed> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"`. If the script cannot run, follow the file's header contract by hand.
-  - `docs/`: source catalog, source notes, and outline update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row.
+  - `docs/`: source catalog, source notes, and outline update as part of the task, not after it. New docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row (prefer `.agent/scripts/docs.sh new`). Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha.
 - Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
 - Fix stale memory, outdated docs, and duplication when encountered.
 - Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files; re-run status.sh to confirm it cleared. REPAIR: stays in the main session.

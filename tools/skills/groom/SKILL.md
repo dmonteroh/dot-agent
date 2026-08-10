@@ -77,12 +77,18 @@ behind if it's a cross-area hazard.
 ## A `docs/` area doc over its size threshold
 
 The threshold is a review trigger: past it, the doc costs more to load
-than most tasks need from it. Two moves, in order of preference:
+than most tasks need from it. This is the one grooming flag whose fix is
+lossy by default, so the doc's own header contract states the invariant:
+**restructuring changes shape, never content.** The savings come from
+structure — no operational fact is dropped to hit a word count. Read the
+file in full before editing it; work the two moves in this order:
 
-1. Tighten in place: convert repeated invariant prose into tables or
-   one-fact-per-line bullets, collapse near-duplicate sections, and keep
-   every operational fact (names, values, commands, gotchas). The
-   savings live in structure, not deletion.
+1. Tighten in place. Convert repeated "X is/does/lives-in Y" invariant
+   prose into a table (`Concern | Rule | Where`) or one-fact-per-line
+   bullets; collapse a multi-sentence paragraph that states one fact
+   into one terse bullet; group near-duplicate mini-sections under one
+   heading. Telegraphic style is right here — fragments, colons,
+   arrows. Prose survives only where it carries the *why*.
 2. Split by sub-area when one file genuinely covers several: create
    `docs/<area>/<sub-doc>.md` files via `.agent/scripts/docs.sh new
    --name <area>/<sub-doc> --read-when "…"` (each gets its own routing
@@ -90,6 +96,24 @@ than most tasks need from it. Two moves, in order of preference:
    original file and its routing row once every section has a home.
    Routing stays in the single `docs/architecture.md` table; a sub-doc
    loads only when its hook matches the task.
+
+## Proving a doc restructuring dropped nothing
+
+A word count falling is not evidence the pass was lossless — it is
+equally consistent with having deleted content. Prove it instead of
+asserting it. Before editing, copy the doc aside (`cp` to a scratch path
+outside the node) and list its anchors: every identifier, numeric value,
+command, config key, path, route, and code fence in it. Grep the
+rewritten file for each anchor and confirm it survives; a `## Gotchas`
+bullet that vanished is a failure, not a saving. Report the before/after
+body-word counts *and* the anchor check together — the counts show the
+gain, the anchor check is what makes the gain safe. Delete the scratch
+copy once the check passes.
+
+When this flag is delegated, the worker owes the orchestrator both
+numbers and the anchor result, and the orchestrator re-runs `status.sh`.
+A doc whose facts genuinely no longer fit under the threshold splits
+(move 2); it does not get trimmed to fit.
 
 Re-run `status.sh` after either move.
 

@@ -340,6 +340,12 @@ docfile="$docroot/.agent/docs/auth-flow.md"
 firstline=$(head -n1 "$docfile" 2>/dev/null)
 [ "$firstline" = "<!-- Read when: working on authentication -->" ] && pass "docs.sh new: doc opens with the Read when: line" || fail "docs.sh new: doc opens with the Read when: line"
 
+# The header contract ships inside the doc, the way every other canonical
+# file carries its own: the shape rules are in context when the doc is
+# written, not only when status.sh flags it for size.
+grep -qF "Agent-facing reference, not a human narrative" "$docfile" && pass "docs.sh new: doc carries its header contract" || fail "docs.sh new: doc carries its header contract"
+grep -qF "no tightening or splitting pass may drop an" "$docfile" && pass "docs.sh new: header contract states the no-fact-loss invariant" || fail "docs.sh new: header contract states the no-fact-loss invariant"
+
 archfile="$docroot/.agent/docs/architecture.md"
 [ -f "$archfile" ] && grep -qF "| auth-flow.md | working on authentication |" "$archfile" && pass "docs.sh new: architecture.md created with the routing row" || fail "docs.sh new: architecture.md created with the routing row"
 
@@ -531,6 +537,17 @@ printf '%s\n' "$(words_n 2100)" >>"$subroot/.agent/docs/huge.md"
 flags19c=$(status_flags "$subroot")
 printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/huge\.md' && pass "status.sh: oversized area doc draws a GROOM flag" || fail "status.sh: oversized area doc draws a GROOM flag ($flags19c)"
 printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/frontend/grids\.md' && fail "status.sh: small sub-doc stays GROOM-clean" || pass "status.sh: small sub-doc stays GROOM-clean"
+# The flag is the only guidance a node with no skills installed gets, so it
+# carries the invariant the header contract states.
+printf '%s\n' "$flags19c" | grep -qF 'restructure without dropping facts' && pass "status.sh: docs GROOM flag names the no-fact-loss invariant" || fail "status.sh: docs GROOM flag names the no-fact-loss invariant"
+
+# The header contract is an HTML comment, so it must not eat into the
+# DOCS_MAX_WORDS budget: 1900 body words stays clean under a 2000 ceiling.
+"$subdocs" new --name budget --read-when "docs budget fixture" "$subroot" >/dev/null 2>&1
+printf '%s\n' "$(words_n 1900)" >>"$subroot/.agent/docs/budget.md"
+flags19d=$(status_flags "$subroot")
+printf '%s\n' "$flags19d" | grep -q '^GROOM: docs/budget\.md' && fail "status.sh: header contract costs no body words" || pass "status.sh: header contract costs no body words"
+rm -f "$subroot/.agent/docs/budget.md"
 
 # ---- 20. status.sh is fully silent on a fresh node ----
 fresh19="$WORK/init-academic-research-track-all"

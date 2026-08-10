@@ -126,9 +126,24 @@ new)
 
   title=$(printf '%s' "$leaf" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)} print}')
 
+  # Two heredocs on purpose: the routing header interpolates, the header
+  # contract must not (it carries backticks and would otherwise run as
+  # command substitution). "Read when:" stays on line 1, where status.sh
+  # looks for it.
   cat >"$doc" <<EOF
 <!-- Read when: $readwhen -->
 # $title
+EOF
+  cat >>"$doc" <<'EOF'
+<!-- Agent-facing reference, not a human narrative: facts belong in tables
+or one-fact-per-line bullets; prose carries only the *why*. Cite the code
+or test path that pins a behavior instead of restating it. Timeless — no
+change narration, no dates. Area traps go under `## Gotchas`. Restructuring
+changes shape, never content: no tightening or splitting pass may drop an
+operational fact — a name, value, command, path, or gotcha. Preferred
+writer when this doc splits into docs/<area>/ sub-docs:
+.agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row
+together). -->
 EOF
 
   if [ ! -s "$arch" ]; then

@@ -111,7 +111,7 @@ if [[ -d "$docs" ]]; then
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
     if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
-      echo "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing row"
+      echo "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing row"
     fi
   done
 fi

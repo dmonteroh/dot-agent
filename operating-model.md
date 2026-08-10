@@ -121,6 +121,22 @@ here; area gotchas go to the matching `.agent/docs/` file under `## Gotchas`.
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 ```
 
+`docs/<area>.md`, the node's largest and fastest-growing file type, whose header carries its shape rules — the `Read when:` hook stays on the first line, where `status.sh` reads it:
+
+```markdown
+<!-- Read when: <one-line hook, same text as this doc's architecture.md row> -->
+# <Area>
+<!-- Agent-facing reference, not a human narrative: facts belong in tables
+or one-fact-per-line bullets; prose carries only the *why*. Cite the code
+or test path that pins a behavior instead of restating it. Timeless — no
+change narration, no dates. Area traps go under `## Gotchas`. Restructuring
+changes shape, never content: no tightening or splitting pass may drop an
+operational fact — a name, value, command, path, or gotcha. Preferred
+writer when this doc splits into docs/<area>/ sub-docs:
+.agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row
+together). -->
+```
+
 ### The node manifest
 
 Every node carries its identity as YAML frontmatter on `purpose.md`, the least-rewritten file in the node:
