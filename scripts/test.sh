@@ -589,38 +589,40 @@ fresh19="$WORK/init-academic-research-track-all"
 out19=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
 [ -z "$out19" ] && pass "status.sh: fresh node prints nothing (no stray blank line)" || fail "status.sh: fresh node prints nothing (no stray blank line)"
 
-# ---- 22. cross-preset invariants ----
-# The presets are three separate seeds on purpose — a node adapts exactly
-# one — but the lines that carry .agent/ mechanics rather than domain
-# rules must stay word-for-word identical, or the same rule drifts three
-# ways. V6.1 kept that in lockstep by hand; this is the check. Leading
-# Comparison starts at the anchor, so a shared sentence may sit after
-# domain-specific lead-in text without counting as drift.
-shared_line() { # file, anchor -> the matching line from the anchor onward
-  grep -F -- "$2" "$1" | head -n 1 |
-    awk -v a="$2" '{ i = index($0, a); if (i) print substr($0, i) }'
-}
-INVARIANTS="Retention_test_for_every_rule_below
-Numbers,_defaults,_and_thresholds_carry_stated_provenance
-Subagents:_report_continuity_facts
-Act_on_GROOM:/REPAIR:/INDEX:_flags
-Before_finishing:_append_one_session-log_entry
-Area_docs_are_agent-facing_reference
-If_a_doc_was_tightened_or_split
-This_rubric_is_the_judgement_layer"
-for enc in $INVARIANTS; do
-  anchor=$(printf '%s' "$enc" | tr '_' ' ')
-  a=$(shared_line "$reporoot/presets/software-development.md" "$anchor")
-  b=$(shared_line "$reporoot/presets/academic-research.md" "$anchor")
-  c=$(shared_line "$reporoot/presets/domain-knowledge.md" "$anchor")
-  if [ -z "$a" ] || [ -z "$b" ] || [ -z "$c" ]; then
-    fail "presets: \"$anchor\" present in all three"
-  elif [ "$a" = "$b" ] && [ "$b" = "$c" ]; then
-    pass "presets: \"$anchor\" identical across all three"
-  else
-    fail "presets: \"$anchor\" identical across all three (drifted)"
-  fi
-done
+# ---- 22. cross-preset invariants, driven by presets/_shared.md ----
+# The presets stay three separate seeds — a node adapts exactly one — but
+# the text carrying .agent/ mechanics rather than domain rules must be
+# word-for-word identical, or the same rule drifts three ways. V6.1 kept
+# that in lockstep by hand and it slipped. presets/_shared.md is the list;
+# this is the check that makes the list load-bearing rather than a comment.
+# Each fenced block there is a substring that must appear verbatim in all
+# three presets — a substring, not a whole line, because a shared sentence
+# may follow domain-specific lead-in text.
+sharedfile="$reporoot/presets/_shared.md"
+[ -f "$sharedfile" ] && pass "presets: _shared.md exists" || fail "presets: _shared.md exists"
+
+blockcount=0
+while IFS= read -r block; do
+  [ -n "$block" ] || continue
+  blockcount=$((blockcount + 1))
+  hits=0
+  for p in software-development academic-research domain-knowledge; do
+    grep -qF -- "$block" "$reporoot/presets/$p.md" && hits=$((hits + 1))
+  done
+  label=$(printf '%s' "$block" | cut -c1-52)
+  [ "$hits" -eq 3 ] && pass "shared: \"$label…\" in all three presets" || fail "shared: \"$label…\" in all three presets (found in $hits)"
+done <<EOF
+$(awk '/^```/ { inb = !inb; next } inb && NF { print }' "$sharedfile")
+EOF
+
+[ "$blockcount" -ge 10 ] && pass "presets: _shared.md tracks the shared text ($blockcount blocks)" || fail "presets: _shared.md tracks the shared text (only $blockcount blocks)"
+
+# _shared.md is a maintainer file, never a node's contract.md.
+noderoot_sh="$WORK/preset-underscore"
+mkdir -p "$noderoot_sh"
+"$NODE" init --preset _shared --mode ignore-all "$noderoot_sh" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$noderoot_sh/.agent" ] && pass "node.sh: --preset _shared is rejected, nothing created" || fail "node.sh: --preset _shared is rejected, nothing created"
 
 # The memory split made memory.md an index; no preset may still instruct
 # writing facts into it.

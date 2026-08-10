@@ -60,6 +60,15 @@ init)
     esac
   done
 
+  # A leading underscore marks a maintainer file in presets/ (_shared.md is
+  # the index of text that must stay identical across presets). It is not a
+  # preset and must never land in a node as rules/contract.md.
+  case "$preset" in
+  _*)
+    echo "node.sh: '$preset' is a maintainer file in presets/, not a preset" >&2
+    usage >&2
+    exit 1 ;;
+  esac
   if [ -z "$preset" ] || [ ! -f "$srcroot/presets/$preset.md" ]; then
     echo "node.sh: unknown --preset: '$preset' (must match a file in $srcroot/presets/)" >&2
     usage >&2

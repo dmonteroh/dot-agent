@@ -397,6 +397,8 @@ The `.agent/` mechanism is domain-agnostic: the structure, contracts, and load o
 
 The `presets/` folder demonstrates this with seeds for software development, academic research, and domain knowledge. What changes between domains is the **rules**: what the agent should prioritize, what quality means, what the agent must never do. The mechanism stays the same.
 
+Each preset stays self-contained — bootstrap copies exactly one, and a preset that needed a second file to be complete would break every tool that reads only `rules/contract.md`. The cost is that rules describing the mechanism rather than a domain are written three times, so `presets/_shared.md` lists that text and `scripts/test.sh` asserts every block of it appears verbatim in all three. It is a maintainer's index, not a build input: nothing composes it into a node, and `node.sh init` rejects `--preset _shared`. Duplication stays, drift does not.
+
 ---
 
 ## How it compares

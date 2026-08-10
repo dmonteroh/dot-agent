@@ -45,6 +45,8 @@ Rule presets for different domains. Pick one during bootstrap or let the agent a
 - **[Academic research](presets/academic-research.md)**: evidence-first writing, source traceability, no unsupported claims
 - **[Domain knowledge](presets/domain-knowledge.md)**: accumulating and organizing information over time
 
+Each preset is self-contained — bootstrap copies exactly one into `rules/contract.md`. Editing them? [`presets/_shared.md`](presets/_shared.md) lists the text that must stay word-for-word identical across all three (the rules describing the operating model rather than a domain); `scripts/test.sh` fails if any of it drifts.
+
 ## Get started
 
 Two prompts, one per node type. Either works standalone: a project node is self-contained; add the root when you want memory that follows you across projects.
