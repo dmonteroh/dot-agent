@@ -1,22 +1,38 @@
 # .agent/
 
-Persistent, self-maintaining AI context that works across tools and sessions. An adaptation from [`jlonardi/dot-agent`](https://github.com/jlonardi/dot-agent).
+[![CI](https://github.com/dmonteroh/dot-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/dmonteroh/dot-agent/actions/workflows/ci.yml)
+
+Agent memory that lives in the repo: portable across LLM providers, shareable across a team, and checked so it doesn't drift. An adaptation from [`jlonardi/dot-agent`](https://github.com/jlonardi/dot-agent).
 
 ## The problem
 
-Every AI coding session starts with amnesia. The agent doesn't know what your project is for, what you decided last week, or why things are the way they are. You re-explain. Every time. Switch tools and you start from zero.
+Agent memory is per-tool and stays there. Claude Code keeps its own store, Cursor keeps another, Copilot another again. None of them read each other, so what an agent learned on Monday in one tool is unavailable on Tuesday in a different one, and a developer running two tools runs two disconnected memories.
+
+Teams get less than that. Those stores sit on one machine, outside the repo, so what your agent learned never reaches anyone else's. The options for fixing it are roughly nothing, or adopting a platform.
+
+Two costs follow the knowledge that does get written down. It drifts, because a rule or a doc that no longer matches the code looks exactly like one that does. And it is paid for on every session, because whatever an agent loads at the start of a task it loads again on the next one.
 
 ## The idea
 
-A `.agent/` directory at the project root. Any agent reads from it, any agent writes to it.
+A `.agent/` directory of markdown at the project root. Any agent reads it, any agent writes it, and it travels with the code through git.
 
-You explain the project once. The agent writes it down. Before finishing any task, the agent updates what it learned: decisions go into `memory.md`, session notes into `session-log.md`. The next session reads what the previous one wrote.
+**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. Each tool's native memory gets switched off at the setting, leaving one store instead of several.
+
+**Shareable without a platform.** A tracking mode, chosen once, decides what enters git. `track-shared` publishes purpose, rules, and docs for the team to review in a pull request, while memory and session logs stay personal to each developer.
+
+**Checked, so it drifts less.** The agent writes context back as part of finishing work, and a check on the load path reads the node's files rather than the agent's claims: files past their grooming thresholds, a routing table that disagrees with the docs it routes, an index out of sync with its facts, bootstrap steps left half-done, native memory still switched on.
+
+**Bounded at load.** What every session reads is a small fixed set: the rules and the indexes. A memory fact opens when its hook matches the task, an area doc when the routing table sends the session there, and reference material only when a doc hands out the path.
 
 ```
-Session 1:  You explain → agent writes purpose.md, memory.md
-Session 2:  Agent reads → works → updates memory + session log
-Session 3:  Different tool → reads same .agent/ → full continuity
+Monday     Claude Code finishes a task and writes what it learned to .agent/
+Tuesday    Cursor reads the same .agent/ and picks up where that left off
+Thursday   A teammate pulls the repo; purpose, rules, and docs came with it
 ```
+
+The design takes what native tool memory gets right, an index over one fact per file with write-back at the end of a task, and adds what a shared repository needs: review, version history, and a format no vendor owns.
+
+It stops there on purpose. Working agreements, team methodology, and how people decide things are not `.agent/`'s to hold. The goal is a harness that stays out of their way.
 
 ## What's inside
 
@@ -24,14 +40,18 @@ Session 3:  Different tool → reads same .agent/ → full continuity
 .agent/
 ├── rules/          # Behavior rules (adapted from a preset)
 ├── purpose.md      # What this project is, who it's for + the dot-agent manifest
-├── memory.md       # Current state, decisions (updated when durable facts change)
+├── memory.md       # Index of durable facts — one line per file in memory/
+├── memory/         # One durable fact per file (decision, preference, constraint)
 ├── session-log.md  # Meeting notes (appended every session)
-├── docs/           # Architecture, features, data flows
-├── archive/        # Groomed history — archived session-log entries
-└── scripts/        # status.sh — the status check the entry point runs first
+├── docs/           # Architecture, features, data flows; docs/<area>/references/
+│                   # holds depth that is never routed or auto-loaded
+├── archive/        # Groomed history — archived log entries, retired facts
+├── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
+│                   # + links.sh, the on-demand orphan/broken-link audit
+└── skills/         # Optional — installed skills, symlinked into tool dirs
 ```
 
-The core mechanism is the **self-maintenance contract**: before finishing any task, the agent writes context back (a session-log entry every session; memory and docs when what they hold changed). This is what keeps context alive without manual effort. The binding rules live in the preset; each file's header carries its own format contract.
+Two contracts hold it together. The self-maintenance contract covers what gets written: before finishing any task, the agent writes context back, a session-log entry every session, memory and docs when what they hold changed. The load contract covers what gets read, and keeps the always-loaded set small enough that a session opening does not cost more than the task. The binding rules live in the preset, and each file's header carries its own format contract.
 
 ## Presets
 
@@ -40,6 +60,8 @@ Rule presets for different domains. Pick one during bootstrap or let the agent a
 - **[Software development](presets/software-development.md)**: load order, code quality, testing, git discipline
 - **[Academic research](presets/academic-research.md)**: evidence-first writing, source traceability, no unsupported claims
 - **[Domain knowledge](presets/domain-knowledge.md)**: accumulating and organizing information over time
+
+Each preset is self-contained — bootstrap copies exactly one into `rules/contract.md`. Editing them? [`presets/_shared.md`](presets/_shared.md) lists the text that must stay word-for-word identical across all three (the rules describing the operating model rather than a domain); `scripts/test.sh` fails if any of it drifts.
 
 ## Get started
 
@@ -53,19 +75,24 @@ Copy this into any capable agent:
 Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
 then set up my root node at ~/.agent/. Its subject is me, not a codebase.
 
-1. Interview me first: role, active projects, how I work and communicate,
-   preferences that should hold across every project. Don't invent facts
-   about me.
-2. Create ~/.agent/ — purpose, memory, session-log, rules, docs, and
-   scripts/status.sh copied from the source repo. Each canonical file
-   opens with its header contract from the operating model.
-3. Adapt the preset that matches my work into rules/contract.md; keep
-   its Kernel intact.
-4. Stamp the dot-agent manifest on purpose.md, listing any existing
-   project nodes in children.
+1. Interview me first, one question at a time, prioritizing questions
+   whose answers change what you'll write: role, active projects, how I
+   work and communicate, preferences that should hold across every
+   project, and the tracking mode — ignore-all, track-shared, or
+   track-all (see Tracking modes in the operating model). Don't invent
+   facts about me.
+2. Clone the source repo. Choose the preset that matches my work, then
+   from the clone run `bash scripts/node.sh init --preset <name> --mode
+   <mode> ~` to create ~/.agent/, stamp its manifest, and copy the
+   scripts.
+3. Adapt the preset copied into rules/contract.md; keep its Kernel
+   intact.
+4. List any existing project nodes in the manifest's children.
 5. Wire my tools at the root from the canonical entry-point template
-   (Claude Code: ~/.claude/CLAUDE.md) and disable Claude Code's native
-   memory in .claude/settings.json.
+   (templates/entry-point.md in the clone; Claude Code:
+   ~/.claude/CLAUDE.md), with every path absolute
+   (~/.agent/...) since sessions run from project directories, and
+   disable Claude Code's native memory in ~/.claude/settings.json.
 
 Ask me anything you can't infer.
 ```
@@ -79,29 +106,28 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
 then bootstrap .agent/ for this project.
 
 1. Explore the project (README, configs, source, git history) and confirm
-   your findings with me — including which preset fits — before writing
-   anything.
-2. Create .agent/ — purpose, memory, session-log, docs, and
-   scripts/status.sh copied from the source repo. Each canonical file
-   opens with its header contract from the operating model.
-3. Adapt the chosen preset into rules/contract.md: keep its Kernel
+   your findings with me — including which preset fits, and what you
+   could not infer — before writing anything.
+2. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored),
+   track-shared (purpose/rules/docs shared, memory.md/memory/ and logs
+   ignored), or track-all (everything committed).
+3. Clone the source repo, then from the clone run `bash scripts/node.sh
+   init --preset <name> --mode <mode> <this project's path>` to create
+   .agent/, stamp its manifest, and write the matching gitignore
+   entries.
+4. Adapt the preset copied into rules/contract.md: keep its Kernel
    intact and fill Project guardrails with exact commands ("run the
    tests" is not filled in; the real test command is).
-4. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored),
-   track-shared (purpose/rules/docs shared, memory and logs ignored), or
-   track-all (everything committed) — and write the matching gitignore
-   entries before anything is committed.
-5. Stamp the dot-agent manifest on purpose.md (source, version, preset,
-   mode, children).
-6. Wire my tools from the canonical entry-point template (CLAUDE.md,
-   AGENTS.md, …), keep every entry point identical, and disable Claude
-   Code's native memory in .claude/settings.json.
-7. If I have a root ~/.agent/, add this node to its manifest's children.
+5. Wire my tools from the canonical entry-point template
+   (templates/entry-point.md in the clone) into CLAUDE.md, AGENTS.md, …;
+   keep every entry point identical, and disable Claude Code's native
+   memory in .claude/settings.json.
+6. If I have a root ~/.agent/, add this node to its manifest's children.
 
 Ask me anything you can't infer; don't guess.
 ```
 
-The tracking mode in step 4 is the gitignore practice: it decides what enters git, once, at bootstrap. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
+The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap; `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
 
 ### Updating an existing node
 
@@ -111,28 +137,32 @@ When the operating model evolves, run this inside the node's project (or at the 
 Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
 then update this project's existing .agent/ node to match it.
 
-1. Read .agent/purpose.md. If it has a dot-agent manifest, compare its
-   version against the operating model — if they match, stop; the node is
-   current. If the manifest is missing, this is a pre-V6 node: use the
-   newest CHANGELOG.md entry as the migration checklist and restore the
-   manifest.
-2. If .agent/ is not tracked by git, copy it aside before changing
-   anything.
-3. Reconcile: apply what the operating model adds; preserve accumulated
-   content — memory, learned rules, project-specific adaptations. If
-   existing content directly conflicts, flag it and let me decide; never
-   silently overwrite.
-4. Refresh the entry points against the canonical template, including the
-   strong-model list, and keep them identical.
-5. Update version in the manifest — change nothing else in the
-   frontmatter — then update each child node listed in children the same
-   way.
-6. Report what changed, what was preserved, and anything flagged.
+1. Clone the source repo, then from the clone run `bash scripts/node.sh
+   update <this node's path>` — it reads the manifest, compares version,
+   backs up the node first unless its mode is track-all, and applies
+   the mechanical migration baseline. Read its output: if it says the
+   node is current, stop here. If it reports no manifest (a pre-V6
+   node), update the node by hand instead: work through CHANGELOG.md
+   from the V6 entry forward as the migration checklist, and if you
+   restore the manifest, stamp it with the node's real prior version
+   before re-running the script.
+2. Reconcile: apply what the operating model adds — including splitting
+   `memory/legacy.md` into fact files per its GROOM flag — while
+   preserving accumulated content: memory, learned rules,
+   project-specific adaptations. If existing content directly conflicts,
+   flag it and let me decide; never silently overwrite.
+3. Refresh the entry points against the canonical template
+   (templates/entry-point.md in the clone), and keep them identical.
+4. Repeat this process for each child node listed in the manifest's
+   children.
+5. Report what changed, what was preserved, and anything flagged.
 ```
 
-Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries plus `GROOM:`/`REPAIR:`/`INDEX:` flags when files breach their grooming thresholds, and the agent handles the flags as part of the session. There is no completion-time gate; grooming rides the load path.
+Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, native memory still enabled), `INDEX:` flags for doc-routing drift, and advisory `TOOLS:` notes; the agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate; grooming rides the load path.
 
-If you use **Claude Code**, optional hooks can add a mechanical compliance check for the load order and self-maintenance contract. The trust contract is the primary compliance story, and the reference deployments run without them. See [`tools/claude-code/`](tools/claude-code/).
+One check is deliberately not on that path: `.agent/scripts/links.sh` audits the node's own link graph on demand, reporting `ORPHAN:` (a file nothing cites) and `BROKEN:` (a cited node path that doesn't exist). Run it when grooming or after a restructuring pass. It matters most for `docs/<area>/references/`, which carries no routing entry by design, so an uncited reference file is unreachable and nothing on the load path can tell.
+
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading; they are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 
@@ -140,10 +170,10 @@ If you use **Claude Code**, optional hooks can add a mechanical compliance check
 
 ```
 ~/.agent/                              # Root — documents the person
-├── memory.md, rules/, docs/
+├── memory.md, memory/, rules/, docs/
 
 ~/projects/app/.agent/                 # Branch — documents this project
-├── purpose.md, memory.md, docs/
+├── purpose.md, memory.md, memory/, docs/
 
 ~/projects/platform/.agent/            # Branch — documents the platform
 └── packages/auth/.agent/              # Leaf — documents this package
@@ -162,14 +192,20 @@ See [operating-model.md](operating-model.md) for the full pattern, observation, 
 | | AGENTS.md | Tool-specific files | .agent/ |
 |---|---|---|---|
 | Agent reads context | Yes | Yes | Yes |
-| Agent writes back | No | No | **Yes** |
+| Agent-maintained memory lives in the repo | No | No | **Yes** |
 | Survives tool switch | Partially | No | **Yes** |
-| Memory across sessions | No | No | **Yes** |
+| Memory across sessions | No | Partially | **Yes** |
+| Shareable with a team through review | Yes | No | **Yes** |
+| Loads only what the task needs | No | No | **Yes** |
 | Has a compliance mechanism | No | No | **Yes** |
 
 Use `AGENTS.md` for shared team instructions. Use `.agent/` for personal persistent context.
 
 Read **[operating-model.md](operating-model.md)** for the full operating model: philosophy, directory structure, self-maintenance contract, tool wiring, and design decisions.
+
+## Working on this repo
+
+Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, and `links.sh`. It must pass before a change ships.
 
 ## License
 

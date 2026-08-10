@@ -1,71 +1,14 @@
-# Claude Code compliance hooks
+# Claude Code settings
 
-Optional compliance tooling for the [dot-agent operating model](../../operating-model.md), Claude-Code-only.
+Optional Claude Code wiring for the [dot-agent operating model](../../operating-model.md).
 
-Without these hooks, the operating model's trust contracts are convention: the agent follows them because the rules say to. These hooks add a mechanical check on top: they block the session when a contract is violated. They are optional and unused in the reference deployments, where the trust contract carries compliance.
+`settings-example.json` ships two things:
 
-**V5-era note:** two hook checks predate the V6 contracts and block on behavior V6 relaxed. `self-maintenance.py` requires a `memory.md` update in every discovered node (V6: update memory only if durable facts changed, and the orchestrator is the single session-log writer), and `correctness.py` requires full-file re-reads (V6 presets: re-read edited regions with context; full file only after large rewrites). Align them before relying on them.
+- `"autoMemoryEnabled": false`, the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
+- A permissions allowlist for reading and writing `.agent/**`, so the self-maintenance contract doesn't hit permission prompts.
 
-`settings-example.json` also ships `"autoMemoryEnabled": false`. Independent of the hooks, this is the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
+Merge the relevant sections into your `~/.claude/settings.json` (user-level) or the project's `.claude/settings.json` (committed in `track-shared`/`track-all` modes so the setting holds for every developer).
 
-## What's enforced
+Compliance rests on the trust contract plus the load-path status check (`scripts/status.sh`); there is no mechanical enforcement layer. The V4/V5-era compliance hooks were removed in V6.1; see `CHANGELOG.md` if you're looking for them.
 
-| Hook | Events | What it does |
-|------|--------|-------------|
-| `pre-work.py` | PreToolUse | Blocks edits to project files until that project's `.agent/purpose.md` and `.agent/memory.md` have been read. Only triggers for projects with `.agent/`. |
-| `correctness.py` | PreToolUse + Stop | Tracks file edits, re-reads, and test/build commands during the session. On Stop, blocks if edited files weren't re-read or if source files changed without tests being run. |
-| `self-maintenance.py` | PreToolUse + Stop | Blocks session end until `session-log.md` is updated in ALL discovered `.agent/` dirs. Enforces dual-write (project + global). |
-| `retro.py` | Stop | After substantial sessions (source files changed, hooks caught mistakes, or long session), prompts the agent to reflect on behavioral lessons and write rules to `rules/learned.md`. |
-
-### Hook execution order
-
-**PreToolUse:** pre-work → correctness → self-maintenance
-
-**Stop:** correctness → self-maintenance → retro
-
-Order matters for Stop: correctness checks your work, self-maintenance checks your documentation, retro reflects on the whole session. Retro reads correctness's checkpoint to know if the safety valve fired.
-
-## Prerequisites
-
-- **Python 3.10+**: hooks use modern type syntax (`Path | None`) that requires 3.10 or later. Check with `python3 --version`.
-
-## Install
-
-```bash
-mkdir -p ~/.claude/hooks
-cp hooks/*.py ~/.claude/hooks/
-
-# Merge settings-example.json into your ~/.claude/settings.json
-# (add the hooks and permissions sections)
-```
-
-Or symlink for auto-updates:
-
-```bash
-for hook in pre-work.py correctness.py self-maintenance.py retro.py; do
-    ln -sf /path/to/dot-agent/tools/claude-code/hooks/$hook ~/.claude/hooks/$hook
-done
-```
-
-## Safety valves
-
-All Stop hooks follow the same pattern: block once, then let through on second attempt. This prevents infinite loops when the agent genuinely can't satisfy the contract (e.g. no tests exist in the project, or a read-only session that doesn't need documentation).
-
-## Checkpoints
-
-Each hook stores session state in `/tmp/`:
-
-| Hook | Checkpoint dir |
-|------|---------------|
-| `pre-work.py` | `/tmp/claude-pre-work/` |
-| `correctness.py` | `/tmp/claude-correctness/` |
-| `self-maintenance.py` | `/tmp/claude-self-maintenance/` |
-| `retro.py` | `/tmp/claude-retro/` |
-
-Checkpoints are per-session (keyed by session ID) and auto-cleaned after 24 hours.
-
-## Extending
-
-These are **core** hooks: they enforce the operating model contract and nothing more.
-
-To add custom behavior (daily bootstrap, inbox enforcement, maintenance prompts, diary nudges, etc.), copy the hooks and extend them. Extensions should be a strict superset: include all core behavior plus your additions. Installing extended hooks replaces the core ones.
+For the optional skills that package the rare in-session procedures (grooming, retro), see [`tools/skills/`](../skills/).

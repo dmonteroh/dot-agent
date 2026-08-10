@@ -4,6 +4,76 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
+## V6.1 (2026-07-27): Tiered context and scripted writes
+
+### Why
+
+A node's context loads in tiers. A small always-loaded set carries the rules and the indexes; everything else waits behind a hook, a routing entry, or a path a doc hands out. Scripts own every write that has to land in two places at once, and `status.sh` checks the node's shape on the load path rather than at the end of a session.
+
+The direction follows Anthropic's *The new rules of context engineering for Claude 5 generation models*, with three workflow patterns from *A field guide to Claude Fable: Finding your unknowns*. Native tool memory stays off: `.agent/` is the only durable store, disabled by setting rather than instruction.
+
+### What changed
+
+#### Memory
+
+- `memory.md` is an index, one line per fact file, newest last, reordered only when grooming. Each durable fact lives in `memory/<slug>.md` under `date`, `scope`, and `type` frontmatter. Two halves that would be superseded at different times are two files.
+- `type` is `fact` or `reference`. A fact is something the node knows and supersedes as the project changes. A reference points outward at a URL, dashboard, ticket, or spec the node does not own.
+- The index loads every session. A fact file opens when its hook matches the task, and that match is re-checked whenever the work moves to a new area.
+
+#### Rules
+
+- Every preset opens with a retention test: keep a rule only if a competent engineer would not already follow it, or if it is specific to this project, this operating model, or a mistake this project made. The Kernel holds at most ten negative constraints.
+- The verification rubric lives in `rules/quality-bar.md`, split out of the preset at bootstrap. Verifier subagents always load it; the main session loads it for substantial work. `contract.md` keeps the rules that bind every session.
+- `rules/learned.md` stays one file, the artifact that passes PR review in `track-shared`. Its grooming triggers are 60 rules or 2,400 words, whichever comes first.
+- `presets/_shared.md` lists the text that must appear word for word in all three presets. `test.sh` fails when any of it drifts.
+- Retro fires on a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan. The rule it produces is imperative and under 40 words, and it merges with a near-duplicate rather than joining it.
+
+#### Docs
+
+- `docs/architecture.md` carries a per-doc entry with two fields. `Read when:` decides whether to open the doc. `Sections:` lists its `## ` headings, and finds a doc whose hook never names the topic. An entry may say more than a heading, never less.
+- A catalog is an area's index of what already exists plus the recipes for adding more. Its hook is unconditional, so it loads for any task in its area that creates something. `software-development` gains the reuse rule, the same-change catalog-entry obligation, a quality-bar criterion, and a `Catalogs:` guardrail slot.
+- An area that outgrows one file splits into `docs/<area>/` sub-docs, routed from the same table.
+- `docs/<area>/references/` is the third tier: no routing entry, no size trigger, no auto-load. An area doc hands out the path. Full schemas, exhaustive tables, and worked examples live here.
+- Area docs carry a header contract written by `docs.sh new`: facts as tables or one-fact-per-line bullets, prose only for the *why*, cited code paths, timeless phrasing, `## Gotchas` for area traps. Restructuring a doc changes its shape and never its content, and no tightening or splitting pass drops a name, value, command, path, or gotcha.
+
+#### Scripts
+
+- `node.sh init` builds the skeleton, manifest, gitignore, and script copies. `node.sh update` reaches the mechanical baseline: memory body moved verbatim to `memory/legacy.md`, scripts refreshed, `version` bumped, and every node with untracked memory backed up first.
+- `memory.sh new` and `docs.sh new` each make a two-place write one operation. `log.sh` stamps the date and holds the summary to 25 words.
+- `links.sh` audits the node's link graph on demand, reporting `ORPHAN:` for a file nothing cites and `BROKEN:` for a cited node path that does not exist. Paths outside `.agent/` are out of scope, and the session log, `archive/`, and `rules/` are read as records and instructions rather than citations.
+- `test.sh` smoke-tests all of it and runs on Ubuntu and macOS in CI alongside ShellCheck.
+
+#### The status check
+
+`status.sh` runs as the entry point's first step. It prints the recent session-log entries, then one line per finding, and always exits 0.
+
+- `GROOM:` at the grooming triggers: 120 log entries or 5,000 words, a 300-word memory fact, a 100-entry index, `learned.md` past 60 rules or 2,400 words, a 2,000-word area doc. Grooming is size-based, so the dates inside log entries are context for when something happened and nothing else. Each threshold is a review trigger rather than a cap, tunable at the top of the script, and each states its source where it lives.
+- `REPAIR:` for a missing canonical file or manifest, index and fact files that disagree, guardrails still holding template placeholders, `## Quality bar` still inside `contract.md`, entry points that stopped matching, and `autoMemoryEnabled` set true or set nowhere.
+- `INDEX:` for a doc missing from the routing table, a hook that drifted on one side, or a `## ` heading absent from `Sections:`.
+- `TOOLS:` for environment availability.
+
+#### Entry points and sessions
+
+- The canonical template ships as `templates/entry-point.md`. Bootstrap copies it into each tool's filename and fills the placeholders. Root nodes write absolute paths, since sessions run from project directories.
+- The README ships three prompts: root-node bootstrap, project-node bootstrap, and node update. The root prompt interviews one question at a time, taking the questions whose answers change what gets written first. The project prompt confirms its findings before writing, including what it could not infer.
+- After a context compaction or handoff, steps 1 through 5 run again.
+- `GROOM:` flags may go to one subagent assigned to write only the flagged files, and the dispatching session re-runs `status.sh` to confirm they cleared. `REPAIR:` stays in the main session.
+
+#### Tooling
+
+- `tools/skills/` ships `groom/` and `retro/` as optional Claude Code skills, installed at `.agent/skills/` and symlinked into each tool's skills directory. A skill expands the *how* of a procedure the contract already names.
+- `tools/claude-code/` ships `settings-example.json`. The V4/V5 compliance hooks and `verify-agent-context.sh` are gone. Compliance is the trust contract plus the status check.
+
+#### Manifest
+
+The manifest's `version` is a quoted string, since bare 6.1 parses as a YAML float and collides with 6.10, and comparison uses `sort -V` semantics. Comparison-table rows updated: "Agent-maintained memory lives in the repo", and "Memory across sessions" is Partially for tool-specific files.
+
+### Migrating a V6 node
+
+Run `scripts/node.sh update`. Then, in a normal session: split `memory/legacy.md` into fact files when `GROOM:` flags it, re-derive the entry points from the canonical template, extract the preset's `## Quality bar` into `rules/quality-bar.md`, and reconcile `rules/contract.md` against the current preset, dropping any `verify-agent-context.sh` reference and the node's local copy. Flag conflicts for the operator instead of overwriting.
+
+---
+
 ## V6 (2026-07-11): Fork lineage + harvest
 
 ### Why
