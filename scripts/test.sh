@@ -35,6 +35,12 @@ status_flags() {
   "$1/.agent/scripts/status.sh" "$1" 2>&1 | grep -E '^(GROOM|REPAIR|INDEX):'
 }
 
+# file, sed-expr -> apply the expression in place. Avoids `sed -i`, whose
+# backup-suffix argument differs between BSD and GNU.
+subst() {
+  sed "$2" "$1" >"$1.tmp" && mv "$1.tmp" "$1"
+}
+
 # n -> "w1 w2 ... wn" (n space-separated words)
 words_n() {
   n="$1"; i=1; out=""
@@ -347,7 +353,8 @@ grep -qF "Agent-facing reference, not a human narrative" "$docfile" && pass "doc
 grep -qF "no tightening or splitting pass may drop an" "$docfile" && pass "docs.sh new: header contract states the no-fact-loss invariant" || fail "docs.sh new: header contract states the no-fact-loss invariant"
 
 archfile="$docroot/.agent/docs/architecture.md"
-[ -f "$archfile" ] && grep -qF "| auth-flow.md | working on authentication |" "$archfile" && pass "docs.sh new: architecture.md created with the routing row" || fail "docs.sh new: architecture.md created with the routing row"
+[ -f "$archfile" ] && grep -qF '### `auth-flow.md`' "$archfile" && grep -qF -- "- **Read when:** working on authentication" "$archfile" && pass "docs.sh new: architecture.md created with the routing entry" || fail "docs.sh new: architecture.md created with the routing entry"
+grep -qF -- "- **Sections:**" "$archfile" && pass "docs.sh new: routing entry carries a Sections field" || fail "docs.sh new: routing entry carries a Sections field"
 
 flags10=$(status_flags "$docroot")
 printf '%s\n' "$flags10" | grep -q '^INDEX:' && fail "docs.sh new: status.sh emits no INDEX flags" || pass "docs.sh new: status.sh emits no INDEX flags"
@@ -518,7 +525,7 @@ subdocs="$subroot/.agent/scripts/docs.sh"
 rc=$?
 [ "$rc" -eq 0 ] && pass "docs.sh: one-level sub-doc path accepted" || fail "docs.sh: one-level sub-doc path accepted (rc=$rc)"
 [ -f "$subroot/.agent/docs/frontend/grids.md" ] && pass "docs.sh: sub-doc file created under docs/frontend/" || fail "docs.sh: sub-doc file created under docs/frontend/"
-grep -qF "| frontend/grids.md | grid layouts and gridstack |" "$subroot/.agent/docs/architecture.md" 2>/dev/null && pass "docs.sh: routing row carries the relative path" || fail "docs.sh: routing row carries the relative path"
+grep -qF '### `frontend/grids.md`' "$subroot/.agent/docs/architecture.md" 2>/dev/null && pass "docs.sh: routing entry carries the relative path" || fail "docs.sh: routing entry carries the relative path"
 flags19=$(status_flags "$subroot")
 [ -z "$flags19" ] && pass "status.sh: routed sub-doc is INDEX-clean" || fail "status.sh: routed sub-doc is INDEX-clean ($flags19)"
 
@@ -548,6 +555,34 @@ printf '%s\n' "$(words_n 1900)" >>"$subroot/.agent/docs/budget.md"
 flags19d=$(status_flags "$subroot")
 printf '%s\n' "$flags19d" | grep -q '^GROOM: docs/budget\.md' && fail "status.sh: header contract costs no body words" || pass "status.sh: header contract costs no body words"
 rm -f "$subroot/.agent/docs/budget.md"
+
+# ---- 21. routing entries: hook drift and section drift ----
+# The hook is precision, the Sections list is recall. Both live in two
+# places and both are checkable, so status.sh checks them.
+rt="$WORK/routing"
+mkdir -p "$rt"
+"$NODE" init --preset software-development --mode track-all "$rt" >/dev/null 2>&1
+rtdocs="$rt/.agent/scripts/docs.sh"
+rtarch="$rt/.agent/docs/architecture.md"
+"$rtdocs" new --name payments --read-when "payment flows and webhooks" "$rt" >/dev/null 2>&1
+[ -z "$(status_flags "$rt")" ] && pass "routing: a freshly scaffolded doc is INDEX-clean" || fail "routing: a freshly scaffolded doc is INDEX-clean ($(status_flags "$rt"))"
+
+# A doc that grows sections its entry never learned about.
+printf '\n## Webhook retries\n\n## Refund flow\n' >>"$rt/.agent/docs/payments.md"
+f21=$(status_flags "$rt")
+printf '%s\n' "$f21" | grep -qF 'INDEX: docs/payments.md sections missing from its architecture.md entry' && pass "routing: unlisted sections draw an INDEX flag" || fail "routing: unlisted sections draw an INDEX flag ($f21)"
+printf '%s\n' "$f21" | grep -qF 'Webhook retries' && printf '%s\n' "$f21" | grep -qF 'Refund flow' && pass "routing: the flag names every missing section" || fail "routing: the flag names every missing section"
+
+# Listing them clears it, and an entry may say MORE than the heading.
+subst "$rtarch" 's/^- \*\*Sections:\*\*$/- **Sections:** Webhook retries (exponential backoff) · Refund flow/'
+[ -z "$(status_flags "$rt")" ] && pass "routing: listing the sections clears the flag, enrichment allowed" || fail "routing: listing the sections clears the flag, enrichment allowed ($(status_flags "$rt"))"
+
+# A hook that drifts on one side only.
+subst "$rt/.agent/docs/payments.md" 's/^<!-- Read when: payment flows and webhooks -->$/<!-- Read when: payment flows, webhooks, and refunds -->/'
+f21b=$(status_flags "$rt")
+printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with its architecture.md entry' && pass "routing: hook drift draws an INDEX flag" || fail "routing: hook drift draws an INDEX flag ($f21b)"
+subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
+[ -z "$(status_flags "$rt")" ] && pass "routing: refreshing both sides clears the hook flag" || fail "routing: refreshing both sides clears the hook flag ($(status_flags "$rt"))"
 
 # ---- 20. status.sh is fully silent on a fresh node ----
 fresh19="$WORK/init-academic-research-track-all"

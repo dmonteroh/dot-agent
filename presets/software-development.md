@@ -18,6 +18,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 ## Context loading
 
 - Scale reads: typo/single-file = entry point + target file; feature = purpose + memory + area doc; domain/behavior change = purpose + memory + relevant docs. If `.agent/docs/architecture.md` has a routing table, pick area docs there; otherwise use the entry point's doc index.
+- Reads scale by task size; catalogs are the exception and route by task kind. Any task that creates a new endpoint, component, service, module, migration, or worker reads that area's catalog first, however small the task looks — that is the read that finds the building block already there.
 - Check `.agent/` context before asking about unknown files, concepts, or deliverables.
 - Use matching local skills, minimal set.
 
@@ -32,6 +33,8 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 
 ## Implementation
 
+- Before adding a new endpoint, component, service, module, migration, or worker, check the area catalog for one that already exists; extend or reuse it rather than building a second. When the catalog has no answer, search the codebase before assuming there is none.
+- A reusable building block gets its one-line catalog entry (name, path, when to use) in the same change that adds it. A catalog that lags the code stops being read.
 - New or changed observable behavior requires test coverage. Pure refactors may rely on existing coverage.
 - A comment must state a constraint the code cannot express and name its external cause, in about two lines (chosen default). Never write change narration, rejected alternatives, bug post-mortems, or citations of artifacts a fresh clone cannot open: task briefs, ticket IDs, commit SHAs. Public API doc comments stay descriptive and are exempt from the cap.
 - Durable *why* is documentation, not a comment: behavior, flows, and architecture go to `docs/`; agent-facing traps go to the matching `.agent/docs/` file under `## Gotchas`.
@@ -60,6 +63,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - No unrelated diffs: every changed file traces to the task.
 - Docs are updated wherever behavior, flows, dependencies, architecture, or practices changed, citing the code or test path rather than paraphrasing it.
 - If a doc was tightened or split, the pass changed shape only: every name, value, command, path, and gotcha in the pre-edit version is still present, and the word count is backed by that check rather than standing in for it.
+- Nothing new in the diff duplicates a building block the area catalog already lists, and any new reusable block added its own catalog entry in this change.
 - No comment in the diff narrates the change or cites an artifact a fresh clone cannot open; durable *why* landed in docs, not inline.
 - Verification commands ran this session against the current diff, and the reported output backs the pass/fail claim.
 - Every failure is classified (caused-by-change, pre-existing, environmental, unknown); unknowns were investigated, not waved through.
@@ -74,7 +78,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
   - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
   - `session-log.md`: append via `.agent/scripts/log.sh --tool <tool, model-tagged when the harness states one, never guessed> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"`; reference task briefs by ID in the summary. If the script cannot run, follow the file's header contract by hand.
     - Bad (transcript): "Added page at /x. 5 new files: a.ts (loader), b.svelte…; reviewer pass; 6 tests; commit 47feccc." Good: `- [2026-06-23] (claude/sonnet) S197 invitation acceptance page (frontend). verify: pass.`
-  - `docs/`: update when architecture, operations, behavior, dependencies, or workflows change. New area docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row (prefer `.agent/scripts/docs.sh new`). Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha.
+  - `docs/`: update when architecture, operations, behavior, dependencies, or workflows change. New area docs open with a one-line `<!-- Read when: … -->` routing hint and get a routing-table row (prefer `.agent/scripts/docs.sh new`). Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha. When a doc's headings or scope change, refresh its `architecture.md` entry — the hook and the `Sections:` list both — in the same change; `status.sh` flags either one drifting.
 - Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
 - Fix stale memory, outdated docs, and duplication when encountered.
 - Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files; re-run status.sh to confirm it cleared. REPAIR: stays in the main session.
@@ -100,6 +104,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 <!-- Bootstrap MUST fill this section with exact commands. "Run the tests" is not filled in; `dotnet test backend/X.sln --no-build` is. -->
 
 - Areas and package managers: <e.g. frontend `app/` — pnpm only>
+- Catalogs: <one per area — e.g. `docs/backend-catalog.md`; unconditional hook, read before creating anything new. Name the areas that have one; note any dead code never to reuse.>
 - Build: <exact command(s)>
 - Test: <exact command(s), noting any serial-execution constraints>
 - Lint / typecheck: <exact command(s)>

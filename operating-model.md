@@ -53,7 +53,7 @@ project-root/
 | `memory.md` | Index of durable facts: one line per file in `memory/`, no facts inline. | Agent (when a fact file is added, superseded, or removed) |
 | `memory/*.md` | One durable fact per file — a decision, preference, or constraint, not a running summary. | Agent (when durable facts change) |
 | `session-log.md` | Meeting notes. One index entry per session; format in the file's header contract. | Agent (mandatory, every session) |
-| `docs/*.md` | Architecture, features, data flows — cites the code/test path that pins each behavior rather than paraphrasing it; a path is checkable, prose isn't. Expensive-to-infer context the agent produces from scanning the codebase. An area that outgrows one file splits into `docs/<area>/` sub-docs, routed from the same `architecture.md` table. | Agent (from codebase scan + your input) |
+| `docs/*.md` | Architecture, features, data flows — cites the code/test path that pins each behavior rather than paraphrasing it; a path is checkable, prose isn't. Expensive-to-infer context the agent produces from scanning the codebase. An area that outgrows one file splits into `docs/<area>/` sub-docs, routed from the same `architecture.md` table. One kind earns an unconditional hook: a **catalog**, the area's index of what already exists (building blocks, sources, ingested material) plus the recipes for adding another — it loads for every task in its area, because its job is to be read *before* something new gets built. | Agent (from codebase scan + your input) |
 
 The distinction between rules and memory: **rules tell the agent how to behave. Memory tells the agent what to know.** Rules are imperative ("always re-read files after editing"). Memory is declarative ("project uses PostgreSQL, user prefers simple solutions").
 
@@ -124,7 +124,7 @@ here; area gotchas go to the matching `.agent/docs/` file under `## Gotchas`.
 `docs/<area>.md`, the node's largest and fastest-growing file type, whose header carries its shape rules — the `Read when:` hook stays on the first line, where `status.sh` reads it:
 
 ```markdown
-<!-- Read when: <one-line hook, same text as this doc's architecture.md row> -->
+<!-- Read when: <one-line hook, same text as this doc's architecture.md entry> -->
 # <Area>
 <!-- Agent-facing reference, not a human narrative: facts belong in tables
 or one-fact-per-line bullets; prose carries only the *why*. Cite the code
@@ -136,6 +136,27 @@ writer when this doc splits into docs/<area>/ sub-docs:
 .agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row
 together). -->
 ```
+
+`docs/architecture.md`, the routing index every session reads before it reads any area doc:
+
+```markdown
+# Architecture routing table
+<!-- One entry per doc in this directory, in this format:
+
+### `<file>`
+- **Read when:** <hook — the same text as the doc's own "Read when:" header>
+- **Sections:** <the doc's `## ` headings, separated by " · ">
+
+Read when: is precision — skip the doc when the hook doesn't match. Sections:
+is recall — find the doc that holds a topic its hook never names. Refresh both
+when the doc changes: status.sh flags a hook that disagrees with the doc's own
+header, and a `## ` heading missing from Sections. A section entry may say more
+than its heading; it may not say less. A doc whose hook is unconditional
+("ANY <area> work — check here before creating a new …") is a catalog: it loads
+for every task in its area, not only when a hook matches. -->
+```
+
+Two fields because they answer different questions. The hook decides whether to open the doc at all; it goes stale in the one direction that matters, since it is written when the doc is new and rarely revisited. The section list is what finds a doc whose hook never names the topic you need — and unlike the hook it is anchored to something checkable, because every `## ` heading must appear in it.
 
 ### The node manifest
 
@@ -407,6 +428,8 @@ The `presets/` folder demonstrates this with seeds for software development, aca
 **Why disable tool-native memory?** Four architectural reasons, not a claim that it's unreliable: home-directory memory is ephemeral in devcontainers, repo knowledge needs to travel through git with the repo, solo projects still want memory versioned, and agents should not write outside the project directory. `.agent/` stays the sole durable store either way.
 
 **Why does the agent write the docs, not the user?** The user explains the project in conversation; the agent converts it into documentation. The user's job is to think and direct, not to format.
+
+**Why do some docs load unconditionally?** Files split along load-condition boundaries, not topic boundaries — the same rule that makes `memory.md` an index and `memory/` the facts. Most `docs/` routing is *conditional* and scales with task size: a typo reads the target file, a feature reads its area doc. A catalog is routed by task *kind* instead: any task that creates something new needs to know what already exists, however small the task is. Splitting the catalog out from the area doc is what lets the deep-dive stay conditional while the inventory stays mandatory; merged, one of the two gets the wrong load condition. The failure it prevents — an agent building a second copy of something the project already has, or inventing a pattern beside an established one — passes tests, passes lint, and survives review, so nothing else in the model catches it.
 
 **Provenance over rationalization.** Every constant in the system — grooming thresholds, ceilings, defaults — states its provenance where it lives: field data from the instances, a real incident, or an explicit chosen-default note. A number that turns out to have none is replaced with a sourced one, not defended because it ships. V6.1 replaced its own implementation-time limits this way after they flagged the field's healthiest artifacts.
 

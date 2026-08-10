@@ -92,10 +92,20 @@ file in full before editing it; work the two moves in this order:
 2. Split by sub-area when one file genuinely covers several: create
    `docs/<area>/<sub-doc>.md` files via `.agent/scripts/docs.sh new
    --name <area>/<sub-doc> --read-when "…"` (each gets its own routing
-   row), move each section's content to its sub-doc, then delete the
-   original file and its routing row once every section has a home.
+   entry), move each section's content to its sub-doc, then delete the
+   original file and its routing entry once every section has a home.
    Routing stays in the single `docs/architecture.md` table; a sub-doc
    loads only when its hook matches the task.
+
+Split only what covers several *areas*. A doc covering one area in many
+facets — where the sections share invariants and get read together —
+stays whole and gets tightened instead; splitting it fragments the
+invariants and costs more routing entries than it saves.
+
+Either move changes the doc's headings, so finish by refreshing its
+`architecture.md` entry: the `Sections:` list, and the hook if the
+doc's scope moved. `status.sh` flags both, so re-running it is the
+check.
 
 ## Proving a doc restructuring dropped nothing
 

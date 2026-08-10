@@ -149,16 +149,29 @@ EOF
   if [ ! -s "$arch" ]; then
     cat >"$arch" <<'EOF'
 # Architecture routing table
-<!-- One row per doc in this directory. Format: | file | read-when hook |. -->
+<!-- One entry per doc in this directory, in this format:
 
-| Doc | Read when |
-|---|---|
+### `<file>`
+- **Read when:** <hook — the same text as the doc's own "Read when:" header>
+- **Sections:** <the doc's `## ` headings, separated by " · ">
+
+Read when: is precision — skip the doc when the hook doesn't match. Sections:
+is recall — find the doc that holds a topic its hook never names. Refresh both
+when the doc changes: status.sh flags a hook that disagrees with the doc's own
+header, and a `## ` heading missing from Sections. A section entry may say more
+than its heading; it may not say less. A doc whose hook is unconditional
+("ANY <area> work — check here before creating a new …") is a catalog: it loads
+for every task in its area, not only when a hook matches. -->
 EOF
   fi
 
-  printf -- '| %s | %s |\n' "$filename" "$readwhen" >>"$arch"
+  {
+    printf -- '\n### `%s`\n' "$filename"
+    printf -- '- **Read when:** %s\n' "$readwhen"
+    printf -- '- **Sections:**\n'
+  } >>"$arch"
 
-  echo "docs.sh: wrote $doc and added its routing row to $arch"
+  echo "docs.sh: wrote $doc and added its routing entry to $arch"
   exit 0
   ;;
 
