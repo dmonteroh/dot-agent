@@ -14,8 +14,17 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: bash scripts/test.sh
+      # Single-byte locales are where bash 3.2 and awk stop agreeing with
+      # UTF-8 source: the leading byte of "—" is the letter "â" in
+      # Latin-1, so an unbraced $var absorbs it into the variable name and
+      # [[:alnum:]] counts it as a word. Both bugs shipped green under a
+      # UTF-8 locale and failed on the runner. ISO8859-1 is present on the
+      # macOS images without generating a locale.
+      - if: runner.os == 'macOS'
+        run: LC_ALL=en_US.ISO8859-1 bash scripts/test.sh
+      - run: LC_ALL=C bash scripts/test.sh
 
   shellcheck:
     # Gated at warning severity: the info-level findings (SC2015 pass/fail
@@ -23,5 +32,5 @@ jobs:
     # are deliberate.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: shellcheck --severity=warning scripts/*.sh

@@ -88,9 +88,23 @@ case "$summary" in
 esac
 
 # Count words, not punctuation: a free-standing separator (an em dash,
-# a lone hyphen) does not spend the ceiling.
+# a lone hyphen) does not spend the ceiling. Separators are matched as
+# literal bytes rather than by asking the locale what counts as a letter:
+# under a single-byte locale, [[:alnum:]] treats the em dash's leading
+# byte (0xE2, "â" in Latin-1) as alphanumeric, and the dash spends a word.
 summary_words=$(printf '%s' "$summary" \
-  | awk '{ n = 0; for (i = 1; i <= NF; i++) if ($i ~ /[[:alnum:]]/) n++; print n }')
+  | awk '{
+      n = 0
+      for (i = 1; i <= NF; i++) {
+        t = $i
+        gsub(/[-|\/]/, "", t)
+        gsub(/—/, "", t)
+        gsub(/–/, "", t)
+        gsub(/·/, "", t)
+        if (t != "") n++
+      }
+      print n
+    }')
 if [ "$summary_words" -gt "$SUMMARY_MAX_WORDS" ]; then
   echo "log.sh: --summary is $summary_words words, over the $SUMMARY_MAX_WORDS-word ceiling" >&2
   exit 1

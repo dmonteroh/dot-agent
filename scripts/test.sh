@@ -754,7 +754,11 @@ while IFS= read -r block; do
     grep -qF -- "$block" "$reporoot/presets/$p.md" && hits=$((hits + 1))
   done
   label=$(printf '%s' "$block" | cut -c1-52)
-  [ "$hits" -eq 3 ] && pass "shared: \"$label…\" in all three presets" || fail "shared: \"$label…\" in all three presets (found in $hits)"
+  # ${label} is braced, not bare: in a single-byte locale the first byte of
+  # the following "…" (0xE2) is the letter â, and bash 3.2 parses an
+  # unbraced $name with locale-aware isalnum(), so it absorbs that byte into
+  # the variable name and `set -u` kills the run.
+  [ "$hits" -eq 3 ] && pass "shared: \"${label}…\" in all three presets" || fail "shared: \"${label}…\" in all three presets (found in $hits)"
 done <<EOF
 $(awk '/^```/ { inb = !inb; next } inb && NF { print }' "$sharedfile")
 EOF
