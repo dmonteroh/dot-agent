@@ -53,7 +53,7 @@ project-root/
 | `rules/quality-bar.md` | The verifier's rubric: judgement criteria, split from the preset's Quality bar section at bootstrap. Loads on demand, not every session — see [Subagents and parallel sessions](#subagents-and-parallel-sessions). | Agent (from preset, at bootstrap) |
 | `purpose.md` | Why this project exists, who it's for, key constraints. Where to change what. | Agent (from conversation with you) |
 | `memory.md` | Index of durable facts: one line per file in `memory/`, no facts inline. | Agent (when a fact file is added, superseded, or removed) |
-| `memory/*.md` | One durable fact per file — a decision, preference, or constraint, not a running summary. | Agent (when durable facts change) |
+| `memory/*.md` | One durable fact per file — a decision, preference, or constraint, not a running summary. Frontmatter and the fact; the contract for all of them is `memory.md`'s header. | Agent (when durable facts change) |
 | `session-log.md` | Meeting notes. One index entry per session; format in the file's header contract. | Agent (mandatory, every session) |
 | `docs/*.md` | Architecture, features, data flows — cites the code/test path that pins each behavior rather than paraphrasing it; a path is checkable, prose isn't. Expensive-to-infer context the agent produces from scanning the codebase. An area that outgrows one file splits into `docs/<area>/` sub-docs, routed from the same `architecture.md` table; depth that no routed doc should carry goes to `docs/<area>/references/` (see [The reference tier](#the-reference-tier)). One kind earns an unconditional hook: a **catalog**, the area's index of what already exists (building blocks, sources, ingested material) plus the recipes for adding another — it loads for every task in its area, because its job is to be read *before* something new gets built. | Agent (from codebase scan + your input) |
 
@@ -87,10 +87,21 @@ Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
 Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
-and its index line together). -->
+and its index line together).
+This contract covers memory/ too, so fact files carry no header of their
+own. Each holds one durable fact under date, scope, and type
+frontmatter. Keep a fact only if work in this node changes when it is
+true: one carried in from another repo or a migration earns its place
+again or is dropped. Two halves that would be superseded at different
+times are two files. Supersede in place: rewrite the fact and the date,
+keep the filename; no dated narratives, no command output, no history.
+As small as the fact allows; expansive detail goes to docs/ with a
+pointer fact here. type: reference points outward at a URL, dashboard,
+ticket, or spec the node does not own: checked for reachability, not
+superseded like a fact. -->
 ```
 
-`memory/<slug>.md` — one fact file:
+`memory/<slug>.md` — one fact file, frontmatter and the fact:
 
 ```markdown
 ---
@@ -98,15 +109,29 @@ date: YYYY-MM-DD
 scope: <project | package | root>
 type: <fact | reference>
 ---
-<!-- One durable fact per file: one decision, one preference, one
-constraint — non-obvious operating facts. If two halves of this file
-would be superseded at different times, they are two files. Supersede in
-place: rewrite the fact and the date, keep the filename; no dated
-narratives, no command output, no history. As small as the fact allows;
-expansive detail goes to docs/ with a pointer fact here. type: reference
-marks a pointer outward — a URL, dashboard, ticket, or spec the node does
-not own; it is checked for reachability, not superseded like a fact. -->
+
+<the fact>
 ```
+
+This is the one tier whose files carry no header contract, and the
+exception is about arity rather than importance. Every other canonical
+file is a singleton — one `purpose.md`, one `session-log.md`, one
+`architecture.md` — so its contract is written once no matter how large
+the node grows. Area docs are the near-case: one per area, holding
+hundreds of words, so a header costs a few percent of the file. `memory/`
+is the only tier with N files at roughly sixty words each, and there the
+same 97-word header came to 1,455 words against 1,025 words of fact on a
+15-fact field node. The contract outweighed what it governed.
+
+Duplication was not buying enforcement either. That node carried a fact
+about a Jira project map for a skill the repo does not use, migrated into
+V6.1 shape with the header sitting directly above it, and it survived the
+migration and two rounds of questioning before anyone dropped it. The
+header stated formats and never asked the question that would have caught
+it. So `memory.md`'s header now opens with the retention test — keep a
+fact only if work in this node changes when it is true — and a fact
+arriving from another repo or a migration is a new candidate, not an
+inheritance.
 
 `type` separates the two things an index line can be. A `fact` is
 something the node knows and supersedes as the project changes. A

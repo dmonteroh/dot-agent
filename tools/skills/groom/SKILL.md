@@ -41,8 +41,10 @@ session.
 ## A `memory/<slug>.md` fact file over the outlier threshold
 
 The threshold is a review trigger, not a cap: a file this size likely
-holds more than one fact. Re-read the file's own header contract first:
-one fact per file. If it holds one fact that grew wordy, rewrite it
+holds more than one fact. Re-read the contract in `memory.md`'s header,
+which covers every file in `memory/`: one fact per file, kept only while
+work in this node changes when it is true. If it holds one fact that
+grew wordy, rewrite it
 tighter in place: same filename, refreshed date. If it holds two facts
 that would be superseded at different times, split it: run
 `.agent/scripts/memory.sh new` for the second fact under a new slug, then
@@ -172,6 +174,11 @@ memory-split migration: the node's pre-6.1 `memory.md` prose body, moved
 verbatim. Read it, identify each distinct durable fact inside it, and run
 `.agent/scripts/memory.sh new` once per fact (its own slug, title, hook;
 keep each body as small as the fact allows; `status.sh` flags outliers
-for review). Once every fact has a home, delete `memory/legacy.md` and
+for review). A split is not a shape migration: each fact faces the
+retention test on the way through, and one that no longer changes any
+work here — a tool this project stopped using, another repo's
+configuration — is dropped rather than carried into a new file. The first
+field split kept a fact about a skill the repo does not use, and it
+survived two rounds of review before anyone asked what it was for. Once every fact has a home, delete `memory/legacy.md` and
 remove its index line from `memory.md` by hand: `memory.sh new` only
 appends index lines, it doesn't remove this one.

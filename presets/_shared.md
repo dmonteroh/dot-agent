@@ -93,7 +93,7 @@ domain-specific text; everything else here is shared:
 ```
 
 ```
-  - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per its header contract: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
+  - `memory/`: write the fact to `memory/<slug>.md` (prefer `.agent/scripts/memory.sh new`) — one fact per file, per the header contract in `memory.md`: a decision, term, preference, or active blocker — then add or update its index line in `memory.md`. Keep it only if work in this node changes when it is true. Supersede in place, don't append. If nothing durable changed, leave both unchanged and say so in the log entry.
 ```
 
 The shared tail of the `docs/` bullet — each preset writes its own lead-in

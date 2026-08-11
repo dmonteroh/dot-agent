@@ -303,13 +303,24 @@ mkdir -p "$memroot"
 finish_bootstrap "$memroot"
 memcopy="$memroot/.agent/scripts/memory.sh"
 
-"$memcopy" new --slug test-fact --title "Test Fact" --hook "why it matters for tests" --fact "This is a short durable fact used only for the smoke test suite." "$memroot" >/dev/null 2>&1
+out9=$("$memcopy" new --slug test-fact --title "Test Fact" --hook "why it matters for tests" --fact "This is a short durable fact used only for the smoke test suite." "$memroot" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && pass "memory.sh new: valid fact exits 0" || fail "memory.sh new: valid fact exits 0"
 factfile="$memroot/.agent/memory/test-fact.md"
 [ -f "$factfile" ] && pass "memory.sh new: fact file created" || fail "memory.sh new: fact file created"
 grep -q '^date: ' "$factfile" 2>/dev/null && grep -q '^scope: project' "$factfile" 2>/dev/null && pass "memory.sh new: fact file has date and scope frontmatter" || fail "memory.sh new: fact file has date and scope frontmatter"
 grep -qxF -- "- [Test Fact](memory/test-fact.md) — why it matters for tests" "$memroot/.agent/memory.md" && pass "memory.sh new: index line appended" || fail "memory.sh new: index line appended"
+
+# memory/ is the one tier that carries no header contract. Every other
+# canonical file is a singleton, so its contract is written once however
+# large the node grows; memory/ is N files of ~60 words, where the same
+# header came to 1,455 words against 1,025 words of fact on a 15-fact field
+# node. The contract lives once in memory.md's header, and the script says
+# it out loud to the session that is writing.
+grep -q '<!--' "$factfile" && fail "memory.sh new: the fact file carries no header contract" || pass "memory.sh new: the fact file carries no header contract"
+printf '%s\n' "$out9" | grep -qF 'supersede in place' && pass "memory.sh new: the write reminds the writer of the contract" || fail "memory.sh new: the write reminds the writer of the contract ($out9)"
+grep -qF 'fact files carry no header of their' "$memroot/.agent/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"
+grep -qF 'Keep a fact only if work in this node changes when it is' "$memroot/.agent/memory.md" && pass "memory.md's header states the retention test" || fail "memory.md's header states the retention test"
 
 flags9=$(status_flags "$memroot")
 [ -z "$flags9" ] && pass "memory.sh new: status.sh clean afterward" || fail "memory.sh new: status.sh clean afterward ($flags9)"
@@ -454,6 +465,42 @@ Deploys go through the internal release tool only.
 EOF
 "$NODE" update "$headroot" >/dev/null 2>&1
 grep -q '^# Deploy facts' "$headroot/.agent/memory/legacy.md" 2>/dev/null && pass "update: a custom first-line heading survives into legacy.md" || fail "update: a custom first-line heading survives into legacy.md"
+
+# A node that already split its memory carries the old shape: a 97-word
+# header in every fact file and a memory.md header covering only the index.
+# The split step skips it — memory/ is present — so without this the whole
+# change would reach new nodes only.
+hdrroot="$WORK/update-fact-headers"
+mkdir -p "$hdrroot/.agent/memory"
+make_v6_fixture "$hdrroot"
+cat >"$hdrroot/.agent/memory.md" <<'EOF'
+# Memory
+<!-- Index only, one line per fact file, newest last; reorder by
+relevance only when grooming.
+Format: - [Title](memory/slug.md) — hook. -->
+
+- [Auth flow](memory/auth-flow.md) — touching login
+EOF
+cat >"$hdrroot/.agent/memory/auth-flow.md" <<'EOF'
+---
+date: 2026-01-01
+scope: project
+type: fact
+---
+<!-- One durable fact per file: one decision, one preference, one
+constraint — non-obvious operating facts. If two halves of this file
+would be superseded at different times, they are two files. -->
+
+Auth uses rotating tokens, refreshed every 900 seconds.
+EOF
+"$NODE" update "$hdrroot" >/dev/null 2>&1
+hdrfact="$hdrroot/.agent/memory/auth-flow.md"
+grep -q '<!--' "$hdrfact" 2>/dev/null && fail "update: an existing fact file loses its header contract" || pass "update: an existing fact file loses its header contract"
+grep -qF 'Auth uses rotating tokens, refreshed every 900 seconds.' "$hdrfact" 2>/dev/null && pass "update: stripping the header keeps the fact" || fail "update: stripping the header keeps the fact"
+grep -q '^date: 2026-01-01' "$hdrfact" 2>/dev/null && grep -q '^type: fact' "$hdrfact" 2>/dev/null && pass "update: stripping the header keeps the frontmatter" || fail "update: stripping the header keeps the frontmatter"
+grep -qF 'This contract covers memory/ too' "$hdrroot/.agent/memory.md" 2>/dev/null && pass "update: memory.md's header gains the memory/ contract" || fail "update: memory.md's header gains the memory/ contract"
+grep -qxF -- "- [Auth flow](memory/auth-flow.md) — touching login" "$hdrroot/.agent/memory.md" && pass "update: rewriting the header keeps the index lines" || fail "update: rewriting the header keeps the index lines"
+[ ! -e "$hdrroot/.agent/memory/legacy.md" ] && pass "update: an already-split node grows no legacy.md" || fail "update: an already-split node grows no legacy.md"
 
 # ---- 15. update: a failed backup aborts before touching the node ----
 if [ "$(id -u)" -eq 0 ]; then

@@ -130,27 +130,30 @@ new)
   mkdir -p "$memdir"
   date_stamp=$(date +%Y-%m-%d)
 
+  # Frontmatter and the fact, and no header contract. Every other canonical
+  # file carries its own because there is one of it; memory/ is the only
+  # tier with N files, and at ~60 words a fact the contract outweighed the
+  # facts it governed 1.4 to 1 on a 15-fact field node. It lives once in
+  # memory.md's header, which loads every session and is the tier's index.
+
   cat >"$factfile" <<EOF
 ---
 date: $date_stamp
 scope: $scope
 type: $type
 ---
-<!-- One durable fact per file: one decision, one preference, one
-constraint — non-obvious operating facts. If two halves of this file
-would be superseded at different times, they are two files. Supersede in
-place: rewrite the fact and the date, keep the filename; no dated
-narratives, no command output, no history. As small as the fact allows;
-expansive detail goes to docs/ with a pointer fact here. type: reference
-marks a pointer outward — a URL, dashboard, ticket, or spec the node does
-not own; it is checked for reachability, not superseded like a fact. -->
 
 $fact
 EOF
 
   printf -- '- [%s](memory/%s.md) — %s\n' "$title" "$slug" "$hook" >>"$memory"
 
+  # The contract reaches the writer through the script's output rather than
+  # through a header copied into the file. Same words, but they arrive in
+  # the session holding the fact in hand and cost nothing on every later
+  # read; a header would be paid by every session that only opens the file.
   echo "memory.sh: wrote $factfile and indexed it in $memory"
+  echo "memory.sh: one fact per file — supersede in place (rewrite the fact and the date, keep the filename), and drop it once no work here changes on it. Full contract: memory.md's header."
   exit 0
   ;;
 

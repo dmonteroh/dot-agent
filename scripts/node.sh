@@ -38,6 +38,84 @@ EOF
 cmd="${1:-}"
 [ $# -ge 1 ] && shift
 
+# The fact-file header contract moved into memory.md's header. Every other
+# canonical file is a singleton, so its contract is written once however
+# large the node grows; memory/ is the only tier with N files, and at ~60
+# words a fact the same 97-word header came to 1,455 words against 1,025
+# words of fact on a 15-fact field node. Worse, it bought no curation: that
+# node carried a fact about a skill the repo does not use, migrated into
+# 6.1 shape with the header directly above it, and the header stated
+# formats and never asked whether the fact still mattered.
+memory_headers_stale() {
+  mh_agent="$1"
+  [ -f "$mh_agent/memory.md" ] \
+    && ! grep -qF 'This contract covers memory/ too' "$mh_agent/memory.md" \
+    && return 0
+  for mh_f in "$mh_agent"/memory/*.md; do
+    [ -e "$mh_f" ] || continue
+    grep -q '^<!-- One durable fact per file' "$mh_f" && return 0
+  done
+  return 1
+}
+
+# Both edits are exact-string: the header comment is deleted whole and the
+# fact below it is never read; memory.md keeps every index line under a
+# replaced header. Sets migrate_note.
+migrate_memory_headers() {
+  mg_agent="$1"
+  mg_memory="$mg_agent/memory.md"
+  mg_stripped=0
+  migrate_note="memory headers already current"
+  for mg_f in "$mg_agent"/memory/*.md; do
+    [ -e "$mg_f" ] || continue
+    grep -q '^<!-- One durable fact per file' "$mg_f" || continue
+    awk '
+      /^<!-- One durable fact per file/ { drop = 1 }
+      drop { if (/-->/) drop = 0; next }
+      { print }
+    ' "$mg_f" >"$mg_f.tmp" && mv "$mg_f.tmp" "$mg_f"
+    mg_stripped=$((mg_stripped + 1))
+  done
+  if [ -f "$mg_memory" ] && ! grep -qF 'This contract covers memory/ too' "$mg_memory"; then
+    mg_body="$mg_agent/.memory-index.tmp"
+    mg_end=""
+    if head -n 5 "$mg_memory" | grep -qF '<!--'; then
+      mg_end=$(grep -n -- '-->' "$mg_memory" | head -n1 | cut -d: -f1)
+    fi
+    mg_end=${mg_end:-0}
+    tail -n +"$((mg_end + 1))" "$mg_memory" \
+      | awk 'NR == 1 && /^# Memory[[:space:]]*$/ { next } { print }' \
+      | sed -e '/./,$!d' >"$mg_body"
+    cat >"$mg_memory" <<'EOF'
+# Memory
+<!-- Index only, one line per fact file, newest last; reorder by
+relevance only when grooming.
+Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
+fact that lives only as a line here and not as its own file under
+memory/ is not recorded. Delete the line when its file is deleted.
+Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
+and its index line together).
+This contract covers memory/ too, so fact files carry no header of their
+own. Each holds one durable fact under date, scope, and type
+frontmatter. Keep a fact only if work in this node changes when it is
+true: one carried in from another repo or a migration earns its place
+again or is dropped. Two halves that would be superseded at different
+times are two files. Supersede in place: rewrite the fact and the date,
+keep the filename; no dated narratives, no command output, no history.
+As small as the fact allows; expansive detail goes to docs/ with a
+pointer fact here. type: reference points outward at a URL, dashboard,
+ticket, or spec the node does not own: checked for reachability, not
+superseded like a fact. -->
+
+EOF
+    cat "$mg_body" >>"$mg_memory"
+    rm -f "$mg_body"
+  fi
+  [ "$mg_stripped" -gt 0 ] \
+    && migrate_note="memory.md header now carries the memory/ contract; $mg_stripped fact file(s) stripped of their own"
+  return 0
+}
+
 case "$cmd" in
 init)
   preset=""
@@ -109,7 +187,18 @@ Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
 Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
-and its index line together). -->
+and its index line together).
+This contract covers memory/ too, so fact files carry no header of their
+own. Each holds one durable fact under date, scope, and type
+frontmatter. Keep a fact only if work in this node changes when it is
+true: one carried in from another repo or a migration earns its place
+again or is dropped. Two halves that would be superseded at different
+times are two files. Supersede in place: rewrite the fact and the date,
+keep the filename; no dated narratives, no command output, no history.
+As small as the fact allows; expansive detail goes to docs/ with a
+pointer fact here. type: reference points outward at a URL, dashboard,
+ticket, or spec the node does not own: checked for reachability, not
+superseded like a fact. -->
 EOF
 
   cat >"$agent/rules/learned.md" <<'EOF'
@@ -222,7 +311,33 @@ EOF
   esac
 
   lowest=$(printf '%s\n%s\n' "$oldversion" "$TARGET_VERSION" | sort -V | head -n1)
-  if [ "$oldversion" = "$TARGET_VERSION" ] || [ "$lowest" != "$oldversion" ]; then
+  if [ "$lowest" != "$oldversion" ]; then
+    # Newer than this script: never touched, not even to migrate a shape
+    # this version happens to know about. Its memory.md is a later format's
+    # to define.
+    echo "node.sh: node is current (version $oldversion)"
+    exit 0
+  fi
+  if [ "$oldversion" = "$TARGET_VERSION" ]; then
+    # Version-current is not shape-current: the fact-file header moved into
+    # memory.md after 6.1 shipped, so a node already on 6.1 needs the same
+    # migration and would never reach the block below. Only when there is
+    # something to migrate, and behind the same backup, since memory/ is
+    # untracked in every mode but track-all.
+    if memory_headers_stale "$agent"; then
+      if [ "$mode" != "track-all" ]; then
+        backup="$root/.agent.backup-v$oldversion"
+        if [ -e "$backup" ]; then
+          echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
+          exit 1
+        fi
+        cp -R "$agent" "$backup" \
+          || { echo "node.sh: backup to $backup failed — aborting before touching the node" >&2; exit 1; }
+        echo "node.sh: backed up node to $backup"
+      fi
+      migrate_memory_headers "$agent"
+      echo "node.sh: $migrate_note"
+    fi
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
@@ -272,7 +387,18 @@ Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
 Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
-and its index line together). -->
+and its index line together).
+This contract covers memory/ too, so fact files carry no header of their
+own. Each holds one durable fact under date, scope, and type
+frontmatter. Keep a fact only if work in this node changes when it is
+true: one carried in from another repo or a migration earns its place
+again or is dropped. Two halves that would be superseded at different
+times are two files. Supersede in place: rewrite the fact and the date,
+keep the filename; no dated narratives, no command output, no history.
+As small as the fact allows; expansive detail goes to docs/ with a
+pointer fact here. type: reference points outward at a URL, dashboard,
+ticket, or spec the node does not own: checked for reachability, not
+superseded like a fact. -->
 
 - [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag
 EOF
@@ -286,12 +412,26 @@ Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
 fact that lives only as a line here and not as its own file under
 memory/ is not recorded. Delete the line when its file is deleted.
 Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
-and its index line together). -->
+and its index line together).
+This contract covers memory/ too, so fact files carry no header of their
+own. Each holds one durable fact under date, scope, and type
+frontmatter. Keep a fact only if work in this node changes when it is
+true: one carried in from another repo or a migration earns its place
+again or is dropped. Two halves that would be superseded at different
+times are two files. Supersede in place: rewrite the fact and the date,
+keep the filename; no dated narratives, no command output, no history.
+As small as the fact allows; expansive detail goes to docs/ with a
+pointer fact here. type: reference points outward at a URL, dashboard,
+ticket, or spec the node does not own: checked for reachability, not
+superseded like a fact. -->
 EOF
       split_note="memory.md was empty/header-only — replaced with the index header, no legacy file"
     fi
     rm -f "$body_tmp"
   fi
+
+  migrate_memory_headers "$agent"
+  header_note="$migrate_note"
 
   # Refresh the scripts from the source repo.
   mkdir -p "$agent/scripts"
@@ -310,6 +450,7 @@ EOF
 
   echo "node.sh: updated $agent from version $oldversion to $TARGET_VERSION"
   echo "node.sh: $split_note"
+  echo "node.sh: $header_note"
   echo "node.sh: status.sh, log.sh, memory.sh, and docs.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model"
   exit 0
