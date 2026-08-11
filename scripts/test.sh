@@ -822,6 +822,23 @@ printf '\nSee `learned.md` for the accumulated corrections.\n' >>"$lk/.agent/doc
 out28e=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28e" | grep -qF 'cites learned.md' && fail "links.sh: a loose basename resolves against the node" || pass "links.sh: a loose basename resolves against the node"
 
+# A bare name the node cannot resolve is as likely a project file as a node
+# one — memory facts name `SKILL.md` and `implementer-prompt.md` constantly.
+# A field node reported 12 BROKEN links, 11 of them project files sitting in
+# a subdirectory rather than at the project root.
+mkdir -p "$lk/skills/testing"
+printf '# Testing\n' >"$lk/skills/testing/SKILL.md"
+printf '\nThe bar lives in `SKILL.md`, and `skills/testing/SKILL.md` implements it.\n' >>"$lk/.agent/docs/backend.md"
+out28i=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28i" | grep -qF 'cites SKILL.md' && fail "links.sh: a bare name held by the project is not broken" || pass "links.sh: a bare name held by the project is not broken"
+printf '%s\n' "$out28i" | grep -qF 'skills/testing/SKILL.md' && fail "links.sh: an out-of-model .agent directory is not audited as a target" || pass "links.sh: an out-of-model .agent directory is not audited as a target"
+
+# The resolution is by name, not a blanket amnesty: a name no one holds is
+# still the finding the audit exists to produce.
+printf '\nAlso `nowhere-at-all.md`.\n' >>"$lk/.agent/docs/backend.md"
+out28j=$("$LINKS" "$lk" 2>&1)
+printf '%s\n' "$out28j" | grep -qF 'cites nowhere-at-all.md' && pass "links.sh: a name neither node nor project holds is still broken" || fail "links.sh: a name neither node nor project holds is still broken ($out28j)"
+
 # session-log.md is a historical record: an entry naming a brief that has
 # since been archived is doing its job.
 printf -- '- [2026-01-01] (claude) worked from `docs/gone-forever.md` (backend). verify: pass.\n' >>"$lk/.agent/session-log.md"

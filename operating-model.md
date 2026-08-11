@@ -207,6 +207,8 @@ Three genres of file are excluded as citation *sources*, because naming a file i
 
 Those exclusions are what makes the output readable, and they were derived rather than designed. The first run against a field instance produced 117 findings, of which all but a handful were session-log entries citing task briefs that had legitimately been archived months earlier. The same run, once scoped, found six genuine dangling doc references and an entry point still pointing at `rules/software-development.md` — the V5-era filename, left behind by a rename the node had otherwise completed.
 
+Deciding *whether a name addresses the node at all* is the other half, and shape cannot settle it: a bare `SKILL.md` in a memory fact looks exactly like a bare `learned.md` in a doc, and node docs really do cite each other by bare name. So a name the node cannot resolve is checked against the project's markdown before it is reported — a second field instance produced 12 `BROKEN:` findings on a healthy node, 11 of them memory facts naming real project files that sit in a subdirectory rather than at the project root. What survives is the case no script can settle: a path naming a file in a *third* repo, such as a skill documenting where its consuming project should keep its config. That one stays reported, because the audit is tuned to over-report rather than to miss a real dangling link, and because a finding here is a review trigger and not an error.
+
 ### The node manifest
 
 Every node carries its identity as YAML frontmatter on `purpose.md`, the least-rewritten file in the node:

@@ -17,6 +17,16 @@
 # field run without that rule produced 117 findings, all but a handful of
 # them project paths a session-log entry had legitimately outlived.
 #
+# Shape alone cannot tell a project file from a node file. A bare `SKILL.md`
+# looks exactly like a bare `learned.md`, and node docs really do cite each
+# other by bare name, so the name is checked against the project's markdown
+# too, not only the node's: a second field run reported 12 BROKEN links on a
+# healthy node, 11 of them memory facts naming real project files
+# (`SKILL.md`, `implementer-prompt.md`) that live in a subdirectory rather
+# than at the project root. What no script can settle is a path that names a
+# file in a third repo — a skill documenting where its consuming project
+# should keep its config — which is why findings stay review triggers.
+#
 # Findings are review triggers, not errors: an orphan is often a file that
 # should be cited, sometimes one that should be deleted, occasionally
 # neither. Always exits 0; the report is the product.
@@ -67,6 +77,19 @@ nodefiles=()
 while IFS= read -r f; do
   [ -n "$f" ] && nodefiles+=("$f")
 done < <(find "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
+
+# Every markdown basename in the project, newline-delimited and newline-
+# bounded so a lookup is one `case` against a string rather than a loop or a
+# subprocess per candidate. Built once; the walk below consults it for every
+# cited name that the node itself cannot resolve. The heavy vendored trees
+# are pruned because they hold thousands of files and none of them is what a
+# node doc means by a bare name.
+projbasenames=$'\n'
+while IFS= read -r f; do
+  [ -n "$f" ] && projbasenames="$projbasenames${f##*/}"$'\n'
+done < <(find "$root" \( -name .git -o -name node_modules -o -name vendor \
+  -o -name .venv -o -name dist -o -name build -o -name target \) -prune -o \
+  -type f -name '*.md' -print 2>/dev/null)
 
 # A file's body with <!-- --> comments stripped. Header contracts live in
 # comments and state formats by example — memory.md's says
@@ -174,11 +197,14 @@ for c in "${corpus[@]}"; do
 
     # In scope only if the target addresses the node: an .agent/-prefixed
     # path, a path under one of the node's own directories, or a bare
-    # basename. Anything else is a project path.
+    # basename. Anything else is a project path. skills/ and its siblings are
+    # not on that list even though they sit under .agent/ — the operating
+    # model places them outside itself, never loaded and never audited, so a
+    # cited skills/testing/SKILL.md is the project's file to keep alive.
     stripped=${target#./}
     inagent=${stripped#.agent/}
     case "$inagent" in
-    docs/* | memory/* | rules/* | archive/* | scripts/* | skills/*) ;;
+    docs/* | memory/* | rules/* | archive/* | scripts/*) ;;
     */*) continue ;;
     *) ;;
     esac
@@ -195,6 +221,10 @@ for c in "${corpus[@]}"; do
       case "$nf" in */"$tbase") resolved=1; break ;; esac
     done
     [ "$resolved" -eq 1 ] && continue
+    # Not the node's, but the project holds a file by that name: a memory
+    # fact naming `SKILL.md` or `implementer-prompt.md` is describing the
+    # project, and the project's files are not the node's to audit.
+    case "$projbasenames" in *$'\n'"$tbase"$'\n'*) continue ;; esac
     case " $reported " in *" $target "*) continue ;; esac
     reported="$reported $target"
     echo "BROKEN: ${c#"$root"/} cites $target — no such file in the node"
