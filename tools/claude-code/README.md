@@ -2,6 +2,8 @@
 
 Optional Claude Code wiring for the [dot-agent operating model](../../operating-model.md).
 
+Claude Code is the wiring matrix's fully verified column (see the operating model's [Wiring your tools](../../operating-model.md#wiring-your-tools)): its entry point and its native-memory switch are both shipped here and checked by `status.sh`.
+
 `settings-example.json` ships two things:
 
 - `"autoMemoryEnabled": false`, the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).

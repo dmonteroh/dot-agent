@@ -16,7 +16,7 @@ Two costs follow the knowledge that does get written down. It drifts, because a 
 
 A `.agent/` directory of markdown at the project root. Any agent reads it, any agent writes it, and it travels with the code through git.
 
-**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. Each tool's native memory gets switched off at the setting, leaving one store instead of several.
+**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename — and the operating model's wiring matrix records what is actually verified per tool, with dates, instead of asserting it. Native tool memory is switched off where the tool has a setting for it (Claude Code's is shipped and checked; the matrix tracks the rest), leaving one store instead of several.
 
 **Shareable without a platform.** A tracking mode, chosen once, decides what enters git. `track-shared` publishes purpose, rules, and docs for the team to review in a pull request, while memory and session logs stay personal to each developer.
 
@@ -158,7 +158,7 @@ then update this project's existing .agent/ node to match it.
 5. Report what changed, what was preserved, and anything flagged.
 ```
 
-Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, native memory still enabled), `INDEX:` flags for doc-routing drift, and advisory `TOOLS:` notes; the agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate; grooming rides the load path.
+Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, native memory still enabled), `INDEX:` flags for doc-routing drift, advisory `TOOLS:` notes, and an advisory `LOAD:` line measuring what the always-loaded set costs; the agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate; grooming rides the load path.
 
 One check is deliberately not on that path: `.agent/scripts/links.sh` audits the node's own link graph on demand, reporting `ORPHAN:` (a file nothing cites) and `BROKEN:` (a cited node path that doesn't exist). Run it when grooming or after a restructuring pass. It matters most for `docs/<area>/references/`, which carries no routing entry by design, so an uncited reference file is unreachable and nothing on the load path can tell.
 

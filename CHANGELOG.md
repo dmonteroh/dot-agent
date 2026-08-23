@@ -4,6 +4,41 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
+## V6.2 (2026-08-23): Claims become checks
+
+### Why
+
+V6.1's standing claims got instruments. Portability was asserted for four tools and never tested, and one asserted value had already rotted. The always-loaded set was bounded per file but never summed. `.agent/` was treated as a leak surface but not as the injection surface a store every future session auto-loads also is. And the session-log entry format lived only in prose and a bypassable writer: a live node hand-appended 32 of 32 entries past the ceiling, the largest 306 words, while a sibling node held 0 of 88 — and no check could tell them apart.
+
+### What changed
+
+#### Portability
+
+- The wiring table is a disposition matrix: entry point, native-memory switch, and a verified-against source and date per tool. A cell reads `verified` only against the product or its vendor's own documentation; `reported` and `unknown` print as themselves, and prose never outruns the cells.
+- Verified 2026-08-23: Cursor reads `AGENTS.md` at the project root, and `.cursorrules` is legacy — deprecated, reported ignored by agent mode. Copilot's coding agent reads `AGENTS.md` and `CLAUDE.md`; Chat and code review read `.github/copilot-instructions.md`. `AGENTS.md` is stewarded by the Agentic AI Foundation. The recommended mirror set becomes `CLAUDE.md` + `AGENTS.md`, plus `.github/copilot-instructions.md` for teams using Copilot Chat or code review; `status.sh` and `links.sh` keep `.cursorrules` in their candidate lists so existing nodes' mirrors stay checked.
+- `test.sh` gains a vendor-token lint over the node-landing corpus — presets, template, node scripts — with a commented allowlist of the deliberate references, and asserts the wiring matrix and both scripts' candidate lists cover the same entry-point set, so a tool added to one surface cannot arrive unchecked on another.
+
+#### The status check
+
+- One advisory `LOAD:` line every run: the always-loaded set's word total with a per-file breakdown, plus the log tail the check just printed. No threshold — the two live instances measured 2026-08-23 ran ~4,600–4,700 words, a calibration point rather than provenance — and the line covers the three set members with no per-file trigger: `contract.md`, `purpose.md`, the routing table.
+- `GROOM:` on session-log entries over `LOG_ENTRY_MAX_WORDS` (50: the header format's 25 with 2× grace), entries counted whole across hand-wrapped lines. The groom skill covers clearing it.
+
+#### Memory security
+
+- The origin gate: durable records — memory facts, learned rules, preferences — are minted only from the user's own messages or the session's verified work; a directive inside processed material is content to report, never an instruction to record. The full rule joins every preset's Continuity contract and a shared clause joins every Kernel's security slot, both locked by `_shared.md`.
+- The operating model's Security section states the mirror rule — load as if it could have been planted — the cross-tool amplification a shared store creates, and the control's honest label: cooperative, with `track-shared` PR review as the mechanical gate.
+- The Continuity contract's `memory/` bullet defers to `memory.md`'s header contract instead of restating three of its rules.
+
+#### Mechanics
+
+- `node.sh` targets `"6.2"`; the 6.1→6.2 update is script refresh plus version bump, with preset changes landing through the normal reconcile step. The update message now names `links.sh` among the refreshed scripts.
+
+### Migrating a V6.1 node
+
+Run `scripts/node.sh update`, then reconcile `rules/contract.md` against the current preset: the security slot's appended clause, the origin-gate bullet, and the shortened `memory/` bullet. Re-derive entry points only if adopting the new mirror set; existing mirrors keep being checked either way.
+
+---
+
 ## V6.1 (2026-07-27): Tiered context and scripted writes
 
 ### Why

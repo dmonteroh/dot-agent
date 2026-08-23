@@ -1,8 +1,10 @@
 <!-- Canonical entry-point template. Copy into each tool's entry-point
-filename (CLAUDE.md, AGENTS.md, .cursorrules, .github/copilot-instructions.md),
-fill every <…> placeholder, and delete this comment. Root nodes write every
-path absolute (bash ~/.agent/scripts/status.sh ~, ~/.agent/rules/…) since
-sessions run from project directories. Keep all entry points identical. -->
+filename (CLAUDE.md, AGENTS.md; plus .github/copilot-instructions.md when
+the team uses Copilot Chat or code review — the operating model's wiring
+matrix records what each tool reads), fill every <…> placeholder, and
+delete this comment. Root nodes write every path absolute (bash
+~/.agent/scripts/status.sh ~, ~/.agent/rules/…) since sessions run from
+project directories. Keep all entry points identical. -->
 # <Project> — Session Bootstrap
 
 <One line: stack, key dirs, package managers.> Binding rules and state load

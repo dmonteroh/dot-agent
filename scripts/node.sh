@@ -19,7 +19,7 @@
 set -u
 unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
 
-TARGET_VERSION="6.1"
+TARGET_VERSION="6.2"
 SOURCE_URL="https://github.com/dmonteroh/dot-agent"
 
 selfdir=$(cd "$(dirname "$0")" && pwd)
@@ -451,7 +451,7 @@ EOF
   echo "node.sh: updated $agent from version $oldversion to $TARGET_VERSION"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, and docs.sh refreshed from source repo"
+  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, and links.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model"
   exit 0
   ;;

@@ -38,6 +38,16 @@ header comment if it doesn't exist yet), then delete those lines from
 place (the flag names the number) so the flag doesn't fire again next
 session.
 
+The entry-shape flag (`entries over N words`) is a different fix:
+the flagged entries breached the header format's per-entry ceiling —
+usually hand-written narratives that bypassed `log.sh`. Rewrite each to
+the header template (task, area, outcome, ≤25 words, `verify:` field)
+and route any durable detail the narrative carried to `memory/` (if it
+passes the retention test) or the matching `docs/` file; most of it is
+transcript, and transcript is dropped, not moved. This flag is a
+per-session cost, not cosmetics: oversized entries ride the status
+check's printed tail into every session's context.
+
 ## A `memory/<slug>.md` fact file over the outlier threshold
 
 The threshold is a review trigger, not a cap: a file this size likely

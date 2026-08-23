@@ -7,7 +7,10 @@
 #           step was never completed
 #   INDEX:  a docs/ file and the routing table disagree
 #   TOOLS:  environment availability note — advisory, not actionable
-# Nothing prints on pass. Always exits 0: this is information on the load
+#   LOAD:   what the always-loaded set costs, in words — an advisory
+#           measurement printed every run, deliberately without a threshold
+# No finding prints on pass; the recent entries and the LOAD line are
+# information, not flags. Always exits 0: this is information on the load
 # path, not a completion gate — the binding instruction ("handle flags as
 # part of this session") lives in the entry point.
 #
@@ -33,8 +36,16 @@ set -u
 # Docs: chosen default set just under the smaller of the two field docs
 # (2,200 and 3,200 words) whose density forced a manual restructuring
 # pass. Tail: covers the busiest logged day (23 entries).
+# Log entry: the header contract's format is ≤25 words; 50 is that ceiling
+# with 2x grace (chosen default). The check exists because the format
+# otherwise lives only in prose and a bypassable writer: a live node
+# hand-appended narrative entries past log.sh — 32 of 32 over 50 words,
+# the largest 306 — while a sibling node held 0 of 88, and no check could
+# tell the two apart. Every oversized entry also rides the tail print
+# below into every session's context.
 LOG_MAX_ENTRIES=120
 LOG_MAX_WORDS=5000
+LOG_ENTRY_MAX_WORDS=50
 MEMORY_MAX_WORDS=300
 MEMORY_MAX_ENTRIES=100
 LEARNED_MAX_RULES=60
@@ -133,6 +144,19 @@ if [[ -s "$log" ]]; then
   entries=$(grep -c '^- \[' "$log")
   if [[ "$entries" -gt "$LOG_MAX_ENTRIES" || "$(words "$log")" -gt "$LOG_MAX_WORDS" ]]; then
     echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))"
+  fi
+  # Entry shape, not just file size: an entry is everything from its `- [`
+  # marker to the next one, so a hand-wrapped narrative is counted whole.
+  oversized=$(awk -v max="$LOG_ENTRY_MAX_WORDS" '
+    /^- \[/ { if (inentry && cnt > max) { n++; if (cnt > big) big = cnt }
+              inentry = 1; cnt = 0 }
+    inentry { cnt += NF }
+    END { if (inentry && cnt > max) { n++; if (cnt > big) big = cnt }
+          printf "%d %d", n, big }' "$log")
+  over_n=${oversized% *}
+  over_big=${oversized#* }
+  if [[ "$over_n" -gt 0 ]]; then
+    echo "GROOM: session-log.md entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh"
   fi
 fi
 if [[ -d "$memdir" ]]; then
@@ -286,6 +310,32 @@ if [[ -n "$missing" ]]; then
 fi
 if ! sed --version >/dev/null 2>&1; then
   echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
+fi
+
+# LOAD: the always-loaded set, measured. A per-file limit that is never
+# summed is not a limit, and three members of this set (contract, purpose,
+# the routing table) carry no per-file trigger at all. Advisory on purpose:
+# the two live field instances measured 2026-08-23 both ran ~4,600-4,700
+# words — one calibration point, not provenance for a threshold. The tail
+# term prices what this check itself printed above.
+load_total=0
+load_detail=""
+load_add() {
+  [[ -s "$2" ]] || return 0
+  lw=$(words "$2")
+  load_total=$((load_total + lw))
+  load_detail="$load_detail, $1 $lw"
+}
+load_add entry "${entrypoints[0]-}"
+load_add contract "$contract"
+load_add learned "$learned"
+load_add purpose "$purpose"
+load_add memory "$memory"
+load_add routing "$arch"
+if [[ "$load_total" -gt 0 ]]; then
+  tailwords=0
+  [[ -n "${recent:-}" ]] && tailwords=$(printf '%s' "$recent" | wc -w | tr -d '[:space:]')
+  echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
 fi
 
 exit 0

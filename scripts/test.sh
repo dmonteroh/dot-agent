@@ -221,7 +221,7 @@ grep -qF "[Legacy memory](memory/legacy.md)" "$v6root/.agent/memory.md" 2>/dev/n
 grep -v '^  version:' "$WORK/purpose-before.md" >"$WORK/pb-noversion"
 grep -v '^  version:' "$v6root/.agent/purpose.md" >"$WORK/pa-noversion"
 diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version line" || fail "update: manifest diff touches only the version line"
-grep -q '^  version: "6.1"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version is now \"6.1\"" || fail "update: version is now \"6.1\""
+grep -q '^  version: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version is now \"6.2\"" || fail "update: version is now \"6.2\""
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
@@ -659,10 +659,12 @@ printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with it
 subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: refreshing both sides clears the hook flag" || fail "routing: refreshing both sides clears the hook flag ($(status_flags "$rt"))"
 
-# ---- 20. status.sh is fully silent on a bootstrapped node ----
+# ---- 20. status.sh on a bootstrapped node: no findings, one LOAD line ----
 fresh19="$WORK/init-academic-research-track-all"
-out19=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
-[ -z "$out19" ] && pass "status.sh: bootstrapped node prints nothing (no stray blank line)" || fail "status.sh: bootstrapped node prints nothing (no stray blank line)"
+out19all=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
+out19=$(printf '%s\n' "$out19all" | grep -v '^LOAD:')
+[ -z "$out19" ] && pass "status.sh: bootstrapped node prints no findings (no stray blank line)" || fail "status.sh: bootstrapped node prints no findings (no stray blank line)"
+[ "$(printf '%s\n' "$out19all" | grep -c '^LOAD:')" = "1" ] && pass "status.sh: exactly one LOAD line on a quiet node" || fail "status.sh: exactly one LOAD line on a quiet node ($out19all)"
 
 # ---- 23. bootstrap-completion checks: guardrails and entry-point mirror ----
 # The judgement half of bootstrap left no evidence before these checks, so a
@@ -928,6 +930,109 @@ out29b=$("$LINKSSP" "$spaceroot" 2>&1)
 printf '%s\n' "$out29b" | grep -qF 'ORPHAN: docs/back end/references/deep dive.md' && pass "links.sh: a filename with spaces is reported whole, not in fragments" || fail "links.sh: a filename with spaces is reported whole, not in fragments ($out29b)"
 printf '%s\n' "$out29b" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' && fail "links.sh: exemptions survive a path with spaces" || pass "links.sh: exemptions survive a path with spaces"
 printf '%s\n' "$out29b" | grep -qi 'awk:' && fail "links.sh: no tool is handed a path fragment" || pass "links.sh: no tool is handed a path fragment"
+
+# ---- 30. portability: the node-landing corpus stays vendor-neutral ----
+# The corpus is read as authored — one tree, every tool reads the same
+# bytes, no build step — so a tool or vendor name that leaks into a preset,
+# the template, or a node script ships verbatim into every other tool's
+# sessions, where it is an instruction some agent cannot follow. Nothing
+# errors when that happens; this lint is the only mechanism that notices.
+# Each allowlisted pattern below marks a deliberate reference:
+#   filename (CLAUDE.md          template header — copying instruction, deleted on copy
+#   uses Copilot Chat            template header — the same instruction's Copilot clause
+#   and AGENTS.md identical      template — the mirror rule
+#   (claude/sonnet)              the log-tag format example (preset + node.sh heredoc)
+#   $root/CLAUDE.md, $root/.github/copilot-instructions.md
+#                                the entry-point candidate lists (status.sh, links.sh)
+#   hand-written AGENTS.md       status.sh comment beside that list
+#   autoMemoryEnabled, $root/.claude, /nonexistent}/.claude
+#                                the verified tool's native-memory check
+lint_allow="$WORK/lint-allow"
+cat >"$lint_allow" <<'EOF'
+filename (CLAUDE.md
+uses Copilot Chat
+and AGENTS.md identical
+(claude/sonnet)
+$root/CLAUDE.md
+$root/.github/copilot-instructions.md
+hand-written AGENTS.md
+autoMemoryEnabled
+$root/.claude
+/nonexistent}/.claude
+EOF
+lint_re='claude|cursor|copilot|codex|anthropic|openai|sonnet|opus|haiku|gpt-|agents\.md'
+hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
+  presets/software-development.md presets/academic-research.md \
+  presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
+  scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
+  scripts/links.sh scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
+[ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
+
+printf 'When stuck, ask SomeVendor to run it in Cursor.\n' >"$WORK/leak.md"
+hits30b=$(grep -inE "$lint_re" "$WORK/leak.md" | grep -vF -f "$lint_allow")
+[ -n "$hits30b" ] && pass "portability: the lint catches an injected vendor token" || fail "portability: the lint catches an injected vendor token"
+
+# ---- 31. portability: one entry-point set, three surfaces ----
+# The tool-to-filename mapping lives in the operating model's wiring matrix
+# and in two scripts' candidate lists (status.sh's mirror check, links.sh's
+# corpus). A tool added to one surface and not the others arrives unchecked
+# and nothing notices — so this asserts all three carry the same set. The
+# set includes legacy names (.cursorrules) on purpose: existing nodes'
+# mirrors keep being checked even after the wiring guidance moves on.
+eps_from() { grep -oE '"\$root/([^"]*\.md|\.cursorrules)"' "$1" | sort -u; }
+eps_status=$(eps_from "$reporoot/scripts/status.sh")
+eps_links=$(eps_from "$reporoot/scripts/links.sh")
+[ -n "$eps_status" ] && [ "$eps_status" = "$eps_links" ] && pass "portability: status.sh and links.sh share one candidate list" || fail "portability: status.sh and links.sh share one candidate list"
+
+wiring31=$(awk '/^## Wiring your tools/ { f = 1; next } f && /^## / { exit } f' "$reporoot/operating-model.md")
+missing31=""
+for ep in CLAUDE.md AGENTS.md .cursorrules .github/copilot-instructions.md .claude/CLAUDE.md; do
+  printf '%s\n' "$eps_status" | grep -qF "/$ep\"" || missing31="$missing31 candidates:$ep"
+  printf '%s\n' "$wiring31" | grep -qF "$ep" || missing31="$missing31 wiring:$ep"
+done
+[ -z "$missing31" ] && pass "portability: the wiring matrix and the candidate lists cover the same entry points" || fail "portability: the wiring matrix and the candidate lists cover the same entry points ($missing31)"
+
+# ---- 32. status.sh: the LOAD line ----
+# The always-loaded set is bounded per file but was never summed, and three
+# of its members (contract, purpose, the routing table) carry no per-file
+# trigger. The LOAD line is a measurement, not a flag: advisory, printed
+# every run, no threshold until the field supplies one.
+ld="$WORK/load-line"
+mkdir -p "$ld"
+"$NODE" init --preset software-development --mode track-all "$ld" >/dev/null 2>&1
+finish_bootstrap "$ld"
+loadline=$("$ld/.agent/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
+[ -n "$loadline" ] && pass "status.sh: LOAD line prints on a quiet node" || fail "status.sh: LOAD line prints on a quiet node"
+printf '%s\n' "$loadline" | grep -q 'contract' && pass "status.sh: LOAD names its components" || fail "status.sh: LOAD names its components ($loadline)"
+total32=$(printf '%s\n' "$loadline" | sed -E 's/^LOAD: always-loaded set ~([0-9]+) words.*/\1/')
+sum32=$(printf '%s\n' "$loadline" | sed -E 's/.*\((.*)\).*/\1/' | tr ',' '\n' | awk '{ s += $2 } END { print s }')
+[ -n "$total32" ] && [ "$total32" = "$sum32" ] && pass "status.sh: LOAD arithmetic sums its components" || fail "status.sh: LOAD arithmetic sums its components (total $total32, sum $sum32)"
+[ -z "$(status_flags "$ld")" ] && pass "status.sh: LOAD is advisory — a quiet node stays quiet" || fail "status.sh: LOAD is advisory — a quiet node stays quiet ($(status_flags "$ld"))"
+
+printf 'Session bootstrap: run .agent/scripts/status.sh first.\n' >"$ld/CLAUDE.md"
+loadline32b=$("$ld/.agent/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
+printf '%s\n' "$loadline32b" | grep -q '(entry ' && pass "status.sh: LOAD counts the entry point once wired" || fail "status.sh: LOAD counts the entry point once wired ($loadline32b)"
+
+# ---- 33. status.sh: session-log entry shape ----
+# The 25-word entry format lives in the header contract and in log.sh — one
+# is prose, the other bypassable by hand-editing the file. A live node
+# hand-appended 32/32 narrative entries (largest 306 words) with zero flags
+# while a sibling held 0/88; this is the check that tells them apart.
+es="$WORK/entry-shape"
+mkdir -p "$es"
+"$NODE" init --preset software-development --mode track-all "$es" >/dev/null 2>&1
+finish_bootstrap "$es"
+printf -- '- [2026-01-02] (tool) %s\n' "$(words_n 60)" >>"$es/.agent/session-log.md"
+f33=$(status_flags "$es")
+printf '%s\n' "$f33" | grep -qF "entries over 50 words: 1 (largest 63" && pass "status.sh: an oversized log entry is flagged with count and size" || fail "status.sh: an oversized log entry is flagged with count and size ($f33)"
+
+printf -- '- [2026-01-03] (tool) %s\n' "$(words_n 45)" >>"$es/.agent/session-log.md"
+f33b=$(status_flags "$es")
+printf '%s\n' "$f33b" | grep -qF "entries over 50 words: 1" && pass "status.sh: an at-format entry does not flag" || fail "status.sh: an at-format entry does not flag ($f33b)"
+
+printf -- '- [2026-01-04] (tool) %s\n%s\n' "$(words_n 30)" "$(words_n 30)" >>"$es/.agent/session-log.md"
+f33c=$(status_flags "$es")
+printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: a hand-wrapped entry is counted whole" || fail "status.sh: a hand-wrapped entry is counted whole ($f33c)"
 
 # ---- summary ----
 total=$((PASS + FAIL))

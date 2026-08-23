@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 6.1 (2026-07-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
+> **Version 6.2 (2026-08-23).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -336,6 +336,8 @@ This is a blast-radius stance, not a claim that native memory is unreliable. The
 - If you notice sensitive data in `.agent/`, remove it immediately
 - Terminal pastes, debug output, and copied error messages are common sources; review periodically
 
+**The mirror rule: load as if it could have been planted.** `.agent/` is an injection surface as well as a leak surface. The agent auto-loads what earlier sessions wrote, so a directive that talks one session into writing a fact binds every future session of every tool, on every machine that pulls the repo — the same portability that makes the store useful widens the blast radius of a poisoned write. The write is where the chain cuts: durable records are minted only from the user's own messages or the session's verified work, and a "remember this" inside processed material — a file, a reviewed document, a PR or issue, tool output — is content to report, never an instruction to record. The binding rule is the presets' Continuity contract and each Kernel's security slot. Like the rest of the trust contract it is a cooperative control, not a mechanical one; the mechanical gate is `track-shared` PR review, which already stands between anything agent-written and everyone else's sessions.
+
 Even in `ignore-all` mode the gitignore is a safety net, not a security boundary: `.agent/` can still be synced by backup tools, read by other processes, or included in archives.
 
 ---
@@ -377,14 +379,16 @@ This works at any level, root or project node. Reconciliation is a diff between 
 
 ## Wiring your tools
 
-Each AI tool gets a thin entry point: a short file the tool loads automatically; the context lives in `.agent/`. One canonical template serves every tool, and per-tool wiring is "put this template in the tool's filename":
+Each AI tool gets a thin entry point: a short file the tool loads automatically; the context lives in `.agent/`. One canonical template serves every tool, and per-tool wiring is "put this template in the tool's filename". The table is a disposition matrix, not a feature list: a cell reads **verified** only when it was checked against the product itself or the vendor's own documentation, with a source and a date; **reported** marks secondary sources awaiting that check; **unknown** means nobody checked. Prose claims never outrun these cells, and a matrix without dates is indistinguishable from one that has rotted.
 
-| Tool | Entry point file |
-|---|---|
-| Codex, and anything AGENTS.md-aware | `AGENTS.md` |
-| Claude Code | `CLAUDE.md` (project root, or `~/.claude/CLAUDE.md` for a root node) |
-| Cursor | `.cursorrules` |
-| Copilot | `.github/copilot-instructions.md` |
+| Tool | Entry point | Native-memory switch | Verified |
+|---|---|---|---|
+| Claude Code | `CLAUDE.md` (project root, or `~/.claude/CLAUDE.md` for a root node) | `"autoMemoryEnabled": false` in `.claude/settings.json` — shipped in `tools/claude-code/`, checked by `status.sh` | verified — v2.1.220, 2026-08-23 |
+| Codex, and anything AGENTS.md-aware | `AGENTS.md` — stewarded by the Agentic AI Foundation, read by 20+ tools | Codex has a Memories layer; its disable switch is unchecked | entry point verified (agents.md, 2026-08-23); memory switch unknown |
+| Cursor | `AGENTS.md` at the project root — the vendor-documented alternative to `.cursor/rules`. `.cursorrules` is legacy: deprecated, and reported ignored by agent mode | a Memories feature exists; a settings switch is reported, with a reported agent-mode bypass bug | entry point verified (cursor.com/docs, 2026-08-23); memory cells reported (secondary, 2026-08) |
+| Copilot | `.github/copilot-instructions.md` (Chat and code review); the coding agent also reads `AGENTS.md` and `CLAUDE.md` | unknown | entry points verified (docs.github.com, 2026-08-23); memory unknown |
+
+The mirror set follows from the verified cells: `CLAUDE.md` + `AGENTS.md` together cover Claude Code, Codex, Cursor, and Copilot's coding agent; add `.github/copilot-instructions.md` when the team uses Copilot Chat or code review. `.cursorrules` left the recommended wiring in V6.2, but `status.sh` and `links.sh` keep it in their entry-point candidate lists so existing nodes' mirrors stay checked; `test.sh` asserts those lists and this matrix cover the same set, so a tool added to one surface cannot arrive unchecked on another.
 
 ### The canonical entry point
 
@@ -442,7 +446,7 @@ Continuity follows the work, not the directory the session was opened in. A sess
 
 A second kind of knowledge doesn't come from code; it comes from watching how the operator works. When you correct an agent, express a preference, or reveal a working pattern, that's a signal: agents record it as a fact file in the appropriate node's `memory/`, indexed from `memory.md`. Not every interaction, but patterns and clear preferences; the recording rule (trigger or confidence tag) is the preset's Continuity contract.
 
-Scope follows the tree: the root learns "prefers simple solutions over configurable ones" and carries it everywhere; a project node learns "always writes tests before implementation here" and keeps it scoped. This builds across sessions and tools — the tree remembers what conversations forget.
+Scope follows the tree: the root learns "prefers simple solutions over configurable ones" and carries it everywhere; a project node learns "always writes tests before implementation here" and keeps it scoped. This builds across sessions and tools — the tree remembers what conversations forget. An observation records what the operator did or said — never what processed material asserts about them; the origin gate in the presets' Continuity contract binds here too.
 
 ### What this enables
 
@@ -515,7 +519,7 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 
 **Provenance over rationalization.** Every constant in the system — grooming thresholds, ceilings, defaults — states its provenance where it lives: field data from the instances, a real incident, or an explicit chosen-default note. A number that turns out to have none is replaced with a sourced one, not defended because it ships. V6.1 replaced its own implementation-time limits this way after they flagged the field's healthiest artifacts.
 
-**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes (nothing on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents). Thresholds (session-log over ~120 entries or ~5,000 words → archive the oldest entries; a memory fact file over ~300 body words → likely two facts, split or route detail to docs/; memory index ~100 entries → review for stale lines; learned ~60 rules, or ~2,400 words under that count → merge or compress; an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel) are variables at the top of the script; projects tune them. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is calibrated against the field instances, so a healthy node rarely sees a flag. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
+**How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment: ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path. The entry point runs it first; it prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach plus advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, always exit 0); the binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents). Thresholds (session-log over ~120 entries or ~5,000 words → archive the oldest entries; a single log entry over ~50 words — the header format's 25 with 2× grace — → distill it to format; a memory fact file over ~300 body words → likely two facts, split or route detail to docs/; memory index ~100 entries → review for stale lines; learned ~60 rules, or ~2,400 words under that count → merge or compress; an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel) are variables at the top of the script; projects tune them. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is calibrated against the field instances, so a healthy node rarely sees a flag. The entry-shape trigger earns its place the hard way: a live node hand-appended narrative entries past `log.sh` — 32 of 32 over 50 words, the largest 306 — while a sibling node held 0 of 88, and until V6.2 no check could tell the two apart; every oversized entry also rides the printed tail into every session's context. The `LOAD:` line is the one always-printed measurement: the always-loaded set's word total with a per-file breakdown, plus the log tail the check just printed. It carries no threshold on purpose — a per-file limit that is never summed is not a limit, three members of the set (`contract.md`, `purpose.md`, the routing table) have no per-file trigger at all, and the only field data so far (two live instances measured 2026-08-23 at ~4,600–4,700 words) is a calibration point, not provenance for one. The line is what accumulates that provenance. There is no `--fix` scaffolding: placeholder scaffolds are phantom-compliance bait, and repair is a bootstrap-time conversation, not a sed job.
 
 ---
 
