@@ -1,19 +1,33 @@
 ---
 name: groom
-description: Use when .agent/scripts/status.sh prints a GROOM: line (session-log.md, a memory/*.md fact file, the memory.md index, rules/learned.md, an oversized docs/ file, or memory/legacy.md over its threshold) and you need the procedure for clearing it, or when auditing a node for orphaned and broken links.
+description: "Clears the GROOM: flags .agent/scripts/status.sh prints — one procedure per flagged file (session-log.md, a memory/*.md fact, the memory.md index, rules/learned.md, an oversized docs/ file, memory/legacy.md) — and runs the on-demand orphan/broken-link audit. Use when a status check prints a GROOM: line, or when auditing a node's links."
 ---
 
 # Grooming `.agent/`
 
 The binding rule, that `GROOM:` flags get handled as part of the current
 session, lives in the node's `.agent/rules/contract.md` (from the preset's
-Kernel and Continuity contract). The thresholds themselves live in one
-place: the variables at the top of the node's own
-`.agent/scripts/status.sh` (the operating model's design decisions
-explain where each number came from). This skill is an optional
-walkthrough of *how* to clear each flag; it adds no obligation beyond
-what those two sources already state, and a node with no skills
-installed grooms fine without it.
+Kernel and Continuity contract). The threshold defaults live at the top of
+the node's own `.agent/scripts/status.sh` (the operating model's design
+decisions explain where each number came from); a project tunes them in
+`.agent/scripts/status.conf`, which survives `node.sh update` — script
+edits don't. This skill is an optional walkthrough of *how* to clear each
+flag; it adds no obligation beyond what those two sources already state,
+and a node with no skills installed grooms fine without it.
+
+## Use this skill when
+
+`.agent/scripts/status.sh` printed a `GROOM:` line, or the operator asked
+for a link audit (`links.sh`).
+
+## Do not use this skill when
+
+- The flag is `REPAIR:` or `INDEX:` — each names its own fix in the flag
+  text; neither is grooming, and `REPAIR:` stays in the main session.
+- No flag stands and no audit was asked for: thresholds are review
+  triggers, and grooming ahead of them trades signal for churn.
+- A threshold itself seems wrong — that is a `status.conf` tuning
+  decision for the operator, not a grooming step.
 
 This skill also works as a subagent brief. Per the contract's subagent
 rule, a session may delegate its `GROOM:` flags to one dispatched worker

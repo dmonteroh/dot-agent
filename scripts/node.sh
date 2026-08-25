@@ -176,7 +176,8 @@ Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pas
 Append the model to the tag when the harness states one — (claude/sonnet) —
 never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
 narrative. Preferred writer: .agent/scripts/log.sh (stamps date, enforces
-the ceiling). -->
+the ceiling; with log.conf's LOG_INCLUDE_BRANCH=true also stamps
+`branch: <name>.` before verify, read from git). -->
 EOF
 
   cat >"$agent/memory.md" <<'EOF'
@@ -233,10 +234,18 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
       || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
+  done
+  # Starter confs — the comment gate's vocabulary and the status check's
+  # tunables. Configs, so the node edits or deletes them freely from here
+  # on; without the files on disk the knobs are undiscoverable, since
+  # agents execute these scripts rather than read them.
+  for conffile in comments.conf status.conf log.conf; do
+    cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile" \
+      || { echo "node.sh: $conffile copy failed" >&2; exit 1; }
   done
 
   # A gitignore at $HOME is commonly git's global core.excludesFile; a
@@ -433,11 +442,20 @@ EOF
   migrate_memory_headers "$agent"
   header_note="$migrate_note"
 
-  # Refresh the scripts from the source repo.
+  # Refresh the shipped scripts from the source repo — by exactly these
+  # names. Anything else under scripts/ is the node's own and is never
+  # overwritten; a missing starter conf is seeded, the one write that
+  # cannot clobber node content.
   mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script"
     chmod +x "$agent/scripts/$script"
+  done
+  for conffile in comments.conf status.conf log.conf; do
+    if [ ! -f "$agent/scripts/$conffile" ]; then
+      cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile"
+      echo "node.sh: $conffile seeded with the starter (node-owned from here on)"
+    fi
   done
 
   # Bump version — nothing else in the frontmatter changes. Rewrite exactly
@@ -451,7 +469,7 @@ EOF
   echo "node.sh: updated $agent from version $oldversion to $TARGET_VERSION"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, and links.sh refreshed from source repo"
+  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, and comments.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model"
   exit 0
   ;;

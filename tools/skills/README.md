@@ -51,4 +51,4 @@ explicitly if the team wants to share installed skills through git. In
 | Skill | Use when |
 |---|---|
 | [`groom/`](groom/) | `status.sh` prints a `GROOM:` flag |
-| [`retro/`](retro/) | deciding whether to distill a learned rule, end of session |
+| [`retro/`](retro/) | a retro trigger fired (user correction, failed verification, plan deviation, comment-hygiene breach), or session close before the log entry |

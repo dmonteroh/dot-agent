@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # scripts/test.sh — self-contained smoke tests for node.sh, status.sh,
-# log.sh, memory.sh, and docs.sh (the scripts this repo ships under
-# scripts/, which node.sh init/update copies into every node).
+# log.sh, memory.sh, docs.sh, links.sh, and comments.sh (the scripts this
+# repo ships under scripts/, which node.sh init/update copies into every
+# node).
 #
 # Usage: scripts/test.sh    (run from anywhere; resolves the repo from its
 # own location via $0). Builds every fixture under a fresh mktemp -d
@@ -965,7 +966,8 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   presets/software-development.md presets/academic-research.md \
   presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
-  scripts/links.sh scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
+  scripts/links.sh scripts/comments.sh scripts/comments.conf \
+  scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
 printf 'When stuck, ask SomeVendor to run it in Cursor.\n' >"$WORK/leak.md"
@@ -1033,6 +1035,204 @@ printf '%s\n' "$f33b" | grep -qF "entries over 50 words: 1" && pass "status.sh: 
 printf -- '- [2026-01-04] (tool) %s\n%s\n' "$(words_n 30)" "$(words_n 30)" >>"$es/.agent/session-log.md"
 f33c=$(status_flags "$es")
 printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: a hand-wrapped entry is counted whole" || fail "status.sh: a hand-wrapped entry is counted whole ($f33c)"
+
+# ---- 34. comments.sh: the diff comment gate ----
+# The preset's comment rule was prose in three places on a live field node
+# and was breached anyway. The gate mechanizes the objective half: an added
+# comment citing what a fresh clone cannot open BLOCKs (exit 1); every
+# other added comment is listed for justification (REVIEW, exit 0). The
+# shipped core carries only universal dead citations; workflow vocabulary —
+# base ref, ticket patterns, path exclusions — is the node's, set in
+# comments.conf beside the script (KEY=value, parsed never executed) and
+# outside the update refresh list.
+cg="$WORK/comment-gate"
+mkdir -p "$cg/src" "$cg/Migrations" "$cg/.agent/scripts"
+cp "$reporoot/scripts/comments.sh" "$cg/.agent/scripts/comments.sh"
+chmod +x "$cg/.agent/scripts/comments.sh"
+git_cg() { git -C "$cg" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
+git_cg init -q
+git_cg checkout -q -b base
+printf 'const a = 1\n// existing constraint comment\n' >"$cg/src/app.ts"
+git_cg add -A >/dev/null
+git_cg commit -q -m base
+git_cg checkout -q -b feat
+cat >>"$cg/src/app.ts" <<'EOF'
+// refactored per commit deadbeefcafe1234
+// retry cap comes from the vendor SLA
+// per AC-12 the cap is three
+// eslint-disable-next-line no-console
+const b = 2
+EOF
+printf '#region Setup\nint x = 1;\n' >"$cg/src/tool.cs"
+printf '# skipped: out of scope for this pass\ny = 1\n' >"$cg/src/calc.py"
+printf '// narration in a migration\n' >"$cg/Migrations/0001_init.cs"
+git_cg add -A >/dev/null
+git_cg commit -q -m feat
+
+out34=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34=$?
+[ "$rc34" -eq 1 ] && pass "comments.sh: a blocking citation exits 1" || fail "comments.sh: a blocking citation exits 1 (rc=$rc34)"
+block34=$(printf '%s\n' "$out34" | sed -n '/^BLOCK:/,$p')
+review34=$(printf '%s\n' "$out34" | awk '/^BLOCK:/ { exit } { print }')
+printf '%s\n' "$block34" | grep -q 'deadbeefcafe1234' && printf '%s\n' "$block34" | grep -q 'out of scope' && pass "comments.sh: SHA citations and scope narration BLOCK" || fail "comments.sh: SHA citations and scope narration BLOCK ($block34)"
+printf '%s\n' "$review34" | grep -q 'vendor SLA' && pass "comments.sh: other added comments land in REVIEW" || fail "comments.sh: other added comments land in REVIEW ($review34)"
+printf '%s\n' "$review34" | grep -q 'AC-12' && pass "comments.sh: ticket shapes are not blocked by the shipped core" || fail "comments.sh: ticket shapes are not blocked by the shipped core ($review34)"
+printf '%s\n' "$out34" | grep -q '#region' && fail "comments.sh: a C-family # line is not a comment" || pass "comments.sh: a C-family # line is not a comment"
+printf '%s\n' "$out34" | grep -q 'eslint-disable' && fail "comments.sh: tooling pragmas are skipped" || pass "comments.sh: tooling pragmas are skipped"
+printf '%s\n' "$out34" | grep -q 'existing constraint comment' && fail "comments.sh: only comments the diff adds are reported" || pass "comments.sh: only comments the diff adds are reported"
+
+# node vocabulary: ticket shapes join BLOCK, project paths leave the scan.
+# The backtick value proves the conf is parsed, never executed — sourcing
+# it would run the command.
+cat >"$cg/.agent/scripts/comments.conf" <<'EOF'
+BLOCK_RE_EXTRA=(^|[^[:alnum:]])AC-?[0-9]|(^|[^[:alnum:]])Q[0-9]+([^[:alnum:]]|$)
+EXCLUDE_RE_EXTRA=(^|/)Migrations/
+PRAGMA_RE_EXTRA=`touch pwned34`
+EOF
+out34b=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+block34b=$(printf '%s\n' "$out34b" | sed -n '/^BLOCK:/,$p')
+printf '%s\n' "$block34b" | grep -q 'AC-12' && pass "comments.sh: conf vocabulary joins BLOCK" || fail "comments.sh: conf vocabulary joins BLOCK ($block34b)"
+printf '%s\n' "$out34b" | grep -q 'narration in a migration' && fail "comments.sh: conf exclusions hide their paths" || pass "comments.sh: conf exclusions hide their paths"
+[ ! -e "$cg/pwned34" ] && pass "comments.sh: comments.conf is parsed, never executed" || fail "comments.sh: comments.conf is parsed, never executed"
+
+git_cg checkout -q base
+git_cg checkout -q -b justify
+printf '// cap ordered by the payment provider contract\nconst c = 3\n' >>"$cg/src/app.ts"
+git_cg add -A >/dev/null
+git_cg commit -q -m justify
+out34c=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34c=$?
+[ "$rc34c" -eq 0 ] && printf '%s\n' "$out34c" | grep -q '^REVIEW:' && pass "comments.sh: REVIEW alone exits 0" || fail "comments.sh: REVIEW alone exits 0 (rc=$rc34c; $out34c)"
+
+git_cg checkout -q base
+git_cg checkout -q -b clean34
+printf 'const d = 4\n' >>"$cg/src/app.ts"
+git_cg add -A >/dev/null
+git_cg commit -q -m clean
+out34d=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34d=$?
+[ "$rc34d" -eq 0 ] && [ -z "$out34d" ] && pass "comments.sh: a clean diff is silent" || fail "comments.sh: a clean diff is silent (rc=$rc34d; $out34d)"
+
+(cd "$cg" && .agent/scripts/comments.sh nosuchref >/dev/null 2>&1)
+rc34e=$?
+[ "$rc34e" -eq 2 ] && pass "comments.sh: a missing base ref exits 2" || fail "comments.sh: a missing base ref exits 2 (rc=$rc34e)"
+
+# install and refresh: init ships it; update refreshes it by name and never
+# touches the node-owned local file beside it
+cgn="$WORK/comment-gate-init"
+mkdir -p "$cgn"
+"$NODE" init --preset software-development --mode ignore-all "$cgn" >/dev/null 2>&1
+[ -x "$cgn/.agent/scripts/comments.sh" ] && pass "init: comments.sh is installed executable" || fail "init: comments.sh is installed executable"
+grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgn/.agent/scripts/comments.conf" 2>/dev/null && pass "init: the starter comments.conf is seeded" || fail "init: the starter comments.conf is seeded"
+grep -q '^PROBE_TOOLS=' "$cgn/.agent/scripts/status.conf" 2>/dev/null && pass "init: the starter status.conf is seeded" || fail "init: the starter status.conf is seeded"
+grep -q '^LOG_INCLUDE_BRANCH=' "$cgn/.agent/scripts/log.conf" 2>/dev/null && pass "init: the starter log.conf is seeded" || fail "init: the starter log.conf is seeded"
+
+cgu="$WORK/comment-gate-update"
+mkdir -p "$cgu"
+make_v6_fixture "$cgu"
+mkdir -p "$cgu/.agent/scripts"
+printf 'BASE_REF=origin/dev\n' >"$cgu/.agent/scripts/comments.conf"
+printf 'PROBE_TOOLS=jq\n' >"$cgu/.agent/scripts/status.conf"
+"$NODE" update "$cgu" >/dev/null 2>&1
+[ -x "$cgu/.agent/scripts/comments.sh" ] && pass "update: comments.sh is refreshed into an existing node" || fail "update: comments.sh is refreshed into an existing node"
+[ "$(cat "$cgu/.agent/scripts/comments.conf")" = 'BASE_REF=origin/dev' ] && pass "update: an existing comments.conf is never overwritten" || fail "update: an existing comments.conf is never overwritten"
+[ "$(cat "$cgu/.agent/scripts/status.conf")" = 'PROBE_TOOLS=jq' ] && pass "update: an existing status.conf is never overwritten" || fail "update: an existing status.conf is never overwritten"
+
+cgu2="$WORK/comment-gate-update-noconf"
+mkdir -p "$cgu2"
+make_v6_fixture "$cgu2"
+"$NODE" update "$cgu2" >/dev/null 2>&1
+grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgu2/.agent/scripts/comments.conf" 2>/dev/null && pass "update: a missing comments.conf is seeded with the starter" || fail "update: a missing comments.conf is seeded with the starter"
+grep -q '^PROBE_TOOLS=' "$cgu2/.agent/scripts/status.conf" 2>/dev/null && pass "update: a missing status.conf is seeded with the starter" || fail "update: a missing status.conf is seeded with the starter"
+grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
+
+# ---- 35. status.sh: per-node overrides in status.conf ----
+# The thresholds and the probed-tools list are per-project tunables, but
+# an edit to status.sh itself is discarded by node.sh update — a field
+# node patching gh out of PROBE_TOOLS lost the edit that way. The conf
+# beside the script survives update and is parsed, never executed.
+printf 'LOG_ENTRY_MAX_WORDS=500\n' >"$es/.agent/scripts/status.conf"
+f35=$(status_flags "$es")
+printf '%s\n' "$f35" | grep -q 'entries over' && fail "status.conf: a threshold override silences the flag" || pass "status.conf: a threshold override silences the flag"
+
+printf 'PROBE_TOOLS=zz-absent-tool-9\n' >>"$es/.agent/scripts/status.conf"
+out35=$("$es/.agent/scripts/status.sh" "$es" 2>&1)
+printf '%s\n' "$out35" | grep -q 'TOOLS: not installed: zz-absent-tool-9' && pass "status.conf: PROBE_TOOLS override is probed" || fail "status.conf: PROBE_TOOLS override is probed"
+
+subst "$es/.agent/scripts/status.conf" 's/^PROBE_TOOLS=.*/PROBE_TOOLS=sh/'
+out35b=$("$es/.agent/scripts/status.sh" "$es" 2>&1)
+printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a trimmed PROBE_TOOLS list stops the probe" || pass "status.conf: a trimmed PROBE_TOOLS list stops the probe"
+
+# ---- 36. starter confs: shown defaults match the scripts' ----
+# The starter confs list each script's defaults (commented, or live for
+# the keys projects trim first) so the knobs are discoverable on disk —
+# agents execute the scripts, they don't read them. A default shown in a
+# conf that drifted from the script's would document a lie; this pins the
+# two together.
+mismatch36=""
+for k in LOG_MAX_ENTRIES LOG_MAX_WORDS LOG_ENTRY_MAX_WORDS MEMORY_MAX_WORDS \
+         MEMORY_MAX_ENTRIES LEARNED_MAX_RULES LEARNED_MAX_WORDS \
+         DOCS_MAX_WORDS TAIL_LINES; do
+  sdef=$(sed -n "s/^$k=//p" "$reporoot/scripts/status.sh" | head -n 1 | tr -d '"')
+  cdef=$(sed -n "s/^# $k=//p" "$reporoot/scripts/status.conf" | head -n 1)
+  [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36="$mismatch36 $k"
+done
+sdef=$(sed -n 's/^PROBE_TOOLS=//p' "$reporoot/scripts/status.sh" | head -n 1 | tr -d '"')
+cdef=$(sed -n 's/^PROBE_TOOLS=//p' "$reporoot/scripts/status.conf" | head -n 1)
+[ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36="$mismatch36 PROBE_TOOLS"
+[ -z "$mismatch36" ] && pass "starter status.conf lists the script's own defaults" || fail "starter status.conf lists the script's own defaults ($mismatch36)"
+
+sdef=$(sed -n 's/^EXTENSIONS=//p' "$reporoot/scripts/comments.sh" | head -n 1 | tr -d '"')
+cdef=$(sed -n 's/^EXTENSIONS=//p' "$reporoot/scripts/comments.conf" | head -n 1)
+[ -n "$sdef" ] && [ "$sdef" = "$cdef" ] && pass "starter comments.conf lists the script's own extension default" || fail "starter comments.conf lists the script's own extension default (script '$sdef' vs conf '$cdef')"
+
+mismatch36b=""
+sdef=$(sed -n 's/^SUMMARY_MAX_WORDS=//p' "$reporoot/scripts/log.sh" | head -n 1)
+cdef=$(sed -n 's/^# SUMMARY_MAX_WORDS=//p' "$reporoot/scripts/log.conf" | head -n 1)
+[ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36b="$mismatch36b SUMMARY_MAX_WORDS"
+sdef=$(sed -n 's/^LOG_INCLUDE_BRANCH=//p' "$reporoot/scripts/log.sh" | head -n 1)
+cdef=$(sed -n 's/^LOG_INCLUDE_BRANCH=//p' "$reporoot/scripts/log.conf" | head -n 1)
+[ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36b="$mismatch36b LOG_INCLUDE_BRANCH"
+[ -z "$mismatch36b" ] && pass "starter log.conf lists the script's own defaults" || fail "starter log.conf lists the script's own defaults ($mismatch36b)"
+
+# ---- 37. log.sh: the branch stamp ----
+# LOG_INCLUDE_BRANCH=true stamps each scripted entry with the checked-out
+# branch, read from git at write time — mechanical, never asked of the
+# agent — and is silently omitted outside a git checkout. The summary
+# ceiling tunes from the same conf.
+lb="$WORK/log-branch"
+mkdir -p "$lb"
+"$NODE" init --preset software-development --mode track-all "$lb" >/dev/null 2>&1
+git -C "$lb" -c user.name=t -c user.email=t@t init -q
+git -C "$lb" checkout -q -b feat-x
+subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
+"$LOGSH" --tool t --area a --verify pass --summary "did the thing" "$lb" >/dev/null 2>&1
+tail -n 1 "$lb/.agent/session-log.md" | grep -qF '. branch: feat-x. verify: pass.' && pass "log.sh: the branch stamp reads the checked-out branch" || fail "log.sh: the branch stamp reads the checked-out branch ($(tail -n 1 "$lb/.agent/session-log.md"))"
+
+subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=true/LOG_INCLUDE_BRANCH=false/'
+"$LOGSH" --tool t --area a --verify pass --summary "did it again" "$lb" >/dev/null 2>&1
+tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch:' && fail "log.sh: false leaves the entry format unchanged" || pass "log.sh: false leaves the entry format unchanged"
+
+lb2="$WORK/log-branch-norepo"
+mkdir -p "$lb2"
+"$NODE" init --preset software-development --mode ignore-all "$lb2" >/dev/null 2>&1
+subst "$lb2/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
+"$LOGSH" --tool t --area a --verify pass --summary "no repo here" "$lb2" >/dev/null 2>&1
+rc37=$?
+[ "$rc37" -eq 0 ] && tail -n 1 "$lb2/.agent/session-log.md" | grep -q 'no repo here' && ! tail -n 1 "$lb2/.agent/session-log.md" | grep -q 'branch:' && pass "log.sh: outside a git checkout the stamp is omitted, not an error" || fail "log.sh: outside a git checkout the stamp is omitted, not an error (rc=$rc37)"
+
+printf 'SUMMARY_MAX_WORDS=5\n' >>"$lb2/.agent/scripts/log.conf"
+"$LOGSH" --tool t --area a --verify pass --summary "one two three four five six" "$lb2" >/dev/null 2>&1 \
+  && fail "log.sh: the summary ceiling tunes from log.conf" || pass "log.sh: the summary ceiling tunes from log.conf"
+
+# The stamp spends no summary budget (the ceiling is enforced on --summary
+# alone, before the line is assembled) and cannot push a format-compliant
+# entry over the entry-shape threshold: a maxed 25-word summary plus every
+# tag and the stamp runs ~33 of the 50-word grace.
+subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
+"$LOGSH" --tool t --area a --verify pass --summary "$(words_n 25)" "$lb" >/dev/null 2>&1 \
+  && tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch: feat-x' && pass "log.sh: the stamp spends no summary budget at the 25-word ceiling" || fail "log.sh: the stamp spends no summary budget at the 25-word ceiling"
+status_flags "$lb" | grep -q 'entries over' && fail "log.sh: a stamped max-length entry stays under the entry-shape flag" || pass "log.sh: a stamped max-length entry stays under the entry-shape flag"
 
 # ---- summary ----
 total=$((PASS + FAIL))

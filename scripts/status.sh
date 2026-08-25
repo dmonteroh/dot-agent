@@ -18,8 +18,10 @@
 
 set -u
 
-# Tunable per project. Thresholds are review triggers, not caps: nothing
-# refuses a write, and each number states its source. Log: ~120 entries
+# Tunable per project — in the node's status.conf (see below), never by
+# editing these lines: node.sh update refreshes this script and discards
+# edits. Thresholds are review triggers, not caps: nothing refuses a
+# write, and each number states its source. Log: ~120 entries
 # is a heavy week at the field's peak pace; the 5,000-word trigger sits
 # just under the 5,834-word log that caused the lost-history incident.
 # Memory file: 300 sits well above the largest
@@ -56,6 +58,27 @@ PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
 root="${1:-.}"
 agent="$root/.agent"
+
+# Per-node overrides for any variable above: <node>/.agent/scripts/
+# status.conf, plain KEY=value, parsed and never executed. node.sh init
+# seeds a starter listing every key; update seeds it only when absent.
+# Tune there, not here — update refreshes this script and discards edits
+# to it, but never overwrites the conf. PROBE_TOOLS lists the tools the
+# project expects; a node that doesn't use one (gh, say) lists the rest.
+conf="$agent/scripts/status.conf"
+conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
+if [[ -f "$conf" ]]; then
+  v=$(conf_get LOG_MAX_ENTRIES);      [[ -n "$v" ]] && LOG_MAX_ENTRIES="$v"
+  v=$(conf_get LOG_MAX_WORDS);        [[ -n "$v" ]] && LOG_MAX_WORDS="$v"
+  v=$(conf_get LOG_ENTRY_MAX_WORDS);  [[ -n "$v" ]] && LOG_ENTRY_MAX_WORDS="$v"
+  v=$(conf_get MEMORY_MAX_WORDS);     [[ -n "$v" ]] && MEMORY_MAX_WORDS="$v"
+  v=$(conf_get MEMORY_MAX_ENTRIES);   [[ -n "$v" ]] && MEMORY_MAX_ENTRIES="$v"
+  v=$(conf_get LEARNED_MAX_RULES);    [[ -n "$v" ]] && LEARNED_MAX_RULES="$v"
+  v=$(conf_get LEARNED_MAX_WORDS);    [[ -n "$v" ]] && LEARNED_MAX_WORDS="$v"
+  v=$(conf_get DOCS_MAX_WORDS);       [[ -n "$v" ]] && DOCS_MAX_WORDS="$v"
+  v=$(conf_get TAIL_LINES);           [[ -n "$v" ]] && TAIL_LINES="$v"
+  v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
+fi
 log="$agent/session-log.md"
 memory="$agent/memory.md"
 memdir="$agent/memory"

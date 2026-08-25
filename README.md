@@ -48,6 +48,8 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 ├── archive/        # Groomed history — archived log entries, retired facts
 ├── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
 │                   # + links.sh, the on-demand orphan/broken-link audit
+│                   # + comments.sh, the diff comment gate (node vocabulary
+│                   # in comments.conf, never refreshed by update)
 └── skills/         # Optional — installed skills, symlinked into tool dirs
 ```
 
@@ -162,6 +164,8 @@ Every session opens with a status check: the entry point's first step runs `.age
 
 One check is deliberately not on that path: `.agent/scripts/links.sh` audits the node's own link graph on demand, reporting `ORPHAN:` (a file nothing cites) and `BROKEN:` (a cited node path that doesn't exist). Run it when grooming or after a restructuring pass. It matters most for `docs/<area>/references/`, which carries no routing entry by design, so an uncited reference file is unreachable and nothing on the load path can tell.
 
+A third check runs at diff time: `.agent/scripts/comments.sh` gates the comments a diff adds — it blocks citations a fresh clone cannot open (commit SHAs, git transcripts, scope narration) and lists every other added comment for the author to justify or delete. Team-specific vocabulary (base ref, ticket patterns, the scanned extensions, path exclusions) lives in `comments.conf` beside it — plain `KEY=value`, parsed and never executed. Init seeds a starter; update seeds it only when absent and never overwrites it. The status check's thresholds and probed-tools list tune the same way, in `status.conf`, and the log writer's options in `log.conf` (`LOG_INCLUDE_BRANCH=true` stamps each entry with the checked-out branch, read from git at write time). Starters listing every key ship at init, since a knob without its file on disk is a knob no one finds; conf edits survive update, script edits don't. The operating model's "The comment gate" section documents the keys with a full example.
+
 If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading; they are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
@@ -205,7 +209,7 @@ Read **[operating-model.md](operating-model.md)** for the full operating model: 
 
 ## Working on this repo
 
-Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, and `links.sh`. It must pass before a change ships.
+Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, and `comments.sh`. It must pass before a change ships.
 
 ## License
 

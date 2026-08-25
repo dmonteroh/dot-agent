@@ -47,6 +47,7 @@ Goal: correct, useful, auditable changes. Be concise. Each sentence must carry o
 ## Verification contract
 
 - Run the verification suite for changed scope: tests, lint, typecheck, build as applicable (exact commands in Project guardrails).
+- Before handing back a diff, run `.agent/scripts/comments.sh` (the comment gate): delete what it blocks — comments citing an artifact a fresh clone cannot open — and justify or delete every comment it lists. Its vocabulary (base ref, ticket patterns, path exclusions) lives in `.agent/scripts/comments.conf`, plain KEY=value, parsed and never executed.
 - If a required tool is unavailable, state the gap instead of silently skipping.
 - If verification fails, classify: caused-by-change, pre-existing, environmental, or unknown. Investigate unknown before reporting.
 - Fix failures within task scope. For unrelated baseline failures, report command, status, blocker, and residual risk.
@@ -66,6 +67,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - If a doc was tightened or split, the pass changed shape only: every name, value, command, path, and gotcha in the pre-edit version is still present, and the word count is backed by that check rather than standing in for it.
 - Nothing new in the diff duplicates a building block the area catalog already lists, and any new reusable block added its own catalog entry in this change.
 - No comment in the diff narrates the change or cites an artifact a fresh clone cannot open; durable *why* landed in docs, not inline.
+- The comment gate (`.agent/scripts/comments.sh`) ran against the branch base: no BLOCK finding stands, and every REVIEW line was justified as a non-obvious invariant, constraint, or workaround, or deleted.
 - Verification commands ran this session against the current diff, and the reported output backs the pass/fail claim.
 - Every failure is classified (caused-by-change, pre-existing, environmental, unknown); unknowns were investigated, not waved through.
 - Unrelated baseline failures are reported with command, status, blocker, and residual risk, not silently absorbed.
@@ -93,7 +95,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 
 - Ask what check or behavior would have prevented it, and record that. A one-off outcome belongs in the session log, not here.
 - Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet. Merge near-duplicates instead of appending.
-- Route by scope: behavioral rules (scoping, verification, communication, workflow) stay in `rules/learned.md`. Area gotchas (library, API, SQL, CSS mechanics) go to the matching `.agent/docs/` file under `## Gotchas`, same format; keep at most a one-line pointer here for cross-area hazards.
+- Route by scope: behavioral rules (scoping, verification, communication, workflow) stay in `rules/learned.md`. Area gotchas (library, API, SQL, CSS mechanics) go to the matching `.agent/docs/` file under `## Gotchas`, same format; keep at most a one-line pointer here for cross-area hazards. A comment-hygiene lesson — a narrative comment or dead citation that reached review — becomes a pattern in `.agent/scripts/comments.conf`, not prose.
 
 ## Git and commits
 

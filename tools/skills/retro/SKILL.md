@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Use at end of session when deciding whether to distill a behavioral rule into rules/learned.md, or when a tool-native memory silo needs harvesting into .agent/.
+description: Distills a session's lessons into durable records. Use after a user correction, a failed verification that needed a non-obvious fix, a mid-task deviation from an agreed plan, or a comment-hygiene breach reaching review — and at session close before the log entry — routing each lesson to rules/learned.md, a docs Gotchas entry, or comments.conf vocabulary. Also covers harvesting a tool-native memory silo into .agent/.
 ---
 
 # Retro
@@ -10,6 +10,24 @@ preset's Self-learning section (part of `rules/contract.md`) and in
 `rules/learned.md`'s own header, which is the curation law itself. This
 skill is an optional walkthrough of *how* to run retro well; it adds no
 obligation beyond what those two sources already state.
+
+## Use this skill when
+
+A retro trigger from the Self-learning section fires — a user correction,
+a failed verification that needed a non-obvious fix, a mid-task deviation
+from an agreed plan, a comment-hygiene breach reaching review — or the
+session is closing and a lesson may be worth keeping.
+
+## Do not use this skill when
+
+- The outcome is a one-off: it goes in the session log, and no rule is
+  written.
+- What's being written is the session-log entry itself — that is `log.sh`'s
+  job, not retro's.
+- The lesson already has a `learned.md` entry — merge or broaden that
+  entry in place (see below) rather than re-running the walkthrough.
+- No tool-native memory silo exists — don't go looking for one; the
+  harvesting section states its own gate.
 
 ## When to distill a rule
 
@@ -46,6 +64,14 @@ area-specific mechanic (a library quirk, an API gotcha, a SQL or CSS
 behavior) belongs in the matching `.agent/docs/<area>.md` file under a
 `## Gotchas` heading instead, same entry format, with at most a one-line
 pointer left in `learned.md` for cross-area hazards.
+
+A comment-hygiene lesson — a narrative comment or dead citation that
+reached review — routes to vocabulary, not prose: add the citation's shape
+(a ticket-number format, a generated path the gate should skip) to
+`.agent/scripts/comments.conf` so `comments.sh` catches the next one
+mechanically. Write a `learned.md` rule for it only when no pattern can
+express what went wrong. This is the fix ladder in miniature: a rule that
+was already written and breached anyway needs a check, not a restatement.
 
 ## Harvesting a tool-native memory silo
 

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # log.sh — appends one session-log entry per session-log.md's header
 # contract. Stamps the date and enforces the summary word ceiling so
-# neither is something an agent can get wrong by hand.
+# neither is something an agent can get wrong by hand. With
+# LOG_INCLUDE_BRANCH=true in the node's log.conf, also stamps the
+# checked-out branch (read from git at write time — mechanical, never
+# asked of the agent; silently omitted outside a git checkout).
 #
 # Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
 #
@@ -10,10 +13,13 @@
 
 set -u
 
-# Tunable per project. 25 words is the field presets' entry ceiling
-# (V6 harvest); at that length a 120-entry log stays near the 5,000-word
-# grooming trigger (see status.sh).
+# Tunable per project — in the node's log.conf (seeded at init), never by
+# editing these lines: node.sh update refreshes this script and discards
+# edits. 25 words is the field presets' entry ceiling (V6 harvest); at
+# that length a 120-entry log stays near the 5,000-word grooming trigger
+# (see status.sh).
 SUMMARY_MAX_WORDS=25
+LOG_INCLUDE_BRANCH=false
 
 usage() {
   cat <<'EOF'
@@ -64,6 +70,15 @@ pass | fail | n/a) ;;
   echo "log.sh: --verify must be pass, fail, or n/a (got '$verify')" >&2
   exit 1 ;;
 esac
+
+# Per-node overrides: <root>/.agent/scripts/log.conf, plain KEY=value,
+# parsed and never executed.
+conf="$root/.agent/scripts/log.conf"
+conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
+if [ -f "$conf" ]; then
+  v=$(conf_get SUMMARY_MAX_WORDS);  [ -n "$v" ] && SUMMARY_MAX_WORDS="$v"
+  v=$(conf_get LOG_INCLUDE_BRANCH); [ -n "$v" ] && LOG_INCLUDE_BRANCH="$v"
+fi
 
 # The entry is one line: `- [date] (tool) summary (area). verify: …` —
 # newlines would forge extra entries, and parentheses in the tags would
@@ -117,7 +132,17 @@ if [ ! -f "$log" ]; then
 fi
 
 date_stamp=$(date +%Y-%m-%d)
-printf -- '- [%s] (%s) %s (%s). verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$verify" >>"$log"
+# symbolic-ref, not rev-parse: it names the branch even before its first
+# commit, and stays empty (stamp omitted) when detached or outside git.
+branch=""
+if [ "$LOG_INCLUDE_BRANCH" = "true" ]; then
+  branch=$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)
+fi
+if [ -n "$branch" ]; then
+  printf -- '- [%s] (%s) %s (%s). branch: %s. verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$branch" "$verify" >>"$log"
+else
+  printf -- '- [%s] (%s) %s (%s). verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$verify" >>"$log"
+fi
 
 echo "log.sh: appended session-log entry for $date_stamp"
 exit 0

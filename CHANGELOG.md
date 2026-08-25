@@ -22,6 +22,7 @@ V6.1's standing claims got instruments. Portability was asserted for four tools 
 
 - One advisory `LOAD:` line every run: the always-loaded set's word total with a per-file breakdown, plus the log tail the check just printed. No threshold — the two live instances measured 2026-08-23 ran ~4,600–4,700 words, a calibration point rather than provenance — and the line covers the three set members with no per-file trigger: `contract.md`, `purpose.md`, the routing table.
 - `GROOM:` on session-log entries over `LOG_ENTRY_MAX_WORDS` (50: the header format's 25 with 2× grace), entries counted whole across hand-wrapped lines. The groom skill covers clearing it.
+- Every threshold and the probed-tools list are per-node tunables in `.agent/scripts/status.conf` (plain `KEY=value`, parsed and never executed): a field node had patched `gh` out of `PROBE_TOOLS` by editing the script, an edit the next update would have silently reverted. Conf edits survive update; script edits don't. A starter ships at init listing every key — the probed-tools line live, thresholds commented at their defaults — because the scripts are executed rather than read, so an unseeded conf is an undiscoverable one; `test.sh` pins the starter's shown defaults to the script's.
 
 #### Memory security
 
@@ -29,13 +30,23 @@ V6.1's standing claims got instruments. Portability was asserted for four tools 
 - The operating model's Security section states the mirror rule — load as if it could have been planted — the cross-tool amplification a shared store creates, and the control's honest label: cooperative, with `track-shared` PR review as the mechanical gate.
 - The Continuity contract's `memory/` bullet defers to `memory.md`'s header contract instead of restating three of its rules.
 
+#### The comment gate
+
+- `comments.sh` joins the shipped node scripts. Run against the branch base before a diff is handed back, it blocks added comments citing what a fresh clone cannot open — commit SHAs, git transcripts, scope narration — and lists every other added comment for the author to justify or delete. Grown on a live field node where the preset's comment rule, stated in three places, was breached anyway: the objective half of the rule moves into code, the judgement half stays a listed review.
+- Wired where sessions live: the entry-point template names the run before a diff is handed back, the software preset's Verification contract binds it, the quality bar carries it as a verifier check, and the Self-learning routing sends comment-hygiene lessons into its vocabulary instead of another prose rule — the retro skill expands the how, and its description now names the concrete retro triggers so it can actually be matched.
+- Workflow vocabulary is the node's, not the core's: `comments.conf` beside the script carries the base ref, ticket and task-reference patterns, the scanned extension list, and path exclusions — plain `KEY=value`, parsed and never executed (a config read every run is an injection surface; this one cannot run code), documented with a full example in the operating model. Init seeds a starter conf — AC/Q ticket shapes as example vocabulary and the extension list live, so trimming to a project's stack is a conf edit; update seeds the file only when absent and never overwrites it, and otherwise refreshes the shipped scripts by exactly their six names, touching nothing else under `scripts/`.
+
+#### The log writer
+
+- `log.sh` reads a seeded `log.conf`: `LOG_INCLUDE_BRANCH=true` stamps each scripted entry with the checked-out branch as `branch: <name>.` before the verify tag — read via `git symbolic-ref` at write time, mechanical rather than agent-supplied, and silently omitted outside a git checkout or on a detached HEAD. The stamp spends no summary budget (the ceiling is enforced on `--summary` alone) and a stamped max-length entry stays well under the entry-shape flag — both test-pinned. The 25-word summary ceiling tunes from the same conf. Off by default; the session-log header contract names the optional segment.
+
 #### Mechanics
 
-- `node.sh` targets `"6.2"`; the 6.1→6.2 update is script refresh plus version bump, with preset changes landing through the normal reconcile step. The update message now names `links.sh` among the refreshed scripts.
+- `node.sh` targets `"6.2"`; the 6.1→6.2 update is script refresh plus version bump, with preset changes landing through the normal reconcile step. The update message now names `links.sh` and `comments.sh` among the refreshed scripts.
 
 ### Migrating a V6.1 node
 
-Run `scripts/node.sh update`, then reconcile `rules/contract.md` against the current preset: the security slot's appended clause, the origin-gate bullet, and the shortened `memory/` bullet. Re-derive entry points only if adopting the new mirror set; existing mirrors keep being checked either way.
+Run `scripts/node.sh update`, then reconcile `rules/contract.md` against the current preset: the security slot's appended clause, the origin-gate bullet, the shortened `memory/` bullet, and (software nodes) the Verification contract's comment-gate bullet plus the quality bar's gate check. Add the template's comment-gate paragraph to every entry-point mirror. A node that grew its own comment gate replaces it with the shipped script and moves its project vocabulary into `comments.conf`. Re-derive entry points only if adopting the new mirror set; existing mirrors keep being checked either way.
 
 ---
 

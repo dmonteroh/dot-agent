@@ -29,6 +29,11 @@ After a context compaction or handoff, re-run steps 1–5 before continuing.
 These steps run once at session start, so a compacted session is a session
 operating without them; re-route step 6 only if the work moved.
 
+Before handing back a diff, run `bash .agent/scripts/comments.sh` — delete
+what it blocks (comments citing artifacts a fresh clone cannot open) and
+justify or delete every comment it lists. Its vocabulary lives in
+`.agent/scripts/comments.conf`.
+
 Exception — subagents: skip step 1 (flags are the orchestrator's to
 handle); read everything else. Never edit `.agent/` unless explicitly
 assigned — the orchestrator is the single session-log writer.
