@@ -1174,6 +1174,18 @@ grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgu2/.agent/scripts/comments.conf" 2>/dev/null 
 grep -q '^PROBE_TOOLS=' "$cgu2/.agent/scripts/status.conf" 2>/dev/null && pass "update: a missing status.conf is seeded with the starter" || fail "update: a missing status.conf is seeded with the starter"
 grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
 
+# The same set the init loop asserts, on the path that reaches nodes already
+# in the field. node.sh names it once for both loops; this is what notices
+# if one of them ever re-inlines a literal.
+missing_u=""
+for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
+  [ -x "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
+done
+for f in comments.conf status.conf log.conf; do
+  [ -f "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
+done
+[ -z "$missing_u" ] && pass "update: every shipped script and starter conf reaches an existing node" || fail "update: every shipped script and starter conf reaches an existing node (missing:$missing_u)"
+
 # ---- 35. status.sh: per-node overrides in status.conf ----
 # The thresholds and the probed-tools list are per-project tunables, but
 # an edit to status.sh itself is discarded by node.sh update. The conf
