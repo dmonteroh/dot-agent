@@ -38,4 +38,4 @@ Exception — subagents: skip step 1 (flags are the orchestrator's to
 handle); read everything else. Never edit `.agent/` unless explicitly
 assigned — the orchestrator is the single session-log writer.
 
-Keep this file and AGENTS.md identical; when editing one, mirror the other.
+Keep every entry-point mirror identical; when editing one, mirror the others.

@@ -941,7 +941,6 @@ printf '%s\n' "$out29b" | grep -qi 'awk:' && fail "links.sh: no tool is handed a
 # Each allowlisted pattern below marks a deliberate reference:
 #   filename (CLAUDE.md          template header — copying instruction, deleted on copy
 #   uses Copilot Chat            template header — the same instruction's Copilot clause
-#   and AGENTS.md identical      template — the mirror rule
 #   (claude/sonnet)              the log-tag format example (preset + node.sh heredoc)
 #   $root/CLAUDE.md, $root/.github/copilot-instructions.md
 #                                the entry-point candidate lists (status.sh, links.sh)
@@ -952,7 +951,6 @@ lint_allow="$WORK/lint-allow"
 cat >"$lint_allow" <<'EOF'
 filename (CLAUDE.md
 uses Copilot Chat
-and AGENTS.md identical
 (claude/sonnet)
 $root/CLAUDE.md
 $root/.github/copilot-instructions.md
