@@ -15,6 +15,11 @@ selfdir=$(cd "$(dirname "$0")" && pwd)
 
 BASE_REF="origin/main"
 EXTENSIONS="ts tsx js jsx mjs cs java kt go rs rb py sh bash css scss less html vue svelte c h cc cpp hpp swift php sql"
+# Trees no one reviews comment-by-comment. Hidden directories are matched
+# generically rather than by name: a tool's own directory holds hooks and
+# helpers the contract's comment rule was never aimed at, and naming the
+# tools we can think of today misses whichever arrives next.
+EXCLUDE_RE='(^|/)\.[^/]+/|(^|/)node_modules/|/dist/|/vendor/|\.min\.'
 EXCLUDE_RE_EXTRA=""
 BLOCK_RE_EXTRA=""
 PRAGMA_RE_EXTRA=""
@@ -24,6 +29,7 @@ conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
 if [ -f "$conf" ]; then
   v=$(conf_get BASE_REF);         [ -n "$v" ] && BASE_REF="$v"
   v=$(conf_get EXTENSIONS);       [ -n "$v" ] && EXTENSIONS="$v"
+  v=$(conf_get EXCLUDE_RE);       [ -n "$v" ] && EXCLUDE_RE="$v"
   v=$(conf_get EXCLUDE_RE_EXTRA); [ -n "$v" ] && EXCLUDE_RE_EXTRA="$v"
   v=$(conf_get BLOCK_RE_EXTRA);   [ -n "$v" ] && BLOCK_RE_EXTRA="$v"
   v=$(conf_get PRAGMA_RE_EXTRA);  [ -n "$v" ] && PRAGMA_RE_EXTRA="$v"
@@ -36,8 +42,7 @@ if ! git rev-parse --verify -q "$base" >/dev/null; then
   exit 2
 fi
 
-# chosen defaults: trees no one reviews comment-by-comment
-exclude_re='(^|/)\.agent/|(^|/)node_modules/|/dist/|/vendor/|\.min\.'
+exclude_re="$EXCLUDE_RE"
 [ -n "$EXCLUDE_RE_EXTRA" ] && exclude_re="$exclude_re|$EXCLUDE_RE_EXTRA"
 
 set --
@@ -70,8 +75,11 @@ if [ -n "$untracked" ]; then
   added=$(printf '%s\n%s' "$added" "$untracked")
 fi
 
+# ENVIRON, not -v: an assignment made with -v has its backslash escapes
+# processed, so an ERE arriving from the conf reaches awk with `\.` already
+# collapsed to `.` — a literal-dot term silently becoming match-anything.
 added=$(printf '%s\n' "$added" \
-  | awk -F'\t' -v re="$exclude_re" '$1 !~ re' \
+  | EXCLUDE_RE_AWK="$exclude_re" awk -F'\t' '$1 !~ ENVIRON["EXCLUDE_RE_AWK"]' \
   || true)
 
 # Comment lines only, and a marker opens a comment only in the languages

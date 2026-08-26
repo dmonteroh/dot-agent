@@ -1062,6 +1062,11 @@ EOF
 printf '#region Setup\nint x = 1;\n' >"$cg/src/tool.cs"
 printf '# skipped: out of scope for this pass\ny = 1\n' >"$cg/src/calc.py"
 printf '// narration in a migration\n' >"$cg/Migrations/0001_init.cs"
+# A tool's own directory: hooks and helpers the comment rule was never
+# aimed at. Excluded generically, by shape, so a tool nobody has heard of
+# yet is covered on arrival.
+mkdir -p "$cg/.toolrc/hooks"
+printf '# tuned per commit deadbeefcafe1234\necho hi\n' >"$cg/.toolrc/hooks/check.sh"
 # "//" opens no comment in shell — a script that prints one is printing a
 # string. A test corpus planting C-family fixtures is the ordinary case.
 printf 'echo "// planted per commit deadbeefcafe1234"\n# a real shell comment\n' >"$cg/src/fixture.sh"
@@ -1081,6 +1086,11 @@ printf '%s\n' "$out34" | grep -q 'planted per commit' && fail "comments.sh: a sh
 printf '%s\n' "$review34" | grep -q 'a real shell comment' && pass "comments.sh: a shell # line still is one" || fail "comments.sh: a shell # line still is one ($review34)"
 printf '%s\n' "$out34" | grep -q 'eslint-disable' && fail "comments.sh: tooling pragmas are skipped" || pass "comments.sh: tooling pragmas are skipped"
 printf '%s\n' "$out34" | grep -q 'existing constraint comment' && fail "comments.sh: only comments the diff adds are reported" || pass "comments.sh: only comments the diff adds are reported"
+printf '%s\n' "$out34" | grep -q '.toolrc' && fail "comments.sh: hidden directories are out of the scan" || pass "comments.sh: hidden directories are out of the scan"
+# The exclusion is anchored: a dot mid-path is not a hidden directory, and
+# the literal-dot terms must survive reaching awk — passed through -v their
+# escapes collapse and `\.` becomes match-anything, which excludes the tree.
+printf '%s\n' "$out34" | grep -q 'src/app.ts' && pass "comments.sh: an ordinary path is not read as hidden" || fail "comments.sh: an ordinary path is not read as hidden ($out34)"
 
 # node vocabulary: ticket shapes join BLOCK, project paths leave the scan.
 # The backtick value proves the conf is parsed, never executed — sourcing
@@ -1095,6 +1105,16 @@ block34b=$(printf '%s\n' "$out34b" | sed -n '/^BLOCK:/,$p')
 printf '%s\n' "$block34b" | grep -q 'AC-12' && pass "comments.sh: conf vocabulary joins BLOCK" || fail "comments.sh: conf vocabulary joins BLOCK ($block34b)"
 printf '%s\n' "$out34b" | grep -q 'narration in a migration' && fail "comments.sh: conf exclusions hide their paths" || pass "comments.sh: conf exclusions hide their paths"
 [ ! -e "$cg/pwned34" ] && pass "comments.sh: comments.conf is parsed, never executed" || fail "comments.sh: comments.conf is parsed, never executed"
+
+# EXCLUDE_RE replaces the shipped list, the way EXTENSIONS does: a project
+# that reviews one of the excluded trees gets it back by naming a narrower
+# list. Grow-only keys cannot express that.
+cat >"$cg/.agent/scripts/comments.conf" <<'EOF'
+EXCLUDE_RE=(^|/)node_modules/
+EOF
+out34j=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf '%s\n' "$out34j" | grep -q '.toolrc' && pass "comments.sh: EXCLUDE_RE replaces the shipped exclusions" || fail "comments.sh: EXCLUDE_RE replaces the shipped exclusions ($out34j)"
+rm -f "$cg/.agent/scripts/comments.conf"
 
 git_cg checkout -q base
 git_cg checkout -q -b justify
@@ -1222,6 +1242,10 @@ cdef=$(sed -n 's/^PROBE_TOOLS=//p' "$reporoot/scripts/status.conf" | head -n 1)
 sdef=$(sed -n 's/^EXTENSIONS=//p' "$reporoot/scripts/comments.sh" | head -n 1 | tr -d '"')
 cdef=$(sed -n 's/^EXTENSIONS=//p' "$reporoot/scripts/comments.conf" | head -n 1)
 [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] && pass "starter comments.conf lists the script's own extension default" || fail "starter comments.conf lists the script's own extension default (script '$sdef' vs conf '$cdef')"
+
+sdef=$(sed -n 's/^EXCLUDE_RE=//p' "$reporoot/scripts/comments.sh" | head -n 1 | tr -d "\"'")
+cdef=$(sed -n 's/^# EXCLUDE_RE=//p' "$reporoot/scripts/comments.conf" | head -n 1)
+[ -n "$sdef" ] && [ "$sdef" = "$cdef" ] && pass "starter comments.conf lists the script's own exclusion default" || fail "starter comments.conf lists the script's own exclusion default (script '$sdef' vs conf '$cdef')"
 
 mismatch36b=""
 sdef=$(sed -n 's/^SUMMARY_MAX_WORDS=//p' "$reporoot/scripts/log.sh" | head -n 1)

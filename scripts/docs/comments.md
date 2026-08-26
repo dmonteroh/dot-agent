@@ -38,8 +38,27 @@ python and ruby but not in C-family sources, where it is a preprocessor
 directive or a region marker; `//`, `/*` and `<!--` the other way round,
 since in shell `//` is a string or a syntax error; `--` only in SQL.
 
-`.agent/` itself, vendored and minified trees, and tooling pragmas
-(`eslint`, `shellcheck`, `noqa`, `@ts-`, and the rest) are skipped.
+Skipped by default: **every hidden directory**, vendored and minified
+trees, and tooling pragmas (`eslint`, `shellcheck`, `noqa`, `@ts-`, and the
+rest).
+
+Hidden directories go generically — `(^|/)\.[^/]+/` — rather than by name.
+An AI tool's or an editor's own directory holds hooks and helpers the
+comment rule was never aimed at, and a list of the tools we can name today
+would miss whichever arrives next; matching by shape covers it on arrival
+and keeps the shipped core free of vendor tokens. It also covers `.agent/`
+itself, which used to be its own term.
+
+The honest cost: `.github/` is a hidden directory, so CI helpers written in
+a scanned language leave the scan too. A project that reviews those sets
+`EXCLUDE_RE` to a narrower list.
+
+Anchoring matters here: the term requires the dot at a path start or
+straight after a slash, so `foo.bar/baz.ts` is not read as hidden. The
+exclusion regex reaches awk through the environment rather than `-v`,
+because `-v` processes backslash escapes and would collapse `\.` to `.` —
+turning a literal-dot term into match-anything and silently excluding the
+whole tree.
 
 ## Configuration
 
@@ -55,7 +74,8 @@ after `=` is the raw value — no quoting, no escaping.
 |---|---|
 | `BASE_REF` | default base when none is passed |
 | `EXTENSIONS` | replaces the scanned extension list |
-| `EXCLUDE_RE_EXTRA` | ERE of paths to skip, ORed onto the defaults |
+| `EXCLUDE_RE` | ERE of paths to skip, **replacing** the shipped list |
+| `EXCLUDE_RE_EXTRA` | ERE of paths to skip, ORed onto whatever `EXCLUDE_RE` holds |
 | `BLOCK_RE_EXTRA` | ERE of citation shapes that BLOCK, ORed onto the defaults |
 | `PRAGMA_RE_EXTRA` | ERE of tooling pragmas to skip, ORed onto the defaults |
 
