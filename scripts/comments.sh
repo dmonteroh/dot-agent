@@ -84,9 +84,9 @@ added=$(printf '%s\n' "$added" \
 
 # Comment lines only, and a marker opens a comment only in the languages
 # where it does: "#" in shell, python and ruby but not in C-family sources,
-# where it is a preprocessor directive or a region marker; "//" the other
-# way round, since in shell it is a string or a syntax error; "--" only in
-# SQL.
+# where it is a preprocessor directive or a region marker. "//" runs the
+# other way round, since in shell it is a string or a syntax error. "--"
+# opens a comment only in SQL.
 comments=$(printf '%s\n' "$added" \
   | awk -F'\t' '{
       line = $2
@@ -105,8 +105,8 @@ comments=$(printf '%s\n' "$comments" | grep -ivE "$pragma_re" || true)
 
 [ -z "$comments" ] && exit 0
 
-# the core names only universal dead citations; workflow-specific reference
-# shapes (ticket ids, task numbers) are the node's BLOCK_RE_EXTRA
+# The core names only universal dead citations. Workflow-specific reference
+# shapes (ticket ids, task numbers) are the node's BLOCK_RE_EXTRA.
 block_re='git (show|log|diff|blame|bisect|merge-base|rev-parse)([^[:alnum:]]|$)|(^|[^[:alnum:]])[0-9a-f]{8,40}([^[:alnum:]]|$)|out of scope|for this pass'
 [ -n "$BLOCK_RE_EXTRA" ] && block_re="$block_re|$BLOCK_RE_EXTRA"
 

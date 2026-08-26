@@ -1,13 +1,8 @@
 # Script documentation
 
-One file per script under `scripts/`. These describe what each script does,
-what it reports, and how a node tunes it.
+One file per script under `scripts/`. These describe what each script does, what it reports, and how a node tunes it.
 
-**These files stay in the source repo.** `node.sh` copies executables and
-starter confs into a node, never this folder — a node's `.agent/scripts/`
-holds the six shipped scripts plus their confs and nothing else. That is the
-point: a script that lands in someone's repository carries the code and its
-usage line, not this repo's design notes.
+**These files stay in the source repo.** `node.sh` copies executables and starter confs into a node, never this folder — a node's `.agent/scripts/` holds the six shipped scripts plus their confs and nothing else. That is the point: a script that lands in someone's repository carries the code and its usage line, not this repo's design notes.
 
 So the split is:
 

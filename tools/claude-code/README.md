@@ -2,7 +2,7 @@
 
 Optional Claude Code wiring for the [dot-agent operating model](../../operating-model.md).
 
-Claude Code is the wiring matrix's fully verified column (see the operating model's [Wiring your tools](../../operating-model.md#wiring-your-tools)): its entry point and its native-memory switch are both shipped here and checked by `status.sh`.
+Claude Code is the wiring matrix's fully verified column (see the operating model's [Wiring your tools](../../operating-model.md#wiring-your-tools)). Its entry point and its native-memory switch are both shipped here and checked by `status.sh`.
 
 `settings-example.json` ships two things:
 
@@ -11,6 +11,6 @@ Claude Code is the wiring matrix's fully verified column (see the operating mode
 
 Merge the relevant sections into your `~/.claude/settings.json` (user-level) or the project's `.claude/settings.json` (committed in `track-shared`/`track-all` modes so the setting holds for every developer).
 
-Compliance rests on the trust contract plus the load-path status check (`scripts/status.sh`); there is no mechanical enforcement layer. The V4/V5-era compliance hooks were removed in V6.1; see `CHANGELOG.md` if you're looking for them.
+Compliance rests on the trust contract plus the load-path status check (`scripts/status.sh`). There is no mechanical enforcement layer. V6.1 removed the V4/V5-era compliance hooks. See `CHANGELOG.md` if you're looking for them.
 
 For the optional skills that package the rare in-session procedures (grooming, retro), see [`tools/skills/`](../skills/).

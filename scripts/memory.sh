@@ -7,7 +7,7 @@
 # Usage:
 #   memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [--type <fact|reference>] [root]
 #
-# root defaults to . ; scope defaults to project, type to fact. Writes
+# root defaults to . — scope defaults to project, type to fact. Writes
 # <root>/.agent/memory/<slug>.md and appends its index line to
 # <root>/.agent/memory.md — both or neither: every check runs before any
 # write happens.
@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [--type <fact|reference>] [root]
 
-root defaults to . ; scope defaults to project, type to fact. Writes
+root defaults to . — scope defaults to project, type to fact. Writes
 <root>/.agent/memory/<slug>.md and indexes it in <root>/.agent/memory.md.
 EOF
 }
@@ -76,8 +76,8 @@ new)
     exit 1 ;;
   esac
 
-  # Title and hook become the one-line index entry `- [title](…) — hook`;
-  # brackets or newlines in them would corrupt that line's format.
+  # Title and hook become the one-line index entry `- [title](…) — hook`.
+  # Brackets or newlines in them would corrupt that line's format.
   case "$title" in
   *\[* | *\]*)
     echo "memory.sh: --title must not contain [ or ] — it becomes the index link text" >&2
@@ -129,7 +129,7 @@ new)
   date_stamp=$(date +%Y-%m-%d)
 
   # Frontmatter and the fact, and no header contract. Every other canonical
-  # file carries its own because there is one of it; memory/ is the only
+  # file carries its own because there is one of it. memory/ is the only
   # tier with N files, where a header is paid once per fact and outweighs
   # the fact itself. It lives once in memory.md's header, which loads every
   # session and is the tier's index.
@@ -149,7 +149,7 @@ EOF
   # The contract reaches the writer through the script's output rather than
   # through a header copied into the file. Same words, but they arrive in
   # the session holding the fact in hand and cost nothing on every later
-  # read; a header would be paid by every session that only opens the file.
+  # read. A header would be paid by every session that only opens the file.
   echo "memory.sh: wrote $factfile and indexed it in $memory"
   echo "memory.sh: one fact per file — supersede in place (rewrite the fact and the date, keep the filename), and drop it once no work here changes on it. Full contract: memory.md's header."
   exit 0

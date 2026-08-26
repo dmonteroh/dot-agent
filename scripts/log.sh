@@ -8,14 +8,14 @@
 #
 # Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
 #
-# root defaults to . ; appends to <root>/.agent/session-log.md. Refuses to
+# root defaults to . — appends to <root>/.agent/session-log.md. Refuses to
 # run if that file does not already exist (an uninitialized node).
 
 set -u
 
 # Tune in the node's log.conf, never here: node.sh update refreshes this
 # script and discards edits to it. 25 words is the session-log header
-# contract's entry format; log.conf states it beside the key.
+# contract's entry format. log.conf states it beside the key.
 SUMMARY_MAX_WORDS=25
 LOG_INCLUDE_BRANCH=false
 
@@ -23,7 +23,7 @@ usage() {
   cat <<'EOF'
 Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
 
-root defaults to . ; appends to <root>/.agent/session-log.md
+root defaults to . — appends to <root>/.agent/session-log.md
 EOF
 }
 

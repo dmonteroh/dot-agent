@@ -1,13 +1,8 @@
 # comments.sh — the comment gate
 
-Flags comments a diff adds to source files, against the contract's comment
-rule: a comment states a constraint the code cannot express, never change
-narration or citations of artifacts a fresh clone cannot open.
+Flags comments a diff adds to source files, against the contract's comment rule: a comment states a constraint the code cannot express, never change narration or citations of artifacts a fresh clone cannot open.
 
-The rule splits into a half a machine can decide and a half it cannot. "Is
-this comment narrative?" is a judgement call a reviewer can wave through;
-"can a fresh clone open what this cites?" is not. So the objective half is
-mechanical and the judgement half stays a listed review.
+The rule splits into a half a machine can decide and a half it cannot. "Is this comment narrative?" is a judgement call a reviewer can wave through. The question "can a fresh clone open what this cites?" is not. So the objective half is mechanical and the judgement half stays a listed review.
 
 ```
 Usage: comments.sh [base-ref]      # default: BASE_REF (origin/main)
@@ -17,58 +12,32 @@ Usage: comments.sh [base-ref]      # default: BASE_REF (origin/main)
 
 | Finding | Exit | Meaning |
 |---|---|---|
-| `BLOCK:` | 1 | the added comment cites something a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Delete these; durable *why* goes to docs |
+| `BLOCK:` | 1 | the added comment cites something a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Delete these. Durable *why* goes to docs |
 | `REVIEW:` | 0 | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
 Exits 2 when there is no merge base between the given base and `HEAD`.
 
 ## What it reads
 
-The diff is merge-base(base, `HEAD`) → **the working tree**, plus untracked
-source files scanned whole. The gate runs before a diff is handed back, and
-hand-back is normally an uncommitted state, so a committed-only diff would
-pass exactly the comments this exists to catch.
+The diff is merge-base(base, `HEAD`) → **the working tree**, plus untracked source files scanned whole. The gate runs before a diff is handed back, and hand-back is normally an uncommitted state, so a committed-only diff would pass exactly the comments this exists to catch.
 
-That scope includes comments already sitting uncommitted in scanned files,
-whoever wrote them. They are part of the diff being handed back, and
-`REVIEW:`'s justify-or-delete decision absorbs them.
+That scope includes comments already sitting uncommitted in scanned files, whoever wrote them. They are part of the diff being handed back, and `REVIEW:`'s justify-or-delete decision absorbs them.
 
-A marker opens a comment only in the languages where it does: `#` in shell,
-python and ruby but not in C-family sources, where it is a preprocessor
-directive or a region marker; `//`, `/*` and `<!--` the other way round,
-since in shell `//` is a string or a syntax error; `--` only in SQL.
+A marker opens a comment only in the languages where it does. `#` opens one in shell, python and ruby but not in C-family sources, where it is a preprocessor directive or a region marker. `//`, `/*` and `<!--` go the other way round, since in shell `//` is a string or a syntax error. `--` opens one only in SQL.
 
-Skipped by default: **every hidden directory**, vendored and minified
-trees, and tooling pragmas (`eslint`, `shellcheck`, `noqa`, `@ts-`, and the
-rest).
+Skipped by default: **every hidden directory**, vendored and minified trees, and tooling pragmas (`eslint`, `shellcheck`, `noqa`, `@ts-`, and the rest).
 
-Hidden directories go generically — `(^|/)\.[^/]+/` — rather than by name.
-An AI tool's or an editor's own directory holds hooks and helpers the
-comment rule was never aimed at, and a list of the tools we can name today
-would miss whichever arrives next; matching by shape covers it on arrival
-and keeps the shipped core free of vendor tokens. It also covers `.agent/`
-itself, which used to be its own term.
+Hidden directories go generically — `(^|/)\.[^/]+/` — rather than by name. An AI tool's or an editor's own directory holds hooks and helpers the comment rule was never aimed at. A list of the tools we can name today would miss whichever arrives next. Matching by shape covers it on arrival and keeps the shipped core free of vendor tokens. It also covers `.agent/` itself, which used to be its own term.
 
-The honest cost: `.github/` is a hidden directory, so CI helpers written in
-a scanned language leave the scan too. A project that reviews those sets
-`EXCLUDE_RE` to a narrower list.
+The honest cost: `.github/` is a hidden directory, so CI helpers written in a scanned language leave the scan too. A project that reviews those sets `EXCLUDE_RE` to a narrower list.
 
-Anchoring matters here: the term requires the dot at a path start or
-straight after a slash, so `foo.bar/baz.ts` is not read as hidden. The
-exclusion regex reaches awk through the environment rather than `-v`,
-because `-v` processes backslash escapes and would collapse `\.` to `.` —
-turning a literal-dot term into match-anything and silently excluding the
-whole tree.
+Anchoring matters here: the term requires the dot at a path start or straight after a slash, so `foo.bar/baz.ts` is not read as hidden. The exclusion regex reaches awk through the environment rather than `-v`, because `-v` processes backslash escapes and would collapse `\.` to `.` — turning a literal-dot term into match-anything and silently excluding the whole tree.
 
 ## Configuration
 
-Node vocabulary lives in `comments.conf` beside the script, which `node.sh
-init` seeds and `update` seeds only when absent — never overwriting it. The
-file lists every key with its default; it is the documentation a node reads.
+Node vocabulary lives in `comments.conf` beside the script, which `node.sh init` seeds and `update` seeds only when absent — never overwriting it. The file lists every key with its default. It is the documentation a node reads.
 
-Plain `KEY=value`, parsed and never executed: a config the gate reads on
-every run is an injection surface, and this one cannot run code. Everything
-after `=` is the raw value — no quoting, no escaping.
+Plain `KEY=value`, parsed and never executed: a config the gate reads on every run is an injection surface, and this one cannot run code. Everything after `=` is the raw value — no quoting, no escaping.
 
 | Key | Effect |
 |---|---|
@@ -79,7 +48,4 @@ after `=` is the raw value — no quoting, no escaping.
 | `BLOCK_RE_EXTRA` | ERE of citation shapes that BLOCK, ORed onto the defaults |
 | `PRAGMA_RE_EXTRA` | ERE of tooling pragmas to skip, ORed onto the defaults |
 
-Ticket and task-reference shapes belong in `BLOCK_RE_EXTRA`, not in the
-shipped core: no two teams number work the same way. The shipped core names
-only universal dead citations. The retro skill routes comment-hygiene
-lessons here.
+Ticket and task-reference shapes belong in `BLOCK_RE_EXTRA`, not in the shipped core: no two teams number work the same way. The shipped core names only universal dead citations. The retro skill routes comment-hygiene lessons here.

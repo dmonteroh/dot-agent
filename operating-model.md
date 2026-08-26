@@ -53,7 +53,7 @@ project-root/
 ### File purposes
 
 | File | What it is | Who writes it |
-|------|------------|---------------|
+| ------ | ------------ | --------------- |
 | `rules/contract.md` | How the agent should behave: load order, self-maintenance contract, verification, autonomy. Adapted from a preset during bootstrap; the manifest's `preset` field records which one. | Agent (from preset, with your input) |
 | `rules/learned.md` | Behavioral rules accumulated from session retros. Imperative, durable, agent-discovered. | Agent (from retro process) |
 | `rules/quality-bar.md` | The verifier's rubric: judgement criteria, split from the preset's Quality bar section at bootstrap. Loads on demand, not every session — see [Subagents and parallel sessions](#subagents-and-parallel-sessions). | Agent (from preset, at bootstrap) |
@@ -119,24 +119,9 @@ type: <fact | reference>
 <the fact>
 ```
 
-This is the one tier whose files carry no header contract, and the
-exception is about arity rather than importance. Every other canonical
-file is a singleton — one `purpose.md`, one `session-log.md`, one
-`architecture.md` — so its contract is written once no matter how large
-the node grows. Area docs are the near-case: one per area, holding
-hundreds of words, so a header costs a few percent of the file. `memory/`
-is the only tier with N files at roughly sixty words each, where one
-header is paid N times over and outweighs the fact it governs. Nor was the
-duplication buying curation, which is why
-`memory.md`'s header now opens with the retention test rather than with
-formats, and why a fact arriving from another repo or a migration is a new
-candidate, not an inheritance.
+This is the one tier whose files carry no header contract, and the exception is about arity rather than importance. Every other canonical file is a singleton — one `purpose.md`, one `session-log.md`, one `architecture.md` — so its contract is written once no matter how large the node grows. Area docs are the near-case: one per area, holding hundreds of words, so a header costs a few percent of the file. `memory/` is the only tier with N files at roughly sixty words each, where one header is paid N times over and outweighs the fact it governs. Nor was the duplication buying curation, which is why `memory.md`'s header now opens with the retention test rather than with formats, and why a fact arriving from another repo or a migration is a new candidate, not an inheritance.
 
-`type` separates the two things an index line can be. A `fact` is
-something the node knows and supersedes as the project changes. A
-`reference` points outward at material the node does not own and cannot
-supersede — it goes stale by disappearing, not by becoming wrong. Both
-route through the same index; only the maintenance they need differs.
+`type` separates the two things an index line can be. A `fact` is something the node knows and supersedes as the project changes. A `reference` points outward at material the node does not own and cannot supersede — it goes stale by disappearing, not by becoming wrong. Both route through the same index; only the maintenance they need differs.
 
 `rules/learned.md`, whose header is the curation law itself:
 
@@ -152,14 +137,7 @@ rules: `contract.md`, Self-learning.
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 ```
 
-This header is the one that pays rent on every session: `learned.md` is
-always-loaded and has no disclosure tier below it, so anything stated here
-is stated in every session's context. What survives is what a session
-needs at the moment it *writes* the file and cannot get elsewhere — the
-no-fact-loss invariant and the routing rule. The entry-length target, the
-curation law, and the merge rule moved out to the preset's **Self-learning**
-section, which is always loaded anyway: keeping both copies meant paying
-twice for one rule.
+This header is the one that pays rent on every session: `learned.md` is always-loaded and has no disclosure tier below it, so anything stated here is stated in every session's context. What survives is what a session needs at the moment it *writes* the file and cannot get elsewhere — the no-fact-loss invariant and the routing rule. The entry-length target, the curation law, and the merge rule moved out to the preset's **Self-learning** section, which is always loaded anyway: keeping both copies meant paying twice for one rule.
 
 `docs/<area>.md`, the node's largest and fastest-growing file type, whose header carries its shape rules — the `Read when:` hook stays on the first line, where `status.sh` reads it:
 
@@ -196,7 +174,7 @@ than its heading; it may not say less. A doc whose hook is unconditional
 for every task in its area, not only when a hook matches. -->
 ```
 
-Two fields because they answer different questions. The hook decides whether to open the doc at all; it goes stale in the one direction that matters, since it is written when the doc is new and rarely revisited. The section list is what finds a doc whose hook never names the topic you need — and unlike the hook it is anchored to something checkable, because every `## ` heading must appear in it.
+Two fields because they answer different questions. The hook decides whether to open the doc at all; it goes stale in the one direction that matters, since it is written when the doc is new and rarely revisited. The section list is what finds a doc whose hook never names the topic you need — and unlike the hook it is anchored to something checkable, because every `##` heading must appear in it.
 
 ### The reference tier
 
@@ -205,7 +183,7 @@ Routing has a floor: every doc in the table is a doc some task will load whole. 
 `docs/<area>/references/<name>.md` is the third tier: **never routed, never auto-loaded, opened only by explicit path from the area doc that cites it.**
 
 | Tier | Loads when | Governed by |
-|---|---|---|
+| --- | --- | --- |
 | `docs/architecture.md` | every session | routing contract |
 | `docs/<area>.md`, `docs/<area>/<sub>.md` | its hook matches the task (a catalog: any task of its kind) | `Read when:` + size trigger |
 | `docs/<area>/references/*.md` | an area doc sends the session there, by path | nothing — it is depth, and depth is the point |
@@ -221,7 +199,7 @@ This is the tier that lets the size trigger stay honest. Before it, a doc over t
 `scripts/links.sh` walks the node's internal link graph on demand and reports two directions:
 
 | Finding | Means |
-|---|---|
+| --- | --- |
 | `ORPHAN:` | a file in the node that nothing cites |
 | `BROKEN:` | a node path a node file cites that does not exist |
 
@@ -238,7 +216,7 @@ Deciding *whether a name addresses the node at all* is the other half, and shape
 `scripts/comments.sh` checks the comments a diff adds to source files against the contract's comment rule, run against the branch base before a diff is handed back (the software preset's Verification contract names the run; the quality bar cites it). It splits the rule at the line judgement actually sits on:
 
 | Finding | Means |
-|---|---|
+| --- | --- |
 | `BLOCK:` (exit 1) | the added comment cites an artifact a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Objectively dead: delete it, durable *why* goes to docs |
 | `REVIEW:` (exit 0) | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
@@ -293,7 +271,7 @@ The self-maintenance contract covers one phase: completion. A well-run session h
 Agents follow these on trust. That is the system's primary compliance story, and how the reference deployments run.
 
 | Phase | Trust contract | The rules live in |
-|-------|---------------|-------------------|
+| ------- | --------------- | ------------------- |
 | **Bootstrap** | Load context before working | The entry point's numbered steps |
 | **Pre-work** | Load project context before editing project files | Preset: Context loading |
 | **Correctness** | Verify before claiming | Preset: Verification contract, judged against the Quality bar rubric |
@@ -321,7 +299,7 @@ A session loads context before doing anything else. The load order is executable
 How much of `.agent/` enters git is a per-node choice, made once at bootstrap and recorded in the manifest (`mode`):
 
 | Mode | Git behavior | When |
-|---|---|---|
+| --- | --- | --- |
 | `ignore-all` | `.agent/` fully ignored, including `memory.md` and `memory/` (`.gitignore` or `.git/info/exclude`) | Public repos; teams where the tree is personal |
 | `track-shared` | Track `purpose.md`, `rules/` (incl. `learned.md`), `docs/`; ignore `memory.md`, `memory/`, `session-log.md`, `archive/`, everything else | Multi-dev teams sharing knowledge, keeping personal state private |
 | `track-all` | Everything committed, including `memory.md` and `memory/` | Solo private repos: full history, free backup |
@@ -404,7 +382,7 @@ This works at any level, root or project node. Reconciliation is a diff between 
 Each AI tool gets a thin entry point: a short file the tool loads automatically; the context lives in `.agent/`. One canonical template serves every tool, and per-tool wiring is "put this template in the tool's filename". The table is a disposition matrix, not a feature list: a cell reads **verified** only when it was checked against the product itself or the vendor's own documentation, with a source and a date; **reported** marks secondary sources awaiting that check; **unknown** means nobody checked. Prose claims never outrun these cells, and a matrix without dates is indistinguishable from one that has rotted.
 
 | Tool | Entry point | Native-memory switch | Verified |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Claude Code | `CLAUDE.md` (project root, or `~/.claude/CLAUDE.md` for a root node) | `"autoMemoryEnabled": false` in `.claude/settings.json` — shipped in `tools/claude-code/`, checked by `status.sh` | verified — v2.1.220, 2026-08-23 |
 | Codex, and anything AGENTS.md-aware | `AGENTS.md` — stewarded by the Agentic AI Foundation, read by 20+ tools | Codex has a Memories layer; its disable switch is unchecked | entry point verified (agents.md, 2026-08-23); memory switch unknown |
 | Cursor | `AGENTS.md` at the project root — the vendor-documented alternative to `.cursor/rules`. `.cursorrules` is legacy: deprecated, and reported ignored by agent mode | a Memories feature exists; a settings switch is reported, with a reported agent-mode bypass bug | entry point verified (cursor.com/docs, 2026-08-23); memory cells reported (secondary, 2026-08) |
@@ -455,7 +433,7 @@ Every node follows the same structure: purpose, memory, session-log, rules, docs
 The tree has a natural gradient: higher nodes document broader, more stable context; lower nodes narrower, more technical.
 
 | Level | Typically documents |
-|---|---|
+| --- | --- |
 | **Root** (`~/.agent/`) | The operator: preferences, working patterns, cross-project decisions, principles |
 | **Project** (`project/.agent/`) | The codebase: architecture, domain, technology choices, project state |
 | **Package / subtree** (`pkg/.agent/`) | A specific area: its API, patterns, gotchas, local decisions |
@@ -508,7 +486,7 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 ## How it compares
 
 | | AGENTS.md | Tool-specific files | .agent/ |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Agent reads context | Yes | Yes | Yes |
 | Agent-maintained memory lives in the repo | No | No | **Yes** |
 | Survives tool switch | Partially | No | **Yes** |

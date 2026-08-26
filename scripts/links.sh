@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # links.sh — on-demand link audit for a node. Reports ORPHAN (a file
 # nothing cites) and BROKEN (a cited path that does not exist). Findings
-# are review triggers, not errors; always exits 0.
+# are review triggers, not errors. The script always exits 0.
 #
 # Full documentation: scripts/docs/links.md in the dot-agent repo.
 #
-# Usage: links.sh [root]    # root defaults to . ; audits <root>/.agent/
+# Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
 
 set -u
 
@@ -17,7 +17,7 @@ Usage: links.sh [root]
 
 Reports ORPHAN: (a file in the node nothing cites) and BROKEN: (a node path
 cited by a node file that does not exist). Paths outside .agent/ are out of
-scope. root defaults to . ; always exits 0.
+scope. root defaults to . — always exits 0.
 EOF
   exit 0 ;;
 esac
@@ -51,7 +51,7 @@ done < <(find "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
 
 # Every markdown basename in the project, newline-delimited and newline-
 # bounded so a lookup is one `case` against a string rather than a loop or a
-# subprocess per candidate. Built once; the walk below consults it for every
+# subprocess per candidate. Built once. The walk below consults it for every
 # cited name that the node itself cannot resolve. The heavy vendored trees
 # are pruned because they hold thousands of files and none of them is what a
 # node doc means by a bare name.

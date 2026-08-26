@@ -6,7 +6,7 @@
 #
 # Usage: docs.sh new --name <file> --read-when "…" [root]
 #
-# root defaults to . ; ".md" is appended to <file> if missing. Writes
+# root defaults to . — ".md" is appended to <file> if missing. Writes
 # <root>/.agent/docs/<file> and appends a row to
 # <root>/.agent/docs/architecture.md, creating it with a minimal routing
 # header if it does not already exist.
@@ -17,7 +17,7 @@ usage() {
   cat <<'EOF'
 Usage: docs.sh new --name <file> --read-when "…" [root]
 
-root defaults to . ; writes <root>/.agent/docs/<file> and a routing row in
+root defaults to . — writes <root>/.agent/docs/<file> and a routing row in
 <root>/.agent/docs/architecture.md.
 EOF
 }

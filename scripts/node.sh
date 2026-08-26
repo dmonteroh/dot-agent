@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # .agent/ node bootstrap and update — the mechanical parts only. Judgement
 # (exploring the project, filling Project guardrails, reconciling content
-# during an update) stays with the agent; this script never does either.
+# during an update) stays with the agent. This script never does either.
 #
 # Full documentation: scripts/docs/node.md.
 #
@@ -12,7 +12,7 @@
 #   <name> matches a file in the source repo's presets/ (currently
 #   software-development, academic-research, domain-knowledge).
 #   <mode> is one of: ignore-all | track-shared | track-all.
-#   root defaults to . ; the script reads/writes <root>/.agent.
+#   root defaults to . — the script reads/writes <root>/.agent.
 
 set -u
 unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
@@ -29,7 +29,7 @@ Usage:
   node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [root]
   node.sh update [root]
 
-root defaults to . ; the script operates on <root>/.agent
+root defaults to . — the script operates on <root>/.agent
 EOF
 }
 
@@ -52,7 +52,7 @@ memory_headers_stale() {
 }
 
 # Both edits are exact-string: the header comment is deleted whole and the
-# fact below it is never read; memory.md keeps every index line under a
+# fact below it is never read. memory.md keeps every index line under a
 # replaced header. Sets migrate_note.
 migrate_memory_headers() {
   mg_agent="$1"
@@ -131,9 +131,10 @@ init)
     esac
   done
 
-  # A leading underscore marks a maintainer file in presets/ (_shared.md is
-  # the index of text that must stay identical across presets). It is not a
-  # preset and must never land in a node as rules/contract.md.
+  # A filename that starts with "_" marks a maintainer file in presets/
+  # (_shared.md is the index of text that must stay identical across
+  # presets). It is not a preset and must never land in a node as
+  # rules/contract.md.
   case "$preset" in
   _*)
     echo "node.sh: '$preset' is a maintainer file in presets/, not a preset" >&2
@@ -234,14 +235,14 @@ EOF
   done
   # Starter confs — the comment gate's vocabulary and the status check's
   # tunables. Configs, so the node edits or deletes them freely from here
-  # on; without the files on disk the knobs are undiscoverable, since
+  # on. Without the files on disk the knobs are undiscoverable, since
   # agents execute these scripts rather than read them.
   for conffile in comments.conf status.conf log.conf; do
     cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile" \
       || { echo "node.sh: $conffile copy failed" >&2; exit 1; }
   done
 
-  # A gitignore at $HOME is commonly git's global core.excludesFile; a
+  # A gitignore at $HOME is commonly git's global core.excludesFile. A
   # `.agent/` pattern there would ignore every project node in every repo.
   if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
     [ "$mode" = "track-all" ] \
@@ -367,7 +368,7 @@ EOF
     body_tmp="$agent/.memory-body.tmp"
     if [ -f "$memory" ]; then
       # Honor a closing --> only when a header comment actually opens near
-      # the top; keying on the first --> alone would silently drop every
+      # the top. Keying on the first --> alone would silently drop every
       # fact above an arrow token in the body of a header-less file.
       header_end=""
       if head -n 5 "$memory" | grep -qF '<!--'; then
@@ -437,7 +438,7 @@ EOF
 
   # Refresh the shipped scripts from the source repo — by exactly these
   # names. Anything else under scripts/ is the node's own and is never
-  # overwritten; a missing starter conf is seeded, the one write that
+  # overwritten. A missing starter conf is seeded, the one write that
   # cannot clobber node content.
   mkdir -p "$agent/scripts"
   for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do

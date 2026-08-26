@@ -12,7 +12,7 @@
 # Tunables: status.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/status.md in the dot-agent repo.
 #
-# Usage: status.sh [root]    # root defaults to . ; checks <root>/.agent/
+# Usage: status.sh [root]    # root defaults to . — checks <root>/.agent/
 
 set -u
 
@@ -99,7 +99,7 @@ if [[ -s "$contract" ]]; then
   guardrails=$(awk '/^## Project guardrails/ { inb = 1; next }
                     inb && /^## / { exit }
                     inb { print }' "$contract")
-  # A placeholder spans several words (`<exact command(s)>`); a filled-in
+  # A placeholder spans several words (`<exact command(s)>`). A filled-in
   # line's own angle brackets are single-token (`--grep <name>`), so the
   # required space is what keeps a real command from reading as a stub.
   if printf '%s\n' "$guardrails" | grep -qE '^- .*<[^>]* [^>]*>'; then
@@ -263,7 +263,7 @@ fi
 
 # REPAIR: .agent/ is the sole durable memory only if the tool's own store is
 # off, and that rests on a setting no other check reads. Absent or true both
-# mean a second store can collect knowledge this node will never see; the
+# mean a second store can collect knowledge this node will never see. The
 # file is checked textually so the check needs no JSON parser.
 for settings in "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
   [[ -s "$settings" ]] || continue
