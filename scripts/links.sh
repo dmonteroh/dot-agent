@@ -206,8 +206,7 @@ for c in "${corpus[@]}"; do
     esac
 
     # A bare or loosely-written basename resolves if the node holds a file
-    # by that name anywhere — `learned.md` for `rules/learned.md` is how
-    # docs actually cite each other in the field.
+    # by that name anywhere: `learned.md` is how docs cite `rules/learned.md`.
     tbase=${inagent##*/}
     if [ -e "$dir/$stripped" ] || [ -e "$agent/$inagent" ] || [ -e "$root/$stripped" ]; then
       continue

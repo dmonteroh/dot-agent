@@ -21,30 +21,21 @@ set -u
 # Tunable per project — in the node's status.conf (see below), never by
 # editing these lines: node.sh update refreshes this script and discards
 # edits. Thresholds are review triggers, not caps: nothing refuses a
-# write, and each number states its source. Log: ~120 entries
-# is a heavy week at the field's peak pace; the 5,000-word trigger sits
-# just under the 5,834-word log that caused the lost-history incident.
-# Memory file: 300 sits well above the largest
-# field fact (~130 words), so a flag means "probably more than one fact".
-# Index: chosen default — a proposed 30 proved unusable against real
-# V5-era memory volume (a field instance holds ~30 facts after two
-# weeks); 100 gives months of headroom, and grooming, not the cap, is
-# what regulates it. Learned: the healthiest instances run 31-44 rules;
-# the word trigger is that 60-rule ceiling times the file's own ~40-word
-# entry target, and it fires first when entries bloat past that target
-# (the field instance averages ~47 words a rule, so 60 of them would run
-# ~2,800). learned.md is always-loaded and has no disclosure tier, so
-# every word of it is paid on every session.
-# Docs: chosen default set just under the smaller of the two field docs
-# (2,200 and 3,200 words) whose density forced a manual restructuring
-# pass. Tail: covers the busiest logged day (23 entries).
-# Log entry: the header contract's format is ≤25 words; 50 is that ceiling
-# with 2x grace (chosen default). The check exists because the format
-# otherwise lives only in prose and a bypassable writer: a live node
-# hand-appended narrative entries past log.sh — 32 of 32 over 50 words,
-# the largest 306 — while a sibling node held 0 of 88, and no check could
-# tell the two apart. Every oversized entry also rides the tail print
-# below into every session's context.
+# write, and each number is a derivation or a chosen default, said here.
+# Log: 120 entries and 5,000 words, chosen defaults — the log is read as a
+# tail every session, so it is groomed as a working file and archived, not
+# grown. Log entry: the header contract's format is ≤25 words; 50 is that
+# ceiling with 2x grace. The format otherwise lives only in prose and in a
+# writer any hand edit bypasses, and every oversized entry rides the tail
+# print below into every session's context.
+# Memory file: 300 body words, a chosen default set well above one fact's
+# natural size, so a flag reads as "probably more than one fact". Index:
+# 100 entries, chosen default — grooming regulates the index, the cap does
+# not. Learned: 60 rules, chosen default; the 2,400-word trigger is that
+# ceiling times the file's own ~40-word entry target, so it fires first
+# when entries bloat past that target. learned.md is always-loaded and has
+# no disclosure tier, so every word of it is paid on every session.
+# Docs: 2,000 body words, chosen default. Tail: 25 entries, chosen default.
 LOG_MAX_ENTRIES=120
 LOG_MAX_WORDS=5000
 LOG_ENTRY_MAX_WORDS=50
@@ -338,9 +329,8 @@ fi
 # LOAD: the always-loaded set, measured. A per-file limit that is never
 # summed is not a limit, and three members of this set (contract, purpose,
 # the routing table) carry no per-file trigger at all. Advisory on purpose:
-# the two live field instances measured 2026-08-23 both ran ~4,600-4,700
-# words — one calibration point, not provenance for a threshold. The tail
-# term prices what this check itself printed above.
+# no threshold until this line has measured enough nodes to source one. The
+# tail term prices what this check itself printed above.
 load_total=0
 load_detail=""
 load_add() {

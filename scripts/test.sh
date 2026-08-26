@@ -348,10 +348,9 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: multiline hook rejected" || fail "memory.sh new: multiline hook rejected"
 [ ! -e "$memroot/.agent/memory/bad-hook.md" ] && pass "memory.sh new: multiline hook creates no file" || fail "memory.sh new: multiline hook creates no file"
 
-# field-size fact (130 words, the scale of the largest fact observed in a
-# mature field instance): accepted, and GROOM-clean on the load path —
-# status.sh counts body words only, and its threshold sits above real
-# field facts, not below them.
+# A fact well inside one fact's natural size: accepted, and GROOM-clean on
+# the load path — status.sh counts body words only, and its threshold sits
+# above a single fact, not below it.
 "$memcopy" new --slug field-size --title "Field Size" --hook "field regression case" --fact "$(words_n 130)" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "memory.sh new: field-size fact (130 words) accepted" || fail "memory.sh new: field-size fact (130 words) accepted"
@@ -858,7 +857,7 @@ out28c=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28c" | grep -qF 'BROKEN: .agent/docs/backend.md cites docs/backend/queues.md' && pass "links.sh: a dangling node path is reported" || fail "links.sh: a dangling node path is reported ($out28c)"
 
 # Project paths are out of scope: the node does not manage their lifecycle,
-# and treating them as findings buried the real ones in the field run.
+# and treating them as findings buries the real ones.
 printf '\nBrief: `temp/some-task-board.md`, source `src/app/main.md`.\n' >>"$lk/.agent/docs/backend.md"
 out28d=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28d" | grep -qF 'temp/some-task-board.md' && fail "links.sh: paths outside the node are out of scope" || pass "links.sh: paths outside the node are out of scope"
@@ -870,9 +869,8 @@ out28e=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28e" | grep -qF 'cites learned.md' && fail "links.sh: a loose basename resolves against the node" || pass "links.sh: a loose basename resolves against the node"
 
 # A bare name the node cannot resolve is as likely a project file as a node
-# one — memory facts name `SKILL.md` and `implementer-prompt.md` constantly.
-# A field node reported 12 BROKEN links, 11 of them project files sitting in
-# a subdirectory rather than at the project root.
+# one — memory facts name files like `SKILL.md` constantly, and a project
+# file often sits in a subdirectory rather than at the project root.
 mkdir -p "$lk/skills/testing"
 printf '# Testing\n' >"$lk/skills/testing/SKILL.md"
 printf '\nThe bar lives in `SKILL.md`, and `skills/testing/SKILL.md` implements it.\n' >>"$lk/.agent/docs/backend.md"
@@ -1014,9 +1012,8 @@ printf '%s\n' "$loadline32b" | grep -q '(entry ' && pass "status.sh: LOAD counts
 
 # ---- 33. status.sh: session-log entry shape ----
 # The 25-word entry format lives in the header contract and in log.sh — one
-# is prose, the other bypassable by hand-editing the file. A live node
-# hand-appended 32/32 narrative entries (largest 306 words) with zero flags
-# while a sibling held 0/88; this is the check that tells them apart.
+# is prose, the other bypassable by hand-editing the file. This is the check
+# that reads the entries themselves.
 es="$WORK/entry-shape"
 mkdir -p "$es"
 "$NODE" init --preset software-development --mode track-all "$es" >/dev/null 2>&1
@@ -1034,8 +1031,7 @@ f33c=$(status_flags "$es")
 printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: a hand-wrapped entry is counted whole" || fail "status.sh: a hand-wrapped entry is counted whole ($f33c)"
 
 # ---- 34. comments.sh: the diff comment gate ----
-# The preset's comment rule was prose in three places on a live field node
-# and was breached anyway. The gate mechanizes the objective half: an added
+# The gate mechanizes the objective half of the comment rule: an added
 # comment citing what a fresh clone cannot open BLOCKs (exit 1); every
 # other added comment is listed for justification (REVIEW, exit 0). The
 # shipped core carries only universal dead citations; workflow vocabulary —
