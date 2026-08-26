@@ -15,6 +15,13 @@
 #           justifies each as a non-obvious invariant, constraint, or
 #           workaround, or deletes it.
 #
+# The diff it reads is merge-base(base, HEAD) → the working tree, plus
+# untracked source files: the gate runs before a diff is handed back, and
+# hand-back is normally an uncommitted state, so a committed-only diff
+# would pass exactly the comments this exists to catch. That scope includes
+# comments already sitting uncommitted in scanned files, whoever wrote
+# them — they are part of the diff being handed back.
+#
 # To customize: edit comments.conf beside this script (node.sh init seeds
 # a starter; update seeds it only when absent, never overwrites) —
 # node-owned and parsed as plain KEY=value lines,
@@ -70,13 +77,32 @@ exclude_re='(^|/)\.agent/|(^|/)node_modules/|/dist/|/vendor/|\.min\.'
 set --
 for ext in $EXTENSIONS; do set -- "$@" "*.${ext}"; done
 
-added=$(git diff "$base...HEAD" -- "$@" \
+# Merge-base → worktree, not base...HEAD: a diff ending at the last commit
+# cannot see staged or unstaged changes, and the state being handed back is
+# normally uncommitted.
+mb=$(git merge-base "$base" HEAD) || {
+  echo "comments.sh: no merge base between '$base' and HEAD" >&2
+  exit 2
+}
+
+added=$(git diff "$mb" -- "$@" \
   | awk '
       /^\+\+\+ b\// { file = substr($0, 7); next }
       /^\+/ && !/^\+\+\+/ {
         line = substr($0, 2)
         print file "\t" line
       }')
+
+# git diff never shows untracked files, so a brand-new unadded source file
+# is scanned whole: every comment line in it is a line this diff adds.
+untracked=$(git ls-files --others --exclude-standard -- "$@" \
+  | while IFS= read -r uf; do
+      [ -f "$uf" ] || continue
+      awk -v f="$uf" '{ print f "\t" $0 }' "$uf"
+    done)
+if [ -n "$untracked" ]; then
+  added=$(printf '%s\n%s' "$added" "$untracked")
+fi
 
 added=$(printf '%s\n' "$added" \
   | awk -F'\t' -v re="$exclude_re" '$1 !~ re' \

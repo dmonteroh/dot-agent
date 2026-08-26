@@ -1117,6 +1117,31 @@ rc34d=$?
 rc34e=$?
 [ "$rc34e" -eq 2 ] && pass "comments.sh: a missing base ref exits 2" || fail "comments.sh: a missing base ref exits 2 (rc=$rc34e)"
 
+# The gate reads the diff as handed back: merge-base to worktree, plus
+# untracked files. A committed-only diff exits 0 on exactly the comments it
+# exists to catch — hand-back is normally an uncommitted state.
+git_cg checkout -q clean34
+printf '// tuned per commit cafebabecafebabe\nconst e = 5\n' >>"$cg/src/app.ts"
+out34f=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34f=$?
+[ "$rc34f" -eq 1 ] && printf '%s\n' "$out34f" | grep -q 'cafebabecafebabe' && pass "comments.sh: an unstaged SHA citation BLOCKs" || fail "comments.sh: an unstaged SHA citation BLOCKs (rc=$rc34f; $out34f)"
+
+git_cg add src/app.ts
+(cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
+rc34g=$?
+[ "$rc34g" -eq 1 ] && pass "comments.sh: a staged-only SHA citation BLOCKs" || fail "comments.sh: a staged-only SHA citation BLOCKs (rc=$rc34g)"
+git_cg reset -q HEAD -- src/app.ts
+git_cg checkout -q -- src/app.ts
+
+printf '// context in commit deadbeef12345678\nconst f = 6\n' >"$cg/src/brand-new.ts"
+out34h=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34h=$?
+[ "$rc34h" -eq 1 ] && printf '%s\n' "$out34h" | grep -q 'brand-new.ts' && pass "comments.sh: an untracked file's SHA citation BLOCKs" || fail "comments.sh: an untracked file's SHA citation BLOCKs (rc=$rc34h; $out34h)"
+rm -f "$cg/src/brand-new.ts"
+out34i=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34i=$?
+[ "$rc34i" -eq 0 ] && [ -z "$out34i" ] && pass "comments.sh: the worktree checks leave a clean diff silent" || fail "comments.sh: the worktree checks leave a clean diff silent (rc=$rc34i; $out34i)"
+
 # install and refresh: init ships it; update refreshes it by name and never
 # touches the node-owned local file beside it
 cgn="$WORK/comment-gate-init"
