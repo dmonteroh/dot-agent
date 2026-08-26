@@ -312,12 +312,9 @@ factfile="$memroot/.agent/memory/test-fact.md"
 grep -q '^date: ' "$factfile" 2>/dev/null && grep -q '^scope: project' "$factfile" 2>/dev/null && pass "memory.sh new: fact file has date and scope frontmatter" || fail "memory.sh new: fact file has date and scope frontmatter"
 grep -qxF -- "- [Test Fact](memory/test-fact.md) — why it matters for tests" "$memroot/.agent/memory.md" && pass "memory.sh new: index line appended" || fail "memory.sh new: index line appended"
 
-# memory/ is the one tier that carries no header contract. Every other
-# canonical file is a singleton, so its contract is written once however
-# large the node grows; memory/ is N files of ~60 words, where the same
-# header came to 1,455 words against 1,025 words of fact on a 15-fact field
-# node. The contract lives once in memory.md's header, and the script says
-# it out loud to the session that is writing.
+# memory/ is the one tier that carries no header contract: it lives once in
+# memory.md's header, and memory.sh says it out loud to the session that is
+# writing.
 grep -q '<!--' "$factfile" && fail "memory.sh new: the fact file carries no header contract" || pass "memory.sh new: the fact file carries no header contract"
 printf '%s\n' "$out9" | grep -qF 'supersede in place' && pass "memory.sh new: the write reminds the writer of the contract" || fail "memory.sh new: the write reminds the writer of the contract ($out9)"
 grep -qF 'fact files carry no header of their' "$memroot/.agent/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"

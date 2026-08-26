@@ -38,14 +38,9 @@ EOF
 cmd="${1:-}"
 [ $# -ge 1 ] && shift
 
-# The fact-file header contract moved into memory.md's header. Every other
-# canonical file is a singleton, so its contract is written once however
-# large the node grows; memory/ is the only tier with N files, and at ~60
-# words a fact the same 97-word header came to 1,455 words against 1,025
-# words of fact on a 15-fact field node. Worse, it bought no curation: that
-# node carried a fact about a skill the repo does not use, migrated into
-# 6.1 shape with the header directly above it, and the header stated
-# formats and never asked whether the fact still mattered.
+# The fact-file header contract lives in memory.md's header, so a fact file
+# holds its frontmatter and the fact and nothing else. A node already on 6.1
+# still carries the old shape: version-current is not shape-current.
 memory_headers_stale() {
   mh_agent="$1"
   [ -f "$mh_agent/memory.md" ] \

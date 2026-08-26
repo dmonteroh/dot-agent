@@ -13,19 +13,15 @@
 #
 # Scope is the node's own link graph. A path pointing outside .agent/ (a
 # source file, a task brief under temp/) is the project's to manage and its
-# lifecycle is not the node's business, so it is never reported. The first
-# field run without that rule produced 117 findings, all but a handful of
-# them project paths a session-log entry had legitimately outlived.
+# lifecycle is not the node's business, so it is never reported.
 #
 # Shape alone cannot tell a project file from a node file. A bare `SKILL.md`
 # looks exactly like a bare `learned.md`, and node docs really do cite each
-# other by bare name, so the name is checked against the project's markdown
-# too, not only the node's: a second field run reported 12 BROKEN links on a
-# healthy node, 11 of them memory facts naming real project files
-# (`SKILL.md`, `implementer-prompt.md`) that live in a subdirectory rather
-# than at the project root. What no script can settle is a path that names a
-# file in a third repo — a skill documenting where its consuming project
-# should keep its config — which is why findings stay review triggers.
+# other by bare name, so an unresolved name is checked against the project's
+# markdown too, not only the node's. What no script can settle is a path
+# that names a file in a third repo — a skill documenting where its
+# consuming project should keep its config — which is why findings stay
+# review triggers.
 #
 # Findings are review triggers, not errors: an orphan is often a file that
 # should be cited, sometimes one that should be deleted, occasionally

@@ -4,9 +4,9 @@
 # constraint the code cannot express; never change narration or citations
 # of artifacts a fresh clone cannot open).
 #
-# The rule was prose in three places on a live field node and was breached
-# anyway — "is this comment narrative?" is a judgement call a reviewer can
-# wave through. This makes the objective half mechanical:
+# "Is this comment narrative?" is a judgement call a reviewer can wave
+# through; "can a fresh clone open what this cites?" is not. So the
+# objective half is mechanical and the judgement half stays a listed review:
 #
 #   BLOCK:  the added comment cites something a fresh clone cannot open —
 #           a commit SHA, a git command transcript, scope narration.
