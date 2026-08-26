@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 6.2 (2026-08-23).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
+> **Version 6.2 (2026-08-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
