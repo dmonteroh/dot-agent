@@ -1357,6 +1357,38 @@ done
 printf 'One line of prose.\n\n```\nwrapped inside\na fence\n```\n' >"$WORK/hardwrap-fence.md"
 [ -z "$(awk -f "$hwawk" "$WORK/hardwrap-fence.md")" ] && pass "markdown: a fenced block is not read as wrapped prose" || fail "markdown: a fenced block is not read as wrapped prose"
 
+# ---- 39. the operating model quotes what the scripts actually write ----
+# node.sh and docs.sh write a node's headers, and the operating model shows
+# each one in a fenced block as the reference copy. Nothing kept the two in
+# step. The session-log block had already lost the branch-stamp clause that
+# log.conf added, and a register pass over the scripts moved four of the
+# five further apart, silently in both cases. A reader trusts the document
+# over the script, so a stale block teaches the wrong contract.
+omnode="$WORK/om-quotes"
+mkdir -p "$omnode"
+"$NODE" init --preset software-development --mode track-all "$omnode" >/dev/null 2>&1
+"$omnode/.agent/scripts/docs.sh" new --name a --read-when "x" "$omnode" >/dev/null 2>&1
+
+om_drift=""
+om_check() { # $1 = path under .agent/, $2 = a distinctive phrase in the header
+  line=$(grep -F "$2" "$omnode/.agent/$1" | head -n 1)
+  if [ -z "$line" ]; then
+    om_drift="$om_drift $1(missing-from-node)"
+  else
+    grep -qF "$line" "$reporoot/operating-model.md" || om_drift="$om_drift $1"
+  fi
+}
+om_check session-log.md "One entry per session"
+om_check memory.md "Index only, one line per fact file"
+om_check rules/learned.md "Binding rules distilled"
+om_check docs/architecture.md "One entry per doc in this directory"
+om_check docs/a.md "Agent-facing reference"
+[ -z "$om_drift" ] && pass "operating model: the quoted node headers match what the scripts write" || fail "operating model: the quoted node headers match what the scripts write (drifted:$om_drift)"
+
+# The check must be able to fail, or a stale document reads as a current one.
+om_probe=$(grep -qF "a phrase no header contains anywhere" "$reporoot/operating-model.md" && echo found || echo absent)
+[ "$om_probe" = absent ] && pass "operating model: the quote check tests presence, not a constant" || fail "operating model: the quote check tests presence, not a constant"
+
 # ---- summary ----
 total=$((PASS + FAIL))
 printf '\n%d/%d checks passed (%d failed)\n' "$PASS" "$total" "$FAIL"
