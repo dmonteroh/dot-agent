@@ -8,7 +8,7 @@ Usage: scripts/test.sh    # run from anywhere; resolves the repo from $0
 
 Builds every fixture under a fresh `mktemp -d` directory, never writes inside this repo, and removes the directory on exit. Prints one `ok`/`FAIL` line per check and a summary line. Exits 0 only if every check passed.
 
-Written bash 3.2 / BSD portable: no associative arrays, no GNU-only flags. CI runs it on Ubuntu and macOS alongside ShellCheck, and once more under `LC_ALL=C` — a single-byte locale changes what `[[:alnum:]]` matches, which the word counters depend on.
+Written bash 3.2 / BSD portable: no associative arrays, no GNU-only flags. CI runs it on Ubuntu and macOS alongside ShellCheck, then twice more on macOS: once under `LC_ALL=en_US.ISO8859-1` and once under `LC_ALL=C`. The ISO8859-1 leg is the one that catches locale bugs. A locale whose alphanumeric table includes the em dash's leading byte `0xE2` makes bash 3.2 absorb that byte into an unbraced `$name`, and `[[:alnum:]]` treat the dash as a letter. `LC_ALL=C` is the one locale here where neither happens, so it guards the opposite direction.
 
 ## Three conventions worth keeping
 

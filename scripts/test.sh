@@ -29,8 +29,16 @@ fail() { FAIL=$((FAIL + 1)); printf 'FAIL %s\n' "$1"; }
 # ---- helpers ---------------------------------------------------------
 
 # root -> GROOM:/REPAIR:/INDEX: lines from the node's own copy of status.sh
+# Findings only. stderr used to be folded into stdout and then filtered
+# out, so a status.sh that died produced an empty result and every
+# `[ -z "$(status_flags ...)" ] && pass` assertion passed over the corpse.
+# A crash now emits STATUSFAIL, which no test expects and every test sees.
 status_flags() {
-  "$1/.agent/scripts/status.sh" "$1" 2>&1 | grep -E '^(GROOM|REPAIR|INDEX):'
+  "$1/.agent/scripts/status.sh" "$1" 2>"$WORK/.status-stderr" | grep -E '^(GROOM|REPAIR|INDEX):'
+  sf_rc=${PIPESTATUS[0]}
+  if [ "$sf_rc" -ne 0 ] || [ -s "$WORK/.status-stderr" ]; then
+    echo "STATUSFAIL: rc=$sf_rc stderr=$(tr '\n' ' ' <"$WORK/.status-stderr" | cut -c1-120)"
+  fi
 }
 
 # file, sed-expr -> apply the expression in place. Avoids `sed -i`, whose
@@ -805,10 +813,12 @@ while IFS= read -r block; do
     grep -qF -- "$block" "$reporoot/presets/$p.md" && hits=$((hits + 1))
   done
   label=$(printf '%s' "$block" | cut -c1-52)
-  # ${label} is braced, not bare: in a single-byte locale the first byte of
-  # the following "…" (0xE2) is the letter â, and bash 3.2 parses an
-  # unbraced $name with locale-aware isalnum(), so it absorbs that byte into
-  # the variable name and `set -u` kills the run.
+  # ${label} is braced, not bare. bash 3.2 parses an unbraced $name with
+  # locale-aware isalnum(), so in any locale whose alnum table covers 0xE2 —
+  # the first byte of the following "…" — that byte is absorbed into the
+  # variable name and `set -u` kills the run. ISO-8859-1 reads it as â and
+  # UTF-8 accepts it too. LC_ALL=C is the one CI leg where it cannot fire,
+  # so the ISO8859-1 leg is what guards this line.
   [ "$hits" -eq 3 ] && pass "shared: \"${label}…\" in all three presets" || fail "shared: \"${label}…\" in all three presets (found in $hits)"
 done <<EOF
 $(awk '/^```/ { inb = !inb; next } inb && NF { print }' "$sharedfile")
@@ -1324,10 +1334,14 @@ infence  { next }
 AWK
 
 hw38=""
-for md in $(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' | sort); do
+# -print0 into a file, then read with a redirect rather than a pipe: a
+# pipeline would run the loop in a subshell and lose hw38. Unquoted
+# $(find) word-split here, so a path with a space read as clean.
+(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' -print0) >"$WORK/hw-corpus"
+while IFS= read -r -d '' md; do
   hit=$(cd "$reporoot" && awk -f "$hwawk" "$md")
   [ -n "$hit" ] && hw38="$hw38 $hit"
-done
+done <"$WORK/hw-corpus"
 [ -z "$hw38" ] && pass "markdown: the corpus is soft-wrapped" || fail "markdown: the corpus is soft-wrapped ($(printf '%s' "${hw38# }" | cut -c1-160))"
 
 # The check has to be able to fail, or a broken detector reads as a clean
@@ -1347,10 +1361,11 @@ mkdir -p "$hwnode"
 "$hwnode/.agent/scripts/docs.sh" new --name auth-flow --read-when "working on authentication" "$hwnode" >/dev/null 2>&1
 "$hwnode/.agent/scripts/memory.sh" new --slug hw --title HW --hook hook --fact "a durable fact" "$hwnode" >/dev/null 2>&1
 hw38b=""
-for md in $(find "$hwnode/.agent" -name '*.md' | sort); do
+find "$hwnode/.agent" -name '*.md' -print0 >"$WORK/hw-nodelist"
+while IFS= read -r -d '' md; do
   hit=$(awk -f "$hwawk" "$md" | sed "s|$hwnode/||")
   [ -n "$hit" ] && hw38b="$hw38b $hit"
-done
+done <"$WORK/hw-nodelist"
 [ -z "$hw38b" ] && pass "markdown: a generated node is soft-wrapped too" || fail "markdown: a generated node is soft-wrapped too ($(printf '%s' "${hw38b# }" | cut -c1-160))"
 
 # A fenced block keeps its line structure and must not be read as prose.
@@ -1389,7 +1404,201 @@ om_check docs/a.md "Agent-facing reference"
 om_probe=$(grep -qF "a phrase no header contains anywhere" "$reporoot/operating-model.md" && echo found || echo absent)
 [ "$om_probe" = absent ] && pass "operating model: the quote check tests presence, not a constant" || fail "operating model: the quote check tests presence, not a constant"
 
+# ---- 40. the fail-open class found by the 2026-08-27 script review ----
+# Every check here pins a defect that shipped and that this suite passed
+# over. They share one shape: the script reported success while the work
+# it names did not happen. A gate that says "clean" when it never ran, a
+# threshold that stops enforcing, a write claimed but not made.
+
+# 40a. status.conf says "parsed and never executed" on its second line.
+# It was not. A conf value reached [[ ]] as an arithmetic operand, and
+# arithmetic evaluates command substitution inside an array subscript.
+# status.sh is the entry point's first step in every session.
+ce="$WORK/confexec"
+mkdir -p "$ce"
+"$NODE" init --preset software-development --mode track-all "$ce" >/dev/null 2>&1
+ce_marker="$WORK/conf-exec-marker"
+rm -f "$ce_marker"
+printf 'LOG_MAX_ENTRIES=entrypoints[$(touch %s)]\n' "$ce_marker" >>"$ce/.agent/scripts/status.conf"
+ce_out=$("$ce/.agent/scripts/status.sh" "$ce" 2>/dev/null)
+[ ! -e "$ce_marker" ] && pass "status.conf: a conf value cannot execute a command" || fail "status.conf: a conf value cannot execute a command"
+printf '%s\n' "$ce_out" | grep -q '^REPAIR: status.conf LOG_MAX_ENTRIES=' && pass "status.conf: a value that is not a whole number draws a REPAIR flag" || fail "status.conf: a value that is not a whole number draws a REPAIR flag"
+
+# The threshold must still tune, or the validation traded one bug for
+# another.
+grep -v '^LOG_MAX_ENTRIES=entrypoints' "$ce/.agent/scripts/status.conf" >"$ce/conf.tmp" && mv "$ce/conf.tmp" "$ce/.agent/scripts/status.conf"
+printf 'LOG_MAX_ENTRIES=1\n' >>"$ce/.agent/scripts/status.conf"
+printf -- '- [2026-01-01] (t) a (b). verify: pass.\n- [2026-01-02] (t) a (b). verify: pass.\n' >>"$ce/.agent/session-log.md"
+status_flags "$ce" | grep -q '^GROOM: session-log.md' && pass "status.conf: a valid threshold still tunes the check" || fail "status.conf: a valid threshold still tunes the check"
+
+# 40b. The word ceiling is why log.sh exists over a hand-written append,
+# so a ceiling it cannot parse fails closed rather than waving entries
+# through. An inline comment is the everyday form of a bad value.
+lc="$WORK/logconf"
+mkdir -p "$lc"
+"$NODE" init --preset software-development --mode track-all "$lc" >/dev/null 2>&1
+printf 'SUMMARY_MAX_WORDS=25 words\n' >>"$lc/.agent/scripts/log.conf"
+"$lc/.agent/scripts/log.sh" --tool t --area a --verify pass --summary "short entry" "$lc" >/dev/null 2>&1 \
+  && fail "log.conf: a ceiling that is not a whole number is refused" || pass "log.conf: a ceiling that is not a whole number is refused"
+
+# 40c. A flag name taken as the next flag's value wrote an entry reading
+# "(t) --area (a)". Only the argument count was checked, never the shape.
+"$lc/.agent/scripts/log.sh" --tool t --area a --verify pass --summary --area "$lc" >/dev/null 2>&1 \
+  && fail "log.sh: a flag is not accepted as another flag's value" || pass "log.sh: a flag is not accepted as another flag's value"
+
+# 40d. status.sh invented three findings for any argument it did not
+# understand, at exit 0. The entry point tells an agent to clear every
+# REPAIR: line it prints.
+"$lc/.agent/scripts/status.sh" --help >"$WORK/sh-help" 2>/dev/null
+sh_rc=$?
+[ "$sh_rc" -eq 0 ] && head -n 1 "$WORK/sh-help" | grep -q '^Usage: status.sh' && pass "status.sh: --help prints usage on stdout at exit 0" || fail "status.sh: --help prints usage on stdout at exit 0"
+grep -q '^REPAIR:' "$WORK/sh-help" && fail "status.sh: --help invents no findings" || pass "status.sh: --help invents no findings"
+sh_bad="$WORK/not-a-node"
+mkdir -p "$sh_bad"
+sh_out=$("$lc/.agent/scripts/status.sh" "$sh_bad" 2>/dev/null)
+sh_rc=$?
+[ "$sh_rc" -ne 0 ] && [ -z "$sh_out" ] && pass "status.sh: a root with no .agent is a usage error, not three findings" || fail "status.sh: a root with no .agent is a usage error, not three findings"
+
+# 40e. memory.sh and docs.sh printed "wrote X and indexed it in Y" when
+# the second write failed, leaving exactly the drift they exist to
+# prevent. The blocked target is a directory rather than a chmod, so the
+# write fails for root too and this means the same thing in CI.
+# The index target must stay a regular file: making it a directory trips
+# an earlier guard and never reaches the defect. A read-only file is the
+# real shape, so the check first proves this environment enforces that.
+# Running as root it does not, and the pair says so rather than passing
+# on a condition it never created.
+hw="$WORK/halfwrite"
+mkdir -p "$hw"
+"$NODE" init --preset software-development --mode track-all "$hw" >/dev/null 2>&1
+: >"$WORK/ro-probe"
+chmod a-w "$WORK/ro-probe"
+if printf 'x\n' >>"$WORK/ro-probe" 2>/dev/null; then
+  ro_enforced=0
+else
+  ro_enforced=1
+fi
+chmod u+w "$WORK/ro-probe"
+
+if [ "$ro_enforced" -eq 1 ]; then
+  chmod a-w "$hw/.agent/memory.md"
+  "$hw/.agent/scripts/memory.sh" new --slug halffact --title T --hook H --fact F "$hw" >/dev/null 2>&1 \
+    && fail "memory.sh: a failed index write is reported as a failure" || pass "memory.sh: a failed index write is reported as a failure"
+  [ ! -e "$hw/.agent/memory/halffact.md" ] && pass "memory.sh: a failed index write leaves no orphan fact file" || fail "memory.sh: a failed index write leaves no orphan fact file"
+  chmod u+w "$hw/.agent/memory.md"
+else
+  pass "memory.sh: failed index write not exercised — this environment ignores file permissions"
+  pass "memory.sh: orphan removal not exercised — this environment ignores file permissions"
+fi
+
+hd="$WORK/halfdoc"
+mkdir -p "$hd"
+"$NODE" init --preset software-development --mode track-all "$hd" >/dev/null 2>&1
+"$hd/.agent/scripts/docs.sh" new --name first --read-when "x" "$hd" >/dev/null 2>&1
+if [ "$ro_enforced" -eq 1 ]; then
+  chmod a-w "$hd/.agent/docs/architecture.md"
+  "$hd/.agent/scripts/docs.sh" new --name second --read-when "y" "$hd" >/dev/null 2>&1 \
+    && fail "docs.sh: a failed routing write is reported as a failure" || pass "docs.sh: a failed routing write is reported as a failure"
+  [ ! -e "$hd/.agent/docs/second.md" ] && pass "docs.sh: a failed routing write leaves no unrouted doc" || fail "docs.sh: a failed routing write leaves no unrouted doc"
+  chmod u+w "$hd/.agent/docs/architecture.md"
+else
+  pass "docs.sh: failed routing write not exercised — this environment ignores file permissions"
+  pass "docs.sh: unrouted doc removal not exercised — this environment ignores file permissions"
+fi
+
+# 40f. Slug and name validation used [a-z0-9-], a collation range that
+# means ASCII only in the C locale. UpperCase was refused under LC_ALL=C
+# and accepted in every locale a person actually runs in. Section 9's
+# Bad_Slug case cannot catch this: its underscore is rejected either way.
+# This input is all-alpha on purpose.
+vn="$WORK/validate"
+mkdir -p "$vn"
+"$NODE" init --preset software-development --mode track-all "$vn" >/dev/null 2>&1
+LC_ALL=C "$vn/.agent/scripts/memory.sh" new --slug UpperCase --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
+  && fail "memory.sh: an uppercase slug is refused under LC_ALL=C" || pass "memory.sh: an uppercase slug is refused under LC_ALL=C"
+vloc=$(locale -a 2>/dev/null | grep -ix -m1 -e 'en_US.UTF-8' -e 'en_US.utf8' -e 'C.UTF-8' -e 'C.utf8')
+if [ -n "$vloc" ]; then
+  LC_ALL="$vloc" "$vn/.agent/scripts/memory.sh" new --slug UpperCase --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
+    && fail "memory.sh: an uppercase slug is refused under a UTF-8 locale" || pass "memory.sh: an uppercase slug is refused under a UTF-8 locale"
+  LC_ALL="$vloc" "$vn/.agent/scripts/docs.sh" new --name AuthFlow --read-when x "$vn" >/dev/null 2>&1 \
+    && fail "docs.sh: an uppercase name is refused under a UTF-8 locale" || pass "docs.sh: an uppercase name is refused under a UTF-8 locale"
+fi
+[ ! -e "$vn/.agent/memory/UpperCase.md" ] && pass "memory.sh: no uppercase fact file was written in any locale" || fail "memory.sh: no uppercase fact file was written in any locale"
+
+# A leading dash passed the character check, and the filename it wrote
+# reads as a flag to everything downstream.
+"$vn/.agent/scripts/memory.sh" new --slug -weird --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
+  && fail "memory.sh: a slug starting with - is refused" || pass "memory.sh: a slug starting with - is refused"
+"$vn/.agent/scripts/docs.sh" new --name -weird --read-when x "$vn" >/dev/null 2>&1 \
+  && fail "docs.sh: a name starting with - is refused" || pass "docs.sh: a name starting with - is refused"
+"$vn/.agent/scripts/memory.sh" new --slug ok-slug --title T --hook H --fact --scope "$vn" >/dev/null 2>&1 \
+  && fail "memory.sh: a flag is not accepted as another flag's value" || pass "memory.sh: a flag is not accepted as another flag's value"
+"$vn/.agent/scripts/memory.sh" new --slug fresh-slug --title T --hook H --fact "a real fact" "$vn" >/dev/null 2>&1 \
+  && pass "memory.sh: a valid invocation still writes" || fail "memory.sh: a valid invocation still writes"
+
+# 40g. The comment gate failed open two ways. A conf regex that will not
+# compile made every grep in the pipeline error into `|| true`, so the run
+# exited 0 with the BLOCK gone. And a path holding a space was skipped
+# whole, because git appends a tab to the `+++ b/<path>` header and the
+# tab travelled into the filename field.
+fo="$WORK/gate-failopen"
+mkdir -p "$fo/.agent/scripts" "$fo/My Project"
+cp "$reporoot/scripts/comments.sh" "$fo/.agent/scripts/comments.sh"
+cp "$reporoot/scripts/comments.conf" "$fo/.agent/scripts/comments.conf"
+chmod +x "$fo/.agent/scripts/comments.sh"
+git_fo() { git -C "$fo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
+git_fo init -q
+git_fo checkout -q -b base
+printf 'const a = 1\n' >"$fo/seed.ts"
+git_fo add -A >/dev/null
+git_fo commit -q -m base
+git_fo checkout -q -b feat
+printf '// refactored per commit deadbeefcafe1234\n' >"$fo/My Project/Program.cs"
+printf '// refactored per commit deadbeefcafe1234\n' >"$fo/Plain.cs"
+git_fo add -A >/dev/null
+
+# Both citations are identical, so the only difference is the space.
+fo_out=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
+printf '%s\n' "$fo_out" | grep -qF 'My Project/Program.cs' && pass "comments.sh: a path containing a space is still gated" || fail "comments.sh: a path containing a space is still gated"
+printf '%s\n' "$fo_out" | grep -qF 'Plain.cs' && pass "comments.sh: the unspaced control path is gated" || fail "comments.sh: the unspaced control path is gated"
+
+# A conf regex that will not compile must stop the gate, not silence it.
+grep -v '^BLOCK_RE_EXTRA=' "$fo/.agent/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agent/scripts/comments.conf"
+printf 'BLOCK_RE_EXTRA=[unclosed\n' >>"$fo/.agent/scripts/comments.conf"
+fo_bad=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
+fo_rc=$?
+[ "$fo_rc" -ne 0 ] && [ -z "$fo_bad" ] && pass "comments.sh: a conf regex that will not compile fails closed" || fail "comments.sh: a conf regex that will not compile fails closed (rc=$fo_rc)"
+
+# 40h. Four different help contracts across six scripts: usage on stdout
+# at exit 0 in two, usage on stderr at exit 1 in two, three invented
+# findings in one, and "base ref not found" at exit 2 in the last. The
+# five root-taking scripts now agree. comments.sh takes a base ref rather
+# than a root and is left out on purpose.
+hp="$WORK/helpcontract"
+mkdir -p "$hp"
+"$NODE" init --preset software-development --mode track-all "$hp" >/dev/null 2>&1
+hp_bad=""
+for hp_s in status log memory docs links; do
+  hp_out=$("$hp/.agent/scripts/$hp_s.sh" --help 2>/dev/null)
+  hp_rc=$?
+  [ "$hp_rc" -eq 0 ] || hp_bad="$hp_bad $hp_s.sh(exit=$hp_rc)"
+  printf '%s\n' "$hp_out" | head -n 1 | grep -q "^Usage: $hp_s.sh" || hp_bad="$hp_bad $hp_s.sh(no-usage-on-stdout)"
+done
+[ -z "$hp_bad" ] && pass "shipped scripts: --help prints usage on stdout at exit 0" || fail "shipped scripts: --help prints usage on stdout at exit 0 ($hp_bad)"
+
 # ---- summary ----
+ran=$((PASS + FAIL))
+
+# The denominator is computed from what ran, so a check that stops running
+# — a fixture that failed to build, a variable gone empty — used to lower
+# the total silently and still report every check passing. Update this
+# number when you add or remove a check, deliberately.
+EXPECTED_CHECKS=323
+if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
+  printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
+  FAIL=$((FAIL + 1))
+fi
+
 total=$((PASS + FAIL))
 printf '\n%d/%d checks passed (%d failed)\n' "$PASS" "$total" "$FAIL"
 [ "$FAIL" -eq 0 ] && exit 0
