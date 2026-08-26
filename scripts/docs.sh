@@ -22,10 +22,37 @@ root defaults to . — writes <root>/.agent/docs/<file> and a routing row in
 EOF
 }
 
+# A token beginning with -- is the next flag, not this flag's value:
+# `--read-when --name` otherwise writes the literal text "--name" into the
+# doc's "Read when:" header. Call as `need_value "$@"` from inside the
+# parse loop, where $1 is the flag and $2 is its candidate value.
+need_value() {
+  # Reject only a value that is one of this script's own flags: that is
+  # the real mistake, a flag whose value was left out. A free-text value
+  # may legitimately begin with -- , so shape alone is not the test.
+  case "${2-}" in
+  --name|--read-when)
+    echo "docs.sh: $1 needs a value, got the flag $2" >&2
+    usage >&2
+    exit 1 ;;
+  esac
+  if [ $# -lt 2 ]; then
+    echo "docs.sh: $1 needs a value" >&2
+    usage >&2
+    exit 1
+  fi
+}
+
 cmd="${1:-}"
 [ $# -ge 1 ] && shift
 
+# Help is a top-level arm, before the subcommand dispatch, so it works
+# the same way here as in log.sh and links.sh. It used to reach the
+# catch-all and read as an unknown command.
 case "$cmd" in
+-h|--help)
+  usage
+  exit 0 ;;
 new)
   name=""
   readwhen=""
@@ -33,10 +60,10 @@ new)
   while [ $# -gt 0 ]; do
     case "$1" in
     --name)
-      [ $# -ge 2 ] || { echo "docs.sh: --name needs a value" >&2; usage >&2; exit 1; }
+      need_value "$@"
       name="$2"; shift 2 ;;
     --read-when)
-      [ $# -ge 2 ] || { echo "docs.sh: --read-when needs a value" >&2; usage >&2; exit 1; }
+      need_value "$@"
       readwhen="$2"; shift 2 ;;
     -h | --help)
       usage; exit 0 ;;
@@ -92,13 +119,32 @@ new)
     subdir=""
     leaf="$base" ;;
   esac
+  # Each part becomes a path component. A leading - makes that filename read
+  # as a flag to every later tool that globs the directory, so it is refused
+  # ahead of the character check, which would otherwise admit it.
   case "$subdir" in
-  *[!a-z0-9-]*)
+  -*)
+    echo "docs.sh: --name parts must not start with - (got '$name') — the filename would read as a flag" >&2
+    exit 1 ;;
+  esac
+  case "$leaf" in
+  -*)
+    echo "docs.sh: --name parts must not start with - (got '$name') — the filename would read as a flag" >&2
+    exit 1 ;;
+  esac
+  # The class is spelled out character by character rather than as [a-z0-9-]:
+  # inside a bracket expression a-z is a collation range, not an ASCII range,
+  # in every locale but C. Under en_US.UTF-8 *[!a-z0-9-]* matches nothing in
+  # "AuthFlow" and the name passes. Listing the characters means the same
+  # thing everywhere, and unlike pinning LC_ALL it leaves date's and grep's
+  # locale alone.
+  case "$subdir" in
+  *[!abcdefghijklmnopqrstuvwxyz0123456789-]*)
     echo "docs.sh: --name parts must match [a-z0-9-]+ (got '$name')" >&2
     exit 1 ;;
   esac
   case "$leaf" in
-  *[!a-z0-9-]* | "")
+  *[!abcdefghijklmnopqrstuvwxyz0123456789-]* | "")
     echo "docs.sh: --name parts must match [a-z0-9-]+ (got '$name')" >&2
     exit 1 ;;
   esac
@@ -130,13 +176,24 @@ new)
   # contract must not (it carries backticks and would otherwise run as
   # command substitution). "Read when:" stays on line 1, where status.sh
   # looks for it.
-  cat >"$doc" <<EOF
+  # `if { …; } >file; then`, not `if ! { …; } >file`: bash 3.2 does not run
+  # the negation when a compound command's own redirection is what failed,
+  # so the ! form never reaches its then-branch. Verified against 3.2.57.
+  if {
+    cat <<EOF
 <!-- Read when: $readwhen -->
 # $title
 EOF
-  cat >>"$doc" <<'EOF'
+    cat <<'EOF'
 <!-- Agent-facing reference, not a human narrative: facts belong in tables or one-fact-per-line bullets. Prose carries only the *why*. Cite the code or test path that pins a behavior instead of restating it. Timeless — no change narration, no dates. Area traps go under `## Gotchas`. Restructuring changes shape, never content: no tightening or splitting pass may drop an operational fact — a name, value, command, path, or gotcha. Preferred writer when this doc splits into docs/<area>/ sub-docs: .agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row together). -->
 EOF
+  } >"$doc"
+  then :
+  else
+    echo "docs.sh: could not write $doc — nothing was written" >&2
+    rm -f "$doc"
+    exit 1
+  fi
 
   if [ ! -s "$arch" ]; then
     cat >"$arch" <<'EOF'
@@ -151,17 +208,34 @@ Read when: is precision — skip the doc when the hook doesn't match. Sections: 
 EOF
   fi
 
-  {
+  # Both writes or neither. The routing append is the one that fails in the
+  # field (a read-only architecture.md, a full disk), and reporting success
+  # after it fails ships exactly the drift this script exists to prevent —
+  # status.sh then flags the doc as INDEX. The orphan is removed rather than
+  # left: this run created it, so nothing of the writer's is lost, and the
+  # retry that follows would otherwise hit "already exists".
+  if {
     printf -- '\n### `%s`\n' "$filename"
     printf -- '- **Read when:** %s\n' "$readwhen"
     printf -- '- **Sections:**\n'
   } >>"$arch"
+  then
+    echo "docs.sh: wrote $doc and added its routing entry to $arch"
+    exit 0
+  fi
 
-  echo "docs.sh: wrote $doc and added its routing entry to $arch"
-  exit 0
+  echo "docs.sh: could not append the routing entry to $arch — removed $doc, nothing was written" >&2
+  rm -f "$doc"
+  exit 1
+  ;;
+
+"")
+  usage >&2
+  exit 1
   ;;
 
 *)
+  echo "docs.sh: unknown command: $cmd" >&2
   usage >&2
   exit 1
   ;;
