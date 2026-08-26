@@ -135,15 +135,7 @@ new)
 # $title
 EOF
   cat >>"$doc" <<'EOF'
-<!-- Agent-facing reference, not a human narrative: facts belong in tables
-or one-fact-per-line bullets; prose carries only the *why*. Cite the code
-or test path that pins a behavior instead of restating it. Timeless — no
-change narration, no dates. Area traps go under `## Gotchas`. Restructuring
-changes shape, never content: no tightening or splitting pass may drop an
-operational fact — a name, value, command, path, or gotcha. Preferred
-writer when this doc splits into docs/<area>/ sub-docs:
-.agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row
-together). -->
+<!-- Agent-facing reference, not a human narrative: facts belong in tables or one-fact-per-line bullets; prose carries only the *why*. Cite the code or test path that pins a behavior instead of restating it. Timeless — no change narration, no dates. Area traps go under `## Gotchas`. Restructuring changes shape, never content: no tightening or splitting pass may drop an operational fact — a name, value, command, path, or gotcha. Preferred writer when this doc splits into docs/<area>/ sub-docs: .agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row together). -->
 EOF
 
   if [ ! -s "$arch" ]; then
@@ -155,13 +147,7 @@ EOF
 - **Read when:** <hook — the same text as the doc's own "Read when:" header>
 - **Sections:** <the doc's `## ` headings, separated by " · ">
 
-Read when: is precision — skip the doc when the hook doesn't match. Sections:
-is recall — find the doc that holds a topic its hook never names. Refresh both
-when the doc changes: status.sh flags a hook that disagrees with the doc's own
-header, and a `## ` heading missing from Sections. A section entry may say more
-than its heading; it may not say less. A doc whose hook is unconditional
-("ANY <area> work — check here before creating a new …") is a catalog: it loads
-for every task in its area, not only when a hook matches. -->
+Read when: is precision — skip the doc when the hook doesn't match. Sections: is recall — find the doc that holds a topic its hook never names. Refresh both when the doc changes: status.sh flags a hook that disagrees with the doc's own header, and a `## ` heading missing from Sections. A section entry may say more than its heading; it may not say less. A doc whose hook is unconditional ("ANY <area> work — check here before creating a new …") is a catalog: it loads for every task in its area, not only when a hook matches. -->
 EOF
   fi
 
