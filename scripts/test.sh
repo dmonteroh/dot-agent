@@ -4,7 +4,7 @@
 #
 # Full documentation: scripts/docs/test.md.
 #
-# Usage: scripts/test.sh    (run from anywhere; resolves the repo from $0)
+# Usage: scripts/test.sh    (run from anywhere — it resolves the repo from $0)
 # Builds every fixture under a fresh mktemp -d, never writes inside this
 # repo, removes it on exit. Exits 0 only if every check passed.
 #
@@ -118,7 +118,7 @@ for preset in $PRESETS; do
     rc=$?
     [ "$rc" -eq 0 ] && pass "init $preset/$mode exits 0" || fail "init $preset/$mode exits 0 (rc=$rc)"
 
-    # node.sh does the mechanical half of bootstrap; the judgement half
+    # node.sh does the mechanical half of bootstrap. The judgement half
     # (guardrails, quality-bar split) is the agent's, and a node with it
     # still undone is not a finished node — status.sh says so.
     flags=$(status_flags "$root")
@@ -340,7 +340,7 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: invalid slug rejected" || fail "memory.sh new: invalid slug rejected"
 [ ! -e "$memroot/.agent/memory/Bad_Slug.md" ] && pass "memory.sh new: invalid slug creates no file" || fail "memory.sh new: invalid slug creates no file"
 
-# title/hook flow into the one-line index entry; brackets and newlines
+# title/hook flow into the one-line index entry. Brackets and newlines
 # there would corrupt its format
 "$memcopy" new --slug bad-title --title "Bad [Title]" --hook "ok" --fact "bracketed title attempt" "$memroot" >/dev/null 2>&1
 rc=$?
@@ -788,8 +788,8 @@ rc=$?
 # The presets stay three separate seeds — a node adapts exactly one — but
 # the text carrying .agent/ mechanics rather than domain rules must be
 # word-for-word identical, or the same rule drifts three ways. V6.1 kept
-# that in lockstep by hand and it slipped. presets/_shared.md is the list;
-# this is the check that makes the list load-bearing rather than a comment.
+# that in lockstep by hand and it slipped. presets/_shared.md is the list.
+# This is the check that makes the list load-bearing rather than a comment.
 # Each fenced block there is a substring that must appear verbatim in all
 # three presets — a substring, not a whole line, because a shared sentence
 # may follow domain-specific lead-in text.
@@ -823,7 +823,7 @@ mkdir -p "$noderoot_sh"
 rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$noderoot_sh/.agent" ] && pass "node.sh: --preset _shared is rejected, nothing created" || fail "node.sh: --preset _shared is rejected, nothing created"
 
-# The memory split made memory.md an index; no preset may still instruct
+# The memory split made memory.md an index. No preset may still instruct
 # writing facts into it.
 memstale=0
 for p in "$reporoot"/presets/*.md; do
@@ -937,7 +937,7 @@ printf '%s\n' "$out29b" | grep -qi 'awk:' && fail "links.sh: no tool is handed a
 # bytes, no build step — so a tool or vendor name that leaks into a preset,
 # the template, or a node script ships verbatim into every other tool's
 # sessions, where it is an instruction some agent cannot follow. Nothing
-# errors when that happens; this lint is the only mechanism that notices.
+# errors when that happens. This lint is the only mechanism that notices.
 # Each allowlisted pattern below marks a deliberate reference:
 #   filename (CLAUDE.md          template header — copying instruction, deleted on copy
 #   uses Copilot Chat            template header — the same instruction's Copilot clause
@@ -1035,9 +1035,9 @@ printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: 
 
 # ---- 34. comments.sh: the diff comment gate ----
 # The gate mechanizes the objective half of the comment rule: an added
-# comment citing what a fresh clone cannot open BLOCKs (exit 1); every
+# comment citing what a fresh clone cannot open BLOCKs (exit 1). Every
 # other added comment is listed for justification (REVIEW, exit 0). The
-# shipped core carries only universal dead citations; workflow vocabulary —
+# shipped core carries only universal dead citations. Workflow vocabulary —
 # base ref, ticket patterns, path exclusions — is the node's, set in
 # comments.conf beside the script (KEY=value, parsed never executed) and
 # outside the update refresh list.
@@ -1163,8 +1163,8 @@ out34i=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 rc34i=$?
 [ "$rc34i" -eq 0 ] && [ -z "$out34i" ] && pass "comments.sh: the worktree checks leave a clean diff silent" || fail "comments.sh: the worktree checks leave a clean diff silent (rc=$rc34i; $out34i)"
 
-# install and refresh: init ships it; update refreshes it by name and never
-# touches the node-owned local file beside it
+# install and refresh: init ships it. The update refreshes it by name and
+# never touches the node-owned local file beside it
 cgn="$WORK/comment-gate-init"
 mkdir -p "$cgn"
 "$NODE" init --preset software-development --mode ignore-all "$cgn" >/dev/null 2>&1
@@ -1193,7 +1193,7 @@ grep -q '^PROBE_TOOLS=' "$cgu2/.agent/scripts/status.conf" 2>/dev/null && pass "
 grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
 
 # The same set the init loop asserts, on the path that reaches nodes already
-# in the field. node.sh names it once for both loops; this is what notices
+# in the field. node.sh names it once for both loops. This is what notices
 # if one of them ever re-inlines a literal.
 missing_u=""
 for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
@@ -1224,7 +1224,7 @@ printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a
 # The starter confs list each script's defaults (commented, or live for
 # the keys projects trim first) so the knobs are discoverable on disk —
 # agents execute the scripts, they don't read them. A default shown in a
-# conf that drifted from the script's would document a lie; this pins the
+# conf that drifted from the script's would document a lie. This pins the
 # two together.
 mismatch36=""
 for k in LOG_MAX_ENTRIES LOG_MAX_WORDS LOG_ENTRY_MAX_WORDS MEMORY_MAX_WORDS \
@@ -1294,6 +1294,49 @@ subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRA
 "$LOGSH" --tool t --area a --verify pass --summary "$(words_n 25)" "$lb" >/dev/null 2>&1 \
   && tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch: feat-x' && pass "log.sh: the stamp spends no summary budget at the 25-word ceiling" || fail "log.sh: the stamp spends no summary budget at the 25-word ceiling"
 status_flags "$lb" | grep -q 'entries over' && fail "log.sh: a stamped max-length entry stays under the entry-shape flag" || pass "log.sh: a stamped max-length entry stays under the entry-shape flag"
+
+# ---- 38. the markdown corpus is soft-wrapped ----
+# Hard-wrapped prose makes every edit a re-wrap. Change one word and the
+# whole paragraph reflows, so the diff shows moved line breaks with the
+# actual edit buried among them. The corpus is authored one line per
+# paragraph and wrapped by the reader's renderer instead. Fenced blocks,
+# tables, frontmatter, headings and list markers keep their line structure,
+# because there the break carries meaning.
+#
+# A hard wrap is a prose line under 100 characters whose next line is
+# non-blank and opens no new block. The width is a floor, not a style
+# limit: a genuinely short line followed by more prose is a wrap, and a
+# long line is left alone whatever follows it.
+hwawk="$WORK/hardwrap.awk"
+cat >"$hwawk" <<'AWK'
+FNR == 1 { infence = 0; prev = ""; prevno = 0; infm = ($0 == "---"); if (infm) next }
+infm     { if ($0 == "---") infm = 0; next }
+/^[ \t]*(```|~~~)/ { infence = !infence; prev = ""; next }
+infence  { next }
+{
+  blank = ($0 ~ /^[ \t]*$/)
+  opens = ($0 ~ /^[ \t]*#+[ \t]/) || ($0 ~ /^[ \t]*([-*+][ \t]+|[0-9]+[.)][ \t]+)/) \
+       || ($0 ~ /^[ \t]*\|/) || ($0 ~ /^[ \t]*>/) || ($0 ~ /^[ \t]*</)
+  if (prev != "" && !blank && !opens && length(prev) < W) printf "%s:%d\n", FILENAME, prevno
+  if (blank) prev = ""; else { prev = $0; prevno = FNR }
+}
+AWK
+
+hw38=""
+for md in $(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' | sort); do
+  hit=$(cd "$reporoot" && awk -v W=100 -f "$hwawk" "$md")
+  [ -n "$hit" ] && hw38="$hw38 $hit"
+done
+[ -z "$hw38" ] && pass "markdown: the corpus is soft-wrapped" || fail "markdown: the corpus is soft-wrapped ($(printf '%s' "${hw38# }" | cut -c1-160))"
+
+# The check has to be able to fail, or a broken detector reads as a clean
+# corpus. Section 30 guards its lint the same way.
+printf 'A paragraph broken by a column limit\nrather than by a blank line.\n' >"$WORK/hardwrap-fixture.md"
+[ -n "$(awk -v W=100 -f "$hwawk" "$WORK/hardwrap-fixture.md")" ] && pass "markdown: the check catches an injected hard wrap" || fail "markdown: the check catches an injected hard wrap"
+
+# A fenced block keeps its line structure and must not be read as prose.
+printf 'One line of prose.\n\n```\nwrapped inside\na fence\n```\n' >"$WORK/hardwrap-fence.md"
+[ -z "$(awk -v W=100 -f "$hwawk" "$WORK/hardwrap-fence.md")" ] && pass "markdown: a fenced block is not read as wrapped prose" || fail "markdown: a fenced block is not read as wrapped prose"
 
 # ---- summary ----
 total=$((PASS + FAIL))
