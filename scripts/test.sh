@@ -1303,10 +1303,11 @@ status_flags "$lb" | grep -q 'entries over' && fail "log.sh: a stamped max-lengt
 # tables, frontmatter, headings and list markers keep their line structure,
 # because there the break carries meaning.
 #
-# A hard wrap is a prose line under 100 characters whose next line is
-# non-blank and opens no new block. The width is a floor, not a style
-# limit: a genuinely short line followed by more prose is a wrap, and a
-# long line is left alone whatever follows it.
+# A hard wrap is any prose line whose next line is also prose. In markdown
+# two consecutive non-blank lines are one paragraph, so the second line is
+# always a continuation. An earlier version of this check only flagged
+# lines under 100 characters, which let a break after a long line through.
+# Width is not the test. Continuation is.
 hwawk="$WORK/hardwrap.awk"
 cat >"$hwawk" <<'AWK'
 FNR == 1 { infence = 0; prev = ""; prevno = 0; infm = ($0 == "---"); if (infm) next }
@@ -1317,14 +1318,14 @@ infence  { next }
   blank = ($0 ~ /^[ \t]*$/)
   opens = ($0 ~ /^[ \t]*#+[ \t]/) || ($0 ~ /^[ \t]*([-*+][ \t]+|[0-9]+[.)][ \t]+)/) \
        || ($0 ~ /^[ \t]*\|/) || ($0 ~ /^[ \t]*>/) || ($0 ~ /^[ \t]*</)
-  if (prev != "" && !blank && !opens && length(prev) < W) printf "%s:%d\n", FILENAME, prevno
+  if (prev != "" && !blank && !opens) printf "%s:%d\n", FILENAME, prevno
   if (blank) prev = ""; else { prev = $0; prevno = FNR }
 }
 AWK
 
 hw38=""
 for md in $(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' | sort); do
-  hit=$(cd "$reporoot" && awk -v W=100 -f "$hwawk" "$md")
+  hit=$(cd "$reporoot" && awk -f "$hwawk" "$md")
   [ -n "$hit" ] && hw38="$hw38 $hit"
 done
 [ -z "$hw38" ] && pass "markdown: the corpus is soft-wrapped" || fail "markdown: the corpus is soft-wrapped ($(printf '%s' "${hw38# }" | cut -c1-160))"
@@ -1332,11 +1333,29 @@ done
 # The check has to be able to fail, or a broken detector reads as a clean
 # corpus. Section 30 guards its lint the same way.
 printf 'A paragraph broken by a column limit\nrather than by a blank line.\n' >"$WORK/hardwrap-fixture.md"
-[ -n "$(awk -v W=100 -f "$hwawk" "$WORK/hardwrap-fixture.md")" ] && pass "markdown: the check catches an injected hard wrap" || fail "markdown: the check catches an injected hard wrap"
+[ -n "$(awk -f "$hwawk" "$WORK/hardwrap-fixture.md")" ] && pass "markdown: the check catches an injected hard wrap" || fail "markdown: the check catches an injected hard wrap"
+
+# A node's markdown is written by the scripts rather than copied out of
+# this repo, so the corpus sweep above cannot see any of it. node.sh and
+# docs.sh carry a node's headers in heredocs, and a hard wrap there ships
+# into every node this repo has ever created. That is the copy that
+# matters: the corpus is read by whoever maintains this repo, a node is
+# read by every agent that works in it.
+hwnode="$WORK/hardwrap-node"
+mkdir -p "$hwnode"
+"$NODE" init --preset software-development --mode track-all "$hwnode" >/dev/null 2>&1
+"$hwnode/.agent/scripts/docs.sh" new --name auth-flow --read-when "working on authentication" "$hwnode" >/dev/null 2>&1
+"$hwnode/.agent/scripts/memory.sh" new --slug hw --title HW --hook hook --fact "a durable fact" "$hwnode" >/dev/null 2>&1
+hw38b=""
+for md in $(find "$hwnode/.agent" -name '*.md' | sort); do
+  hit=$(awk -f "$hwawk" "$md" | sed "s|$hwnode/||")
+  [ -n "$hit" ] && hw38b="$hw38b $hit"
+done
+[ -z "$hw38b" ] && pass "markdown: a generated node is soft-wrapped too" || fail "markdown: a generated node is soft-wrapped too ($(printf '%s' "${hw38b# }" | cut -c1-160))"
 
 # A fenced block keeps its line structure and must not be read as prose.
 printf 'One line of prose.\n\n```\nwrapped inside\na fence\n```\n' >"$WORK/hardwrap-fence.md"
-[ -z "$(awk -v W=100 -f "$hwawk" "$WORK/hardwrap-fence.md")" ] && pass "markdown: a fenced block is not read as wrapped prose" || fail "markdown: a fenced block is not read as wrapped prose"
+[ -z "$(awk -f "$hwawk" "$WORK/hardwrap-fence.md")" ] && pass "markdown: a fenced block is not read as wrapped prose" || fail "markdown: a fenced block is not read as wrapped prose"
 
 # ---- summary ----
 total=$((PASS + FAIL))
