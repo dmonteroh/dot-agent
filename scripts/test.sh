@@ -1064,6 +1064,9 @@ EOF
 printf '#region Setup\nint x = 1;\n' >"$cg/src/tool.cs"
 printf '# skipped: out of scope for this pass\ny = 1\n' >"$cg/src/calc.py"
 printf '// narration in a migration\n' >"$cg/Migrations/0001_init.cs"
+# "//" opens no comment in shell — a script that prints one is printing a
+# string. A test corpus planting C-family fixtures is the ordinary case.
+printf 'echo "// planted per commit deadbeefcafe1234"\n# a real shell comment\n' >"$cg/src/fixture.sh"
 git_cg add -A >/dev/null
 git_cg commit -q -m feat
 
@@ -1076,6 +1079,8 @@ printf '%s\n' "$block34" | grep -q 'deadbeefcafe1234' && printf '%s\n' "$block34
 printf '%s\n' "$review34" | grep -q 'vendor SLA' && pass "comments.sh: other added comments land in REVIEW" || fail "comments.sh: other added comments land in REVIEW ($review34)"
 printf '%s\n' "$review34" | grep -q 'AC-12' && pass "comments.sh: ticket shapes are not blocked by the shipped core" || fail "comments.sh: ticket shapes are not blocked by the shipped core ($review34)"
 printf '%s\n' "$out34" | grep -q '#region' && fail "comments.sh: a C-family # line is not a comment" || pass "comments.sh: a C-family # line is not a comment"
+printf '%s\n' "$out34" | grep -q 'planted per commit' && fail "comments.sh: a shell // line is not a comment" || pass "comments.sh: a shell // line is not a comment"
+printf '%s\n' "$review34" | grep -q 'a real shell comment' && pass "comments.sh: a shell # line still is one" || fail "comments.sh: a shell # line still is one ($review34)"
 printf '%s\n' "$out34" | grep -q 'eslint-disable' && fail "comments.sh: tooling pragmas are skipped" || pass "comments.sh: tooling pragmas are skipped"
 printf '%s\n' "$out34" | grep -q 'existing constraint comment' && fail "comments.sh: only comments the diff adds are reported" || pass "comments.sh: only comments the diff adds are reported"
 

@@ -108,17 +108,19 @@ added=$(printf '%s\n' "$added" \
   | awk -F'\t' -v re="$exclude_re" '$1 !~ re' \
   || true)
 
-# comment lines only. "#" counts as a comment only where it opens one
-# (shell, python, ruby): in C-family sources it is a preprocessor directive
-# or region marker. "--" likewise only in SQL.
+# Comment lines only, and a marker opens a comment only in the languages
+# where it does: "#" in shell, python and ruby but not in C-family sources,
+# where it is a preprocessor directive or a region marker; "//" the other
+# way round, since in shell it is a string or a syntax error; "--" only in
+# SQL.
 comments=$(printf '%s\n' "$added" \
   | awk -F'\t' '{
       line = $2
       sub(/^[[:space:]]+/, "", line)
-      keep = (line ~ /^(\/\/|\/\*|\*|<!--)/)
+      if ($1 ~ /\.(sh|bash|py|rb)$/)      keep = (line ~ /^#/)
+      else if ($1 ~ /\.sql$/)             keep = (line ~ /^--/)
+      else                                keep = (line ~ /^(\/\/|\/\*|\*|<!--)/)
       if (line == "/**" || line == "/*" || line == "*/" || line == "*") keep = 0
-      if (!keep && $1 ~ /\.(sh|bash|py|rb)$/ && line ~ /^#/) keep = 1
-      if (!keep && $1 ~ /\.sql$/ && line ~ /^--/) keep = 1
       if (keep) print $0
     }' \
   || true)
