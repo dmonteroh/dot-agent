@@ -132,11 +132,16 @@ for preset in $PRESETS; do
     flags=$(status_flags "$root")
     [ -z "$flags" ] && pass "init $preset/$mode: status.sh clean once bootstrap completes" || fail "init $preset/$mode: status.sh clean once bootstrap completes ($flags)"
 
-    scriptsok=true
-    for f in status.sh log.sh memory.sh docs.sh links.sh; do
-      [ -x "$root/.agent/scripts/$f" ] || scriptsok=false
+    # The shipped set, stated here independently of node.sh's copy loop —
+    # deriving it from the script under test would pass a dropped entry.
+    missing=""
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
+      [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
-    $scriptsok && pass "init $preset/$mode: scripts present and executable" || fail "init $preset/$mode: scripts present and executable"
+    for f in comments.conf status.conf log.conf; do
+      [ -f "$root/.agent/scripts/$f" ] || missing="$missing $f"
+    done
+    [ -z "$missing" ] && pass "init $preset/$mode: every shipped script and starter conf is in place" || fail "init $preset/$mode: every shipped script and starter conf is in place (missing:$missing)"
   done
 done
 
