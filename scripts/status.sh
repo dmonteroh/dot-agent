@@ -5,9 +5,11 @@
 # is missing), INDEX (a docs/ file and the routing table disagree), plus
 # advisory TOOLS and LOAD lines. No finding prints on pass.
 #
-# Always exits 0: information on the load path, not a completion gate. The
-# binding instruction ("handle flags as part of this session") lives in the
-# entry point.
+# Exits 0 on every node it can check: information on the load path, not a
+# completion gate. The binding instruction ("handle flags as part of this
+# session") lives in the entry point. The one non-zero exit is a usage
+# error — a root that holds no .agent/ — which is not a finding about a
+# node and must never be reported as one.
 #
 # Tunables: status.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/status.md in the dot-agent repo.
@@ -32,23 +34,67 @@ TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
 root="${1:-.}"
+case "$root" in
+-h | --help)
+  cat <<'EOF'
+Usage: status.sh [root]
+
+Prints the recent session-log entries, then one line per finding: GROOM: (a
+file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
+step is missing), INDEX: (a docs/ file and the routing table disagree), plus
+advisory TOOLS: and LOAD: lines. No finding prints on pass.
+
+root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds.
+EOF
+  exit 0 ;;
+esac
+
 agent="$root/.agent"
+# A root with no .agent/ is a usage error, not a node with three missing
+# files: printing findings for it would send an agent off to repair a node
+# that was never addressed. links.sh refuses the same way.
+if [ ! -d "$agent" ]; then
+  echo "status.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+  exit 1
+fi
 
 # Per-node overrides for any variable above: plain KEY=value, parsed and
 # never executed — a config read on the load path cannot be allowed to run
-# code.
+# code. Every numeric key is checked against ^[0-9]+$ before it reaches a
+# variable, because "parsed, never executed" is not what the shell does
+# next: `[[ x -gt $v ]]` and `$(( ))` evaluate their operands as arithmetic,
+# and arithmetic evaluation performs command substitution inside an array
+# subscript. An unvalidated value here would run whatever it named.
 conf="$agent/scripts/status.conf"
-conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
+# The trailing-space strip forgives a stray space or a CR from an editor on
+# another platform; nothing else about the value is repaired.
+conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
+# A value that is not a whole number keeps the shipped default and adds a
+# REPAIR line naming the key. This script always exits 0 for a node, so a
+# quiet fallback would leave a broken config indistinguishable from a clean
+# node — the caller reads the findings, not the exit status.
+conf_repairs=""
+conf_num() { # $1: key name — the current value is its shipped default
+  local v
+  v=$(conf_get "$1")
+  [[ -n "$v" ]] || return 0
+  case "$v" in
+  *[!0-9]*)
+    conf_repairs="${conf_repairs}REPAIR: status.conf $1=$v is not a whole number — the default ${!1} is in use; fix the line, which takes digits only (no inline comment, no units)"$'\n'
+    return 0 ;;
+  esac
+  printf -v "$1" '%s' "$v"
+}
 if [[ -f "$conf" ]]; then
-  v=$(conf_get LOG_MAX_ENTRIES);      [[ -n "$v" ]] && LOG_MAX_ENTRIES="$v"
-  v=$(conf_get LOG_MAX_WORDS);        [[ -n "$v" ]] && LOG_MAX_WORDS="$v"
-  v=$(conf_get LOG_ENTRY_MAX_WORDS);  [[ -n "$v" ]] && LOG_ENTRY_MAX_WORDS="$v"
-  v=$(conf_get MEMORY_MAX_WORDS);     [[ -n "$v" ]] && MEMORY_MAX_WORDS="$v"
-  v=$(conf_get MEMORY_MAX_ENTRIES);   [[ -n "$v" ]] && MEMORY_MAX_ENTRIES="$v"
-  v=$(conf_get LEARNED_MAX_RULES);    [[ -n "$v" ]] && LEARNED_MAX_RULES="$v"
-  v=$(conf_get LEARNED_MAX_WORDS);    [[ -n "$v" ]] && LEARNED_MAX_WORDS="$v"
-  v=$(conf_get DOCS_MAX_WORDS);       [[ -n "$v" ]] && DOCS_MAX_WORDS="$v"
-  v=$(conf_get TAIL_LINES);           [[ -n "$v" ]] && TAIL_LINES="$v"
+  conf_num LOG_MAX_ENTRIES
+  conf_num LOG_MAX_WORDS
+  conf_num LOG_ENTRY_MAX_WORDS
+  conf_num MEMORY_MAX_WORDS
+  conf_num MEMORY_MAX_ENTRIES
+  conf_num LEARNED_MAX_RULES
+  conf_num LEARNED_MAX_WORDS
+  conf_num DOCS_MAX_WORDS
+  conf_num TAIL_LINES
   v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
 fi
 log="$agent/session-log.md"
@@ -85,6 +131,10 @@ if [[ -s "$log" ]]; then
     printf '%s\n\n' "$recent"
   fi
 fi
+
+# REPAIR: conf values that could not be used, held from the parse above so
+# they print with the other findings rather than ahead of the log tail.
+[[ -n "$conf_repairs" ]] && printf '%s' "$conf_repairs"
 
 # REPAIR: canonical files present and stamped.
 [[ -s "$memory" ]] || echo "REPAIR: memory.md missing/empty"
@@ -282,9 +332,14 @@ fi
 
 # TOOLS: availability facts for the environment this session runs in.
 missing=""
+# The list is split on spaces on purpose; globbing is off across the split
+# so a `*` in the conf value stays one literal name to probe instead of
+# expanding into whatever files sit in the working directory.
+set -f
 for tool in $PROBE_TOOLS; do
   command -v "$tool" >/dev/null 2>&1 || missing="$missing, $tool"
 done
+set +f
 if [[ -n "$missing" ]]; then
   fallbacks=""
   case " $missing" in *" rg"*) fallbacks="grep -rn" ;; esac

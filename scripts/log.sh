@@ -33,19 +33,40 @@ verify=""
 summary=""
 root="."
 
+# A flag's value must exist and must not itself be a flag: a dropped value
+# otherwise swallows the next flag silently, and `--summary --area <root>`
+# logs the entry with `--area` as its summary. Called as `need_value "$@"`,
+# so $1 is the flag and $2 is whatever followed it.
+need_value() {
+  # Reject only a value that is one of this script's own flags: that is
+  # the real mistake, a flag whose value was left out. A free-text value
+  # may legitimately begin with -- , so shape alone is not the test.
+  case "${2-}" in
+  --tool|--area|--verify|--summary)
+    echo "log.sh: $1 needs a value, got the flag $2" >&2
+    usage >&2
+    exit 1 ;;
+  esac
+  if [ $# -lt 2 ]; then
+    echo "log.sh: $1 needs a value" >&2
+    usage >&2
+    exit 1
+  fi
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
   --tool)
-    [ $# -ge 2 ] || { echo "log.sh: --tool needs a value" >&2; usage >&2; exit 1; }
+    need_value "$@"
     tool="$2"; shift 2 ;;
   --area)
-    [ $# -ge 2 ] || { echo "log.sh: --area needs a value" >&2; usage >&2; exit 1; }
+    need_value "$@"
     area="$2"; shift 2 ;;
   --verify)
-    [ $# -ge 2 ] || { echo "log.sh: --verify needs a value" >&2; usage >&2; exit 1; }
+    need_value "$@"
     verify="$2"; shift 2 ;;
   --summary)
-    [ $# -ge 2 ] || { echo "log.sh: --summary needs a value" >&2; usage >&2; exit 1; }
+    need_value "$@"
     summary="$2"; shift 2 ;;
   -h | --help)
     usage; exit 0 ;;
@@ -70,12 +91,35 @@ pass | fail | n/a) ;;
 esac
 
 # Per-node overrides: <root>/.agent/scripts/log.conf, plain KEY=value,
-# parsed and never executed.
+# parsed and never executed. Each value is checked before it is used:
+# `SUMMARY_MAX_WORDS=25 words` reaching the `-gt` below stops the ceiling
+# from being enforced at all, and enforcing that ceiling is why this script
+# exists instead of a hand-written append. A value this script cannot use is
+# refused, the way every other bad input here is refused — a config that
+# quietly disables the check is worse than one that will not run.
 conf="$root/.agent/scripts/log.conf"
-conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
+# The trailing-space strip forgives a stray space or a CR from an editor on
+# another platform; nothing else about the value is repaired.
+conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
 if [ -f "$conf" ]; then
-  v=$(conf_get SUMMARY_MAX_WORDS);  [ -n "$v" ] && SUMMARY_MAX_WORDS="$v"
-  v=$(conf_get LOG_INCLUDE_BRANCH); [ -n "$v" ] && LOG_INCLUDE_BRANCH="$v"
+  v=$(conf_get SUMMARY_MAX_WORDS)
+  if [ -n "$v" ]; then
+    case "$v" in
+    *[!0-9]*)
+      echo "log.sh: log.conf SUMMARY_MAX_WORDS=$v is not a whole number — fix the line, which takes digits only (no inline comment, no units)" >&2
+      exit 1 ;;
+    esac
+    SUMMARY_MAX_WORDS="$v"
+  fi
+  v=$(conf_get LOG_INCLUDE_BRANCH)
+  if [ -n "$v" ]; then
+    case "$v" in
+    true | false) LOG_INCLUDE_BRANCH="$v" ;;
+    *)
+      echo "log.sh: log.conf LOG_INCLUDE_BRANCH=$v is not true or false — fix the line (no inline comment)" >&2
+      exit 1 ;;
+    esac
+  fi
 fi
 
 # The entry is one line: `- [date] (tool) summary (area). verify: …` —
@@ -102,9 +146,10 @@ esac
 
 # Count words, not punctuation: a free-standing separator (an em dash,
 # a lone hyphen) does not spend the ceiling. Separators are matched as
-# literal bytes rather than by asking the locale what counts as a letter:
-# under a single-byte locale, [[:alnum:]] treats the em dash's leading
-# byte (0xE2, "â" in Latin-1) as alphanumeric, and the dash spends a word.
+# literal bytes rather than by asking the locale what counts as a letter.
+# Where the locale's alnum table covers 0xE2 — the em dash's leading byte,
+# "â" in Latin-1 — [[:alnum:]] reads that byte as a letter and the dash
+# spends a word. LC_ALL=C is the one locale here that does not.
 summary_words=$(printf '%s' "$summary" \
   | awk '{
       n = 0
