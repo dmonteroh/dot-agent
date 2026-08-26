@@ -51,6 +51,18 @@ memory_headers_stale() {
   return 1
 }
 
+# The memory.md index header. node.sh writes memory.md down four paths:
+# init, the pre-6.1 header migration, and both branches of update. One
+# writer keeps them identical, so a node created today and a node updated
+# today carry the same contract. The operating model quotes this text and
+# test.sh section 39 checks that quote.
+write_memory_header() {
+  cat >"$1" <<'EOF'
+# Memory
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+EOF
+}
+
 # Both edits are exact-string: the header comment is deleted whole and the
 # fact below it is never read. memory.md keeps every index line under a
 # replaced header. Sets migrate_note.
@@ -79,11 +91,8 @@ migrate_memory_headers() {
     tail -n +"$((mg_end + 1))" "$mg_memory" \
       | awk 'NR == 1 && /^# Memory[[:space:]]*$/ { next } { print }' \
       | sed -e '/./,$!d' >"$mg_body"
-    cat >"$mg_memory" <<'EOF'
-# Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
-
-EOF
+    write_memory_header "$mg_memory"
+    printf '\n' >>"$mg_memory"
     cat "$mg_body" >>"$mg_memory"
     rm -f "$mg_body"
   fi
@@ -151,10 +160,7 @@ init)
 <!-- One entry per session, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. Append the model to the tag when the harness states one — (claude/sonnet). Never guess it. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
 EOF
 
-  cat >"$agent/memory.md" <<'EOF'
-# Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
-EOF
+  write_memory_header "$agent/memory.md"
 
   cat >"$agent/rules/learned.md" <<'EOF'
 # Learned rules
@@ -337,18 +343,11 @@ EOF
     fi
     if grep -q '[^[:space:]]' "$body_tmp" 2>/dev/null; then
       sed -e '/./,$!d' "$body_tmp" >"$memdir/legacy.md"
-      cat >"$memory" <<'EOF'
-# Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
-
-- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag
-EOF
+      write_memory_header "$memory"
+      printf '\n%s\n' '- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag' >>"$memory"
       split_note="memory.md body moved to memory/legacy.md (GROOM flag will prompt the fact split)"
     else
-      cat >"$memory" <<'EOF'
-# Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
-EOF
+      write_memory_header "$memory"
       split_note="memory.md was empty/header-only — replaced with the index header, no legacy file"
     fi
     rm -f "$body_tmp"
