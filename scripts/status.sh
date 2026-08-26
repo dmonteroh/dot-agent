@@ -6,7 +6,8 @@
 #   REPAIR: a canonical file is missing, lost its manifest, or a bootstrap
 #           step was never completed
 #   INDEX:  a docs/ file and the routing table disagree
-#   TOOLS:  environment availability note — advisory, not actionable
+#   TOOLS:  environment availability, and which tools have run the
+#           bootstrap here — advisory, not actionable
 #   LOAD:   what the always-loaded set costs, in words — an advisory
 #           measurement printed every run, deliberately without a threshold
 # No finding prints on pass; the recent entries and the LOAD line are
@@ -333,6 +334,35 @@ if [[ -n "$missing" ]]; then
 fi
 if ! sed --version >/dev/null 2>&1; then
   echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
+fi
+
+# TOOLS: which tools have actually run the bootstrap here. A wiring cell says
+# a tool loads the entry point; it cannot say the model executed the numbered
+# steps, and a tool that treats them as advisory leaves no status run and no
+# log entry — indistinguishable from a tool nobody used. The (tool) tags
+# log.sh stamps are the only artifact that records the difference, so a tool
+# wired into this node and missing from this census never ran the steps.
+# A tag's optional model half is dropped, so one tool counts once however
+# its harness labelled the model. Usage, not compliance — a session that ran
+# the steps and skipped the write is invisible here, which is why entries
+# with no tag are counted too.
+if [[ -s "$log" ]]; then
+  census=$(awk '
+    /^- \[/ {
+      tag = ""
+      if (match($0, /^- \[[^]]*\] *\([^)]*\)/)) {
+        tag = substr($0, RSTART, RLENGTH)
+        sub(/^[^(]*\(/, "", tag); sub(/\)$/, "", tag); sub(/\/.*/, "", tag)
+      }
+      if (tag == "") untagged++; else n[tag]++
+    }
+    END {
+      for (t in n) printf "0\t%d\t%s\n", n[t], t
+      if (untagged) printf "1\t%d\tuntagged\n", untagged
+    }' "$log" \
+    | sort -k1,1n -k2,2nr -k3,3 \
+    | awk '{ printf "%s%s %s", sep, $3, $2; sep = ", " }')
+  [[ -n "$census" ]] && echo "TOOLS: session-log tool tags — $census"
 fi
 
 # LOAD: the always-loaded set, measured. A per-file limit that is never
