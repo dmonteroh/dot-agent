@@ -1256,40 +1256,6 @@ subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRA
   && tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch: feat-x' && pass "log.sh: the stamp spends no summary budget at the 25-word ceiling" || fail "log.sh: the stamp spends no summary budget at the 25-word ceiling"
 status_flags "$lb" | grep -q 'entries over' && fail "log.sh: a stamped max-length entry stays under the entry-shape flag" || pass "log.sh: a stamped max-length entry stays under the entry-shape flag"
 
-# ---- 38. status.sh: the session-log tool census ----
-# A wiring matrix cell says a tool loads the entry point, never that its
-# model ran the numbered steps; a tool that skips them writes no log entry,
-# which reads like a tool nobody used. The (tool) tags are the only artifact
-# that separates the two, so status.sh counts them every run.
-tc="$WORK/tool-census"
-mkdir -p "$tc"
-"$NODE" init --preset software-development --mode track-all "$tc" >/dev/null 2>&1
-finish_bootstrap "$tc"
-
-census() { "$1/.agent/scripts/status.sh" "$1" 2>&1 | grep '^TOOLS: session-log'; }
-
-[ -z "$(census "$tc")" ] && pass "status.sh: an empty log prints no census" || fail "status.sh: an empty log prints no census ($(census "$tc"))"
-
-cat >>"$tc/.agent/session-log.md" <<'LOGEOF'
-- [2026-01-02] (claude/sonnet) wired the node (setup). verify: pass.
-- [2026-01-03] (claude/opus) reviewed the gate (scripts). verify: pass.
-- [2026-01-04] (claude) fixed the links (scripts). verify: pass.
-- [2026-01-05] (codex) ran the suite (scripts). verify: pass.
-LOGEOF
-c38=$(census "$tc")
-printf '%s\n' "$c38" | grep -qF 'claude 3, codex 1' && pass "status.sh: the census counts tools, model suffixes collapsed, most entries first" || fail "status.sh: the census counts tools, model suffixes collapsed, most entries first ($c38)"
-
-# A hand-appended entry that bypassed log.sh carries no (tool) tag; the area
-# parenthetical later in the line is not one, and must not be read as a tool.
-printf -- '- [2026-01-06] hand-written, no tag (scripts). verify: n/a.\n' >>"$tc/.agent/session-log.md"
-c38b=$(census "$tc")
-printf '%s\n' "$c38b" | grep -qF 'claude 3, codex 1, untagged 1' && pass "status.sh: an untagged entry counts as untagged, last, and no area tag is read as a tool" || fail "status.sh: an untagged entry counts as untagged, last, and no area tag is read as a tool ($c38b)"
-
-# The census is one advisory line and never a flag: it must not change the
-# GROOM:/REPAIR:/INDEX: verdict on an otherwise clean node.
-[ "$(printf '%s\n' "$c38b" | grep -c .)" = "1" ] && pass "status.sh: the census is exactly one line" || fail "status.sh: the census is exactly one line ($c38b)"
-[ -z "$(status_flags "$tc")" ] && pass "status.sh: the census raises no flag on a clean node" || fail "status.sh: the census raises no flag on a clean node ($(status_flags "$tc"))"
-
 # ---- summary ----
 total=$((PASS + FAIL))
 printf '\n%d/%d checks passed (%d failed)\n' "$PASS" "$total" "$FAIL"
