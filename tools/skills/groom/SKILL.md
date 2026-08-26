@@ -16,7 +16,7 @@ This skill is an optional walkthrough of *how* to clear each flag. It adds no ob
 ## Do not use this skill when
 
 - The flag is `REPAIR:` or `INDEX:` — each names its own fix in the flag text. Neither is grooming, and `REPAIR:` stays in the main session.
-- No flag stands and the operator asked for no audit. Thresholds are review triggers, and grooming ahead of them trades signal for churn.
+- No flag stands and nobody asked for an audit. Thresholds are review triggers, and grooming ahead of them trades signal for churn.
 - A threshold itself seems wrong — that is a `status.conf` tuning decision for the operator, not a grooming step.
 
 This skill also works as a subagent brief. Per the contract's subagent rule, a session may delegate its `GROOM:` flags to one dispatched worker. Assign that worker explicitly to write only the flagged files. A small model such as Haiku is fine. The scripts do the exacting parts. Pass the worker the `GROOM:` lines and this file. Then re-run `status.sh` yourself. The cleared flag is the confirmation, not the worker's report.
@@ -62,7 +62,7 @@ The threshold is a review trigger. Past it, the doc costs more to load than most
 1. Tighten in place. Convert repeated "X is/does/lives-in Y" invariant prose into a table (`Concern | Rule | Where`) or one-fact-per-line bullets. Collapse a multi-sentence paragraph that states one fact into one terse bullet. Group near-duplicate mini-sections under one heading. Telegraphic style is right here — fragments, colons, arrows. Prose survives only where it carries the *why*.
 2. Split by sub-area when one file genuinely covers several. Create `docs/<area>/<sub-doc>.md` files via `.agent/scripts/docs.sh new --name <area>/<sub-doc> --read-when "…"`. Each gets its own routing entry. Move each section's content to its sub-doc. Then delete the original file and its routing entry, once every section has a home. Routing stays in the single `docs/architecture.md` table. A sub-doc loads only when its hook matches the task.
 
-3. Move irreducible depth out of the routed layer. Some material has its value in being complete rather than in being read. A full schema, an exhaustive option or error-code table, and a worked example all qualify. That material goes to `docs/<area>/references/<name>.md`, cited by path from the area doc in the same edit. Reference files carry no `Read when:` header, get no routing entry, and have no size trigger. `status.sh` skips them. Use this move when tightening would cost facts and splitting would only spread the same bulk across more routed docs.
+3. Move irreducible depth out of the routed layer. Some material has its value in being complete rather than in being read. Examples include a full schema, an exhaustive option or error-code table, and a worked example. That material goes to `docs/<area>/references/<name>.md`, cited by path from the area doc in the same edit. Reference files carry no `Read when:` header, get no routing entry, and have no size trigger. `status.sh` skips them. Use this move when tightening would cost facts and splitting would only spread the same bulk across more routed docs.
 
 Split only what covers several *areas*. A doc covering one area in many facets stays whole where its sections share invariants and get read together. Tighten it instead. Splitting it fragments the invariants and costs more routing entries than it saves.
 
