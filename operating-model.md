@@ -75,36 +75,14 @@ Every canonical file opens with a short comment that is its own format contract,
 
 ```markdown
 # Session log
-<!-- One entry per session, newest last.
-Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a.
-Append the model to the tag when the harness states one — (claude/sonnet) —
-never guess it. No file lists, SHAs, test counts, reviewer verdicts, or
-narrative. Preferred writer: .agent/scripts/log.sh (stamps date, enforces
-the ceiling). -->
+<!-- One entry per session, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. Append the model to the tag when the harness states one — (claude/sonnet). Never guess it. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
 ```
 
 `memory.md` — the index, not a fact store:
 
 ```markdown
 # Memory
-<!-- Index only, one line per fact file, newest last; reorder by
-relevance only when grooming.
-Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a
-fact that lives only as a line here and not as its own file under
-memory/ is not recorded. Delete the line when its file is deleted.
-Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file
-and its index line together).
-This contract covers memory/ too, so fact files carry no header of their
-own. Each holds one durable fact under date, scope, and type
-frontmatter. Keep a fact only if work in this node changes when it is
-true: one carried in from another repo or a migration earns its place
-again or is dropped. Two halves that would be superseded at different
-times are two files. Supersede in place: rewrite the fact and the date,
-keep the filename; no dated narratives, no command output, no history.
-As small as the fact allows; expansive detail goes to docs/ with a
-pointer fact here. type: reference points outward at a URL, dashboard,
-ticket, or spec the node does not own: checked for reachability, not
-superseded like a fact. -->
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
 ```
 
 `memory/<slug>.md` — one fact file, frontmatter and the fact:
@@ -128,11 +106,7 @@ This is the one tier whose files carry no header contract, and the exception is 
 ```markdown
 # Learned rules
 
-Binding rules distilled from operator corrections and failed verifications
-on this project. Merging and compressing entries is allowed; dropping
-operational content is not. Behavioral rules stay here; area gotchas go to
-the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation
-rules: `contract.md`, Self-learning.
+Binding rules distilled from operator corrections and failed verifications on this project. Merging and compressing entries is allowed. Dropping operational content is not. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 ```
@@ -144,15 +118,7 @@ This header is the one that pays rent on every session: `learned.md` is always-l
 ```markdown
 <!-- Read when: <one-line hook, same text as this doc's architecture.md entry> -->
 # <Area>
-<!-- Agent-facing reference, not a human narrative: facts belong in tables
-or one-fact-per-line bullets; prose carries only the *why*. Cite the code
-or test path that pins a behavior instead of restating it. Timeless — no
-change narration, no dates. Area traps go under `## Gotchas`. Restructuring
-changes shape, never content: no tightening or splitting pass may drop an
-operational fact — a name, value, command, path, or gotcha. Preferred
-writer when this doc splits into docs/<area>/ sub-docs:
-.agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row
-together). -->
+<!-- Agent-facing reference, not a human narrative: facts belong in tables or one-fact-per-line bullets. Prose carries only the *why*. Cite the code or test path that pins a behavior instead of restating it. Timeless — no change narration, no dates. Area traps go under `## Gotchas`. Restructuring changes shape, never content: no tightening or splitting pass may drop an operational fact — a name, value, command, path, or gotcha. Preferred writer when this doc splits into docs/<area>/ sub-docs: .agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row together). -->
 ```
 
 `docs/architecture.md`, the routing index every session reads before it reads any area doc:
