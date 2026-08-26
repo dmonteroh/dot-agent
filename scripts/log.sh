@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # log.sh — appends one session-log entry per session-log.md's header
-# contract. Stamps the date and enforces the summary word ceiling so
-# neither is something an agent can get wrong by hand. With
-# LOG_INCLUDE_BRANCH=true in the node's log.conf, also stamps the
-# checked-out branch (read from git at write time — mechanical, never
-# asked of the agent; silently omitted outside a git checkout).
+# contract, stamping the date and enforcing the summary word ceiling so
+# neither is something an agent can get wrong by hand.
+#
+# Tunables: log.conf beside this script, which lists every key.
+# Full documentation: scripts/docs/log.md in the dot-agent repo.
 #
 # Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
 #
@@ -13,11 +13,9 @@
 
 set -u
 
-# Tunable per project — in the node's log.conf (seeded at init), never by
-# editing these lines: node.sh update refreshes this script and discards
-# edits. 25 words is the field presets' entry ceiling (V6 harvest); at
-# that length a 120-entry log stays near the 5,000-word grooming trigger
-# (see status.sh).
+# Tune in the node's log.conf, never here: node.sh update refreshes this
+# script and discards edits to it. 25 words is the session-log header
+# contract's entry format; log.conf states it beside the key.
 SUMMARY_MAX_WORDS=25
 LOG_INCLUDE_BRANCH=false
 

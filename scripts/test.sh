@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
-# scripts/test.sh — self-contained smoke tests for node.sh, status.sh,
-# log.sh, memory.sh, docs.sh, links.sh, and comments.sh (the scripts this
-# repo ships under scripts/, which node.sh init/update copies into every
-# node).
+# scripts/test.sh — self-contained smoke tests for every script this repo
+# ships. The gate: it must pass before a change ships.
 #
-# Usage: scripts/test.sh    (run from anywhere; resolves the repo from its
-# own location via $0). Builds every fixture under a fresh mktemp -d
-# directory, never writes inside this repo, and removes the directory on
-# exit. Prints one ok/FAIL line per check and a summary line at the end.
-# Exits 0 only if every check passed.
+# Full documentation: scripts/docs/test.md.
 #
-# bash 3.2 / BSD portable: no associative arrays, no `local`-only idioms
-# assumed, no GNU-only flags.
+# Usage: scripts/test.sh    (run from anywhere; resolves the repo from $0)
+# Builds every fixture under a fresh mktemp -d, never writes inside this
+# repo, removes it on exit. Exits 0 only if every check passed.
+#
+# bash 3.2 / BSD portable: no associative arrays, no GNU-only flags.
 
 set -u
 
@@ -142,6 +139,9 @@ for preset in $PRESETS; do
       [ -f "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     [ -z "$missing" ] && pass "init $preset/$mode: every shipped script and starter conf is in place" || fail "init $preset/$mode: every shipped script and starter conf is in place (missing:$missing)"
+    # A node receives executables and their confs. This repo's design notes
+    # under scripts/docs/ are not a node's to carry.
+    [ ! -e "$root/.agent/scripts/docs" ] && pass "init $preset/$mode: scripts/docs is not shipped into the node" || fail "init $preset/$mode: scripts/docs is not shipped into the node"
   done
 done
 
@@ -1176,8 +1176,7 @@ grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pa
 
 # ---- 35. status.sh: per-node overrides in status.conf ----
 # The thresholds and the probed-tools list are per-project tunables, but
-# an edit to status.sh itself is discarded by node.sh update — a field
-# node patching gh out of PROBE_TOOLS lost the edit that way. The conf
+# an edit to status.sh itself is discarded by node.sh update. The conf
 # beside the script survives update and is parsed, never executed.
 printf 'LOG_ENTRY_MAX_WORDS=500\n' >"$es/.agent/scripts/status.conf"
 f35=$(status_flags "$es")

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # memory.sh — scaffolds a fact file and its memory.md index line as one
-# operation. This is a two-place write that drifts if done by hand; the
-# point of the script is to make that drift impossible, not just detect it
-# (status.sh's REPAIR check does the detecting for facts written by hand).
-# No size gate: writes are never refused for length; status.sh flags
-# outliers on the load path for grooming.
+# operation: a two-place write that drifts if done by hand.
+#
+# Full documentation: scripts/docs/memory.md in the dot-agent repo.
 #
 # Usage:
 #   memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" [--scope <project|package|root>] [--type <fact|reference>] [root]

@@ -1,31 +1,9 @@
 #!/usr/bin/env bash
-# links.sh — on-demand link audit for a node. Not on the load path: run it
-# when grooming, before a restructuring pass, or whenever you want to know
-# what the node holds that nothing points at.
+# links.sh — on-demand link audit for a node. Reports ORPHAN (a file
+# nothing cites) and BROKEN (a cited path that does not exist). Findings
+# are review triggers, not errors; always exits 0.
 #
-# Two directions over one graph:
-#   ORPHAN: a file nothing in the node cites
-#   BROKEN: a path a node file cites that does not exist
-#
-# The reference tier is what motivated it — docs/<area>/references/ files
-# carry no routing entry by design, so an uncited one is unreachable and
-# status.sh cannot see it — but the walk covers every non-exempt file.
-#
-# Scope is the node's own link graph. A path pointing outside .agent/ (a
-# source file, a task brief under temp/) is the project's to manage and its
-# lifecycle is not the node's business, so it is never reported.
-#
-# Shape alone cannot tell a project file from a node file. A bare `SKILL.md`
-# looks exactly like a bare `learned.md`, and node docs really do cite each
-# other by bare name, so an unresolved name is checked against the project's
-# markdown too, not only the node's. What no script can settle is a path
-# that names a file in a third repo — a skill documenting where its
-# consuming project should keep its config — which is why findings stay
-# review triggers.
-#
-# Findings are review triggers, not errors: an orphan is often a file that
-# should be cited, sometimes one that should be deleted, occasionally
-# neither. Always exits 0; the report is the product.
+# Full documentation: scripts/docs/links.md in the dot-agent repo.
 #
 # Usage: links.sh [root]    # root defaults to . ; audits <root>/.agent/
 
@@ -50,12 +28,9 @@ if [ ! -d "$agent" ]; then
   exit 1
 fi
 
-# Files exempt from the orphan check, and why. Canonical files load by name
-# from the entry point, so nothing cites them by path. memory/ is already
-# checked both ways by status.sh's REPAIR pass. archive/ is retired content
-# on purpose. scripts/ are executables wired by the entry point, which lives
-# outside the node. The rest are directories the operating model explicitly
-# places outside itself: never loaded, never groomed, never audited.
+# Files exempt from the orphan check — each is reached by a route the link
+# graph cannot see, or is placed outside the model. Per-entry reasons:
+# scripts/docs/links.md.
 is_exempt() {
   case "$1" in
   purpose.md | memory.md | session-log.md) return 0 ;;
@@ -133,17 +108,13 @@ audited=0
 
 # ---- ORPHAN: files nothing cites ------------------------------------
 #
-# A citation is matched on the file's node-relative path or on its bare
-# basename, because docs cite each other both ways (`docs/backend.md` from
-# the routing table, `references/error-codes.md` from the doc beside it).
-# The loose half is deliberate: a false "cited" is quieter than a false
-# orphan. Two files sharing a basename can mask one another — the one case
-# where this check knowingly under-reports.
-# One grep over the whole corpus per candidate, not one per (candidate,
-# file) pair: the pairwise version spawned ~39,000 processes on a 325-file
-# node and had to be killed at two minutes. `grep -l` reads every corpus
-# file in a single invocation and names the ones that matched, which is the
-# same answer for one process instead of hundreds.
+# Matched on node-relative path or bare basename, because docs cite each
+# other both ways. Two files sharing a basename can mask one another: the
+# one case where this check knowingly under-reports, and the quiet
+# direction to fail in.
+# One `grep -l` over the whole corpus per candidate, never one per
+# (candidate, file) pair — the pairwise form is quadratic in processes and
+# unusable on a large node for the same answer.
 for f in "${nodefiles[@]}"; do
   rel=${f#"$agent"/}
   is_exempt "$rel" && continue
@@ -170,13 +141,10 @@ done
 
 # ---- BROKEN: cited node paths that do not exist ----------------------
 #
-# Candidates come from markdown link targets and backticked .md paths, the
-# two ways node files cite each other. Three sources are excluded because
-# they name files in a different genre than citation: session-log.md and
-# archive/ are historical records, where an entry naming a since-archived
-# brief is doing its job; rules/ is instruction, naming the node's
-# furniture prescriptively ("pick area docs via architecture.md") whether
-# or not the node has grown that file yet.
+# Candidates come from markdown link targets and backticked .md paths.
+# session-log.md, archive/ and rules/ are excluded: they name files as
+# record or as instruction, not as citation, so a name they carry is not a
+# claim the path resolves. Why each: scripts/docs/links.md.
 for c in "${corpus[@]}"; do
   case "${c#"$agent"/}" in
   session-log.md | archive/* | rules/*) continue ;;

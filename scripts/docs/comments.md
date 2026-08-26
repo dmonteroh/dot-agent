@@ -1,0 +1,65 @@
+# comments.sh — the comment gate
+
+Flags comments a diff adds to source files, against the contract's comment
+rule: a comment states a constraint the code cannot express, never change
+narration or citations of artifacts a fresh clone cannot open.
+
+The rule splits into a half a machine can decide and a half it cannot. "Is
+this comment narrative?" is a judgement call a reviewer can wave through;
+"can a fresh clone open what this cites?" is not. So the objective half is
+mechanical and the judgement half stays a listed review.
+
+```
+Usage: comments.sh [base-ref]      # default: BASE_REF (origin/main)
+```
+
+## What it reports
+
+| Finding | Exit | Meaning |
+|---|---|---|
+| `BLOCK:` | 1 | the added comment cites something a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Delete these; durable *why* goes to docs |
+| `REVIEW:` | 0 | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
+
+Exits 2 when there is no merge base between the given base and `HEAD`.
+
+## What it reads
+
+The diff is merge-base(base, `HEAD`) → **the working tree**, plus untracked
+source files scanned whole. The gate runs before a diff is handed back, and
+hand-back is normally an uncommitted state, so a committed-only diff would
+pass exactly the comments this exists to catch.
+
+That scope includes comments already sitting uncommitted in scanned files,
+whoever wrote them. They are part of the diff being handed back, and
+`REVIEW:`'s justify-or-delete decision absorbs them.
+
+A marker opens a comment only in the languages where it does: `#` in shell,
+python and ruby but not in C-family sources, where it is a preprocessor
+directive or a region marker; `//`, `/*` and `<!--` the other way round,
+since in shell `//` is a string or a syntax error; `--` only in SQL.
+
+`.agent/` itself, vendored and minified trees, and tooling pragmas
+(`eslint`, `shellcheck`, `noqa`, `@ts-`, and the rest) are skipped.
+
+## Configuration
+
+Node vocabulary lives in `comments.conf` beside the script, which `node.sh
+init` seeds and `update` seeds only when absent — never overwriting it. The
+file lists every key with its default; it is the documentation a node reads.
+
+Plain `KEY=value`, parsed and never executed: a config the gate reads on
+every run is an injection surface, and this one cannot run code. Everything
+after `=` is the raw value — no quoting, no escaping.
+
+| Key | Effect |
+|---|---|
+| `BASE_REF` | default base when none is passed |
+| `EXTENSIONS` | replaces the scanned extension list |
+| `EXCLUDE_RE_EXTRA` | ERE of paths to skip, ORed onto the defaults |
+| `BLOCK_RE_EXTRA` | ERE of citation shapes that BLOCK, ORed onto the defaults |
+| `PRAGMA_RE_EXTRA` | ERE of tooling pragmas to skip, ORed onto the defaults |
+
+Ticket and task-reference shapes belong in `BLOCK_RE_EXTRA`, not in the
+shipped core: no two teams number work the same way. The shipped core names
+only universal dead citations. The retro skill routes comment-hygiene
+lessons here.

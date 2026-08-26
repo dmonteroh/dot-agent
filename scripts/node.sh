@@ -3,6 +3,8 @@
 # (exploring the project, filling Project guardrails, reconciling content
 # during an update) stays with the agent; this script never does either.
 #
+# Full documentation: scripts/docs/node.md.
+#
 # Usage:
 #   node.sh init --preset <name> --mode <mode> [root]
 #   node.sh update [root]
@@ -11,10 +13,6 @@
 #   software-development, academic-research, domain-knowledge).
 #   <mode> is one of: ignore-all | track-shared | track-all.
 #   root defaults to . ; the script reads/writes <root>/.agent.
-#
-# Header contracts in operating-model.md remain the format authority: this
-# script writes files that carry their own header contracts, and produces
-# nothing a header contract doesn't already describe.
 
 set -u
 unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths

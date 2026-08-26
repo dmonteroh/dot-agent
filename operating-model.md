@@ -42,7 +42,10 @@ project-root/
 │   │                       # + links.sh, the on-demand link audit
 │   │                       # + comments.sh, the diff comment gate —
 │   │                       # node-owned tunables seeded at init:
-│   │                       # comments.conf, status.conf, log.conf
+│   │                       # comments.conf, status.conf, log.conf.
+│   │                       # Each script's usage is its own header; each
+│   │                       # conf lists every key it reads. Full docs stay
+│   │                       # in the source repo, under scripts/docs/
 │   └── skills/             # Optional — installed skill payloads; tools
 │                           # read them via symlink (.claude/skills → here)
 ```

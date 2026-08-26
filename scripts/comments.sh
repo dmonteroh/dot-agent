@@ -1,45 +1,11 @@
 #!/usr/bin/env bash
-# scripts/comments.sh — the comment gate: flags comments a diff adds to
-# source files, against the contract's comment rule (a comment states a
-# constraint the code cannot express; never change narration or citations
-# of artifacts a fresh clone cannot open).
+# comments.sh — the comment gate. Flags comments a diff adds to source
+# files, against the contract's comment rule. BLOCK (exit 1): the comment
+# cites what a fresh clone cannot open. REVIEW (exit 0): every other added
+# comment, for the author to justify or delete.
 #
-# "Is this comment narrative?" is a judgement call a reviewer can wave
-# through; "can a fresh clone open what this cites?" is not. So the
-# objective half is mechanical and the judgement half stays a listed review:
-#
-#   BLOCK:  the added comment cites something a fresh clone cannot open —
-#           a commit SHA, a git command transcript, scope narration.
-#           Exits 1. Delete these; durable why goes to docs.
-#   REVIEW: every other comment the diff adds. Exits 0 — the author
-#           justifies each as a non-obvious invariant, constraint, or
-#           workaround, or deletes it.
-#
-# The diff it reads is merge-base(base, HEAD) → the working tree, plus
-# untracked source files: the gate runs before a diff is handed back, and
-# hand-back is normally an uncommitted state, so a committed-only diff
-# would pass exactly the comments this exists to catch. That scope includes
-# comments already sitting uncommitted in scanned files, whoever wrote
-# them — they are part of the diff being handed back.
-#
-# To customize: edit comments.conf beside this script (node.sh init seeds
-# a starter; update seeds it only when absent, never overwrites) —
-# node-owned and parsed as plain KEY=value lines,
-# never executed (a config read every session is an injection surface; this
-# one cannot run code). Everything after `=` is the raw value — no quoting,
-# no escaping. Recognized keys, e.g.:
-#   BASE_REF=origin/dev
-#   EXTENSIONS=ts tsx cs py
-#   EXCLUDE_RE_EXTRA=/types/generated/|(^|/)Migrations/
-#   BLOCK_RE_EXTRA=(^|[^[:alnum:]])AC-?[0-9]|(^|[^[:alnum:]])Q[0-9]+([^[:alnum:]]|$)
-#   PRAGMA_RE_EXTRA=noinspection
-# BASE_REF is the default base when none is passed; EXTENSIONS replaces the
-# scanned extension list; the *_EXTRA keys are EREs ORed onto the shipped
-# defaults. Ticket and task-reference shapes belong in BLOCK_RE_EXTRA, not
-# in the shipped core: no two teams number work the same way. The retro
-# skill routes comment-hygiene lessons here.
-#
-# .agent/ itself, vendored and minified trees, and pragmas are skipped.
+# Tunables: comments.conf beside this script, which lists every key.
+# Full documentation: scripts/docs/comments.md in the dot-agent repo.
 #
 # Usage: comments.sh [base-ref]      # default: $BASE_REF (origin/main)
 
@@ -93,7 +59,7 @@ added=$(git diff "$mb" -- "$@" \
         print file "\t" line
       }')
 
-# git diff never shows untracked files, so a brand-new unadded source file
+# The diff never shows untracked files, so a brand-new unadded source file
 # is scanned whole: every comment line in it is a line this diff adds.
 untracked=$(git ls-files --others --exclude-standard -- "$@" \
   | while IFS= read -r uf; do

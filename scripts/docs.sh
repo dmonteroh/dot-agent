@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # docs.sh — scaffolds an area doc and its architecture.md routing-table
-# row as one operation. This is a two-place write that drifts if done by
-# hand; the point of the script is to make that drift impossible (the
-# INDEX check in status.sh does the detecting for docs written by hand).
+# row as one operation: a two-place write that drifts if done by hand.
+#
+# Full documentation: scripts/docs/docs.md in the dot-agent repo.
 #
 # Usage: docs.sh new --name <file> --read-when "…" [root]
 #

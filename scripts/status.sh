@@ -1,41 +1,25 @@
 #!/usr/bin/env bash
-# .agent/ status check — run as the entry point's first step.
+# .agent/ status check — run as the entry point's first step. Prints the
+# recent session-log entries, then one line per finding: GROOM (a file
+# crossed a grooming threshold), REPAIR (a canonical file or bootstrap step
+# is missing), INDEX (a docs/ file and the routing table disagree), plus
+# advisory TOOLS and LOAD lines. No finding prints on pass.
 #
-# Prints the recent session-log entries, then one line per finding:
-#   GROOM:  a file crossed its grooming threshold
-#   REPAIR: a canonical file is missing, lost its manifest, or a bootstrap
-#           step was never completed
-#   INDEX:  a docs/ file and the routing table disagree
-#   TOOLS:  environment availability note — advisory, not actionable
-#   LOAD:   what the always-loaded set costs, in words — an advisory
-#           measurement printed every run, deliberately without a threshold
-# No finding prints on pass; the recent entries and the LOAD line are
-# information, not flags. Always exits 0: this is information on the load
-# path, not a completion gate — the binding instruction ("handle flags as
-# part of this session") lives in the entry point.
+# Always exits 0: information on the load path, not a completion gate. The
+# binding instruction ("handle flags as part of this session") lives in the
+# entry point.
+#
+# Tunables: status.conf beside this script, which lists every key.
+# Full documentation: scripts/docs/status.md in the dot-agent repo.
 #
 # Usage: status.sh [root]    # root defaults to . ; checks <root>/.agent/
 
 set -u
 
-# Tunable per project — in the node's status.conf (see below), never by
-# editing these lines: node.sh update refreshes this script and discards
-# edits. Thresholds are review triggers, not caps: nothing refuses a
-# write, and each number is a derivation or a chosen default, said here.
-# Log: 120 entries and 5,000 words, chosen defaults — the log is read as a
-# tail every session, so it is groomed as a working file and archived, not
-# grown. Log entry: the header contract's format is ≤25 words; 50 is that
-# ceiling with 2x grace. The format otherwise lives only in prose and in a
-# writer any hand edit bypasses, and every oversized entry rides the tail
-# print below into every session's context.
-# Memory file: 300 body words, a chosen default set well above one fact's
-# natural size, so a flag reads as "probably more than one fact". Index:
-# 100 entries, chosen default — grooming regulates the index, the cap does
-# not. Learned: 60 rules, chosen default; the 2,400-word trigger is that
-# ceiling times the file's own ~40-word entry target, so it fires first
-# when entries bloat past that target. learned.md is always-loaded and has
-# no disclosure tier, so every word of it is paid on every session.
-# Docs: 2,000 body words, chosen default. Tail: 25 entries, chosen default.
+# Review triggers, not caps: nothing refuses a write for size. Tune in the
+# node's status.conf, never here — node.sh update refreshes this script and
+# discards edits to it. Each default and where its number comes from:
+# status.conf beside this script, and scripts/docs/status.md upstream.
 LOG_MAX_ENTRIES=120
 LOG_MAX_WORDS=5000
 LOG_ENTRY_MAX_WORDS=50
@@ -50,12 +34,9 @@ PROBE_TOOLS="rg fd jq gh python3 curl tree"
 root="${1:-.}"
 agent="$root/.agent"
 
-# Per-node overrides for any variable above: <node>/.agent/scripts/
-# status.conf, plain KEY=value, parsed and never executed. node.sh init
-# seeds a starter listing every key; update seeds it only when absent.
-# Tune there, not here — update refreshes this script and discards edits
-# to it, but never overwrites the conf. PROBE_TOOLS lists the tools the
-# project expects; a node that doesn't use one (gh, say) lists the rest.
+# Per-node overrides for any variable above: plain KEY=value, parsed and
+# never executed — a config read on the load path cannot be allowed to run
+# code.
 conf="$agent/scripts/status.conf"
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
 if [[ -f "$conf" ]]; then
@@ -82,10 +63,10 @@ arch="$docs/architecture.md"
 
 words() { wc -w <"$1" | tr -d '[:space:]'; }
 
-# Word count of a file's body: YAML frontmatter and <!-- --> header
-# comments excluded, so fixed per-file overhead never eats the fact budget.
-# Approximation: with two comments on one line the greedy strip also drops
-# the words between them — a slight undercount on a review trigger.
+# Body words: YAML frontmatter and <!-- --> header comments excluded, so
+# fixed per-file overhead never eats the fact budget. With two comments on
+# one line the greedy strip also drops the words between them — an
+# undercount, the safe direction for a review trigger.
 body_words() {
   awk '
     NR == 1 && $0 == "---" { infm = 1; next }
@@ -112,11 +93,8 @@ if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
 
-# REPAIR: bootstrap steps that produce a file the checks above cannot tell
-# apart from a finished one. Each is a step the operator and agent perform
-# by judgement at bootstrap, so nothing else catches a half-done node:
-# guardrails left as template placeholders, and the Quality bar left inside
-# contract.md instead of split into rules/quality-bar.md.
+# REPAIR: the two bootstrap steps done by judgement, which nothing else can
+# tell apart from a finished node.
 if [[ -s "$contract" ]]; then
   guardrails=$(awk '/^## Project guardrails/ { inb = 1; next }
                     inb && /^## / { exit }
@@ -134,9 +112,9 @@ if [[ -s "$contract" ]]; then
   fi
 fi
 
-# REPAIR: entry points drifted. The model requires every tool's entry point
-# to be identical; only files that are actually dot-agent entry points are
-# compared, so a hand-written AGENTS.md of team instructions is left alone.
+# REPAIR: entry points drifted. Only files that are actually dot-agent
+# entry points are compared, so a hand-written AGENTS.md of team
+# instructions is left alone.
 entrypoints=()
 for candidate in "$root/CLAUDE.md" "$root/AGENTS.md" "$root/.cursorrules" \
   "$root/.github/copilot-instructions.md" "$root/.claude/CLAUDE.md"; do
@@ -202,9 +180,8 @@ if [[ -d "$docs" ]]; then
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: no routing entry, no
-    # size trigger. Its files are opened only by explicit path from the area
-    # doc that cites them, so neither check applies.
+    # references/ is the never-auto-loaded depth tier: opened only by
+    # explicit path, so neither check applies.
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
       echo "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
@@ -213,15 +190,10 @@ if [[ -d "$docs" ]]; then
 fi
 
 # INDEX: every area doc carries a routing hint and the routing table agrees
-# with it. Walks one sublevel: an area that outgrew one file splits into
-# docs/<area>/ sub-docs, still routed from the single architecture.md
-# (entries carry the relative path).
-#
-# Three ways a doc and its entry disagree, all checkable: the doc is
-# missing from the index, the hook drifted on one side, or the doc grew a
-# `## ` section the Sections list never learned about. The section check
-# is one-directional on purpose — an entry may say more than the heading
-# (a hand-written gloss routes better than a bare title), never less.
+# with it. Walks one sublevel, since an area that outgrew one file splits
+# into docs/<area>/ sub-docs still routed from the single architecture.md.
+# The section check is one-directional: an entry may say more than the
+# heading, never less.
 doc_hook() { # the doc's own routing hook, from its opening lines
   head -n 5 "$1" | sed -n 's/^<!-- Read when: \(.*\) -->$/\1/p' | head -n 1
 }
@@ -237,9 +209,8 @@ if [[ -d "$docs" ]]; then
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: no routing entry, no
-    # size trigger. Its files are opened only by explicit path from the area
-    # doc that cites them, so neither check applies.
+    # references/ is the never-auto-loaded depth tier: opened only by
+    # explicit path, so neither check applies.
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if ! head -n 5 "$doc" | grep -qF "Read when:"; then
       echo "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
@@ -269,8 +240,8 @@ if [[ -d "$docs" ]]; then
 fi
 
 # REPAIR: memory.md index and memory/ fact files agree. Both directions
-# parse only the index line's own link — the first `[title](memory/…)` on
-# the line — so a hook that mentions another memory path is never counted.
+# parse only the index line's own link — the first `[title](memory/…)` —
+# so a hook mentioning another memory path is never counted.
 if [[ -s "$memory" ]]; then
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
@@ -326,11 +297,9 @@ if ! sed --version >/dev/null 2>&1; then
   echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
 fi
 
-# LOAD: the always-loaded set, measured. A per-file limit that is never
-# summed is not a limit, and three members of this set (contract, purpose,
-# the routing table) carry no per-file trigger at all. Advisory on purpose:
-# no threshold until this line has measured enough nodes to source one. The
-# tail term prices what this check itself printed above.
+# LOAD: the always-loaded set, measured. Advisory on purpose — no threshold
+# until this line has measured enough nodes to source one. The tail term
+# prices what this check itself printed above.
 load_total=0
 load_detail=""
 load_add() {

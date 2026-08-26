@@ -211,6 +211,8 @@ Read **[operating-model.md](operating-model.md)** for the full operating model: 
 
 Rationale has one home per story: `CHANGELOG.md` states what a release changed in this repo, `operating-model.md` states the rule plus at most a one-line pointer, and a code comment states only the constraint it enforces — for a tunable, the provenance of its number. Field observations from private nodes are evidence for a decision, never content: a shipped number cites them anonymously where it lives, and nothing in the corpus retells them. Trim the other copies whenever a change touches them.
 
+Every script is documented in [`scripts/docs/`](scripts/docs/) — one file each, covering what it reports and how a node tunes it. Those docs stay in this repo: a node receives the executables and their starter confs, never this repo's design notes.
+
 Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, and `comments.sh`. It must pass before a change ships.
 
 ## License
