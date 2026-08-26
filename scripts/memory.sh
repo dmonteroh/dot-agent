@@ -132,9 +132,9 @@ new)
 
   # Frontmatter and the fact, and no header contract. Every other canonical
   # file carries its own because there is one of it; memory/ is the only
-  # tier with N files, and at ~60 words a fact the contract outweighed the
-  # facts it governed 1.4 to 1 on a 15-fact field node. It lives once in
-  # memory.md's header, which loads every session and is the tier's index.
+  # tier with N files, where a header is paid once per fact and outweighs
+  # the fact itself. It lives once in memory.md's header, which loads every
+  # session and is the tier's index.
 
   cat >"$factfile" <<EOF
 ---

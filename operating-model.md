@@ -124,11 +124,10 @@ the node grows. Area docs are the near-case: one per area, holding
 hundreds of words, so a header costs a few percent of the file. `memory/`
 is the only tier with N files at roughly sixty words each, where one
 header is paid N times over and, in the field, outweighed what it
-governed. Nor was the duplication buying curation, which is why `memory.md`'s header now opens
-with the retention test rather than with formats, and why a fact arriving
-from another repo or a migration is a new candidate, not an inheritance.
-The field measurements and the fact that survived under the old header:
-`CHANGELOG.md`, V6.2.
+governed. Nor was the duplication buying curation, which is why
+`memory.md`'s header now opens with the retention test rather than with
+formats, and why a fact arriving from another repo or a migration is a new
+candidate, not an inheritance.
 
 `type` separates the two things an index line can be. A `fact` is
 something the node knows and supersedes as the project changes. A
@@ -240,7 +239,7 @@ Deciding *whether a name addresses the node at all* is the other half, and shape
 | `BLOCK:` (exit 1) | the added comment cites an artifact a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Objectively dead: delete it, durable *why* goes to docs |
 | `REVIEW:` (exit 0) | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
-It exists because the comment rule is the contract's most-breached prose, and the split above is where the breach happens: "is this comment narrative?" is a judgement call a reviewer can wave through, while "can a fresh clone open what this cites?" is not. The field node it was grown on, and what the rule cost there: `CHANGELOG.md`, V6.2. Like every check here it is cooperative — the agent must run it — but it checks the artifact, so it binds the diff however the comment got there.
+It exists because the comment rule is the contract's most-breached prose, and the split above is where the breach happens: "is this comment narrative?" is a judgement call a reviewer can wave through, while "can a fresh clone open what this cites?" is not. Like every check here it is cooperative — the agent must run it — but it checks the artifact, so it binds the diff however the comment got there.
 
 The shipped core carries only universal dead citations. Everything a team numbers its own way — the base branch, ticket and task-reference shapes, the scanned extension list, generated or vendored paths beyond the defaults — is node vocabulary in `comments.conf` beside the script. `node.sh init` seeds a starter (the AC/Q ticket shapes as example vocabulary, and the extension list written out live, so trimming either to the project is a conf edit rather than a script edit); it is node-owned from then on, under the update rule every node script and conf follows (see [Updating existing nodes](#updating-existing-nodes)). The conf is parsed as plain `KEY=value` lines — never executed, because a config the gate reads on every run is itself an injection surface, and this one cannot run code. Everything after `=` is the raw value; the `*_EXTRA` keys are EREs ORed onto the shipped defaults:
 
