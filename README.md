@@ -74,13 +74,17 @@ Two prompts, one per node type. Either works standalone: a project node is self-
 Copy this into any capable agent:
 
 ```
-Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent, then set up my root node at ~/.agent/. Its subject is me, not a codebase.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then set up my root node at ~/.agent/. Its subject is me, not a codebase. Do the steps in order. Finish each one before starting the next.
 
-1. Interview me first, one question at a time, prioritizing questions whose answers change what you'll write: role, active projects, how I work and communicate, preferences that should hold across every project, and the tracking mode — ignore-all, track-shared, or track-all (see Tracking modes in the operating model). Don't invent facts about me.
-2. Clone the source repo. Choose the preset that matches my work, then from the clone run `bash scripts/node.sh init --preset <name> --mode <mode> ~` to create ~/.agent/, stamp its manifest, and copy the scripts.
-3. Adapt the preset copied into rules/contract.md; keep its Kernel intact.
-4. List any existing project nodes in the manifest's children.
-5. Wire my tools at the root from the canonical entry-point template (templates/entry-point.md in the clone; Claude Code: ~/.claude/CLAUDE.md), with every path absolute (~/.agent/...) since sessions run from project directories, and disable Claude Code's native memory in ~/.claude/settings.json.
+1. Interview me first, before you clone anything or write any file. Ask one question at a time. Prioritize questions whose answers change what you'll write. Cover my role, my active projects, how I work and communicate, and preferences that should hold across every project. Ask for the tracking mode too: ignore-all, track-shared, or track-all (see Tracking modes in the operating model). Don't invent facts about me.
+2. Clone the source repo. Choose the preset that matches my work: software-development, academic-research, or domain-knowledge, and no other name. Then run `bash scripts/node.sh init --preset <name> --mode <mode> ~` from the clone. It creates ~/.agent/, stamps its manifest, and copies the scripts and their starter confs. Read what it prints before going on. If it refuses because ~/.agent/ already exists, stop and tell me. An existing node takes the update prompt, not this one. Expect its note about skipping the gitignore at ~. Don't write one by hand.
+3. Adapt the preset that node.sh copied into rules/contract.md. Keep its Kernel intact.
+4. Move contract.md's `## Quality bar` section into rules/quality-bar.md. After the move, that section is gone from contract.md and the rubric loads on demand.
+5. Write purpose.md from what I told you in step 1: what this node is for and what it holds. Leave the dot-agent frontmatter block at the top of the file untouched.
+6. List any existing project nodes in the manifest's children.
+7. Wire my tools at the root from the canonical entry-point template. The template is templates/entry-point.md in the clone. For Claude Code, the entry point is ~/.claude/CLAUDE.md. Fill every <…> placeholder. Delete the template's own header comment. Write every path absolute, since sessions run from project directories. That means ~/.agent/..., and `bash ~/.agent/scripts/status.sh ~` for the status step. Keep every entry point you write byte-identical to the others.
+8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in ~/.claude/settings.json.
+9. Last, run `bash ~/.agent/scripts/status.sh ~`. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
 Ask me anything you can't infer.
 ```
@@ -90,16 +94,20 @@ Ask me anything you can't infer.
 Run this inside the project:
 
 ```
-Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent, then bootstrap .agent/ for this project.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then bootstrap .agent/ for this project. Do the steps in order. Finish each one before starting the next.
 
-1. Explore the project (README, configs, source, git history) and confirm your findings with me — including which preset fits, and what you could not infer — before writing anything.
-2. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored), track-shared (purpose/rules/docs shared, memory.md/memory/ and logs ignored), or track-all (everything committed).
-3. Clone the source repo, then from the clone run `bash scripts/node.sh init --preset <name> --mode <mode> <this project's path>` to create .agent/, stamp its manifest, and write the matching gitignore entries.
-4. Adapt the preset copied into rules/contract.md: keep its Kernel intact and fill Project guardrails with exact commands ("run the tests" is not filled in; the real test command is).
-5. Wire my tools from the canonical entry-point template (templates/entry-point.md in the clone) into CLAUDE.md, AGENTS.md, …; keep every entry point identical, and disable Claude Code's native memory in .claude/settings.json.
-6. If I have a root ~/.agent/, add this node to its manifest's children.
+1. Explore the project: README, configs, source, and git history. Confirm your findings with me before writing anything. Include which preset fits, and what you could not infer.
+2. Ask me the tracking mode once. The three modes are ignore-all (.agent/ fully gitignored), track-shared (purpose/rules/docs shared, memory.md/memory/ and logs ignored), and track-all (everything committed).
+3. Clone the source repo. Then run `bash scripts/node.sh init --preset <name> --mode <mode> <this project's path>` from the clone. It creates .agent/, stamps its manifest, and writes the matching gitignore entries. <name> is the preset we settled in step 1: software-development, academic-research, or domain-knowledge, and no other name. Give an absolute path, since you are running from the clone. Read what it prints before going on. If it refuses because .agent/ already exists, stop and tell me. An existing node takes the update prompt, not this one.
+4. Adapt the preset that node.sh copied into rules/contract.md. Keep its Kernel intact. Fill Project guardrails with exact commands ("run the tests" is not filled in — the real test command is).
+5. Move contract.md's `## Quality bar` section into rules/quality-bar.md. After the move, that section is gone from contract.md and the rubric loads on demand.
+6. Write purpose.md from what step 1 established. Cover what this project is, who it's for, its key constraints, and where to change what. Leave the dot-agent frontmatter block at the top of the file untouched.
+7. Wire my tools from the canonical entry-point template into CLAUDE.md and AGENTS.md. The template is templates/entry-point.md in the clone. Add .github/copilot-instructions.md if I use Copilot Chat or code review. Fill every <…> placeholder: the project line and the doc routing. Delete the template's own header comment. Keep every entry point byte-identical.
+8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in .claude/settings.json.
+9. If I have a root ~/.agent/, add this node to its manifest's children.
+10. Last, run `bash .agent/scripts/status.sh` from this project's root. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
-Ask me anything you can't infer; don't guess.
+Ask me anything you can't infer. Don't guess.
 ```
 
 The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap, and `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
@@ -109,13 +117,17 @@ The tracking mode in step 2 is the gitignore practice: it decides what enters gi
 When the operating model evolves, run this inside the node's project (or at the root):
 
 ```
-Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent then update this project's existing .agent/ node to match it.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then update this project's existing .agent/ node to match it.
 
-1. Clone the source repo, then from the clone run `bash scripts/node.sh update <this node's path>` — it reads the manifest, compares version, backs up the node first unless its mode is track-all, and applies the mechanical migration baseline. Read its output: if it says the node is current, stop here. If it reports no manifest (a pre-V6 node), update the node by hand instead: work through CHANGELOG.md from the V6 entry forward as the migration checklist, and if you restore the manifest, stamp it with the node's real prior version before re-running the script.
-2. Reconcile: apply what the operating model adds — including splitting `memory/legacy.md` into fact files per its GROOM flag — while preserving accumulated content: memory, learned rules, project-specific adaptations. If existing content directly conflicts, flag it and let me decide; never silently overwrite.
-3. Refresh the entry points against the canonical template (templates/entry-point.md in the clone), and keep them identical.
-4. Repeat this process for each child node listed in the manifest's children.
-5. Report what changed, what was preserved, and anything flagged.
+1. Clone the source repo. Then run `bash scripts/node.sh update <this node's path>` from the clone. Give an absolute path, since you are running from the clone. The script reads the manifest and compares version. It backs up the node first, unless its mode is track-all. It then applies the mechanical migration baseline. Read its output before going on:
+   - If it says the node is current, this node needs no migration. Go straight to step 4.
+   - If it reports no manifest (a pre-V6 node), update the node by hand instead. Work through CHANGELOG.md from the V6 entry forward as the migration checklist. If you restore the manifest, stamp it with the node's real prior version before re-running the script.
+   - If it stops for any other reason, stop and tell me. Those reasons include no .agent directory at that path, or a backup path already there. Never delete, move, or rename anything to get past it.
+2. Reconcile. Apply what the operating model adds, while preserving accumulated content: memory, learned rules, and project-specific adaptations. That includes splitting `memory/legacy.md` into fact files per its GROOM flag. If existing content directly conflicts, flag it and let me decide. Never silently overwrite.
+3. Refresh the entry points against the canonical template. The template is templates/entry-point.md in the clone. Carry this node's own filled-in values into the refreshed copy: the project line and the doc routing. Never leave the template's <…> placeholders. Keep every entry point byte-identical.
+4. Repeat steps 1–3 for each child node listed in the manifest's children, one node at a time.
+5. Run the node's status check: `bash .agent/scripts/status.sh` from its project root, or `bash ~/.agent/scripts/status.sh ~` for a root node. Clear the REPAIR: lines it prints.
+6. Report what changed, what you preserved, anything you flagged for me, and any REPAIR: line still standing.
 ```
 
 Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`. It prints recent session-log entries and `GROOM:` flags when files breach their grooming thresholds. `REPAIR:` flags cover missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, native memory still enabled). It also prints `INDEX:` flags for doc-routing drift, advisory `TOOLS:` notes, and an advisory `LOAD:` line measuring what the always-loaded set costs. The agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate. Grooming rides the load path.
