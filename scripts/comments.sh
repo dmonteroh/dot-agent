@@ -10,6 +10,7 @@
 # Usage: comments.sh [base-ref]      # default: $BASE_REF (origin/main)
 
 set -uo pipefail
+unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
 
 selfdir=$(cd "$(dirname "$0")" && pwd)
 
@@ -35,6 +36,27 @@ if [ -f "$conf" ]; then
   v=$(conf_get PRAGMA_RE_EXTRA);  [ -n "$v" ] && PRAGMA_RE_EXTRA="$v"
 fi
 
+# Fail closed on a conf regex that will not compile. Every filter below is
+# followed by `|| true` to absorb grep's exit 1, which means "no match" and
+# is not an error. That same `|| true` would absorb the exit 2 a broken
+# pattern raises, and the run would report a clean diff it never read. So
+# each conf-supplied pattern is compiled here first, by the engine that
+# will consume it, and a bad one stops the run.
+re_require() {   # re_require <awk|grep> <key> <pattern>
+  case "$1" in
+    awk)  RE_CHECK="$3" awk 'BEGIN { if ("" ~ ENVIRON["RE_CHECK"]) n = 1 }' \
+            >/dev/null 2>&1 ;;
+    grep) printf '' | grep -E "$3" >/dev/null 2>&1 ;;
+  esac
+  [ $? -le 1 ] && return 0
+  echo "comments.sh: $2 is not a valid regular expression: $3" >&2
+  exit 2
+}
+re_require awk EXCLUDE_RE "$EXCLUDE_RE"
+[ -n "$EXCLUDE_RE_EXTRA" ] && re_require awk EXCLUDE_RE_EXTRA "$EXCLUDE_RE_EXTRA"
+[ -n "$BLOCK_RE_EXTRA" ]   && re_require grep BLOCK_RE_EXTRA "$BLOCK_RE_EXTRA"
+[ -n "$PRAGMA_RE_EXTRA" ]  && re_require grep PRAGMA_RE_EXTRA "$PRAGMA_RE_EXTRA"
+
 base="${1:-$BASE_REF}"
 
 if ! git rev-parse --verify -q "$base" >/dev/null; then
@@ -56,9 +78,24 @@ mb=$(git merge-base "$base" HEAD) || {
   exit 2
 }
 
-added=$(git diff "$mb" -- "$@" \
+# The prefixes are forced and quoting is turned off, because the header
+# line is the only place the filename comes from. `diff.noprefix` or
+# `diff.mnemonicPrefix` in a node's git config renames the `b/` the parser
+# looks for, and a path holding a non-ASCII byte arrives quoted. Either one
+# leaves the filename unset, and every added line is then judged with no
+# extension and no path to match the exclusions against.
+added=$(git -c core.quotepath=false diff --src-prefix=a/ --dst-prefix=b/ "$mb" -- "$@" \
   | awk '
-      /^\+\+\+ b\// { file = substr($0, 7); next }
+      /^\+\+\+ / {
+        p = substr($0, 5)
+        # git appends a tab to this header when the path holds a space.
+        sub(/\t.*$/, "", p)
+        # A path holding a quote or a control byte is quoted even so.
+        if (p ~ /^".*"$/) p = substr(p, 2, length(p) - 2)
+        sub(/^b\//, "", p)
+        file = p
+        next
+      }
       /^\+/ && !/^\+\+\+/ {
         line = substr($0, 2)
         print file "\t" line
@@ -66,10 +103,13 @@ added=$(git diff "$mb" -- "$@" \
 
 # The diff never shows untracked files, so a brand-new unadded source file
 # is scanned whole: every comment line in it is a line this diff adds.
-untracked=$(git ls-files --others --exclude-standard -- "$@" \
-  | while IFS= read -r uf; do
+# -z, because a name git would quote is not a path any longer, and the
+# file would be skipped whole. ENVIRON for the same reason -v is avoided
+# below: -v collapses the backslash escapes in a name.
+untracked=$(git ls-files --others --exclude-standard -z -- "$@" \
+  | while IFS= read -r -d '' uf; do
       [ -f "$uf" ] || continue
-      awk -v f="$uf" '{ print f "\t" $0 }' "$uf"
+      UF="$uf" awk 'BEGIN { f = ENVIRON["UF"] } { print f "\t" $0 }' "$uf"
     done)
 if [ -n "$untracked" ]; then
   added=$(printf '%s\n%s' "$added" "$untracked")
@@ -86,14 +126,25 @@ added=$(printf '%s\n' "$added" \
 # where it does: "#" in shell, python and ruby but not in C-family sources,
 # where it is a preprocessor directive or a region marker. "//" runs the
 # other way round, since in shell it is a string or a syntax error. "--"
-# opens a comment only in SQL.
+# opens a comment only in SQL. PHP takes both "#" and "//", so it gets its
+# own branch rather than joining either one.
+#
+# A leading "*" continues a comment only inside an open /* */, and a diff
+# of added lines cannot see whether one is open: the line that opened it is
+# usually unchanged context. So the pattern is narrowed rather than tracked
+# — "*" then a space then content, minus the CSS universal selector and its
+# combinators. "*p = 5;" and "* { box-sizing: border-box; }" are code.
 comments=$(printf '%s\n' "$added" \
   | awk -F'\t' '{
       line = $2
       sub(/^[[:space:]]+/, "", line)
+      star = (line ~ /^\*[[:space:]]/ && line !~ /^\*[[:space:]]*[{,+>~=]/)
       if ($1 ~ /\.(sh|bash|py|rb)$/)      keep = (line ~ /^#/)
       else if ($1 ~ /\.sql$/)             keep = (line ~ /^--/)
-      else                                keep = (line ~ /^(\/\/|\/\*|\*|<!--)/)
+      else if ($1 ~ /\.php$/)             keep = (line ~ /^(\/\/|\/\*|<!--)/ \
+                                                  || (line ~ /^#/ && line !~ /^#\[/) \
+                                                  || star)
+      else                                keep = (line ~ /^(\/\/|\/\*|<!--)/ || star)
       if (line == "/**" || line == "/*" || line == "*/" || line == "*") keep = 0
       if (keep) print $0
     }' \
