@@ -169,7 +169,7 @@ This is the tier that lets the size trigger stay honest. Before it, a doc over t
 | `ORPHAN:` | a file in the node that nothing cites |
 | `BROKEN:` | a node path a node file cites that does not exist |
 
-It exists because the reference tier removed the last mechanism that could notice an unreachable file, and it is off the load path on purpose. An orphan is a review trigger with a slow clock: sometimes a file that should be cited, sometimes one that should be retired, occasionally neither. Nothing about it needs deciding before this session's first edit. Run it when grooming, before a restructuring pass, or when a node has been through enough hands to have drifted. It always exits 0. The report is the product.
+It exists because the reference tier removed the last mechanism that could notice an unreachable file, and it is off the load path on purpose. An orphan is a review trigger with a slow clock: sometimes a file that should be cited, sometimes one that should be retired, occasionally neither. Nothing about it needs deciding before this session's first edit. Run it when grooming, before a restructuring pass, or when a node has been through enough hands to have drifted. No finding reaches its exit status. The report is the product.
 
 Three genres of file are excluded as citation *sources*, because naming a file is not always citing it. `session-log.md` and `archive/` are historical records, where an entry naming a since-deleted brief is doing its job rather than rotting. `rules/` is instruction, naming the node's furniture prescriptively whether or not the node has grown that file yet. Header contracts are skipped for the same reason at a smaller scale — they state formats *by example*, so `memory.md`'s own `- [Title](memory/slug.md)` is a spec, not a link. Paths that leave the node are out of scope entirely: a source file or a task brief under `temp/` belongs to the project, whose lifecycle the node does not manage.
 
@@ -495,7 +495,7 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 
 **How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment. Ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path.
 
-The entry point runs it first. It prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach. It also emits advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, always exit 0). The binding instruction ("handle flags as part of this session") lives in the entry point. The entry point also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents).
+The entry point runs it first. It prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach. It also emits advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, and no finding in the exit status either). The binding instruction ("handle flags as part of this session") lives in the entry point. The entry point also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents).
 
 Thresholds are defaults at the top of the script:
 

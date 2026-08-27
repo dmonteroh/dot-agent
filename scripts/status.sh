@@ -44,7 +44,8 @@ file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
 step is missing), INDEX: (a docs/ file and the routing table disagree), plus
 advisory TOOLS: and LOAD: lines. No finding prints on pass.
 
-root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds.
+root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
+root holding no .agent/ is a usage error and exits 1.
 EOF
   exit 0 ;;
 esac
@@ -70,9 +71,9 @@ conf="$agent/scripts/status.conf"
 # another platform; nothing else about the value is repaired.
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
 # A value that is not a whole number keeps the shipped default and adds a
-# REPAIR line naming the key. This script always exits 0 for a node, so a
-# quiet fallback would leave a broken config indistinguishable from a clean
-# node — the caller reads the findings, not the exit status.
+# REPAIR line naming the key. No finding this script makes reaches its exit
+# status, so a quiet fallback would leave a broken config indistinguishable
+# from a clean node — the caller reads the findings, not the exit status.
 conf_repairs=""
 conf_num() { # $1: key name — the current value is its shipped default
   local v

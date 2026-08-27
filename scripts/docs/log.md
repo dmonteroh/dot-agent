@@ -18,7 +18,7 @@ Words are counted, not punctuation: a free-standing separator — an em dash, a 
 
 ## Configuration
 
-`log.conf` beside the script, seeded by `node.sh init` and by `update` only when absent. Plain `KEY=value`, parsed and never executed.
+`log.conf` beside the script, seeded by `node.sh init` and by `update` only when absent. Plain `KEY=value`, parsed and never executed. A key written twice takes its first line.
 
 | Key | Default | Effect |
 |---|---|---|

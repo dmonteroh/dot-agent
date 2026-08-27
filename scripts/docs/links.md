@@ -13,7 +13,7 @@ Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
 | `ORPHAN:` | a file nothing in the node cites |
 | `BROKEN:` | a path a node file cites that does not exist |
 
-Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **Always exits 0** — the report is the product.
+Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **No finding reaches the exit status** — the report is the product. The one non-zero exit is a usage error: a root holding no `.agent/`, which is not a finding about a node.
 
 ## Scope
 

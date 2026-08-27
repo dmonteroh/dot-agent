@@ -47,6 +47,7 @@ V6.1's standing claims got instruments. Portability was asserted for four tools 
 #### Mechanics
 
 - `node.sh` targets `"6.2"`. The 6.1→6.2 update is script refresh plus version bump, with preset changes landing through the normal reconcile step. The update message now names `links.sh` and `comments.sh` among the refreshed scripts.
+- `status.sh` and `links.sh` exit non-zero on one case: a root holding no `.agent/`. Findings still never reach the exit status. Printing a node's worth of `REPAIR:` lines for a directory nobody addressed would send an agent to repair a node that does not exist, so the two are told apart. `scripts/docs/README.md` states every script's codes in one table.
 
 ### Migrating a V6.1 node
 

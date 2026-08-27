@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # links.sh — on-demand link audit for a node. Reports ORPHAN (a file
 # nothing cites) and BROKEN (a cited path that does not exist). Findings
-# are review triggers, not errors. The script always exits 0.
+# are review triggers, not errors, and never reach the exit status: the
+# report is the product. The one non-zero exit is a usage error — a root
+# that holds no .agent/ — which is not a finding about a node.
 #
 # Full documentation: scripts/docs/links.md in the dot-agent repo.
 #
@@ -17,7 +19,8 @@ Usage: links.sh [root]
 
 Reports ORPHAN: (a file in the node nothing cites) and BROKEN: (a node path
 cited by a node file that does not exist). Paths outside .agent/ are out of
-scope. root defaults to . — always exits 0.
+scope. root defaults to . — findings never change the exit status. A root
+holding no .agent/ is a usage error and exits 1.
 EOF
   exit 0 ;;
 esac

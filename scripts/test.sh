@@ -1458,6 +1458,23 @@ mkdir -p "$sh_bad"
 sh_out=$("$lc/.agent/scripts/status.sh" "$sh_bad" 2>/dev/null)
 sh_rc=$?
 [ "$sh_rc" -ne 0 ] && [ -z "$sh_out" ] && pass "status.sh: a root with no .agent is a usage error, not three findings" || fail "status.sh: a root with no .agent is a usage error, not three findings"
+lk_out=$("$lc/.agent/scripts/links.sh" "$sh_bad" 2>/dev/null)
+lk_rc=$?
+[ "$lk_rc" -ne 0 ] && [ -z "$lk_out" ] && pass "links.sh: a root with no .agent is a usage error, not an empty report" || fail "links.sh: a root with no .agent is a usage error, not an empty report"
+
+# 40d-ii. Both reporting scripts documented an unconditional "always exits
+# 0" that the usage-error exit above had already made false. The claim is
+# load-bearing: a caller told the status is constant will not branch on it,
+# and a script whose own docs are wrong about its contract is the failure
+# this suite exists to catch. Pinned as a phrase, in the scripts and in
+# every doc, because that is the shape a future edit would reintroduce.
+ax_bad=""
+for ax_f in "$reporoot"/scripts/status.sh "$reporoot"/scripts/links.sh \
+  "$reporoot"/scripts/docs/status.md "$reporoot"/scripts/docs/links.md \
+  "$reporoot"/operating-model.md; do
+  grep -qiE 'always exits? 0' "$ax_f" && ax_bad="$ax_bad $(basename "$ax_f")"
+done
+[ -z "$ax_bad" ] && pass "status.sh and links.sh: nothing claims an unconditional exit 0" || fail "status.sh and links.sh: nothing claims an unconditional exit 0 ($ax_bad)"
 
 # 40e. memory.sh and docs.sh printed "wrote X and indexed it in Y" when
 # the second write failed, leaving exactly the drift they exist to
@@ -1593,7 +1610,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=323
+EXPECTED_CHECKS=325
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

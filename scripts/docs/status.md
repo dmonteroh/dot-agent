@@ -16,7 +16,7 @@ Usage: status.sh [root]    # root defaults to . — checks <root>/.agent/
 | `TOOLS:` | environment availability — advisory, not actionable |
 | `LOAD:` | what the always-loaded set costs, in words — an advisory measurement printed every run, deliberately without a threshold |
 
-No finding prints on pass. The recent entries and the `LOAD:` line are information, not flags. **Always exits 0.** This is information on the load path, not a completion gate. The binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path. `GROOM:` work may go to one subagent scoped to the flagged files.
+No finding prints on pass. The recent entries and the `LOAD:` line are information, not flags. **No finding reaches the exit status**, which is 0 for every node the check can read: this is information on the load path, not a completion gate. The one non-zero exit is a usage error — a root holding no `.agent/` — which is not a finding about a node and must never be reported as one. The binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path. `GROOM:` work may go to one subagent scoped to the flagged files.
 
 ## Thresholds
 
@@ -47,7 +47,7 @@ No threshold, on purpose. A per-file limit that is never summed is not a limit, 
 
 ## Configuration
 
-`status.conf` beside the script, seeded by `node.sh init` and by `update` only when absent. Plain `KEY=value`, parsed and never executed. Tune there, never in the script: `node.sh update` refreshes the script and discards edits to it, while the conf survives.
+`status.conf` beside the script, seeded by `node.sh init` and by `update` only when absent. Plain `KEY=value`, parsed and never executed. A key written twice takes its first line. Tune there, never in the script: `node.sh update` refreshes the script and discards edits to it, while the conf survives.
 
 An uncommented line pins the value for this node. A commented line shows the shipped default and keeps tracking the script until uncommented. `test.sh` pins the conf's shown defaults to the script's own, so a default cannot drift into documenting a lie.
 

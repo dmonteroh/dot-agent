@@ -15,7 +15,9 @@ Usage: comments.sh [base-ref]      # default: BASE_REF (origin/main)
 | `BLOCK:` | 1 | the added comment cites something a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Delete these. Durable *why* goes to docs |
 | `REVIEW:` | 0 | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
-Exits 2 when there is no merge base between the given base and `HEAD`.
+Exit 2 is the third answer, and it means the gate could not run rather than that it found nothing: a base ref that does not resolve, no merge base between that base and `HEAD`, or a conf regex that will not compile. It is separate from 0 because every filter in the script absorbs a no-match, and an error that arrived as 0 would report a clean diff the gate never read.
+
+The argument is a git base ref, not the `[root]` the reporting scripts take. This one audits a diff in the repository it runs in, so `comments.sh .` resolves nothing and exits 2 rather than guessing.
 
 ## What it reads
 
@@ -37,7 +39,7 @@ Anchoring matters here: the term requires the dot at a path start or straight af
 
 Node vocabulary lives in `comments.conf` beside the script, which `node.sh init` seeds and `update` seeds only when absent — never overwriting it. The file lists every key with its default. It is the documentation a node reads.
 
-Plain `KEY=value`, parsed and never executed: a config the gate reads on every run is an injection surface, and this one cannot run code. Everything after `=` is the raw value — no quoting, no escaping.
+Plain `KEY=value`, parsed and never executed: a config the gate reads on every run is an injection surface, and this one cannot run code. Everything after `=` is the raw value — no quoting, no escaping. A key written twice takes its first line, the same way every conf in the node resolves one.
 
 | Key | Effect |
 |---|---|
