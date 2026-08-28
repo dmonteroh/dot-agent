@@ -101,6 +101,47 @@ migrate_memory_headers() {
   return 0
 }
 
+# The docs shape contract moved out of every area doc and into the preset
+# and docs.sh's output: docs/ is the N-file tier, so a header there is paid
+# by every session that only reads the doc. A 6.1 node carries a copy in
+# each doc, sub-docs under docs/<area>/ included.
+doc_headers_stale() {
+  dh_docs="$1/docs"
+  [ -d "$dh_docs" ] || return 1
+  # Non-empty output, not find's exit status: with -exec … + that status is
+  # the last grep's, which is 1 on the common case of a clean tail file.
+  [ -n "$(find "$dh_docs" -name '*.md' -type f \
+    -exec grep -lF '<!-- Agent-facing reference, not a human narrative' {} + 2>/dev/null)" ]
+}
+
+# Exact-string, like the memory strip: the comment is deleted whole and the
+# doc below it is never read. Sets migrate_doc_note.
+migrate_doc_headers() {
+  dm_docs="$1/docs"
+  dm_stripped=0
+  migrate_doc_note="doc headers already current"
+  [ -d "$dm_docs" ] || return 0
+  # The match list goes through a file, not a pipeline: `while read` on the
+  # right of a pipe runs in a subshell, where dm_stripped would not survive.
+  dm_list="$1/.doc-headers.tmp"
+  find "$dm_docs" -name '*.md' -type f \
+    -exec grep -lF '<!-- Agent-facing reference, not a human narrative' {} + \
+    >"$dm_list" 2>/dev/null
+  while IFS= read -r dm_f; do
+    [ -n "$dm_f" ] || continue
+    awk '
+      /<!-- Agent-facing reference, not a human narrative/ { drop = 1 }
+      drop { if (/-->/) drop = 0; next }
+      { print }
+    ' "$dm_f" >"$dm_f.tmp" && mv "$dm_f.tmp" "$dm_f"
+    dm_stripped=$((dm_stripped + 1))
+  done <"$dm_list"
+  rm -f "$dm_list"
+  [ "$dm_stripped" -gt 0 ] \
+    && migrate_doc_note="$dm_stripped area doc(s) stripped of the shape header the preset now carries"
+  return 0
+}
+
 case "$cmd" in
 init)
   preset=""
@@ -288,7 +329,7 @@ EOF
     # migration and would never reach the block below. Only when there is
     # something to migrate, and behind the same backup, since memory/ is
     # untracked in every mode but track-all.
-    if memory_headers_stale "$agent"; then
+    if memory_headers_stale "$agent" || doc_headers_stale "$agent"; then
       if [ "$mode" != "track-all" ]; then
         backup="$root/.agent.backup-v$oldversion"
         if [ -e "$backup" ]; then
@@ -301,6 +342,8 @@ EOF
       fi
       migrate_memory_headers "$agent"
       echo "node.sh: $migrate_note"
+      migrate_doc_headers "$agent"
+      echo "node.sh: $migrate_doc_note"
     fi
     echo "node.sh: node is current (version $oldversion)"
     exit 0
@@ -354,7 +397,8 @@ EOF
   fi
 
   migrate_memory_headers "$agent"
-  header_note="$migrate_note"
+  migrate_doc_headers "$agent"
+  header_note="$migrate_note; $migrate_doc_note"
 
   # Refresh the shipped scripts from the source repo — by exactly these
   # names. Anything else under scripts/ is the node's own and is never

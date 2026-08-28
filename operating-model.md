@@ -97,7 +97,7 @@ type: <fact | reference>
 <the fact>
 ```
 
-This is the one tier whose files carry no header contract, and the exception is about arity rather than importance. Every other canonical file is a singleton — one `purpose.md`, one `session-log.md`, one `architecture.md` — so its contract is written once no matter how large the node grows. Area docs are the near-case: one per area, holding hundreds of words, so a header costs a few percent of the file. `memory/` is the only tier with N files at roughly sixty words each, where one header is paid N times over and outweighs the fact it governs. Nor was the duplication buying curation. That is why `memory.md`'s header now opens with the retention test rather than with formats, and why a fact arriving from another repo or a migration is a new candidate, not an inheritance.
+Fact files carry no header contract, and the exception is about arity rather than importance. A canonical singleton — one `purpose.md`, one `session-log.md`, one `architecture.md` — states its contract once no matter how large the node grows. The two N-file tiers cannot: `memory/` holds a file per fact at roughly sixty words each, and `docs/` a file per area, per split, and per reference, so a header there is paid once per file by every session that only reads one of them. Nor was the duplication buying curation. That is why `memory.md`'s header now opens with the retention test rather than with formats, and why a fact arriving from another repo or a migration is a new candidate, not an inheritance.
 
 `type` separates the two things an index line can be. A `fact` is something the node knows and supersedes as the project changes. A `reference` points outward at material the node does not own and cannot supersede — it goes stale by disappearing, not by becoming wrong. Both route through the same index. Only the maintenance they need differs.
 
@@ -113,13 +113,14 @@ Binding rules distilled from operator corrections and failed verifications on th
 
 This header is the one that pays rent on every session: `learned.md` is always-loaded and has no disclosure tier below it, so anything stated here is stated in every session's context. What survives is what a session needs at the moment it *writes* the file and cannot get elsewhere — the no-fact-loss invariant and the routing rule. The entry-length target, the curation law, and the merge rule moved out to the preset's **Self-learning** section, which is always loaded anyway: keeping both copies meant paying twice for one rule.
 
-`docs/<area>.md`, the node's largest and fastest-growing file type, whose header carries its shape rules — the `Read when:` hook stays on the first line, where `status.sh` reads it:
+`docs/<area>.md`, the node's largest and fastest-growing file type, which carries a routing hook and nothing else — the hook stays on the first line, where `status.sh` reads it:
 
 ```markdown
 <!-- Read when: <one-line hook, same text as this doc's architecture.md entry> -->
 # <Area>
-<!-- Agent-facing reference, not a human narrative: facts belong in tables or one-fact-per-line bullets. Prose carries only the *why*. Cite the code or test path that pins a behavior instead of restating it. Timeless — no change narration, no dates. Area traps go under `## Gotchas`. Restructuring changes shape, never content: no tightening or splitting pass may drop an operational fact — a name, value, command, path, or gotcha. Preferred writer when this doc splits into docs/<area>/ sub-docs: .agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row together). -->
 ```
+
+The shape rules a doc used to carry — facts as tables or one-fact-per-line bullets, prose for the *why* alone, timeless phrasing, a cited path rather than a restated behavior, `## Gotchas` for area traps, and restructuring that changes shape and never content — are the preset's `docs/` bullet, loaded in every session that opens a doc. `docs.sh new` restates them in its output, where they reach the session writing the doc and cost nothing on every later read. Sub-doc routing is what settled it: one area doc could carry a header for a few percent of its size, a directory of sub-docs and reference files cannot, and the rules were already stated in a file loaded alongside them.
 
 `docs/architecture.md`, the routing index every session reads before it reads any area doc:
 

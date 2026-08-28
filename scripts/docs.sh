@@ -172,22 +172,21 @@ new)
 
   title=$(printf '%s' "$leaf" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)} print}')
 
-  # Two heredocs on purpose: the routing header interpolates, the header
-  # contract must not (it carries backticks and would otherwise run as
-  # command substitution). "Read when:" stays on line 1, where status.sh
-  # looks for it.
-  # `if { …; } >file; then`, not `if ! { …; } >file`: bash 3.2 does not run
-  # the negation when a compound command's own redirection is what failed,
-  # so the ! form never reaches its then-branch. Verified against 3.2.57.
-  if {
-    cat <<EOF
+  # The doc opens with its routing hook and its title, and no shape
+  # contract. Every canonical singleton carries its own because there is
+  # one of it. docs/ is the N-file tier — one doc per area, another per
+  # split into docs/<area>/, another per reference — where a header is
+  # paid by every session that only opens the file and says what the
+  # preset, loaded in all of them, already says. The contract reaches the
+  # writer through this script's output instead. "Read when:" stays on
+  # line 1, where status.sh looks for it.
+  # `if cmd >file; then … else`, not `if ! cmd >file`: bash 3.2 does not
+  # run the negation when the redirection is what failed, so the ! form
+  # never reaches its then-branch. Verified against 3.2.57.
+  if cat >"$doc" <<EOF
 <!-- Read when: $readwhen -->
 # $title
 EOF
-    cat <<'EOF'
-<!-- Agent-facing reference, not a human narrative: facts belong in tables or one-fact-per-line bullets. Prose carries only the *why*. Cite the code or test path that pins a behavior instead of restating it. Timeless — no change narration, no dates. Area traps go under `## Gotchas`. Restructuring changes shape, never content: no tightening or splitting pass may drop an operational fact — a name, value, command, path, or gotcha. Preferred writer when this doc splits into docs/<area>/ sub-docs: .agent/scripts/docs.sh new (scaffolds each sub-doc and its routing row together). -->
-EOF
-  } >"$doc"
   then :
   else
     echo "docs.sh: could not write $doc — nothing was written" >&2
@@ -221,6 +220,7 @@ EOF
   } >>"$arch"
   then
     echo "docs.sh: wrote $doc and added its routing entry to $arch"
+    echo "docs.sh: agent-facing reference — facts as tables or one-fact-per-line bullets, prose only for the *why*, timeless, area traps under ## Gotchas. Restructuring changes shape, never content: no tightening or split may drop a name, value, command, path, or gotcha. Full contract: the preset's docs/ bullet."
     exit 0
   fi
 

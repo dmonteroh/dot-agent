@@ -393,11 +393,16 @@ docfile="$docroot/.agent/docs/auth-flow.md"
 firstline=$(head -n1 "$docfile" 2>/dev/null)
 [ "$firstline" = "<!-- Read when: working on authentication -->" ] && pass "docs.sh new: doc opens with the Read when: line" || fail "docs.sh new: doc opens with the Read when: line"
 
-# The header contract ships inside the doc, the way every other canonical
-# file carries its own: the shape rules are in context when the doc is
-# written, not only when status.sh flags it for size.
-grep -qF "Agent-facing reference, not a human narrative" "$docfile" && pass "docs.sh new: doc carries its header contract" || fail "docs.sh new: doc carries its header contract"
-grep -qF "no tightening or splitting pass may drop an" "$docfile" && pass "docs.sh new: header contract states the no-fact-loss invariant" || fail "docs.sh new: header contract states the no-fact-loss invariant"
+# No shape contract in the doc. docs/ is an N-file tier — a doc per area,
+# per split, per reference — so a header there is paid by every session
+# that only reads one of them, and the preset loaded in all of them
+# already states the same rules. The contract reaches the session doing
+# the writing through this script's output instead.
+grep -qF "Agent-facing reference, not a human narrative" "$docfile" && fail "docs.sh new: the doc carries no shape header" || pass "docs.sh new: the doc carries no shape header"
+[ "$(wc -l <"$docfile")" -eq 2 ] && pass "docs.sh new: the doc is its hook and its title, nothing else" || fail "docs.sh new: the doc is its hook and its title, nothing else"
+docout=$("$doccopy" new --name payments --read-when "touching billing" "$docroot" 2>&1)
+printf '%s\n' "$docout" | grep -qF "one-fact-per-line bullets" && pass "docs.sh new: the output states the shape contract" || fail "docs.sh new: the output states the shape contract"
+printf '%s\n' "$docout" | grep -qF "may drop a name, value, command, path, or gotcha" && pass "docs.sh new: the output states the no-fact-loss invariant" || fail "docs.sh new: the output states the no-fact-loss invariant"
 
 archfile="$docroot/.agent/docs/architecture.md"
 [ -f "$archfile" ] && grep -qF '### `auth-flow.md`' "$archfile" && grep -qF -- "- **Read when:** working on authentication" "$archfile" && pass "docs.sh new: architecture.md created with the routing entry" || fail "docs.sh new: architecture.md created with the routing entry"
@@ -503,8 +508,25 @@ would be superseded at different times, they are two files. -->
 
 Auth uses rotating tokens, refreshed every 900 seconds.
 EOF
+mkdir -p "$hdrroot/.agent/docs/billing"
+for hdrdoc in "$hdrroot/.agent/docs/billing.md" "$hdrroot/.agent/docs/billing/refunds.md"; do
+  cat >"$hdrdoc" <<'EOF'
+<!-- Read when: touching billing -->
+# Billing
+<!-- Agent-facing reference, not a human narrative: facts belong in tables or one-fact-per-line bullets. Prose carries only the *why*. -->
+
+Refunds settle in 3 business days.
+EOF
+done
 "$NODE" update "$hdrroot" >/dev/null 2>&1
 hdrfact="$hdrroot/.agent/memory/auth-flow.md"
+for hdrdoc in "$hdrroot/.agent/docs/billing.md" "$hdrroot/.agent/docs/billing/refunds.md"; do
+  hdrlabel=${hdrdoc#"$hdrroot/.agent/"}
+  grep -qF 'Agent-facing reference' "$hdrdoc" 2>/dev/null && fail "update: $hdrlabel loses its shape header" || pass "update: $hdrlabel loses its shape header"
+  head -n1 "$hdrdoc" | grep -qxF '<!-- Read when: touching billing -->' && pass "update: $hdrlabel keeps its Read when: hook" || fail "update: $hdrlabel keeps its Read when: hook"
+  grep -qF 'Refunds settle in 3 business days.' "$hdrdoc" 2>/dev/null && pass "update: $hdrlabel keeps its body" || fail "update: $hdrlabel keeps its body"
+done
+[ ! -e "$hdrroot/.agent/.doc-headers.tmp" ] && pass "update: the doc-header migration leaves no scratch file" || fail "update: the doc-header migration leaves no scratch file"
 grep -q '<!--' "$hdrfact" 2>/dev/null && fail "update: an existing fact file loses its header contract" || pass "update: an existing fact file loses its header contract"
 grep -qF 'Auth uses rotating tokens, refreshed every 900 seconds.' "$hdrfact" 2>/dev/null && pass "update: stripping the header keeps the fact" || fail "update: stripping the header keeps the fact"
 grep -q '^date: 2026-01-01' "$hdrfact" 2>/dev/null && grep -q '^type: fact' "$hdrfact" 2>/dev/null && pass "update: stripping the header keeps the frontmatter" || fail "update: stripping the header keeps the frontmatter"
@@ -1397,7 +1419,11 @@ om_check session-log.md "One entry per session"
 om_check memory.md "Index only, one line per fact file"
 om_check rules/learned.md "Binding rules distilled"
 om_check docs/architecture.md "One entry per doc in this directory"
-om_check docs/a.md "Agent-facing reference"
+# docs/a.md has no header to quote: the shape contract moved to the preset
+# and docs.sh's output. Pin the removal at both ends instead — a copy that
+# grows back in either place is the drift this section exists to catch.
+grep -qF "Agent-facing reference, not a human narrative" "$omnode/.agent/docs/a.md" && om_drift="$om_drift docs/a.md(header-returned)"
+grep -qF "Agent-facing reference, not a human narrative" "$reporoot/operating-model.md" && om_drift="$om_drift operating-model.md(header-returned)"
 [ -z "$om_drift" ] && pass "operating model: the quoted node headers match what the scripts write" || fail "operating model: the quoted node headers match what the scripts write (drifted:$om_drift)"
 
 # The check must be able to fail, or a stale document reads as a current one.
@@ -1610,7 +1636,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=325
+EXPECTED_CHECKS=334
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
