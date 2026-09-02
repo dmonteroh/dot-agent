@@ -172,7 +172,7 @@ block_re='git (show|log|diff|blame|bisect|merge-base|rev-parse)([^[:alnum:]]|$)|
 # the next reader, who has no before-state to compare against. The terms
 # are the ones that cannot be anything else: a comment describing what the
 # code did before is describing a version that is not in the file.
-narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed (from|to)|moved (from|to) (the|its)|changed from|as of this (change|commit|pr|version)|(in|for) this (task|change|commit|pr|pass|iteration|implementation|ticket|issue)|this (task|change|commit|pr|patch|implementation) (adds|added|removes|removed|changes|changed|fixes|fixed|makes|introduces|updates|updated|supports|supported|handles|handled)|now (returns|supports|uses|handles|takes|accepts|includes|also|correctly|sets|creates|builds|loads|reads|writes)|instead of the (old|previous|former)|was (renamed|moved|replaced|removed|inlined)|(we|i) (added|changed|updated|removed|refactored|implemented|decided|considered|tried)([^[:alnum:]_]|$)|(added|removed|replaced|updated|refactored|migrated|kept) (in|as part of|for) (this|the) (change|commit|pr|pass|task|ticket|refactor))'
+narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed (from|to)|moved (from|to) (the|its)|changed from|as of this (change|commit|pr|version)|(in|for) this (task|change|request|commit|pr|pull request|pass|iteration|implementation|ticket|issue)|this (task|change|request|commit|pr|patch|implementation) (adds|added|removes|removed|changes|changed|fixes|fixed|makes|introduces|updates|updated|supports|supported|handles|handled)|now (returns|supports|uses|handles|takes|accepts|includes|also|correctly|sets|creates|builds|loads|reads|writes)|instead of the (old|previous|former)|was (renamed|moved|replaced|removed|inlined)|(we|i) (added|changed|updated|removed|refactored|implemented|decided|considered|tried)([^[:alnum:]_]|$)|(added|removed|replaced|updated|refactored|migrated|kept) (in|as part of|for) (this|the) (change|commit|pr|pass|task|ticket|refactor))'
 [ -n "$NARRATION_RE_EXTRA" ] && narration_re="$narration_re|$NARRATION_RE_EXTRA"
 
 # A comment addressed to whoever asked for the change. The answer belongs in
@@ -192,7 +192,7 @@ routine_re='(^|[^[:alnum:]_])((build|create|initialize|initialise|set|return|fet
 # job the rule asks for, whatever verb it opens with: "update the cache
 # because the vendor SDK caches credentials" is not structure narration.
 # A false positive is repaired by naming the constraint, not by an exception.
-constraint_re='because|otherwise|unless|so that|until|workaround|bug|quirk|limitation|deadlock|race|invariant|constraint|unsafe|required by|must|cannot|can.t|never|only|upstream|vendor|protocol|specification|spec |rfc|api|sdk|browser|kernel|driver|compatib|legacy|deliberate|intentional|on purpose|keep in sync'
+constraint_re='because|otherwise|unless|without|so that|until|workaround|bug|quirk|limitation|non[- ]reactive|deadlock|race|invariant|constraint|unsafe|require|must|cannot|can.t|never|only|upstream|vendor|external|protocol|specification|spec |rfc|api|sdk|browser|kernel|driver|compatib|legacy|deliberate|intentional|on purpose|keep in sync'
 [ -n "$CONSTRAINT_RE_EXTRA" ] && constraint_re="$constraint_re|$CONSTRAINT_RE_EXTRA"
 
 findings=$(printf '%s\n' "$added" \
