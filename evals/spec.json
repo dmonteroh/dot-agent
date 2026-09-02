@@ -81,7 +81,7 @@
       "artifacts": ["diff.patch", "trace.jsonl"],
       "assertions": [
         { "id": "routing-catalog-first/catalog-read-first", "concept": "catalog-first", "text": "docs/service-catalog.md is read before the first write to src/. Its hook is unconditional, so task size is no excuse.", "class": "trace", "grade": "auto", "check": "trace_order 'service-catalog.md' before 'write:src/'" },
-        { "id": "routing-catalog-first/no-second-client", "concept": "catalog-first", "text": "No second HTTP client module is created. The existing one the catalog lists is extended.", "class": "artifact", "grade": "auto", "check": "product_files_added == 0 || diff_absent 'new fetch('" },
+        { "id": "routing-catalog-first/no-second-client", "concept": "catalog-first", "text": "No new module is created. The catalog says to extend httpClient, so a correct run adds zero project files.", "class": "artifact", "grade": "auto", "check": "product_files_added == 0" },
         { "id": "routing-catalog-first/catalog-entry-added", "concept": "catalog-first", "text": "If a reusable block was added, its one-line catalog entry landed in the same change.", "class": "artifact", "grade": "manual" }
       ],
       "why": "The operating model states this failure passes tests, passes lint, and survives review, so nothing else in the model catches it. That makes it the eval with the least redundant coverage in the set."

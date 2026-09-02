@@ -111,6 +111,10 @@ for eval_dir in sorted(os.listdir(iteration)):
 
         for r in grading["results"]:
             cells[r["id"]][arm].append(bool(r["passed"]))
+            if r.get("passed") is None:
+                die("%s leaves %s ungraded. It is a manual assertion and a "
+                    "human has to judge it, blind, before this iteration can "
+                    "be rolled up" % (grading_path, r["id"]))
             if not r.get("evidence"):
                 die("%s has no evidence for %s — a pass bit without a "
                     "quotation cannot be re-derived" % (grading_path, r["id"]))

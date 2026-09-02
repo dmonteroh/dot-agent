@@ -1921,6 +1921,49 @@ evfg="$WORK/eval-fixture-flagged"
 f42b=$(status_flags "$evfg")
 printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf '%s\n' "$f42b" | grep -q '^GROOM: memory/' && pass "evals: the flagged fixture arrives over the thresholds its eval clears" || fail "evals: the flagged fixture arrives over the thresholds its eval clears ($f42b)"
 
+# run.sh refuses rather than guessing an agent. A benchmark that silently
+# drove the wrong binary, or no binary, still produces artifacts and a
+# plausible grading record — and the delta then gets attributed to the corpus.
+ra42=$("$evroot/run.sh" --list-arms 2>&1)
+printf '%s\n' "$ra42" | grep -q 'not configured' && pass "evals: run.sh ships with no agent configured and says so" || fail "evals: run.sh ships with no agent configured and says so ($ra42)"
+"$evroot/run.sh" --eval comments-feature --arm x --agent claude --corpus-ref HEAD --workspace "$WORK/ev-refuse" >/dev/null 2>&1
+rc42d=$?
+[ "$rc42d" -eq 2 ] && pass "evals: run.sh refuses an unconfigured agent" || fail "evals: run.sh refuses an unconfigured agent (rc=$rc42d)"
+
+# The grader is the piece that turns spec.json's check strings from a
+# declared DSL into executing code. Driven here against artifacts written by
+# hand, so the primitives are pinned without a model or a network.
+gd="$WORK/eval-grade/r0"
+mkdir -p "$gd/outputs"
+cat >"$gd/snap.json" <<'EOF'
+{"id":"g","assertions":[
+ {"id":"g/new","concept":"c","class":"artifact","grade":"auto","check":"product_files_added == 1"},
+ {"id":"g/append","concept":"c","class":"artifact","grade":"auto","check":"memory_files_added == 0"},
+ {"id":"g/order","concept":"c","class":"trace","grade":"auto","check":"trace_order 'catalog' before 'write:'"},
+ {"id":"g/absent","concept":"c","class":"artifact","grade":"auto","check":"node_tree_absent 'SECRET-TOKEN'"},
+ {"id":"g/missing","concept":"c","class":"artifact","grade":"auto","check":"gate_block_count == 0"},
+ {"id":"g/human","concept":"c","class":"artifact","grade":"manual"}]}
+EOF
+# A created file and an appended one, so "added" cannot be inferred from
+# "has no removed lines" — the defect that read an append as a creation.
+printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$gd/outputs/diff.patch"
+printf -- '--- a/memory/x.md\n+++ b/memory/x.md\n+a line\n' >"$gd/outputs/node-diff.patch"
+printf '{"seq":0,"text":"read catalog"}\n{"seq":1,"text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
+printf 'nothing sensitive here\n' >"$gd/outputs/node-tree.txt"
+"$evroot/grade.sh" "$gd" "$gd/snap.json" >/dev/null 2>&1
+g42=$(python3 -c '
+import json,sys
+r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
+bad = []
+if not r["g/new"]["passed"]: bad.append("new-file-not-counted")
+if not r["g/append"]["passed"]: bad.append("append-read-as-creation")
+if not r["g/order"]["passed"]: bad.append("trace-order")
+if not r["g/absent"]["passed"]: bad.append("tree-absence")
+if r["g/missing"]["passed"]: bad.append("missing-artifact-passed-by-default")
+if r["g/human"]["passed"] is not None: bad.append("manual-was-auto-graded")
+print(" ".join(bad))' "$gd/grading.json" 2>&1)
+[ -z "$g42" ] && pass "evals: the grader evaluates its check language and fails closed on a missing artifact" || fail "evals: the grader evaluates its check language and fails closed on a missing artifact ($g42)"
+
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
 # grading record means the grader could see the condition. Either one makes
@@ -1947,6 +1990,11 @@ printf '{"results":[{"id":"a1","passed":true,"evidence":"the treat arm did it"},
 rc42c=$?
 [ "$rc42c" -eq 2 ] && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c)"
 
+printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
+"$evroot/rollup.sh" "$evr" >/dev/null 2>&1
+rc42e=$?
+[ "$rc42e" -eq 2 ] && pass "evals: rollup refuses an iteration with a manual assertion still ungraded" || fail "evals: rollup refuses an iteration with a manual assertion still ungraded (rc=$rc42e)"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -1954,7 +2002,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=379
+EXPECTED_CHECKS=383
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

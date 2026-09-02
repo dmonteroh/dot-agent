@@ -4,7 +4,7 @@
 
 It is deliberately **not** in CI. `.github/workflows/ci.yml` runs `test.sh` and `shellcheck`, both deterministic and free. An eval run costs model tokens, needs API access, and returns a distribution rather than a bit. It is an operator ceremony, run when the corpus changes in a way that is supposed to change behavior — and the run is worth its cost only when something is genuinely in doubt.
 
-The one part that does ride CI is static: `test.sh` validates `spec.json`'s shape and builds every fixture. That keeps the eval set from rotting between runs without ever invoking a model.
+The one part that does ride CI is static: `test.sh` validates `spec.json`'s shape, builds fixtures, drives `grade.sh` against hand-written artifacts to pin its check language, and asserts `run.sh` refuses an unconfigured agent. That keeps the eval set and its tooling from rotting between runs without ever invoking a model.
 
 ## The method
 
@@ -54,31 +54,89 @@ The corpus supplies several of its own graders, which is what keeps the automate
 
 That leaves manual grading for what genuinely needs judgment: whether a constraint comment survived the rule that cuts valueless ones, whether a failure was honestly classified, whether a groom pass changed shape without dropping content. Those are graded blind, and there are few enough of them to grade carefully.
 
-## Running one
+## What is wired, and what is not
+
+| Piece | State |
+| --- | --- |
+| `spec.json` — 20 evals, 58 assertions | complete |
+| `fixtures.sh` — 9 fixtures at a pinned corpus revision | complete |
+| `run.sh` — drives an agent, captures the artifact set, grades | complete |
+| `grade.sh` — executes the check language, writes evidence per assertion | complete |
+| `rollup.sh` — joins arms, buckets, reports the delta | complete |
+| **an agent to drive** | **none configured — this is yours** |
+
+Nothing in `agents.conf` ships uncommented. That is deliberate: a wrong flag drives the wrong binary or the wrong model, the run still produces a full set of artifacts and a plausible grading record, and the delta gets attributed to the corpus. `run.sh` refuses an unconfigured arm rather than guessing, and `test.sh` pins that refusal.
+
+## Configuring an agent
+
+Open `evals/agents.conf` and uncomment the arm you are running. Each needs three values:
 
 ```
-bash evals/fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
+CLAUDE_MODEL=<the model id you are paying for>
+CLAUDE_CMD=<the exact non-interactive invocation your install uses>
+CLAUDE_TRACE=stream-json | none
 ```
 
-builds an eval's fixture node at a pinned corpus revision. Everything after that is the operator's harness: open a session in the destination, paste the eval's prompt verbatim, save the artifacts under the run layout, and grade.
+`run.sh` substitutes `{prompt}`, `{model}` and `{cwd}` into `CMD` and runs it with the fixture as the working directory. Two requirements on whatever you put there: it must run headless and exit, and its stdout must be capturable.
+
+`TRACE` is the one that decides how much of the set is measurable. **11 of the 58 assertions are trace assertions** — was the catalog read *before* the build, did the bootstrap run once, was the gate invoked against a real base ref. They are the assertions with the least redundant coverage anywhere else, and they need a machine-readable record of the agent's tool calls. Set `TRACE=stream-json` if your agent can emit one and `run.sh` will normalize it; set `none` and those assertions grade as unjudgeable, named, rather than passing by default.
+
+Check the flags against your own install rather than against this file. CLI flags move between versions, and a stale one here would fail a whole iteration.
 
 ```
-<workspace>/
-  spec.json                  # hashed, frozen for the run
-  iteration-<n>/
-    run-config.json          # models, versions, sampling, corpus refs, repeats, grader
-    arm-map.json             # opaque run id -> arm; the grader never opens this
-    eval-<id>/
-      eval-snapshot.json     # prompt + assertions, copied from spec.json at run time
-      <run-id>/              # opaque: no arm token in the path or the filename
-        outputs/             # the artifact set named by the eval, same names both arms
-        grading.json
-    rollup.json
+evals/run.sh --list-arms      # what is actually configured right now
 ```
 
-The condition must appear in no path, no filename, and no field of a grading record. Blinding is a requirement, not a nicety — an unblinded grader working toward an expected direction is a first-order threat to any delta it produces. It also cannot be total here: treatment-arm output carries the corpus's own vocabulary. Report that residual rather than claiming full blinding.
+## Running one eval, both arms
 
-`bash evals/rollup.sh <iteration-dir>` joins the arms on assertion id, recomputes every number from the grading records, and prints the four-bucket split. Nothing in a report is transcribed by hand.
+```
+W=~/eval-runs/v6.2
+
+# treatment: the corpus under test
+evals/run.sh --eval routing-catalog-first --arm merged \
+  --agent claude --corpus-ref feature/v6.2 --workspace "$W"
+
+# control: the corpus the field ran
+evals/run.sh --eval routing-catalog-first --arm prerelease \
+  --agent claude --corpus-ref 2f779b7 --workspace "$W"
+
+evals/rollup.sh "$W/iteration-1"
+```
+
+Each invocation builds its own fixture from the corpus revision named, drives the agent in it, captures the artifacts, and grades the auto assertions. `--dry-run` does everything except drive the agent and prints the prompt, which is the way to run an eval by hand in a session you are watching.
+
+Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json`, which the grader does not open, and `rollup.sh` greps every record for arm tokens and voids the pass if it finds one.
+
+## What a run leaves behind
+
+```
+<workspace>/iteration-<n>/
+  arm-map.json               # run id -> arm. The only place the condition lives
+  run-config.json            # models, versions, sampling, corpus refs, repeats
+  eval-<id>/
+    eval-snapshot.json       # prompt + assertions, frozen at run time
+    <run-id>/
+      fixture/               # the tree the session actually worked in
+      run-meta.json          # model, corpus ref, fixture base, timings
+      outputs/
+        diff.patch           # project tree, fixture base -> end
+        node-diff.patch      # .agent/ tree, fixture base -> end
+        node-tree.txt        # every .agent/ file with content, for absence checks
+        session-transcript.txt
+        trace.jsonl          # normalized {"seq","text"} per tool call
+        status-after.txt     # status.sh over the node afterwards
+        gate.txt             # comments.sh over the diff
+      grading.json           # one record per assertion, with evidence
+  rollup.json
+```
+
+`grade.sh` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved.
+
+## Filling in the manual assertions
+
+10 of 58 need a human. `grade.sh` writes them with `passed: null`, and `rollup.sh` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
+
+Grade them from `outputs/` without opening `arm-map.json`. Each needs a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. "Assertion not met" is not evidence and cannot be re-derived.
 
 ## Reading a result
 
