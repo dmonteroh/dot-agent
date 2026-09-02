@@ -21,18 +21,28 @@ The `corpus` control is precise on purpose: `2f779b7` is the exact tree the oper
 
 ## The eval set
 
-`spec.json` is frozen data, not prose — hash it before the first run and after the last. Each entry carries an id, the verbatim prompt, the fixture it needs, the fixed artifact set both arms must emit, and its assertions.
+`spec.json` is frozen data, not prose — hash it before the first run and after the last. Each entry carries an id, the phase whose contract it tests, the verbatim prompt, the fixture it needs, the fixed artifact set both arms must emit, and its assertions.
 
-| Eval | Encodes the field failure | Arm variable |
+The set is organized by the **trust-contract phase** the operating model already names, not by the bug that prompted each eval. That ordering is deliberate: a set organized by bug report drifts toward whatever failed most recently, and the first version of this file did exactly that — four evals on the comment rule and none at all on write-back, which is the harness's central claim. `test.sh` now asserts every phase in that table carries at least one eval, so the set cannot narrow back silently.
+
+| Phase | The claim under test | Evals |
 | --- | --- | --- |
-| `comments-feature` | valueless comments reaching PRs | corpus |
-| `comments-docstrings` | `<summary>` doc comments nobody wanted; off-register prompt | corpus |
-| `learning-source-gate` | learned rules written to compensate for a harness defect | corpus |
-| `memory-admission` | a memory fact explaining what `architecture.md` already states | corpus |
-| `entry-point-boundary` | `purpose.md` content growing into the entry point | corpus |
-| `bootstrap-once` | Codex re-reading the whole bootstrap every message | **agent** |
+| Bootstrap | load context before working, once per session | `bootstrap-once` · `bootstrap-complete` · `entry-point-boundary` |
+| Pre-work | load project context before editing, scaled to the task | `routing-catalog-first` · `routing-scales` · `routing-finds-doc` |
+| Correctness | verify before claiming; comments state what code cannot | `verify-no-false-done` · `verify-baseline-failure` · `comments-feature` · `comments-docstrings` |
+| Completion | write context back before finishing | `continuity-writes-back` · `continuity-supersede` · `continuity-docs-not-memory` · `memory-admission` |
+| Retro | distill durable rules, and only those | `retro-source-gate` · `retro-rule-expiry` |
+| Security | the origin gate, and the leak surface | `security-origin-gate` · `security-no-secrets` |
+| Grooming | flags handled in the session that printed them | `groom-acts-on-flags` |
+| Scope control | answer a question without editing | `scope-question-no-edit` |
 
-`bootstrap-once` is the one that must run with the agent as the variable. The failure was agent-specific — reported on `gpt-5.6-*`, not observed on Claude Code — so a corpus-arm run on the agent that never had the problem measures nothing. Run it against both harnesses with the corpus held at the treatment revision, and use `cross-vendor-delegation` for the foreign-harness arm: content-not-path handoff, an injection-delimited payload, a bounded run, and a fail-closed verdict gate.
+Two carry a note on why they exist at all. `routing-catalog-first` tests the failure the operating model says "passes tests, passes lint, and survives review, so nothing else in the model catches it" — which makes it the eval with the least redundant coverage anywhere in the set. `security-origin-gate` tests the corpus's only security claim, which is cooperative by design; an untested cooperative control is an assumption wearing a control's clothes.
+
+`bootstrap-once` is the one eval that must run with the **agent** as the variable. Its failure was agent-specific — reported on `gpt-5.6-*`, never observed on Claude Code — so a corpus arm on the agent that never had it measures nothing. Run it against both harnesses with the corpus held at the treatment revision, and use `cross-vendor-delegation` for the foreign arm: content-not-path handoff, an injection-delimited payload, a bounded run, and a fail-closed verdict gate.
+
+## Fixtures
+
+Nine, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Eight arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. The ninth, `ts-service-flagged`, exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear.
 
 ## Assertions
 
@@ -40,7 +50,9 @@ Two classes. An **artifact assertion** names a checkable property of a named out
 
 Each assertion carries a stable `id` (joins the two arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind.
 
-The nicest property of this particular subject: `comments.sh` is itself an automated grader. Several assertions are settled by running the shipped gate over the diff the agent produced and counting findings by class. The corpus grades its own output.
+The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. `links.sh` settles reachability after a restructure. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once.
+
+That leaves manual grading for what genuinely needs judgment: whether a constraint comment survived the rule that cuts valueless ones, whether a failure was honestly classified, whether a groom pass changed shape without dropping content. Those are graded blind, and there are few enough of them to grade carefully.
 
 ## Running one
 

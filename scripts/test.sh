@@ -1886,12 +1886,24 @@ else
   fail "evals: spec.json is well-formed and every assertion is joinable (python3 absent)"
 fi
 
+# Every phase the operating model's trust contract names must carry at least
+# one eval. Without this the set narrows back to whichever bug was reported
+# last — which is exactly how it was first written, covering the comment rule
+# four ways and the write-back contract not at all.
+phases42=$(awk '/^\| Phase \| Trust contract/ { f = 1; next } f && /^\| \*\*/ { gsub(/\*/, "", $2); print tolower($2) } f && !/^\|/ { exit }' "$reporoot/operating-model.md")
+covered42=$(sed -n 's/.*"phase": "\([a-z-]*\)".*/\1/p' "$evroot/spec.json" | sort -u)
+uncovered42=""
+for ph in $phases42; do
+  printf '%s\n' "$covered42" | grep -qx "$ph" || uncovered42="$uncovered42 $ph"
+done
+[ -n "$phases42" ] && [ -z "$uncovered42" ] && pass "evals: every trust-contract phase carries at least one eval" || fail "evals: every trust-contract phase carries at least one eval (uncovered:${uncovered42:-none}; phases found: $(printf '%s' "$phases42" | tr '\n' ' '))"
+
 # A fixture arriving with its own REPAIR: flags would make every eval spend
 # its session on repair rather than on the behavior under test, and the delta
 # would measure that instead. Built from the working tree on purpose: the
 # corpus under test is the one being edited, not the one last committed.
 evfx="$WORK/eval-fixture"
-"$evroot/fixtures.sh" ts-service-with-doc "$evfx" --corpus-dir "$reporoot" >/dev/null 2>&1
+"$evroot/fixtures.sh" ts-service-catalog "$evfx" --corpus-dir "$reporoot" >/dev/null 2>&1
 if [ -d "$evfx/.agent" ]; then
   pass "evals: a fixture builds a node from the corpus under test"
   f42=$(status_flags "$evfx")
@@ -1900,6 +1912,14 @@ else
   fail "evals: a fixture builds a node from the corpus under test"
   fail "evals: a freshly built fixture reports no findings (no fixture)"
 fi
+
+# The one fixture whose contract is the opposite: it exists to be flagged, and
+# a build that stopped seeding its thresholds would leave groom-acts-on-flags
+# passing against nothing.
+evfg="$WORK/eval-fixture-flagged"
+"$evroot/fixtures.sh" ts-service-flagged "$evfg" --corpus-dir "$reporoot" >/dev/null 2>&1
+f42b=$(status_flags "$evfg")
+printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf '%s\n' "$f42b" | grep -q '^GROOM: memory/' && pass "evals: the flagged fixture arrives over the thresholds its eval clears" || fail "evals: the flagged fixture arrives over the thresholds its eval clears ($f42b)"
 
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
@@ -1934,7 +1954,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=377
+EXPECTED_CHECKS=379
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
