@@ -37,13 +37,19 @@ cmd="${1:-}"
 [ $# -ge 1 ] && shift
 
 # The fact-file header contract lives in memory.md's header, so a fact file
-# holds its frontmatter and the fact and nothing else. A node already on 6.1
-# still carries the old shape: version-current is not shape-current.
+# holds its frontmatter and the fact and nothing else. A current version may
+# still carry an earlier pre-release header: version-current is not shape-current.
+memory_index_header_stale() {
+  mih_memory="$1"
+  [ -f "$mih_memory" ] || return 1
+  grep -qF 'This contract covers memory/ too' "$mih_memory" || return 0
+  grep -qF 'If one already states it, update that source or its routing and write no fact.' "$mih_memory" || return 0
+  return 1
+}
+
 memory_headers_stale() {
   mh_agent="$1"
-  [ -f "$mh_agent/memory.md" ] \
-    && ! grep -qF 'This contract covers memory/ too' "$mh_agent/memory.md" \
-    && return 0
+  memory_index_header_stale "$mh_agent/memory.md" && return 0
   for mh_f in "$mh_agent"/memory/*.md; do
     [ -e "$mh_f" ] || continue
     grep -q '^<!-- One durable fact per file' "$mh_f" && return 0
@@ -59,7 +65,7 @@ memory_headers_stale() {
 write_memory_header() {
   cat >"$1" <<'EOF'
 # Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Expansive detail goes to docs/ with a pointer fact here. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing and write no fact. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place: rewrite the fact and the date, keep the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
 EOF
 }
 
@@ -70,6 +76,7 @@ migrate_memory_headers() {
   mg_agent="$1"
   mg_memory="$mg_agent/memory.md"
   mg_stripped=0
+  mg_index_refreshed=0
   migrate_note="memory headers already current"
   for mg_f in "$mg_agent"/memory/*.md; do
     [ -e "$mg_f" ] || continue
@@ -81,7 +88,7 @@ migrate_memory_headers() {
     ' "$mg_f" >"$mg_f.tmp" && mv "$mg_f.tmp" "$mg_f"
     mg_stripped=$((mg_stripped + 1))
   done
-  if [ -f "$mg_memory" ] && ! grep -qF 'This contract covers memory/ too' "$mg_memory"; then
+  if memory_index_header_stale "$mg_memory"; then
     mg_body="$mg_agent/.memory-index.tmp"
     mg_end=""
     if head -n 5 "$mg_memory" | grep -qF '<!--'; then
@@ -95,9 +102,13 @@ migrate_memory_headers() {
     printf '\n' >>"$mg_memory"
     cat "$mg_body" >>"$mg_memory"
     rm -f "$mg_body"
+    mg_index_refreshed=1
   fi
-  [ "$mg_stripped" -gt 0 ] \
-    && migrate_note="memory.md header now carries the memory/ contract; $mg_stripped fact file(s) stripped of their own"
+  if [ "$mg_stripped" -gt 0 ]; then
+    migrate_note="memory.md header refreshed; $mg_stripped fact file(s) stripped of their own"
+  elif [ "$mg_index_refreshed" -eq 1 ]; then
+    migrate_note="memory.md header refreshed"
+  fi
   return 0
 }
 
@@ -206,7 +217,7 @@ EOF
   cat >"$agent/rules/learned.md" <<'EOF'
 # Learned rules
 
-Binding rules distilled from operator corrections and failed verifications on this project. Merging and compressing entries is allowed. Dropping operational content is not. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
+Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 EOF
@@ -331,7 +342,9 @@ EOF
     # untracked in every mode but track-all.
     if memory_headers_stale "$agent" || doc_headers_stale "$agent"; then
       if [ "$mode" != "track-all" ]; then
-        backup="$root/.agent.backup-v$oldversion"
+        # Same-version pre-release refreshes must not collide with the backup
+        # created by an earlier version migration or shape refresh.
+        backup="$root/.agent.backup-v$oldversion-shape"
         if [ -e "$backup" ]; then
           echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
           exit 1

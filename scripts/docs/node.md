@@ -28,6 +28,6 @@ A `.gitignore` at `$HOME` is commonly git's global `core.excludesFile`, so a `.a
 
 Refreshes the shipped scripts from the source repo **by exactly their six names**. Anything else under `scripts/` is the node's own and is never overwritten. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
 
-It also reaches the mechanical migration baseline: memory body moved verbatim to `memory/legacy.md`, the old per-fact header stripped behind a backup, and `version` bumped. Every node with untracked memory is backed up first.
+It also reaches the mechanical migration baseline: memory body moved verbatim to `memory/legacy.md`, the old per-fact header stripped behind a backup, and `version` bumped. Every node with untracked memory is backed up first. A version migration writes `.agent.backup-v<old-version>`. A same-version shape refresh writes `.agent.backup-v<version>-shape`, so a pre-release refresh cannot collide with the earlier backup.
 
-A node already on the current version can still be shape-stale: version- current is not shape-current, so shape migrations run regardless.
+A node already on the current version can still be shape-stale: version-current is not shape-current, so shape migrations run regardless.

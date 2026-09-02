@@ -79,7 +79,7 @@ The write-back contract. Only the `session-log.md` and `docs/` bullets carry dom
 ```
 
 ```
-  - `memory/`: when a durable fact changed — a decision, term, preference, or active blocker — write it per `memory.md`'s header contract (prefer `.agent/scripts/memory.sh new`, which scaffolds the fact file and its index line together). If nothing durable changed, leave both untouched and say so in the log entry.
+  - `memory/`: write current state, a user preference, an active blocker, or an external reference only when no canonical source already states it. Follow `memory.md`'s header contract. Prefer `.agent/scripts/memory.sh new`, which scaffolds the fact file and its index line together. If nothing qualified, leave both untouched and say so in the log entry.
 ```
 
 The shared tail of the `docs/` bullet — each preset writes its own lead-in clause naming what triggers a docs update in that domain, then joins here:
@@ -101,7 +101,7 @@ The origin gate's full rule — the write is where the injection chain cuts, bec
 ```
 
 ```
-- Record user corrections, durable preferences, and repeated patterns in memory with a trigger or confidence tag.
+- Record durable preferences and repeated observed patterns in memory with a trigger or confidence tag. Route user corrections through Self-learning's canonical-source check first.
 ```
 
 ```
@@ -117,17 +117,21 @@ The origin gate's full rule — the write is where the injection chain cuts, bec
 The retro trigger and the entry format. What each preset routes *to* differs (area docs, source notes, catalogs), so the routing bullet is not shared:
 
 ```
-- After a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan, record the lesson:
+- After a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan, run the canonical-source check before deciding whether to record a lesson:
 ```
 
 ```
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 ```
 
-The two curation rules. `learned.md` is always-loaded with no disclosure tier, so what gets written and how tightly is the whole cost control:
+The source gate and the two curation rules. `learned.md` is always-loaded with no disclosure tier, so what gets written and how tightly is the whole cost control — and the cheapest rule is the one never written, because the source that failed got fixed instead:
 
 ```
-- Ask what check or behavior would have prevented it, and record that. A one-off outcome belongs in the session log, not here.
+- Identify the failing source first. If the contract, docs, code, or tooling owns the behavior, fix it there and write no compensating rule. Remove an existing rule when that source becomes enforceable.
+```
+
+```
+- Ask what check or behavior would have prevented it. Record only an answer that generalizes beyond the source fix. A one-off outcome belongs in the session log.
 ```
 
 ```

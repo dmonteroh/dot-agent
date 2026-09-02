@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # comments.sh — the comment gate. Flags comments a diff adds to source
-# files, against the contract's comment rule. BLOCK (exit 1): the comment is
+# files, against the preset's Comments rule. BLOCK (exit 1): the comment is
 # dead on arrival — it cites what a fresh clone cannot open, is commented-out
-# code, narrates the change, or answers the prompt. REVIEW (exit 0): every
-# other added comment, for the author to justify or delete.
+# code, narrates the change, answers the prompt, or narrates the structure of
+# the code under it. REVIEW (exit 0): every other added comment, for the
+# author to justify or delete.
 #
 # Tunables: comments.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/comments.md in the dot-agent repo.
@@ -27,7 +28,9 @@ EXCLUDE_RE='(^|/)\.[^/]+/|(^|/)node_modules/|/dist/|/vendor/|\.min\.'
 EXCLUDE_RE_EXTRA=""
 BLOCK_RE_EXTRA=""
 NARRATION_RE_EXTRA=""
+CONSTRAINT_RE_EXTRA=""
 PRAGMA_RE_EXTRA=""
+ROUTINE_MAX_WORDS=8
 RESTATE_CHECK=true
 
 conf="$selfdir/comments.conf"
@@ -39,9 +42,21 @@ if [ -f "$conf" ]; then
   v=$(conf_get EXCLUDE_RE_EXTRA);   [ -n "$v" ] && EXCLUDE_RE_EXTRA="$v"
   v=$(conf_get BLOCK_RE_EXTRA);     [ -n "$v" ] && BLOCK_RE_EXTRA="$v"
   v=$(conf_get NARRATION_RE_EXTRA); [ -n "$v" ] && NARRATION_RE_EXTRA="$v"
+  v=$(conf_get CONSTRAINT_RE_EXTRA);[ -n "$v" ] && CONSTRAINT_RE_EXTRA="$v"
   v=$(conf_get PRAGMA_RE_EXTRA);    [ -n "$v" ] && PRAGMA_RE_EXTRA="$v"
+  v=$(conf_get ROUTINE_MAX_WORDS);  [ -n "$v" ] && ROUTINE_MAX_WORDS="$v"
   v=$(conf_get RESTATE_CHECK);      [ -n "$v" ] && RESTATE_CHECK="$v"
 fi
+
+# The one numeric key. It reaches awk rather than a shell arithmetic context,
+# so a bad value cannot run anything — but it would compare as a string and
+# silently change which comments block, and this gate fails closed on a conf
+# it cannot use.
+case "$ROUTINE_MAX_WORDS" in
+  "" | *[!0-9]*)
+    echo "comments.sh: ROUTINE_MAX_WORDS is not a whole number: $ROUTINE_MAX_WORDS" >&2
+    exit 2 ;;
+esac
 
 # Fail closed on a conf regex that will not compile. Every filter below is
 # followed by `|| true` to absorb a no-match exit, which is not an error.
@@ -60,10 +75,11 @@ re_require() {   # re_require <awk|grep> <key> <pattern>
   exit 2
 }
 re_require awk EXCLUDE_RE "$EXCLUDE_RE"
-[ -n "$EXCLUDE_RE_EXTRA" ]   && re_require awk EXCLUDE_RE_EXTRA "$EXCLUDE_RE_EXTRA"
-[ -n "$BLOCK_RE_EXTRA" ]     && re_require awk BLOCK_RE_EXTRA "$BLOCK_RE_EXTRA"
-[ -n "$NARRATION_RE_EXTRA" ] && re_require awk NARRATION_RE_EXTRA "$NARRATION_RE_EXTRA"
-[ -n "$PRAGMA_RE_EXTRA" ]    && re_require awk PRAGMA_RE_EXTRA "$PRAGMA_RE_EXTRA"
+[ -n "$EXCLUDE_RE_EXTRA" ]    && re_require awk EXCLUDE_RE_EXTRA "$EXCLUDE_RE_EXTRA"
+[ -n "$BLOCK_RE_EXTRA" ]      && re_require awk BLOCK_RE_EXTRA "$BLOCK_RE_EXTRA"
+[ -n "$NARRATION_RE_EXTRA" ]  && re_require awk NARRATION_RE_EXTRA "$NARRATION_RE_EXTRA"
+[ -n "$CONSTRAINT_RE_EXTRA" ] && re_require awk CONSTRAINT_RE_EXTRA "$CONSTRAINT_RE_EXTRA"
+[ -n "$PRAGMA_RE_EXTRA" ]     && re_require awk PRAGMA_RE_EXTRA "$PRAGMA_RE_EXTRA"
 
 base="${1:-$BASE_REF}"
 
@@ -156,7 +172,7 @@ block_re='git (show|log|diff|blame|bisect|merge-base|rev-parse)([^[:alnum:]]|$)|
 # the next reader, who has no before-state to compare against. The terms
 # are the ones that cannot be anything else: a comment describing what the
 # code did before is describing a version that is not in the file.
-narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed (from|to)|moved (from|to) (the|its)|changed from|as of this (change|commit|pr|version)|in this (change|commit|pr|pass|iteration)|this (change|commit|pr|patch) (adds|removes|changes|fixes|makes|introduces)|now (returns|supports|uses|handles|takes|accepts|includes|also|correctly)|instead of the (old|previous|former)|was (renamed|moved|replaced|removed|inlined)|(added|removed|replaced|updated|refactored|migrated|kept) (in|as part of|for) (this|the) (change|commit|pr|pass|task|ticket|refactor))'
+narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed (from|to)|moved (from|to) (the|its)|changed from|as of this (change|commit|pr|version)|(in|for) this (task|change|commit|pr|pass|iteration|implementation|ticket|issue)|this (task|change|commit|pr|patch|implementation) (adds|added|removes|removed|changes|changed|fixes|fixed|makes|introduces|updates|updated|supports|supported|handles|handled)|now (returns|supports|uses|handles|takes|accepts|includes|also|correctly|sets|creates|builds|loads|reads|writes)|instead of the (old|previous|former)|was (renamed|moved|replaced|removed|inlined)|(we|i) (added|changed|updated|removed|refactored|implemented|decided|considered|tried)([^[:alnum:]_]|$)|(added|removed|replaced|updated|refactored|migrated|kept) (in|as part of|for) (this|the) (change|commit|pr|pass|task|ticket|refactor))'
 [ -n "$NARRATION_RE_EXTRA" ] && narration_re="$narration_re|$NARRATION_RE_EXTRA"
 
 # A comment addressed to whoever asked for the change. The answer belongs in
@@ -164,9 +180,25 @@ narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed 
 # who never saw the question.
 echo_re='(^|[^[:alnum:]])(as (you |the user |the operator )?(requested|asked for|instructed)|as (we |you )?discussed|per (your|the user.s|the operator.s) (request|instruction|ask|comment)|you asked|per our (discussion|chat|conversation)|to answer (your|the) question)'
 
+# Structure narration: the comment that says in English what the next few
+# lines say in code — "build the rows", "loop over the items", "increment
+# the counter". It is the single most common valueless comment, and unlike a
+# restatement its words need not match any identifier, so word-matching
+# cannot find it. A verb of routine action plus an article is the shape.
+routine_re='(^|[^[:alnum:]_])((build|create|initialize|initialise|set|return|fetch|get|parse|validate|call|render|define|declare|import|export|handle|process|construct|convert|map|filter|sort|add|remove|update|check|store|save|send|start|stop|close|open|clear|reset|apply|wrap|extract|format|compute|calculate)(s|es|ed|ing)?[[:space:]]+(the|a|an|this|these|those|it|them)([^[:alnum:]_]|$)|(loop|iterate)(s|d|ing)?[[:space:]]+(over|through)[[:space:]]|(increment|decrement)(s|ed|ing)?[[:space:]])'
+
+# The escape hatch, and the reason the routine class can block at all. A
+# comment that names a cause, a constraint, or an external actor is doing the
+# job the rule asks for, whatever verb it opens with: "update the cache
+# because the vendor SDK caches credentials" is not structure narration.
+# A false positive is repaired by naming the constraint, not by an exception.
+constraint_re='because|otherwise|unless|so that|until|workaround|bug|quirk|limitation|deadlock|race|invariant|constraint|unsafe|required by|must|cannot|can.t|never|only|upstream|vendor|protocol|specification|spec |rfc|api|sdk|browser|kernel|driver|compatib|legacy|deliberate|intentional|on purpose|keep in sync'
+[ -n "$CONSTRAINT_RE_EXTRA" ] && constraint_re="$constraint_re|$CONSTRAINT_RE_EXTRA"
+
 findings=$(printf '%s\n' "$added" \
   | PRAGMA_RE="$pragma_re" BLOCK_RE="$block_re" NARRATION_RE="$narration_re" \
-    ECHO_RE="$echo_re" RESTATE_CHECK="$RESTATE_CHECK" \
+    ECHO_RE="$echo_re" ROUTINE_RE="$routine_re" CONSTRAINT_RE="$constraint_re" \
+    ROUTINE_MAX_WORDS="$ROUTINE_MAX_WORDS" RESTATE_CHECK="$RESTATE_CHECK" \
     awk '
   # A marker opens a comment only in the languages where it does: "#" in
   # shell, python and ruby but not in C-family sources, where it is a
@@ -208,9 +240,32 @@ findings=$(printf '%s\n' "$added" \
   function is_code(b) {
     if (b ~ /^[{}();][[:space:]]*$/) return 1
     if (b ~ /;[[:space:]]*$/ && b ~ /[=(){}\[\]]|::|->/) return 1
+    if (b ~ /^(if|for|while|foreach|switch)[[:space:]]*\(/) return 1
     if (b ~ /^(if|for|while|foreach|switch|return|throw|else|elif|try|catch|finally|def|class|function|func|fn|import|from|export|const|let|var|public|private|protected|internal|static|await|async|print|println|echo|require|include|using|namespace|package|struct|enum|interface|impl|match|yield|assert|raise|delete|new)[^[:alnum:]_]/ \
         && b ~ /[=(){}\[\];]/) return 1
     if (b ~ /^[[:alnum:]_.$]+\([^;]*\)[;,]?$/) return 1
+    # An assignment whose right side is a single token ending the line. Prose
+    # naming a value runs on past it ("x = the number of retries"), so the
+    # end-of-line anchor is what separates the two.
+    if (b ~ /^[[:alnum:]_$.]+[[:space:]]*=[[:space:]]*[^[:space:]=]+[[:space:]]*;?$/) return 1
+    return 0
+  }
+
+  function words_in(s,   parts) { return split(s, parts, /[[:space:]]+/) }
+
+  # Structure narration is the line that opens its comment, never a fragment
+  # carried over from the line above. A wrapped paragraph continues onto lines
+  # that can start with a routine verb and mean nothing of the kind — "stops
+  # the run." is the tail of a sentence, not a narration of the code below.
+  # The word cap already covers a long opening line; this covers the short
+  # continuation, which is the case that cap cannot see.
+  #
+  # A markup-only line does not count as an opener. `/// <summary>` above a doc
+  # comment is syntax, and the sentence under it is not continuing anything.
+  function opens_comment(i,   pb) {
+    if (i == 1 || F[i - 1] != F[i] || !C[i - 1]) return 1
+    pb = body_of(T[i - 1])
+    if (pb == "" || pb ~ /^<\/?[[:alpha:]][^>]*>$/) return 1
     return 0
   }
 
@@ -267,11 +322,14 @@ findings=$(printf '%s\n' "$added" \
     STOP = " the and any all are but for from into its not now that this" \
            " those these with when where which while you your has have had" \
            " will was were been they them their there then than out "
-    pragma_re = tolower(ENVIRON["PRAGMA_RE"])
-    block_re  = tolower(ENVIRON["BLOCK_RE"])
-    narr_re   = tolower(ENVIRON["NARRATION_RE"])
-    echo_re   = tolower(ENVIRON["ECHO_RE"])
-    restate   = (ENVIRON["RESTATE_CHECK"] != "false")
+    pragma_re  = tolower(ENVIRON["PRAGMA_RE"])
+    block_re   = tolower(ENVIRON["BLOCK_RE"])
+    narr_re    = tolower(ENVIRON["NARRATION_RE"])
+    echo_re    = tolower(ENVIRON["ECHO_RE"])
+    routine_re = tolower(ENVIRON["ROUTINE_RE"])
+    constr_re  = tolower(ENVIRON["CONSTRAINT_RE"])
+    routine_max = ENVIRON["ROUTINE_MAX_WORDS"] + 0
+    restate    = (ENVIRON["RESTATE_CHECK"] != "false")
   }
 
   # Split on the first tab only: a source line may hold tabs of its own,
@@ -298,6 +356,13 @@ findings=$(printf '%s\n' "$added" \
       else if (is_code(body)) { class = "BLOCK"; reason = "commented-out code" }
       else if (lb ~ narr_re)  { class = "BLOCK"; reason = "change narration" }
       else if (lb ~ echo_re)  { class = "BLOCK"; reason = "answers the prompt" }
+      # Routine narration blocks only while it is short. Past the word cap a
+      # comment is carrying a clause the verb alone cannot account for, so it
+      # is labeled and left to the author rather than deleted on a keyword.
+      else if (lb ~ routine_re && lb !~ constr_re && opens_comment(i)) {
+        reason = "routine narration"
+        if (words_in(body) <= routine_max) class = "BLOCK"
+      }
       else if (restate && restates(body, code_below(i))) \
                               { reason = "restates the code below" }
       printf "%s\t%s\t%s\t%s\n", class, reason, F[i], L[i]
@@ -321,8 +386,9 @@ fi
 if [ -n "$blocked" ]; then
   [ -n "$review" ] && echo
   echo "BLOCK: comments that are dead on arrival — a citation a fresh clone cannot"
-  echo "       open, code left commented out, narration of the change, or an answer"
-  echo "       to the prompt. Delete them; durable why goes to docs:"
+  echo "       open, code left commented out, narration of the change or of the"
+  echo "       structure below, or an answer to the prompt. Delete them, or state"
+  echo "       the constraint the code cannot; durable why goes to docs:"
   printf '%s\n' "$blocked" | show
   exit 1
 fi

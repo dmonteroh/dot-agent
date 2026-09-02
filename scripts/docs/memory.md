@@ -16,3 +16,5 @@ No size gate. Writes are never refused for length. `status.sh` flags outliers on
 It holds its frontmatter and the fact, and nothing else. Every other canonical file carries its own contract because there is one of it. `memory/` is the only tier with N files, where a header is paid once per fact and outweighs the fact itself. The contract lives once in `memory.md`'s header, which loads every session and is the tier's index.
 
 `memory.sh` also states the contract in its own output, where it reaches the session doing the writing instead of every later read.
+
+Before writing, search `purpose.md`, `rules/`, routed docs, relevant source, and existing facts. If one already states the knowledge, update that source or its routing and write no fact. Stable knowledge about how the system works belongs in `docs/`. `architecture.md` already routes it, so memory adds no pointer. A harness or tool defect fixed at its source creates no compensating fact.

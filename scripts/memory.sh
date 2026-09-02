@@ -211,6 +211,8 @@ EOF
   if printf -- '- [%s](memory/%s.md) — %s\n' "$title" "$slug" "$hook" >>"$memory"
   then
     echo "memory.sh: wrote $factfile and indexed it in $memory"
+    echo "memory.sh: search purpose, rules, routed docs, source, and existing facts first."
+    echo "memory.sh: if one already states this, remove the new fact and update that source or its routing."
     echo "memory.sh: one fact per file — supersede in place (rewrite the fact and the date, keep the filename), and drop it once no work here changes on it. Full contract: memory.md's header."
     exit 0
   fi

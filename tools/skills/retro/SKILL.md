@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Distills a session's lessons into durable records. Use after a user correction, a failed verification that needed a non-obvious fix, a mid-task deviation from an agreed plan, or a comment-hygiene breach reaching review — and at session close before the log entry — routing each lesson to rules/learned.md, a docs Gotchas entry, or comments.conf vocabulary. Also covers harvesting a tool-native memory silo into .agent/.
+description: Triages session corrections and failures against their canonical source before retaining durable lessons. Use after a user correction, non-obvious verification fix, agreed-plan deviation, or comment-hygiene breach, and at session close. Routes surviving lessons to rules/learned.md, a docs Gotchas entry, or comments.conf vocabulary. Also harvests a tool-native memory silo into .agent/.
 ---
 
 # Retro
@@ -24,14 +24,18 @@ Or the session is closing and a lesson may be worth keeping.
 
 - The outcome is a one-off: it goes in the session log, and no rule is written.
 - The task is the session-log entry itself — that is `log.sh`'s job, not retro's.
-- The lesson already has a `learned.md` entry — merge or broaden that entry in place (see below) rather than re-running the walkthrough.
+- The lesson already has a `learned.md` entry and its failure mode is still unenforced — merge or broaden that entry in place (see below). Remove it when code or tooling now prevents the failure.
 - No tool-native memory silo exists — don't go looking for one. The harvesting section states its own gate.
 
-## When to distill a rule
+## Find the failing source before distilling
 
-The preset's Self-learning section is part of `rules/contract.md`. When one of its retro triggers fires, ask what check or behavior would have prevented it. For a plan deviation, ask what the plan missed.
+The preset's Self-learning section is part of `rules/contract.md`. A trigger starts this check. It does not guarantee a new rule.
 
-If the answer generalizes past this one session, draft a rule. If it doesn't, the outcome belongs in the session log, not `learned.md`. A useful test: try to state the rule in one imperative sentence before writing anything down. If it only makes sense with a paragraph of backstory attached, keep asking the question until the generalizable version surfaces.
+Search the contract, routed docs, relevant source, tooling, and existing learned rules for the behavior and its cause. If one already owns it, fix that source and write no compensating rule. If this session made the behavior mechanically enforceable, remove any learned rule that only asked the agent to do the same thing. Version control keeps the incident history.
+
+Only after that source check, ask what check or behavior would have prevented the failure. For a plan deviation, ask what the plan missed.
+
+If the answer generalizes past the source fix and this session, draft a rule. Otherwise the outcome belongs in the session log. A useful test: try to state the rule in one imperative sentence before writing anything down. If it only makes sense with a paragraph of backstory attached, keep asking until the generalizable version surfaces.
 
 ## The format
 
@@ -49,7 +53,7 @@ Before adding a new entry, search `learned.md` for existing entries on the same 
 
 Behavioral rules stay in `learned.md`. Some rules are really an area-specific mechanic: a library quirk, an API gotcha, a SQL or CSS behavior. Those belong in the matching `.agent/docs/<area>.md` file instead, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer in `learned.md` for cross-area hazards.
 
-A comment-hygiene lesson routes to vocabulary, not prose. That lesson is a narrative comment or dead citation that reached review. Add its shape to `.agent/scripts/comments.conf`, so `comments.sh` catches the next one mechanically: a citation format goes to `BLOCK_RE_EXTRA`, a house narration phrasing to `NARRATION_RE_EXTRA`, a generated path the gate should skip to `EXCLUDE_RE_EXTRA`.
+A comment-hygiene lesson first routes to `comments.sh`. If the gate already catches the shape, write nothing. Otherwise add a project-specific repeatable shape to `.agent/scripts/comments.conf`, so the next occurrence is mechanical: a citation format goes to `BLOCK_RE_EXTRA`, a house narration phrasing to `NARRATION_RE_EXTRA`, a generated path the gate should skip to `EXCLUDE_RE_EXTRA`. When the gate blocked something real, the fix is `CONSTRAINT_RE_EXTRA`, not an exception.
 
 Write a `learned.md` rule for it only when no pattern can express what went wrong. This is the fix ladder in miniature. A rule that was already written and breached anyway needs a check, not a restatement.
 

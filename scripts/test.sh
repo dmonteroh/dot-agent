@@ -268,6 +268,28 @@ rc=$?
 grep -q "current" "$WORK/update4.out" && pass "update on a current node prints 'current'" || fail "update on a current node prints 'current'"
 diff -r "$WORK/current-snapshot" "$current_root/.agent" >/dev/null 2>&1 && pass "update on a current node is a no-op" || fail "update on a current node is a no-op"
 
+# A pre-release 6.2 node can be version-current while its memory header still
+# predates the canonical-source admission test. Update refreshes the contract
+# without dropping facts or waiting for another version bump.
+stale62="$WORK/current-stale-memory-header"
+cp -R "$current_root" "$stale62"
+"$stale62/.agent/scripts/memory.sh" new --slug keep --title Keep --hook "keep this hook" --fact "Keep this fact body." "$stale62" >/dev/null 2>&1
+subst "$stale62/.agent/memory.md" 's/ Before writing, search purpose.*architecture\.md already routes it\.//'
+subst "$stale62/.agent/purpose.md" 's/mode: track-all/mode: track-shared/'
+mkdir -p "$stale62/.agent.backup-v6.2"
+printf 'earlier backup\n' >"$stale62/.agent.backup-v6.2/marker"
+grep -qF 'If one already states it' "$stale62/.agent/memory.md" && fail "update: stale 6.2 fixture actually lacks the new admission test" || pass "update: stale 6.2 fixture lacks the new admission test"
+"$NODE" update "$stale62" >/dev/null 2>&1
+grep -qF 'If one already states it, update that source or its routing and write no fact.' "$stale62/.agent/memory.md" && pass "update: a version-current node refreshes a stale memory header" || fail "update: a version-current node refreshes a stale memory header"
+grep -qxF -- '- [Keep](memory/keep.md) — keep this hook' "$stale62/.agent/memory.md" && grep -qF 'Keep this fact body.' "$stale62/.agent/memory/keep.md" && pass "update: refreshing the stale memory header keeps facts and index lines" || fail "update: refreshing the stale memory header keeps facts and index lines"
+if [ -f "$stale62/.agent.backup-v6.2/marker" ] \
+  && [ -f "$stale62/.agent.backup-v6.2-shape/memory.md" ] \
+  && ! grep -qF 'If one already states it' "$stale62/.agent.backup-v6.2-shape/memory.md"; then
+  pass "update: same-version shape backup does not collide with an earlier backup"
+else
+  fail "update: same-version shape backup does not collide with an earlier backup"
+fi
+
 # ---- 8. log.sh ----
 logroot="$WORK/log-tests"
 mkdir -p "$logroot"
@@ -332,6 +354,8 @@ grep -q '<!--' "$factfile" && fail "memory.sh new: the fact file carries no head
 printf '%s\n' "$out9" | grep -qF 'supersede in place' && pass "memory.sh new: the write reminds the writer of the contract" || fail "memory.sh new: the write reminds the writer of the contract ($out9)"
 grep -qF 'fact files carry no header of their' "$memroot/.agent/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"
 grep -qF 'Keep a fact only if work in this node changes when it is' "$memroot/.agent/memory.md" && pass "memory.md's header states the retention test" || fail "memory.md's header states the retention test"
+grep -qF 'If one already states it, update that source or its routing and write no fact.' "$memroot/.agent/memory.md" && pass "memory.md's header rejects facts duplicated from canonical sources" || fail "memory.md's header rejects facts duplicated from canonical sources"
+printf '%s\n' "$out9" | grep -qF 'search purpose, rules, routed docs, source, and existing facts first' && pass "memory.sh new: the writer output repeats the source check" || fail "memory.sh new: the writer output repeats the source check ($out9)"
 
 flags9=$(status_flags "$memroot")
 [ -z "$flags9" ] && pass "memory.sh new: status.sh clean afterward" || fail "memory.sh new: status.sh clean afterward ($flags9)"
@@ -1066,13 +1090,14 @@ f33c=$(status_flags "$es")
 printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: a hand-wrapped entry is counted whole" || fail "status.sh: a hand-wrapped entry is counted whole ($f33c)"
 
 # ---- 34. comments.sh: the diff comment gate ----
-# The gate mechanizes the objective half of the comment rule: an added
-# comment citing what a fresh clone cannot open BLOCKs (exit 1). Every
-# other added comment is listed for justification (REVIEW, exit 0). The
-# shipped core carries only universal dead citations. Workflow vocabulary —
-# base ref, ticket patterns, path exclusions — is the node's, set in
-# comments.conf beside the script (KEY=value, parsed never executed) and
-# outside the update refresh list.
+# The gate BLOCKs the decidable failures (exit 1): dead citations, code left
+# commented out, narration of the change, a reply to the prompt, and short
+# narration of the structure below. Every other added comment is listed for
+# justification (REVIEW, exit 0), labeled where a heuristic has something to
+# say. Workflow vocabulary — base ref, ticket and narration patterns, the
+# constraint escape, path exclusions — is the node's, set in comments.conf
+# beside the script (KEY=value, parsed never executed) and outside the update
+# refresh list.
 cg="$WORK/comment-gate"
 mkdir -p "$cg/src" "$cg/Migrations" "$cg/.agent/scripts"
 cp "$reporoot/scripts/comments.sh" "$cg/.agent/scripts/comments.sh"
@@ -1207,6 +1232,15 @@ cat >>"$cg/src/app.ts" <<'EOF'
 // as you requested, the cap is three
 // keep in sync with the billing schema;
 const g = 7
+// Build the rows
+const rows = []
+// update the cache because the vendor SDK holds a stale handle
+cache.flush()
+// Update the cache after every write, or a reader sees the previous generation
+cache.write(rows)
+// A wrapped paragraph whose next line is a fragment, and whose fragment
+// stops the run. It is not narrating the code under it.
+const h = 8
 EOF
 git_cg add -A >/dev/null
 git_cg commit -q -m classes
@@ -1222,6 +1256,18 @@ printf '%s\n' "$block34k" | grep -qF '[answers the prompt]' && pass "comments.sh
 # class needs a code character as well as a code shape, or the gate deletes
 # real constraints under a label that says they were dead.
 printf '%s\n' "$review34k" | grep -q 'billing schema' && pass "comments.sh: prose ending in a semicolon is not commented-out code" || fail "comments.sh: prose ending in a semicolon is not commented-out code ($out34k)"
+printf '%s\n' "$block34k" | grep -qF '[routine narration]' && printf '%s\n' "$block34k" | grep -q 'Build the rows' && pass "comments.sh: short structure narration BLOCKs, named" || fail "comments.sh: short structure narration BLOCKs, named ($block34k)"
+# The two guards that keep the routine class from deleting real comments. A
+# comment naming a cause is exempt whatever verb it opens with; a long one is
+# carrying a clause the verb cannot account for, so it is labeled, not deleted.
+printf '%s\n' "$review34k" | grep -q 'because the vendor SDK' && pass "comments.sh: naming a constraint exempts a routine verb" || fail "comments.sh: naming a constraint exempts a routine verb ($out34k)"
+long34=$(printf '%s\n' "$review34k" | grep -A1 'routine narration' | grep 'Update the cache after every write')
+[ -n "$long34" ] && pass "comments.sh: routine narration past the word cap is labeled, not blocked" || fail "comments.sh: routine narration past the word cap is labeled, not blocked ($out34k)"
+# The third guard, found by running the gate over this repository: a wrapped
+# paragraph continues onto lines that can open with a routine verb and mean
+# nothing of the kind. "stops the run." is the tail of a sentence. The word
+# cap cannot see it, because the fragment is short.
+printf '%s\n' "$out34k" | grep -A1 'routine narration' | grep -q 'stops the run' && fail "comments.sh: a wrapped-comment continuation is not structure narration" || pass "comments.sh: a wrapped-comment continuation is not structure narration"
 
 # The restatement label: a comment whose every content word already appears
 # in the identifiers under it. The scan reaches past the rest of the comment
@@ -1233,14 +1279,44 @@ cat >"$cg/src/Thing.cs" <<'EOF'
 /// </summary>
 public string UserName { get; set; }
 EOF
+printf '// retry counter\nretryCounter = retryCounter + 1\n' >>"$cg/src/app.ts"
 out34l=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+block34l=$(printf '%s\n' "$out34l" | sed -n '/^BLOCK:/,$p')
 review34l=$(printf '%s\n' "$out34l" | awk '/^BLOCK:/ { exit } { print }')
-printf '%s\n' "$review34l" | grep -qF '[restates the code below]' && pass "comments.sh: a doc comment restating its signature is labeled" || fail "comments.sh: a doc comment restating its signature is labeled ($review34l)"
+# The doc comment that restates its own signature — the case the deleted
+# "public API is exempt" clause used to wave through. It reaches the routine
+# class first, which is a delete instruction rather than a justify one.
+printf '%s\n' "$block34l" | grep -q 'Gets the user name' && pass "comments.sh: a doc comment narrating its signature BLOCKs" || fail "comments.sh: a doc comment narrating its signature BLOCKs ($out34l)"
+# The restatement label covers what no verb pattern reaches: a comment whose
+# words are the identifier below it, with no routine verb anywhere.
+rest34=$(printf '%s\n' "$review34l" | grep -A1 'restates the code below' | grep 'retry counter')
+[ -n "$rest34" ] && pass "comments.sh: a comment repeating the identifier below it is labeled" || fail "comments.sh: a comment repeating the identifier below it is labeled ($review34l)"
 
 printf 'RESTATE_CHECK=false\n' >"$cg/.agent/scripts/comments.conf"
 out34m=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34m" | grep -qF '[restates the code below]' && fail "comments.sh: RESTATE_CHECK=false drops the label" || pass "comments.sh: RESTATE_CHECK=false drops the label"
-printf '%s\n' "$out34m" | grep -q 'Gets the user name' && pass "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW" || fail "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW ($out34m)"
+printf '%s\n' "$out34m" | awk '/^BLOCK:/ { exit } { print }' | grep -q 'retry counter' && pass "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW" || fail "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW ($out34m)"
+
+# The escape hatch a node reaches for when the routine class blocks something
+# real: name the constraint in its own vocabulary, rather than add an exception.
+printf 'CONSTRAINT_RE_EXTRA=payments gateway\n' >"$cg/.agent/scripts/comments.conf"
+printf 'const m0 = 0\n// Build the rows the payments gateway expects\nconst m = 12\n' >>"$cg/src/app.ts"
+out34q=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf '%s\n' "$out34q" | awk '/^BLOCK:/ { exit } { print }' | grep -q 'payments gateway' && pass "comments.sh: CONSTRAINT_RE_EXTRA rescues a real comment from the routine class" || fail "comments.sh: CONSTRAINT_RE_EXTRA rescues a real comment from the routine class ($out34q)"
+
+# The word cap is the class's other guard, and it is a per-node number.
+printf 'ROUTINE_MAX_WORDS=0\n' >"$cg/.agent/scripts/comments.conf"
+out34r=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf '%s\n' "$out34r" | sed -n '/^BLOCK:/,$p' | grep -q 'Build the rows' && fail "comments.sh: ROUTINE_MAX_WORDS=0 leaves the class a label only" || pass "comments.sh: ROUTINE_MAX_WORDS=0 leaves the class a label only"
+printf '%s\n' "$out34r" | grep -qF '[routine narration]' && pass "comments.sh: ROUTINE_MAX_WORDS=0 keeps the label" || fail "comments.sh: ROUTINE_MAX_WORDS=0 keeps the label ($out34r)"
+
+# The gate fails closed on every conf value it cannot use, numbers included:
+# a threshold that silently fell back would change which comments block.
+printf 'ROUTINE_MAX_WORDS=eight\n' >"$cg/.agent/scripts/comments.conf"
+(cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
+rc34s=$?
+[ "$rc34s" -eq 2 ] && pass "comments.sh: a non-numeric ROUTINE_MAX_WORDS fails closed" || fail "comments.sh: a non-numeric ROUTINE_MAX_WORDS fails closed (rc=$rc34s)"
+git_cg checkout -q -- src/app.ts
 
 # House narration terms are the node's, the same way ticket shapes are.
 printf 'NARRATION_RE_EXTRA=(^|[^[:alnum:]])old world\n' >"$cg/.agent/scripts/comments.conf"
@@ -1441,7 +1517,7 @@ hw38=""
 # -print0 into a file, then read with a redirect rather than a pipe: a
 # pipeline would run the loop in a subshell and lose hw38. Unquoted
 # $(find) word-split here, so a path with a space read as clean.
-(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' -print0) >"$WORK/hw-corpus"
+(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './evals/runs/*' -print0) >"$WORK/hw-corpus"
 while IFS= read -r -d '' md; do
   hit=$(cd "$reporoot" && awk -f "$hwawk" "$md")
   [ -n "$hit" ] && hw38="$hw38 $hit"
@@ -1746,11 +1822,22 @@ def41=$(sed -n 's/^ENTRYPOINT_MAX_WORDS=//p' "$reporoot/scripts/status.sh" | hea
 # timing rules are the ones a harness re-reading it per message depends on.
 tpl41f="$reporoot/templates/entry-point.md"
 missing41=""
-grep -qF "run once" "$tpl41f" || grep -qF "runs once" "$tpl41f" || grep -qF "steps run once" "$tpl41f" || missing41="$missing41 once-per-session"
+grep -qF "run once" "$tpl41f" || grep -qF "runs once" "$tpl41f" || missing41="$missing41 once-per-session"
+grep -qF "A new user message does not start a new session." "$tpl41f" || missing41="$missing41 user-turn-is-not-a-session"
+grep -qF "Do not open this file with a tool when its content is already present in your context." "$tpl41f" || missing41="$missing41 no-reopen-from-disk"
 grep -qF "compaction" "$tpl41f" || missing41="$missing41 compaction-rerun"
-grep -qF "never restate it here" "$tpl41f" || grep -qF "Never restate it here" "$tpl41f" || missing41="$missing41 wiring-only"
+grep -qF "Never restate it here" "$tpl41f" || missing41="$missing41 wiring-only"
 grep -qF "never \`HEAD\`" "$tpl41f" || missing41="$missing41 comment-gate-base"
 [ -z "$missing41" ] && pass "template: the entry point carries its timing and boundary rules" || fail "template: the entry point carries its timing and boundary rules (missing:$missing41)"
+
+# A user turn is not a session boundary, and the gate saying so must precede
+# the numbered imperative: a literal reader that meets "Execute with tools, in
+# order:" first starts the list and never reaches its exception. This is
+# structural prompt coverage. Whether a given model honors it is behavior, and
+# behavior is measured by the evals under evals/, not asserted here.
+gate41=$(grep -nF 'A new user message does not start a new session.' "$tpl41f" | cut -d: -f1)
+steps41=$(grep -nF 'Execute with tools, in order:' "$tpl41f" | cut -d: -f1)
+[ -n "$gate41" ] && [ -n "$steps41" ] && [ "$gate41" -lt "$steps41" ] && pass "template: the per-conversation gate precedes the numbered steps" || fail "template: the per-conversation gate precedes the numbered steps (gate=$gate41 steps=$steps41)"
 
 # ---- summary ----
 ran=$((PASS + FAIL))
@@ -1759,7 +1846,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=354
+EXPECTED_CHECKS=371
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

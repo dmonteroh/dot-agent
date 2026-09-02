@@ -3,7 +3,7 @@
 
 <One line: stack, key dirs, package managers.> Everything else about this project — scope, boundaries, constraints, architecture, conventions — lives in `.agent/` and loads in the steps below. Never restate it here: a fact written in two places goes stale in one, and this file is the copy no check reads.
 
-**The steps run once, at the start of a session.** Some tools re-read this file on every message. If this session has already run them, they are still in effect: do not run them again, do not re-read those files, continue the work. Do not answer, plan, or edit before they have run.
+**The whole conversation is one session, and the steps below run once in it.** A new user message does not start a new session. If earlier turns completed steps 1–5, they are still in effect: continue from that context, do not run them again, and do not re-read those files. Do not open this file with a tool when its content is already present in your context. Do not answer, plan, or edit before the steps have run.
 
 Execute with tools, in order:
 
@@ -14,7 +14,7 @@ Execute with tools, in order:
 5. Read `.agent/memory.md` — the fact index. Open the `memory/` fact files whose hooks match the task.
 6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`. Read only what the task needs.>
 
-The one re-run: after a context compaction or handoff, run steps 1–5 again. The steps ran once at session start, so a compacted session is a session operating without them. Re-route step 6 only if the work moved.
+The one re-run: after a context compaction or handoff, run steps 1–5 again. A summary is lossy by construction, so a compacted session is a session operating without them, and it is not in a position to judge what it kept. Re-route step 6 only if the work moved.
 
 Before handing back a diff, run `bash .agent/scripts/comments.sh <base-ref>` against the change's true parent — the branch base, never `HEAD`, which diffs a committed change against itself and reads nothing. Delete every comment it blocks. Justify or delete every comment it lists. Its vocabulary lives in `.agent/scripts/comments.conf`.
 

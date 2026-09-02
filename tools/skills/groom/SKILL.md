@@ -39,7 +39,7 @@ The threshold is a review trigger, not a cap. A file this size likely holds more
 
 If the file holds one fact that grew wordy, rewrite it tighter in place: same filename, refreshed date. If it holds two facts that would be superseded at different times, split it. Run `.agent/scripts/memory.sh new` for the second fact under a new slug. Then trim the original down to just the first fact. Both slugs end up indexed in `memory.md`.
 
-If the fact cannot shrink without losing detail a future session needs, move that detail to the matching `.agent/docs/` file. Cut the fact down to the decision plus a pointer.
+If the file is stable knowledge about how the system works, move it to the matching `.agent/docs/` file and remove the fact and index line. `architecture.md` already routes the doc. If it mixes that knowledge with current state, keep only the current state in memory.
 
 ## `memory.md` index over its review threshold
 
@@ -50,6 +50,8 @@ Where two lines describe the same underlying fact, consolidate into one `memory/
 ## `rules/learned.md` over its rule ceiling or word trigger
 
 The file's own header comment is the curation law. Read it before editing. Look for near-duplicate rules and fold them into one entry instead of keeping both. Grep for shared trigger words or subject matter across entries as a starting point.
+
+Then check whether the contract, routed docs, code, or tooling now owns each rule's behavior. Drop a rule whose failure mode is mechanically prevented, and fix the canonical source instead of retaining a local restatement. Version control keeps the history. A rule such as "run this script against the correct ref" expires when the script resolves that ref itself.
 
 Some entries are really an area-specific mechanic: a library, API, SQL, or CSS gotcha rather than a behavioral rule. Move each of those to the matching `.agent/docs/<area>.md` file, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer behind if it's a cross-area hazard.
 
@@ -93,6 +95,6 @@ This file is the mechanical output of `scripts/node.sh update`'s memory-split mi
 
 Read it and identify each distinct durable fact inside it. Run `.agent/scripts/memory.sh new` once per fact, with its own slug, title, and hook. Keep each body as small as the fact allows. `status.sh` flags outliers for review.
 
-A split is not a shape migration. Each fact faces the retention test on the way through. A fact that no longer changes any work here is dropped rather than carried into a new file. A tool this project stopped using and another repo's configuration are both examples. The first field split kept a fact about a skill the repo does not use. It survived two rounds of review before anyone asked what it was for.
+A split is not a shape migration. Each fact faces the retention and canonical-source tests on the way through. Drop a fact that no longer changes work here or that purpose, rules, routed docs, source, or another fact already states. A tool this project stopped using and stable architecture already present in a routed doc are both examples.
 
 Once every fact has a home, delete `memory/legacy.md`. Remove its index line from `memory.md` by hand. `memory.sh new` only appends index lines, and it doesn't remove this one.

@@ -222,7 +222,7 @@ if [[ -d "$memdir" ]]; then
   for f in "$memdir"/*.md; do
     [[ -e "$f" ]] || continue
     if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
-      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split it, or move detail to a docs/ file and keep a pointer fact"
+      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact"
     fi
   done
 fi
