@@ -548,15 +548,27 @@ The `LOAD:` line is the one always-printed measurement: the always-loaded set's 
 
 ---
 
+---
+
+## Measuring the model against an agent
+
+**This lives in the source repository and never in a node.** `evals/` is this project's own test bench, the way `scripts/test.sh` is — it is not part of the harness, it is not installed by `node.sh`, and a project adopting `.agent/` copies none of it. What lands in a node is listed under [Directory structure](#directory-structure), and that list is the whole of it.
+
+It exists because of a gap in what the suite can reach. `test.sh` checks the corpus as an artifact: the text is present, the scripts behave, the shared blocks match. Every one of those checks passes on a corpus no agent obeys. So the compliance story above — the trust contract, the load-path check — rests on behavior nothing was measuring.
+
+Each eval prompt runs **twice** under one arm variable, and the result is the delta between the arms: the corpus at the revision under test against the corpus at the revision the field ran, or one agent against another with the corpus held fixed. A single arm's pass rate cannot separate what the corpus contributed from what the model was doing anyway.
+
+The set is organized by the phase of the [trust contract](#the-trust-contract) each eval tests, not by the bug that prompted it — a set organized by bug report drifts toward whatever failed most recently, and `test.sh` asserts every phase in that table carries at least one eval. The corpus supplies most of its own graders: `comments.sh` by finding class, `status.sh` by its own flags, `links.sh` by reachability, plus tree diffs and the agent's call trace for ordering. What stays manual is what needs judgement, and it is graded blind.
+
+No eval runs in CI. A run costs model tokens, needs an agent configured against a model someone is paying for, and returns a distribution rather than a bit. What does ride CI is static: the spec's shape, a fixture build, the grader's check language driven against fixed artifacts, and the runner's refusal to guess an agent. `evals/README.md` carries the procedure.
+
+---
+
 ## Appendix: optional tooling
 
 Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check. There is no mechanical enforcement layer. The V4/V5-era Claude Code compliance hooks were removed in V6.1, because a Stop-time file-diff check cannot tell whether durable facts changed this session, and the field demoted completion-time gates in favor of the status check. See `CHANGELOG.md` for the removal rationale.
 
 **Claude Code settings:** [`tools/claude-code/`](tools/claude-code/) ships `settings-example.json` — `"autoMemoryEnabled": false` (see [Native tool memory](#native-tool-memory)) plus a permissions allowlist for `.agent/**` writes.
-
-**Behavioral evals:** [`evals/`](evals/) measures what this corpus does to an agent, which is the half `test.sh` structurally cannot reach: every check in the suite passes on a corpus no agent obeys. Each eval prompt runs twice under one arm variable — the corpus at the revision under test against the corpus at the revision the field ran, or one agent against another — both arms graded blind against one assertion checklist, and the result is the delta. The set is organized by the phase of the trust contract each eval tests, not by the bug that prompted it, and `test.sh` asserts every phase above carries at least one eval — a set organized by bug report drifts toward whatever failed most recently. The corpus supplies most of its own graders: `comments.sh` by finding class, `status.sh` by its own flags, `links.sh` by reachability, plus tree diffs and the harness's call trace for ordering. What stays manual is what needs judgment, and it is graded blind.
-
-It does not run in CI. An eval run costs model tokens and returns a distribution rather than a bit; it is an operator ceremony, run when a corpus change is supposed to change behavior. What does ride CI is static — `test.sh` validates the spec's shape, builds a fixture, and pins the rollup's fail-closed cases — so the eval set cannot rot silently between runs. `evals/README.md` carries the procedure.
 
 **Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live in the node at `.agent/skills/`, and each tool reads them through a symlink (`.claude/skills` → `.agent/skills`): one reviewable, tool-neutral location. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule. A skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
 

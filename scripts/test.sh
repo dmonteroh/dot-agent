@@ -1839,6 +1839,47 @@ gate41=$(grep -nF 'A new user message does not start a new session.' "$tpl41f" |
 steps41=$(grep -nF 'Execute with tools, in order:' "$tpl41f" | cut -d: -f1)
 [ -n "$gate41" ] && [ -n "$steps41" ] && [ "$gate41" -lt "$steps41" ] && pass "template: the per-conversation gate precedes the numbered steps" || fail "template: the per-conversation gate precedes the numbered steps (gate=$gate41 steps=$steps41)"
 
+# ---- 43. evals/ is the repo's, never a node's ----
+# The eval bench is maintainer tooling. It costs model tokens, names agents
+# and models by vendor, and carries fixtures that plant a credential and an
+# injection payload on purpose — none of which belongs in someone's project.
+# node.sh copies a fixed list, so the leak cannot happen by accident today;
+# this is what notices when that list grows a wildcard, or when a bootstrap
+# prompt starts telling an agent to copy the clone.
+evleak="$WORK/node-scope"
+mkdir -p "$evleak"
+"$NODE" init --preset software-development --mode track-all "$evleak" >/dev/null 2>&1
+leaked43=$(find "$evleak" -path '*eval*' -o -name 'spec.json' -o -name 'agents.conf' \
+  -o -name 'fixtures.sh' -o -name 'rollup.sh' -o -name 'grade.sh' 2>/dev/null)
+[ -z "$leaked43" ] && pass "evals: init puts nothing from evals/ into a node" || fail "evals: init puts nothing from evals/ into a node ($leaked43)"
+
+# The same on the path that reaches nodes already in the field.
+evleak2="$WORK/node-scope-update"
+mkdir -p "$evleak2"
+make_v6_fixture "$evleak2"
+"$NODE" update "$evleak2" >/dev/null 2>&1
+leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents.conf' \
+  -o -name 'fixtures.sh' -o -name 'rollup.sh' -o -name 'grade.sh' 2>/dev/null)
+[ -z "$leaked43b" ] && pass "evals: update puts nothing from evals/ into a node" || fail "evals: update puts nothing from evals/ into a node ($leaked43b)"
+
+# A node's scripts directory holds exactly the shipped set and nothing else.
+# The eval bench is the newest candidate for arriving there by mistake, but
+# the assertion is general: what a node receives is a closed list.
+extra43=""
+for f43 in "$evleak"/.agent/scripts/*; do
+  case "$(basename "$f43")" in
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | status.conf | log.conf | comments.conf) ;;
+  *) extra43="$extra43 $(basename "$f43")" ;;
+  esac
+done
+[ -z "$extra43" ] && pass "evals: a node's scripts/ holds exactly the shipped set" || fail "evals: a node's scripts/ holds exactly the shipped set (extra: $(printf '%s' "$extra43" | tr '\n' ' '))"
+
+# The bench says so where a reader meets it, and the operating model keeps it
+# out of the appendix that lists what a node *does* install.
+grep -qF "belongs to the dot-agent repository, not to the harness" "$reporoot/evals/README.md" && pass "evals: the bench states its own scope at the top of its README" || fail "evals: the bench states its own scope at the top of its README"
+appendix43=$(awk '/^## Appendix: optional tooling/ { f = 1 } f' "$reporoot/operating-model.md")
+printf '%s\n' "$appendix43" | grep -q 'evals/' && fail "evals: the bench is not listed as node-installable tooling" || pass "evals: the bench is not listed as node-installable tooling"
+
 # ---- 42. evals/: the eval set stays buildable and well-formed ----
 # The eval runs themselves need a model and are an operator ceremony, never
 # CI. What rides here is the static half: a spec that parses and a fixture
@@ -2002,7 +2043,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=383
+EXPECTED_CHECKS=388
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

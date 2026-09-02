@@ -1,5 +1,15 @@
 # `evals/` — measuring what the corpus does to an agent
 
+> **This directory belongs to the dot-agent repository, not to the harness.**
+> Nothing here is installed into a node, copied into a project adopting
+> `.agent/`, or refreshed by `node.sh update`. It is this project's own test
+> bench, exactly as `scripts/test.sh` is. What a node receives is the list
+> under **Directory structure** in the operating model, and `test.sh` pins
+> that a freshly created node contains none of this.
+>
+> If you are adopting `.agent/` in a project: you want `README.md` at the
+> repository root. You will never need this file.
+
 `scripts/test.sh` checks the corpus as an artifact: the text is present, the scripts behave, the shared blocks match. Every one of those checks passes on a corpus that no agent obeys. This directory covers the other half — whether a session under this corpus behaves differently from a session without it — and it is the only place in the repo where the answer comes from running an agent rather than from reading one.
 
 It is deliberately **not** in CI. `.github/workflows/ci.yml` runs `test.sh` and `shellcheck`, both deterministic and free. An eval run costs model tokens, needs API access, and returns a distribution rather than a bit. It is an operator ceremony, run when the corpus changes in a way that is supposed to change behavior — and the run is worth its cost only when something is genuinely in doubt.
