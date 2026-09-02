@@ -203,7 +203,9 @@ EOF
 - **Read when:** <hook — the same text as the doc's own "Read when:" header>
 - **Sections:** <the doc's `## ` headings, separated by " · ">
 
-Read when: is precision — skip the doc when the hook doesn't match. Sections: is recall — find the doc that holds a topic its hook never names. Refresh both when the doc changes: status.sh flags a hook that disagrees with the doc's own header, and a `## ` heading missing from Sections. A section entry may say more than its heading. It may not say less. A doc whose hook is unconditional ("ANY <area> work — check here before creating a new …") is a catalog. It loads for every task in its area, even when no hook matches. -->
+Read when: is precision — skip the doc when the hook doesn't match. Sections: is recall — find the doc that holds a topic its hook never names. Refresh both when the doc changes: status.sh flags a hook that disagrees with the doc's own header, and a `## ` heading missing from Sections. A section entry may say more than its heading. It may not say less. A doc whose hook is unconditional ("ANY <area> work — check here before creating a new …") is a catalog. It loads for every task in its area, even when no hook matches.
+
+The docs in this table are the node's design of record: a design fact, number, or open question lives in one of them, and a design change lands there. Material under `archive/` is superseded — never an entry here, never routed, and never cited as intent by a routed or always-loaded file. -->
 EOF
   fi
 

@@ -49,7 +49,7 @@ Before adding a new entry, search `learned.md` for existing entries on the same 
 
 Behavioral rules stay in `learned.md`. Some rules are really an area-specific mechanic: a library quirk, an API gotcha, a SQL or CSS behavior. Those belong in the matching `.agent/docs/<area>.md` file instead, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer in `learned.md` for cross-area hazards.
 
-A comment-hygiene lesson routes to vocabulary, not prose. That lesson is a narrative comment or dead citation that reached review. Add the citation's shape to `.agent/scripts/comments.conf`, so `comments.sh` catches the next one mechanically. For example, that shape is a ticket-number format, or a generated path the gate should skip.
+A comment-hygiene lesson routes to vocabulary, not prose. That lesson is a narrative comment or dead citation that reached review. Add its shape to `.agent/scripts/comments.conf`, so `comments.sh` catches the next one mechanically: a citation format goes to `BLOCK_RE_EXTRA`, a house narration phrasing to `NARRATION_RE_EXTRA`, a generated path the gate should skip to `EXCLUDE_RE_EXTRA`.
 
 Write a `learned.md` rule for it only when no pattern can express what went wrong. This is the fix ladder in miniature. A rule that was already written and breached anyway needs a check, not a restatement.
 

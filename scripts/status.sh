@@ -30,6 +30,7 @@ MEMORY_MAX_ENTRIES=100
 LEARNED_MAX_RULES=60
 LEARNED_MAX_WORDS=2400
 DOCS_MAX_WORDS=2000
+ENTRYPOINT_MAX_WORDS=800
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
@@ -95,6 +96,7 @@ if [[ -f "$conf" ]]; then
   conf_num LEARNED_MAX_RULES
   conf_num LEARNED_MAX_WORDS
   conf_num DOCS_MAX_WORDS
+  conf_num ENTRYPOINT_MAX_WORDS
   conf_num TAIL_LINES
   v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
 fi
@@ -181,6 +183,20 @@ if [[ "${#entrypoints[@]}" -gt 1 ]]; then
     fi
   done
 fi
+
+# GROOM: an entry point that grew past wiring. The template's body is ~350
+# words and a filled copy lands near 400, so the threshold is that with 2×
+# grace — the same grace the log entry format gets. What crosses it is never
+# more load path: it is project
+# scope, constraints, or architecture restated from purpose.md and docs/,
+# where it is loaded two steps later anyway. Paid on every message by every
+# tool that keeps this file resident, and stale in one of the two copies.
+for ep in "${entrypoints[@]-}"; do
+  [[ -n "$ep" ]] || continue
+  if [[ "$(body_words "$ep")" -gt "$ENTRYPOINT_MAX_WORDS" ]]; then
+    echo "GROOM: ${ep#"$root"/} > $ENTRYPOINT_MAX_WORDS words — an entry point is wiring only: move project scope, constraints, and architecture into purpose.md or docs/, keep the load path, and mirror the trim to every other entry point"
+  fi
+done
 
 # GROOM: grooming thresholds.
 if [[ -s "$log" ]]; then

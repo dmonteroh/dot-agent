@@ -88,6 +88,12 @@ The shared tail of the `docs/` bullet — each preset writes its own lead-in cla
 Area docs are agent-facing reference: state facts as tables or one-fact-per-line bullets and let prose carry only the *why*. Write them timeless — no change narration, no dates — and cite the file or source that pins a fact instead of restating it. Tightening or splitting a doc changes its shape, never its content — no such pass may drop a name, value, command, path, or gotcha. When a doc's headings or scope change, refresh its `architecture.md` entry — the hook and the `Sections:` list both — in the same change. `status.sh` flags either one drifting. Depth that will not fit under the doc's size trigger — long tables, full schemas, worked examples — goes to `docs/<area>/references/<name>.md`. Cite it by path from the area doc: never routed, never auto-loaded, opened only when a doc sends you there.
 ```
 
+The wrapping rule. It governs the node's markdown and the agent's own deliverables alike, so it is mechanism rather than domain:
+
+```
+- Every markdown you write is soft-wrapped: one line per paragraph, bullet, or step, and never a manual break mid-paragraph. That holds for node files and for anything you hand back — a PR description, a brief, a report. The renderer wraps; a hard wrap makes the next edit reflow the paragraph and buries the real change among moved line breaks.
+```
+
 The origin gate's full rule — the write is where the injection chain cuts, because a fact written once binds every future session of every tool:
 
 ```

@@ -138,7 +138,12 @@ when the doc changes: status.sh flags a hook that disagrees with the doc's own
 header, and a `## ` heading missing from Sections. A section entry may say more
 than its heading; it may not say less. A doc whose hook is unconditional
 ("ANY <area> work — check here before creating a new …") is a catalog: it loads
-for every task in its area, not only when a hook matches. -->
+for every task in its area, not only when a hook matches.
+
+The docs in this table are the node's design of record: a design fact, number,
+or open question lives in one of them, and a design change lands there.
+Material under `archive/` is superseded — never an entry here, never routed,
+and never cited as intent by a routed or always-loaded file. -->
 ```
 
 Two fields because they answer different questions. The hook decides whether to open the doc at all. It goes stale in the one direction that matters, since it is written when the doc is new and rarely revisited. The section list is what finds a doc whose hook never names the topic you need — and unlike the hook it is anchored to something checkable, because every `##` heading must appear in it.
@@ -154,6 +159,9 @@ Routing has a floor: every doc in the table is a doc some task will load whole. 
 | `docs/architecture.md` | every session | routing contract |
 | `docs/<area>.md`, `docs/<area>/<sub>.md` | its hook matches the task (a catalog: any task of its kind) | `Read when:` + size trigger |
 | `docs/<area>/references/*.md` | an area doc sends the session there, by path | nothing — it is depth, and depth is the point |
+| `archive/*` | never — it is outside routing | nothing points at it, and nothing cites it as intent |
+
+`archive/` is the row that has to be stated rather than inferred. The other three tiers differ in *when* they load; this one differs in kind. Groomed-out log entries and retired facts read exactly like current ones, so a routed doc that cites one for provenance turns superseded material into a live claim, and every session after it inherits the wrong intent. The routed docs are the design of record. Archive is what the design used to be, kept for people, not for routing. That is stated in `architecture.md`'s own header, where routing is read and written.
 
 It carries no `Read when:` header and gets no routing row, so `status.sh` skips it in both the `INDEX:` and `GROOM:` walks. A reference file has no size trigger, because a size trigger on it would recreate the problem it exists to solve. Cite it from the area doc in the same change that creates it, exactly as a catalog entry is written in the same change as the building block it lists. An uncited reference is unreachable, and the load path cannot see it.
 
@@ -180,26 +188,41 @@ Deciding *whether a name addresses the node at all* is the other half, and shape
 
 ### The comment gate
 
-`scripts/comments.sh` checks the comments a diff adds to source files against the contract's comment rule, run against the branch base before a diff is handed back. The software preset's Verification contract names the run, and the quality bar cites it. It splits the rule at the line judgement actually sits on:
+`scripts/comments.sh` checks the comments a diff adds to source files against the software preset's **Comments** rule, run against the change's true parent before a diff is handed back. The preset's Verification contract names the run, and the quality bar cites it. It splits the rule at the line judgement actually sits on:
 
 | Finding | Means |
 | --- | --- |
-| `BLOCK:` (exit 1) | the added comment cites an artifact a fresh clone cannot open — a commit SHA, a git command transcript, scope narration. Objectively dead: delete it, durable *why* goes to docs |
+| `BLOCK:` (exit 1) | the comment is dead on arrival, in one of four decidable ways. Delete it, and durable *why* goes to docs |
 | `REVIEW:` (exit 0) | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
-It exists because the comment rule is the contract's most-breached prose, and the split above is where the breach happens: "is this comment narrative?" is a judgement call a reviewer can wave through, while "can a fresh clone open what this cites?" is not. Like every check here it is cooperative — the agent must run it — but it checks the artifact, so it binds the diff however the comment got there.
+Every finding names its class, because "delete this" and "justify this" are different instructions and a list that mixes them gets skimmed as one. The four blocking classes:
 
-The shipped core carries only universal dead citations. Everything a team numbers its own way — the base branch, ticket and task-reference shapes, the scanned extension list, generated or vendored paths beyond the defaults — is node vocabulary in `comments.conf` beside the script. `node.sh init` seeds a starter (the AC/Q ticket shapes as example vocabulary, and the extension list written out live, so trimming either to the project is a conf edit rather than a script edit). It is node-owned from then on, under the update rule every node script and conf follows (see [Updating existing nodes](#updating-existing-nodes)). The conf is parsed as plain `KEY=value` lines — never executed, because a config the gate reads on every run is itself an injection surface, and this one cannot run code. Everything after `=` is the raw value. The `*_EXTRA` keys are EREs ORed onto the shipped defaults:
+| Class | What it catches |
+| --- | --- |
+| `dead citation` | a commit SHA, a git transcript, a ticket id, scope narration — something a fresh clone cannot open |
+| `commented-out code` | code left in a comment instead of deleted. Both a code shape and a code character are required, so a sentence that opens with "if" or ends with a semicolon is not one |
+| `change narration` | the comment written from the diff's point of view: "previously", "no longer", "now returns", "renamed from". It carries information to whoever wrote it and none to the next reader, who has no before-state |
+| `answers the prompt` | a reply to whoever asked for the change. The answer belongs in the reply, read once, not in the file, read forever by people who never saw the question |
+
+`REVIEW:` lines carry one label of their own, `restates the code below`: a comment whose every content word already appears in the identifiers under it is those identifiers, spelled out. It is a heuristic rather than a decision, so it stays in the justify-or-delete list, and `RESTATE_CHECK=false` turns it off. The scan reaches past the rest of a comment block to find that code, which is what makes it see a doc comment restating the signature it sits on.
+
+It exists because the comment rule is the contract's most-breached prose, and the split above is where the breach happens: "does this comment earn its place?" is a judgement call a reviewer can wave through, while "was this code commented out rather than deleted?" is not. Like every check here it is cooperative — the agent must run it — but it checks the artifact, so it binds the diff however the comment got there.
+
+One shape of pass is refused rather than reported. A base ref that resolves to `HEAD` over a clean tree describes an empty diff: the gate reads nothing and would exit 0, a pass that means "this run checked nothing" and reads in a transcript exactly like "the comments are clean". It is the state a session lands in by committing first and then reaching for `comments.sh HEAD`, so that case exits 2 and names the fix.
+
+The shipped core carries only universal dead citations and phrasings. Everything a team numbers or phrases its own way — the base branch, ticket and task-reference shapes, house narration terms, the scanned extension list, generated or vendored paths beyond the defaults — is node vocabulary in `comments.conf` beside the script. `node.sh init` seeds a starter (the AC/Q ticket shapes as example vocabulary, and the extension list written out live, so trimming either to the project is a conf edit rather than a script edit). It is node-owned from then on, under the update rule every node script and conf follows (see [Updating existing nodes](#updating-existing-nodes)). The conf is parsed as plain `KEY=value` lines — never executed, because a config the gate reads on every run is itself an injection surface, and this one cannot run code. Everything after `=` is the raw value. The `*_EXTRA` keys are EREs ORed onto the shipped defaults:
 
 ```
 BASE_REF=origin/dev
 EXTENSIONS=ts tsx cs py
 EXCLUDE_RE_EXTRA=/types/generated/|(^|/)Migrations/
 BLOCK_RE_EXTRA=(^|[^[:alnum:]])AC-?[0-9]|(^|[^[:alnum:]])Q[0-9]+([^[:alnum:]]|$)
+NARRATION_RE_EXTRA=(^|[^[:alnum:]])(pre-migration|old world)
 PRAGMA_RE_EXTRA=noinspection
+RESTATE_CHECK=false
 ```
 
-The vocabulary grows through retro, not by hand-tuning. When a narrative comment or dead citation reaches review anyway, the preset's Self-learning routing sends the lesson here: the citation's shape becomes a `BLOCK_RE_EXTRA` pattern the gate catches mechanically next time. A `learned.md` rule is written only for what no pattern can express. The binding routing lives in the contract because skills carry no obligations. The retro skill, where installed, expands the how. The gate is wired where sessions live. The entry point names the run before a diff is handed back, the software preset's Verification contract binds it, and the quality bar carries it as a check the verifier judges.
+The vocabulary grows through retro, not by hand-tuning. When a narrative comment or dead citation reaches review anyway, the preset's Self-learning routing sends the lesson here: the citation's shape becomes a `BLOCK_RE_EXTRA` pattern and the phrasing a `NARRATION_RE_EXTRA` one, both caught mechanically next time. A `learned.md` rule is written only for what no pattern can express. The binding routing lives in the contract because skills carry no obligations. The retro skill, where installed, expands the how. The gate is wired where sessions live. The entry point names the run before a diff is handed back, the software preset's Verification contract binds it, and the quality bar carries it as a check the verifier judges.
 
 ### The node manifest
 
@@ -367,7 +390,9 @@ The template is a file, not prose: [`templates/entry-point.md`](templates/entry-
 
 Template mechanics: a root node wired through a user-level file (`~/.claude/CLAUDE.md`) writes every path absolute — `bash ~/.agent/scripts/status.sh ~`, `~/.agent/rules/…` — because the session's working directory is the project, not `~`, and the relative paths would resolve against the project's node or nothing. The `~` argument matters: status.sh checks the node it is handed (default `.`), not the one it lives in. The status check runs first because step-skipping concentrates at the tail of numbered lists.
 
-The template also carries the one instruction that has to survive its own reading. The load steps run once, at session start, so a session that compacts is a session operating without them — after a compaction or handoff, steps 1–5 run again. That instruction lives in the entry point rather than the preset because the entry point is the file a harness keeps resident. A rule about recovering lost context is worthless in a file the compaction discarded. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
+The template also carries the two instructions that have to survive their own reading, both of them about when the steps run. The load steps run once, at session start, so a session that compacts is a session operating without them — after a compaction or handoff, steps 1–5 run again. And once is a ceiling as well as a floor: harnesses differ in how often they re-read the entry point, and some read it before every message in a session. A file that reads as a standing instruction to load context is then a standing instruction to reload it, and the bootstrap is paid per message instead of per session — a status check, the rules, purpose, the memory index, and the routed docs, none of which changed. So the template says the steps are already in effect when they have run, and names the compaction re-run as the one exception. Both instructions live in the entry point rather than the preset because the entry point is the file a harness keeps resident. A rule about recovering lost context is worthless in a file the compaction discarded, and a rule about not re-reading this file has to be in the file being re-read.
+
+The template also states its own boundary: an entry point is wiring, and the project's scope, constraints, and architecture live in `purpose.md` and `docs/`, which steps 4 and 6 open anyway. The pull the other way is constant — the entry point is the file a human edits when a tool misbehaves — and what lands there is a second copy of `purpose.md` that no check reads and no groom pass touches, paid on every message by every tool that keeps the file resident. `status.sh` puts a `GROOM:` threshold on it for the same reason the other tiers have one: the boundary held only as prose until a script measured it. Step 3 reads the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
 
 ### Subagents and parallel sessions
 
@@ -506,6 +531,7 @@ Thresholds are defaults at the top of the script:
 - memory index ~100 entries → review for stale lines
 - learned ~60 rules, or ~2,400 words under that count → merge or compress
 - an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel
+- an entry point over ~800 body words (a filled template runs near 400, with 2× grace) → project content has grown into the wiring: move it to `purpose.md` or `docs/`
 
 Projects tune them — and the probed-tools list — per node in `.agent/scripts/status.conf`, because an edit to the script itself is discarded by the next `node.sh update` while the conf survives it. The conf is plain `KEY=value`, parsed and never executed. A starter `status.conf` ships at init listing every key: the probed-tools line live, the thresholds commented at their shipped defaults. It ships because the scripts are executed rather than read, so a knob without its file on disk is a knob no one finds. `test.sh` pins the shown defaults to the script's own. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is set so a healthy node rarely sees a flag. The entry-shape trigger exists because entries hand-appended past `log.sh` escaped every check until V6.2, and every oversized one rides the printed tail into every session's context.
 

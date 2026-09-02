@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # comments.sh — the comment gate. Flags comments a diff adds to source
-# files, against the contract's comment rule. BLOCK (exit 1): the comment
-# cites what a fresh clone cannot open. REVIEW (exit 0): every other added
-# comment, for the author to justify or delete.
+# files, against the contract's comment rule. BLOCK (exit 1): the comment is
+# dead on arrival — it cites what a fresh clone cannot open, is commented-out
+# code, narrates the change, or answers the prompt. REVIEW (exit 0): every
+# other added comment, for the author to justify or delete.
 #
 # Tunables: comments.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/comments.md in the dot-agent repo.
 #
 # Usage: comments.sh [base-ref]      # default: $BASE_REF (origin/main)
+#        The change's true parent — never HEAD, which diffs a committed
+#        change against itself and passes without reading anything.
 
 set -uo pipefail
 unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
@@ -23,25 +26,29 @@ EXTENSIONS="ts tsx js jsx mjs cs java kt go rs rb py sh bash css scss less html 
 EXCLUDE_RE='(^|/)\.[^/]+/|(^|/)node_modules/|/dist/|/vendor/|\.min\.'
 EXCLUDE_RE_EXTRA=""
 BLOCK_RE_EXTRA=""
+NARRATION_RE_EXTRA=""
 PRAGMA_RE_EXTRA=""
+RESTATE_CHECK=true
 
 conf="$selfdir/comments.conf"
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1; }
 if [ -f "$conf" ]; then
-  v=$(conf_get BASE_REF);         [ -n "$v" ] && BASE_REF="$v"
-  v=$(conf_get EXTENSIONS);       [ -n "$v" ] && EXTENSIONS="$v"
-  v=$(conf_get EXCLUDE_RE);       [ -n "$v" ] && EXCLUDE_RE="$v"
-  v=$(conf_get EXCLUDE_RE_EXTRA); [ -n "$v" ] && EXCLUDE_RE_EXTRA="$v"
-  v=$(conf_get BLOCK_RE_EXTRA);   [ -n "$v" ] && BLOCK_RE_EXTRA="$v"
-  v=$(conf_get PRAGMA_RE_EXTRA);  [ -n "$v" ] && PRAGMA_RE_EXTRA="$v"
+  v=$(conf_get BASE_REF);           [ -n "$v" ] && BASE_REF="$v"
+  v=$(conf_get EXTENSIONS);         [ -n "$v" ] && EXTENSIONS="$v"
+  v=$(conf_get EXCLUDE_RE);         [ -n "$v" ] && EXCLUDE_RE="$v"
+  v=$(conf_get EXCLUDE_RE_EXTRA);   [ -n "$v" ] && EXCLUDE_RE_EXTRA="$v"
+  v=$(conf_get BLOCK_RE_EXTRA);     [ -n "$v" ] && BLOCK_RE_EXTRA="$v"
+  v=$(conf_get NARRATION_RE_EXTRA); [ -n "$v" ] && NARRATION_RE_EXTRA="$v"
+  v=$(conf_get PRAGMA_RE_EXTRA);    [ -n "$v" ] && PRAGMA_RE_EXTRA="$v"
+  v=$(conf_get RESTATE_CHECK);      [ -n "$v" ] && RESTATE_CHECK="$v"
 fi
 
 # Fail closed on a conf regex that will not compile. Every filter below is
-# followed by `|| true` to absorb grep's exit 1, which means "no match" and
-# is not an error. That same `|| true` would absorb the exit 2 a broken
-# pattern raises, and the run would report a clean diff it never read. So
-# each conf-supplied pattern is compiled here first, by the engine that
-# will consume it, and a bad one stops the run.
+# followed by `|| true` to absorb a no-match exit, which is not an error.
+# That same `|| true` would absorb the exit a broken pattern raises, and the
+# run would report a clean diff it never read. So each conf-supplied pattern
+# is compiled here first, by the engine that will consume it, and a bad one
+# stops the run.
 re_require() {   # re_require <awk|grep> <key> <pattern>
   case "$1" in
     awk)  RE_CHECK="$3" awk 'BEGIN { if ("" ~ ENVIRON["RE_CHECK"]) n = 1 }' \
@@ -53,9 +60,10 @@ re_require() {   # re_require <awk|grep> <key> <pattern>
   exit 2
 }
 re_require awk EXCLUDE_RE "$EXCLUDE_RE"
-[ -n "$EXCLUDE_RE_EXTRA" ] && re_require awk EXCLUDE_RE_EXTRA "$EXCLUDE_RE_EXTRA"
-[ -n "$BLOCK_RE_EXTRA" ]   && re_require grep BLOCK_RE_EXTRA "$BLOCK_RE_EXTRA"
-[ -n "$PRAGMA_RE_EXTRA" ]  && re_require grep PRAGMA_RE_EXTRA "$PRAGMA_RE_EXTRA"
+[ -n "$EXCLUDE_RE_EXTRA" ]   && re_require awk EXCLUDE_RE_EXTRA "$EXCLUDE_RE_EXTRA"
+[ -n "$BLOCK_RE_EXTRA" ]     && re_require awk BLOCK_RE_EXTRA "$BLOCK_RE_EXTRA"
+[ -n "$NARRATION_RE_EXTRA" ] && re_require awk NARRATION_RE_EXTRA "$NARRATION_RE_EXTRA"
+[ -n "$PRAGMA_RE_EXTRA" ]    && re_require awk PRAGMA_RE_EXTRA "$PRAGMA_RE_EXTRA"
 
 base="${1:-$BASE_REF}"
 
@@ -77,6 +85,18 @@ mb=$(git merge-base "$base" HEAD) || {
   echo "comments.sh: no merge base between '$base' and HEAD" >&2
   exit 2
 }
+
+# A base that resolves to HEAD, with nothing uncommitted, describes an empty
+# diff. The gate would read no lines and exit 0 — a pass meaning "this run
+# checked nothing", which in a transcript is indistinguishable from a pass
+# meaning "the comments are clean". It is the shape a session lands in by
+# committing first and then reaching for `comments.sh HEAD`.
+if [ "$mb" = "$(git rev-parse HEAD)" ] \
+  && git diff --quiet HEAD 2>/dev/null \
+  && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+  echo "comments.sh: '$base' resolves to HEAD and the tree is clean, so the diff is empty and this run checks nothing. Pass the change's true parent — the branch base, or the commit before the change." >&2
+  exit 2
+fi
 
 # The prefixes are forced and quoting is turned off, because the header
 # line is the only place the filename comes from. `diff.noprefix` or
@@ -122,60 +142,188 @@ added=$(printf '%s\n' "$added" \
   | EXCLUDE_RE_AWK="$exclude_re" awk -F'\t' '$1 !~ ENVIRON["EXCLUDE_RE_AWK"]' \
   || true)
 
-# Comment lines only, and a marker opens a comment only in the languages
-# where it does: "#" in shell, python and ruby but not in C-family sources,
-# where it is a preprocessor directive or a region marker. "//" runs the
-# other way round, since in shell it is a string or a syntax error. "--"
-# opens a comment only in SQL. PHP takes both "#" and "//", so it gets its
-# own branch rather than joining either one.
-#
-# A leading "*" continues a comment only inside an open /* */, and a diff
-# of added lines cannot see whether one is open: the line that opened it is
-# usually unchanged context. So the pattern is narrowed rather than tracked
-# — "*" then a space then content, minus the CSS universal selector and its
-# combinators. "*p = 5;" and "* { box-sizing: border-box; }" are code.
-comments=$(printf '%s\n' "$added" \
-  | awk -F'\t' '{
-      line = $2
-      sub(/^[[:space:]]+/, "", line)
-      star = (line ~ /^\*[[:space:]]/ && line !~ /^\*[[:space:]]*[{,+>~=]/)
-      if ($1 ~ /\.(sh|bash|py|rb)$/)      keep = (line ~ /^#/)
-      else if ($1 ~ /\.sql$/)             keep = (line ~ /^--/)
-      else if ($1 ~ /\.php$/)             keep = (line ~ /^(\/\/|\/\*|<!--)/ \
-                                                  || (line ~ /^#/ && line !~ /^#\[/) \
-                                                  || star)
-      else                                keep = (line ~ /^(\/\/|\/\*|<!--)/ || star)
-      if (line == "/**" || line == "/*" || line == "*/" || line == "*") keep = 0
-      if (keep) print $0
-    }' \
-  || true)
-
 pragma_re='eslint|prettier|stylelint|@ts-|<reference|istanbul|jest-environment|#!/|shellcheck|noqa|type: ignore|pylint|biome-ignore'
 [ -n "$PRAGMA_RE_EXTRA" ] && pragma_re="$pragma_re|$PRAGMA_RE_EXTRA"
-comments=$(printf '%s\n' "$comments" | grep -ivE "$pragma_re" || true)
 
-[ -z "$comments" ] && exit 0
-
-# The core names only universal dead citations. Workflow-specific reference
-# shapes (ticket ids, task numbers) are the node's BLOCK_RE_EXTRA.
+# Citations of what a fresh clone cannot open. The core names only the
+# universal ones. Workflow-specific reference shapes — ticket ids, task
+# numbers — are the node's BLOCK_RE_EXTRA.
 block_re='git (show|log|diff|blame|bisect|merge-base|rev-parse)([^[:alnum:]]|$)|(^|[^[:alnum:]])[0-9a-f]{8,40}([^[:alnum:]]|$)|out of scope|for this pass'
 [ -n "$BLOCK_RE_EXTRA" ] && block_re="$block_re|$BLOCK_RE_EXTRA"
 
-blocked=$(printf '%s\n' "$comments" | grep -iE "$block_re" || true)
-review=$(printf '%s\n' "$comments" | grep -ivE "$block_re" || true)
+# Change narration: a comment written from the diff's point of view rather
+# than the file's. It carries information to whoever wrote it and none to
+# the next reader, who has no before-state to compare against. The terms
+# are the ones that cannot be anything else: a comment describing what the
+# code did before is describing a version that is not in the file.
+narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed (from|to)|moved (from|to) (the|its)|changed from|as of this (change|commit|pr|version)|in this (change|commit|pr|pass|iteration)|this (change|commit|pr|patch) (adds|removes|changes|fixes|makes|introduces)|now (returns|supports|uses|handles|takes|accepts|includes|also|correctly)|instead of the (old|previous|former)|was (renamed|moved|replaced|removed|inlined)|(added|removed|replaced|updated|refactored|migrated|kept) (in|as part of|for) (this|the) (change|commit|pr|pass|task|ticket|refactor))'
+[ -n "$NARRATION_RE_EXTRA" ] && narration_re="$narration_re|$NARRATION_RE_EXTRA"
+
+# A comment addressed to whoever asked for the change. The answer belongs in
+# the reply, where it is read once; in the file it is read forever, by people
+# who never saw the question.
+echo_re='(^|[^[:alnum:]])(as (you |the user |the operator )?(requested|asked for|instructed)|as (we |you )?discussed|per (your|the user.s|the operator.s) (request|instruction|ask|comment)|you asked|per our (discussion|chat|conversation)|to answer (your|the) question)'
+
+findings=$(printf '%s\n' "$added" \
+  | PRAGMA_RE="$pragma_re" BLOCK_RE="$block_re" NARRATION_RE="$narration_re" \
+    ECHO_RE="$echo_re" RESTATE_CHECK="$RESTATE_CHECK" \
+    awk '
+  # A marker opens a comment only in the languages where it does: "#" in
+  # shell, python and ruby but not in C-family sources, where it is a
+  # preprocessor directive or a region marker. "//" runs the other way
+  # round, since in shell it is a string or a syntax error. "--" opens a
+  # comment only in SQL. PHP takes both "#" and "//", so it gets its own
+  # branch rather than joining either one.
+  #
+  # A leading "*" continues a comment only inside an open /* */, and a diff
+  # of added lines cannot see whether one is open: the line that opened it
+  # is usually unchanged context. So the pattern is narrowed rather than
+  # tracked — "*" then a space then content, minus the CSS universal
+  # selector and its combinators. "*p = 5;" and "* { box-sizing: … }" are
+  # code.
+  function is_comment(file, line,   star) {
+    if (line == "/**" || line == "/*" || line == "*/" || line == "*") return 0
+    star = (line ~ /^\*[[:space:]]/ && line !~ /^\*[[:space:]]*[{,+>~=]/)
+    if (file ~ /\.(sh|bash|py|rb)$/) return (line ~ /^#/)
+    if (file ~ /\.sql$/)             return (line ~ /^--/)
+    if (file ~ /\.php$/)             return (line ~ /^(\/\/|\/\*|<!--)/ \
+                                             || (line ~ /^#/ && line !~ /^#\[/) \
+                                             || star)
+    return (line ~ /^(\/\/|\/\*|<!--)/ || star)
+  }
+
+  # The comment without its delimiters, so every test below reads the
+  # sentence the author wrote rather than the syntax around it.
+  function body_of(line,   b) {
+    b = line
+    sub(/^(\/\/+|\/\*+|\*|<!--|#+|--)[[:space:]]*/, "", b)
+    sub(/[[:space:]]*(\*\/|-->)[[:space:]]*$/, "", b)
+    sub(/[[:space:]]+$/, "", b)
+    return b
+  }
+
+  # Code commented out rather than deleted. Every term needs both a code
+  # shape and a code character, because a sentence can open with "if" or
+  # end with a semicolon and still be prose.
+  function is_code(b) {
+    if (b ~ /^[{}();][[:space:]]*$/) return 1
+    if (b ~ /;[[:space:]]*$/ && b ~ /[=(){}\[\]]|::|->/) return 1
+    if (b ~ /^(if|for|while|foreach|switch|return|throw|else|elif|try|catch|finally|def|class|function|func|fn|import|from|export|const|let|var|public|private|protected|internal|static|await|async|print|println|echo|require|include|using|namespace|package|struct|enum|interface|impl|match|yield|assert|raise|delete|new)[^[:alnum:]_]/ \
+        && b ~ /[=(){}\[\];]/) return 1
+    if (b ~ /^[[:alnum:]_.$]+\([^;]*\)[;,]?$/) return 1
+    return 0
+  }
+
+  # camelCase and PascalCase carry the words a restating comment repeats,
+  # so an identifier is split before it is compared. gsub cannot do it —
+  # POSIX awk has no backreference in the replacement.
+  function decamel(s,   i, ch, prev, out) {
+    out = ""
+    for (i = 1; i <= length(s); i++) {
+      ch = substr(s, i, 1)
+      if (ch ~ /[A-Z]/ && prev ~ /[a-z0-9]/) out = out " "
+      out = out ch
+      prev = ch
+    }
+    return out
+  }
+
+  function stem(w) { sub(/s$/, "", w); return w }
+
+  # The next line of code under a comment, scanning past the rest of its
+  # block. A doc comment sits above its member with the block terminator in
+  # between, so stopping at the very next line would exempt exactly the
+  # doc comments that restate the signature they sit on.
+  function code_below(i,   j) {
+    for (j = i + 1; j <= n && F[j] == F[i]; j++) if (!C[j]) return T[j]
+    return ""
+  }
+
+  # A comment whose every content word already appears in the identifiers on
+  # the line below it is that line, spelled out. Two content words minimum,
+  # so "// the id" over `const id = …` is not a finding.
+  function restates(b, code,   n, i, seen, parts, cn, w) {
+    if (code == "") return 0
+    code = tolower(decamel(code))
+    gsub(/[^a-z0-9]+/, " ", code)
+    n = split(code, parts, " ")
+    if (n == 0) return 0
+    for (i = 1; i <= n; i++) seen[stem(parts[i])] = 1
+    b = tolower(b)
+    gsub(/[^a-z]+/, " ", b)
+    cn = split(b, parts, " ")
+    n = 0
+    for (i = 1; i <= cn; i++) {
+      w = parts[i]
+      if (length(w) < 3 || index(STOP, " " w " ") > 0) continue
+      if (!(stem(w) in seen)) return 0
+      n++
+    }
+    return (n >= 2)
+  }
+
+  BEGIN {
+    FS = "\t"
+    STOP = " the and any all are but for from into its not now that this" \
+           " those these with when where which while you your has have had" \
+           " will was were been they them their there then than out "
+    pragma_re = tolower(ENVIRON["PRAGMA_RE"])
+    block_re  = tolower(ENVIRON["BLOCK_RE"])
+    narr_re   = tolower(ENVIRON["NARRATION_RE"])
+    echo_re   = tolower(ENVIRON["ECHO_RE"])
+    restate   = (ENVIRON["RESTATE_CHECK"] != "false")
+  }
+
+  # Split on the first tab only: a source line may hold tabs of its own,
+  # and $2 would then stop at the first one.
+  {
+    n++
+    tab = index($0, "\t")
+    F[n] = substr($0, 1, tab - 1)
+    L[n] = substr($0, tab + 1)
+    T[n] = L[n]
+    sub(/^[[:space:]]+/, "", T[n])
+    C[n] = is_comment(F[n], T[n])
+  }
+
+  END {
+    for (i = 1; i <= n; i++) {
+      if (!C[i]) continue
+      if (tolower(T[i]) ~ pragma_re) continue
+      body = body_of(T[i])
+      if (body == "") continue
+      lb = tolower(body)
+      class = "REVIEW"; reason = ""
+      if (lb ~ block_re)      { class = "BLOCK"; reason = "dead citation" }
+      else if (is_code(body)) { class = "BLOCK"; reason = "commented-out code" }
+      else if (lb ~ narr_re)  { class = "BLOCK"; reason = "change narration" }
+      else if (lb ~ echo_re)  { class = "BLOCK"; reason = "answers the prompt" }
+      else if (restate && restates(body, code_below(i))) \
+                              { reason = "restates the code below" }
+      printf "%s\t%s\t%s\t%s\n", class, reason, F[i], L[i]
+    }
+  }' \
+  || true)
+
+[ -z "$findings" ] && exit 0
+
+show() { awk -F'\t' '{ printf "  %s%s\n    %s\n", $3, ($2 == "" ? "" : "  [" $2 "]"), $4 }'; }
+
+blocked=$(printf '%s\n' "$findings" | grep '^BLOCK	' || true)
+review=$(printf '%s\n' "$findings" | grep '^REVIEW	' || true)
 
 if [ -n "$review" ]; then
   echo "REVIEW: comments this diff adds — justify each as a non-obvious invariant,"
   echo "        constraint, or workaround, or delete it:"
-  printf '%s\n' "$review" | awk -F'\t' '{printf "  %s\n    %s\n", $1, $2}'
+  printf '%s\n' "$review" | show
 fi
 
 if [ -n "$blocked" ]; then
   [ -n "$review" ] && echo
-  echo "BLOCK: comments citing an artifact a fresh clone cannot open — a commit"
-  echo "       SHA, a git transcript, scope narration. Delete them; durable why"
-  echo "       goes to docs:"
-  printf '%s\n' "$blocked" | awk -F'\t' '{printf "  %s\n    %s\n", $1, $2}'
+  echo "BLOCK: comments that are dead on arrival — a citation a fresh clone cannot"
+  echo "       open, code left commented out, narration of the change, or an answer"
+  echo "       to the prompt. Delete them; durable why goes to docs:"
+  printf '%s\n' "$blocked" | show
   exit 1
 fi
 

@@ -37,7 +37,7 @@ Each script's status answers a question about that script's own run. The codes a
 |---|---|---|---|
 | `status.sh`, `links.sh` | ran, whatever it found | usage error — a root holding no `.agent/` | — |
 | `log.sh`, `memory.sh`, `docs.sh`, `node.sh` | wrote what was asked | refused or could not write it | — |
-| `comments.sh` | no `BLOCK:` finding | a `BLOCK:` finding | could not run — bad base ref, no merge base, an uncompilable conf regex |
+| `comments.sh` | no `BLOCK:` finding | a `BLOCK:` finding | could not run — bad base ref, no merge base, an uncompilable conf regex, or a base that describes an empty diff |
 
 `comments.sh` is the only gate, and the only script whose status reports a verdict on someone else's work rather than on its own health. That is why it alone needs a second failure code: "the answer is no" and "I could not ask the question" must not arrive as the same number, or a broken conf reads as a clean diff.
 

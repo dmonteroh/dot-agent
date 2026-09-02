@@ -1195,6 +1195,75 @@ out34i=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 rc34i=$?
 [ "$rc34i" -eq 0 ] && [ -z "$out34i" ] && pass "comments.sh: the worktree checks leave a clean diff silent" || fail "comments.sh: the worktree checks leave a clean diff silent (rc=$rc34i; $out34i)"
 
+# The three classes that joined dead citations in V6.2. Each is decidable
+# without reading the code around it, so each BLOCKs, and each names itself:
+# "delete this" and "justify this" are different instructions, and a list
+# that mixes them unlabeled gets skimmed as one.
+git_cg checkout -q base
+git_cg checkout -q -b classes
+cat >>"$cg/src/app.ts" <<'EOF'
+// const retired = 2;
+// this previously returned null
+// as you requested, the cap is three
+// keep in sync with the billing schema;
+const g = 7
+EOF
+git_cg add -A >/dev/null
+git_cg commit -q -m classes
+out34k=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34k=$?
+block34k=$(printf '%s\n' "$out34k" | sed -n '/^BLOCK:/,$p')
+review34k=$(printf '%s\n' "$out34k" | awk '/^BLOCK:/ { exit } { print }')
+[ "$rc34k" -eq 1 ] && pass "comments.sh: the added blocking classes exit 1" || fail "comments.sh: the added blocking classes exit 1 (rc=$rc34k; $out34k)"
+printf '%s\n' "$block34k" | grep -qF '[commented-out code]' && pass "comments.sh: code left in a comment BLOCKs, named" || fail "comments.sh: code left in a comment BLOCKs, named ($block34k)"
+printf '%s\n' "$block34k" | grep -qF '[change narration]' && pass "comments.sh: change narration BLOCKs, named" || fail "comments.sh: change narration BLOCKs, named ($block34k)"
+printf '%s\n' "$block34k" | grep -qF '[answers the prompt]' && pass "comments.sh: a reply to the prompt BLOCKs, named" || fail "comments.sh: a reply to the prompt BLOCKs, named ($block34k)"
+# A sentence can end in a semicolon and still be prose: the commented-out
+# class needs a code character as well as a code shape, or the gate deletes
+# real constraints under a label that says they were dead.
+printf '%s\n' "$review34k" | grep -q 'billing schema' && pass "comments.sh: prose ending in a semicolon is not commented-out code" || fail "comments.sh: prose ending in a semicolon is not commented-out code ($out34k)"
+
+# The restatement label: a comment whose every content word already appears
+# in the identifiers under it. The scan reaches past the rest of the comment
+# block, which is what lets it see a doc comment restating the signature it
+# sits on — the case a "public API is exempt" rule used to wave through.
+cat >"$cg/src/Thing.cs" <<'EOF'
+/// <summary>
+/// Gets the user name.
+/// </summary>
+public string UserName { get; set; }
+EOF
+out34l=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+review34l=$(printf '%s\n' "$out34l" | awk '/^BLOCK:/ { exit } { print }')
+printf '%s\n' "$review34l" | grep -qF '[restates the code below]' && pass "comments.sh: a doc comment restating its signature is labeled" || fail "comments.sh: a doc comment restating its signature is labeled ($review34l)"
+
+printf 'RESTATE_CHECK=false\n' >"$cg/.agent/scripts/comments.conf"
+out34m=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf '%s\n' "$out34m" | grep -qF '[restates the code below]' && fail "comments.sh: RESTATE_CHECK=false drops the label" || pass "comments.sh: RESTATE_CHECK=false drops the label"
+printf '%s\n' "$out34m" | grep -q 'Gets the user name' && pass "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW" || fail "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW ($out34m)"
+
+# House narration terms are the node's, the same way ticket shapes are.
+printf 'NARRATION_RE_EXTRA=(^|[^[:alnum:]])old world\n' >"$cg/.agent/scripts/comments.conf"
+printf '// the old world path is gone\nconst j = 9\n' >>"$cg/src/app.ts"
+out34n=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf '%s\n' "$out34n" | sed -n '/^BLOCK:/,$p' | grep -q 'old world' && pass "comments.sh: NARRATION_RE_EXTRA joins the narration class" || fail "comments.sh: NARRATION_RE_EXTRA joins the narration class ($out34n)"
+rm -f "$cg/.agent/scripts/comments.conf" "$cg/src/Thing.cs"
+git_cg checkout -q -- src/app.ts
+
+# A base resolving to HEAD over a clean tree is an empty diff. Exiting 0
+# there is a pass meaning "this run read nothing", which in a transcript is
+# indistinguishable from "the comments are clean" — and it is the state a
+# session lands in by committing first and then reaching for HEAD.
+[ -z "$(git -C "$cg" status --porcelain)" ] && pass "comments.sh: the empty-diff fixture starts clean" || fail "comments.sh: the empty-diff fixture starts clean ($(git -C "$cg" status --porcelain | tr '\n' ' '))"
+(cd "$cg" && .agent/scripts/comments.sh HEAD >/dev/null 2>&1)
+rc34o=$?
+[ "$rc34o" -eq 2 ] && pass "comments.sh: a base resolving to HEAD over a clean tree exits 2" || fail "comments.sh: a base resolving to HEAD over a clean tree exits 2 (rc=$rc34o)"
+printf '// tuned per commit cafebabecafebabe\nconst k = 10\n' >>"$cg/src/app.ts"
+(cd "$cg" && .agent/scripts/comments.sh HEAD >/dev/null 2>&1)
+rc34p=$?
+[ "$rc34p" -eq 1 ] && pass "comments.sh: HEAD with an uncommitted change is a real diff, not the empty case" || fail "comments.sh: HEAD with an uncommitted change is a real diff, not the empty case (rc=$rc34p)"
+git_cg checkout -q -- src/app.ts
+
 # install and refresh: init ships it. The update refreshes it by name and
 # never touches the node-owned local file beside it
 cgn="$WORK/comment-gate-init"
@@ -1261,7 +1330,7 @@ printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a
 mismatch36=""
 for k in LOG_MAX_ENTRIES LOG_MAX_WORDS LOG_ENTRY_MAX_WORDS MEMORY_MAX_WORDS \
          MEMORY_MAX_ENTRIES LEARNED_MAX_RULES LEARNED_MAX_WORDS \
-         DOCS_MAX_WORDS TAIL_LINES; do
+         DOCS_MAX_WORDS ENTRYPOINT_MAX_WORDS TAIL_LINES; do
   sdef=$(sed -n "s/^$k=//p" "$reporoot/scripts/status.sh" | head -n 1 | tr -d '"')
   cdef=$(sed -n "s/^# $k=//p" "$reporoot/scripts/status.conf" | head -n 1)
   [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36="$mismatch36 $k"
@@ -1278,6 +1347,19 @@ cdef=$(sed -n 's/^EXTENSIONS=//p' "$reporoot/scripts/comments.conf" | head -n 1)
 sdef=$(sed -n 's/^EXCLUDE_RE=//p' "$reporoot/scripts/comments.sh" | head -n 1 | tr -d "\"'")
 cdef=$(sed -n 's/^# EXCLUDE_RE=//p' "$reporoot/scripts/comments.conf" | head -n 1)
 [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] && pass "starter comments.conf lists the script's own exclusion default" || fail "starter comments.conf lists the script's own exclusion default (script '$sdef' vs conf '$cdef')"
+
+sdef=$(sed -n 's/^RESTATE_CHECK=//p' "$reporoot/scripts/comments.sh" | head -n 1)
+cdef=$(sed -n 's/^# RESTATE_CHECK=//p' "$reporoot/scripts/comments.conf" | head -n 1)
+[ -n "$sdef" ] && [ "$sdef" = "$cdef" ] && pass "starter comments.conf lists the script's own restatement default" || fail "starter comments.conf lists the script's own restatement default (script '$sdef' vs conf '$cdef')"
+
+# Every key the gate reads has a line in the conf beside it. The conf is
+# the only documentation a node gets — the scripts are executed, not read —
+# so a knob added to the script and not to the file is a knob nobody finds.
+missing36=""
+for k in $(sed -n 's/^  v=\$(conf_get \([A-Z_]*\)).*/\1/p' "$reporoot/scripts/comments.sh"); do
+  grep -qE "^#? ?$k=" "$reporoot/scripts/comments.conf" || missing36="$missing36 $k"
+done
+[ -z "$missing36" ] && pass "starter comments.conf lists every key the gate reads" || fail "starter comments.conf lists every key the gate reads (missing:$missing36)"
 
 mismatch36b=""
 sdef=$(sed -n 's/^SUMMARY_MAX_WORDS=//p' "$reporoot/scripts/log.sh" | head -n 1)
@@ -1629,6 +1711,47 @@ for hp_s in status log memory docs links; do
 done
 [ -z "$hp_bad" ] && pass "shipped scripts: --help prints usage on stdout at exit 0" || fail "shipped scripts: --help prints usage on stdout at exit 0 ($hp_bad)"
 
+# ---- 41. status.sh: the entry point stays wiring ----
+# An entry point is the load path and nothing else. What grows past the
+# template's size is project scope, constraints, or architecture restated
+# from purpose.md and docs/, which the load path opens two steps later
+# anyway — a second copy no check reads and no groom pass touches, paid on
+# every message by every tool that keeps the file resident. The boundary was
+# prose until this threshold measured it.
+ew="$WORK/entry-width"
+mkdir -p "$ew"
+"$NODE" init --preset software-development --mode track-all "$ew" >/dev/null 2>&1
+finish_bootstrap "$ew"
+printf '# P — Session Bootstrap\n\nRun `bash .agent/scripts/status.sh` first.\n' >"$ew/CLAUDE.md"
+status_flags "$ew" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-sized entry point does not flag" || pass "status.sh: a wiring-sized entry point does not flag"
+
+printf '\n%s\n' "$(words_n 900)" >>"$ew/CLAUDE.md"
+f41=$(status_flags "$ew")
+printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 800 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
+
+printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agent/scripts/status.conf"
+status_flags "$ew" | grep -q 'CLAUDE.md > ' && fail "status.conf: the entry-point threshold tunes per node" || pass "status.conf: the entry-point threshold tunes per node"
+
+# The threshold's stated provenance: the shipped template, filled, with 2x
+# grace. Checked both ways — a template that grew past half the threshold
+# would make the number an invention, and a threshold far above 2x would
+# stop flagging what it exists to flag.
+tpl41=$(sed -n '2,$p' "$reporoot/templates/entry-point.md" | wc -w | tr -d '[:space:]')
+def41=$(sed -n 's/^ENTRYPOINT_MAX_WORDS=//p' "$reporoot/scripts/status.sh" | head -n 1)
+[ -n "$def41" ] && [ "$def41" -ge "$((tpl41 * 2))" ] && [ "$def41" -le "$((tpl41 * 3))" ] \
+  && pass "status.sh: ENTRYPOINT_MAX_WORDS stays ~2x the shipped template" \
+  || fail "status.sh: ENTRYPOINT_MAX_WORDS stays ~2x the shipped template (template $tpl41, threshold $def41)"
+
+# The template is the only copy of the load path, and both of its
+# timing rules are the ones a harness re-reading it per message depends on.
+tpl41f="$reporoot/templates/entry-point.md"
+missing41=""
+grep -qF "run once" "$tpl41f" || grep -qF "runs once" "$tpl41f" || grep -qF "steps run once" "$tpl41f" || missing41="$missing41 once-per-session"
+grep -qF "compaction" "$tpl41f" || missing41="$missing41 compaction-rerun"
+grep -qF "never restate it here" "$tpl41f" || grep -qF "Never restate it here" "$tpl41f" || missing41="$missing41 wiring-only"
+grep -qF "never \`HEAD\`" "$tpl41f" || missing41="$missing41 comment-gate-base"
+[ -z "$missing41" ] && pass "template: the entry point carries its timing and boundary rules" || fail "template: the entry point carries its timing and boundary rules (missing:$missing41)"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -1636,7 +1759,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=334
+EXPECTED_CHECKS=354
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

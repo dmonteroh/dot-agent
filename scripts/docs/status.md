@@ -32,6 +32,7 @@ Review triggers, not caps: nothing refuses a write for size. Every number is eit
 | `LEARNED_MAX_RULES` | 60 | chosen default |
 | `LEARNED_MAX_WORDS` | 2400 | the 60-rule ceiling × the file's own ~40-word entry target, so it fires first when entries bloat past that target |
 | `DOCS_MAX_WORDS` | 2000 | chosen default |
+| `ENTRYPOINT_MAX_WORDS` | 800 | the canonical template's ~350-word body, ~400 once filled, with 2× grace |
 | `TAIL_LINES` | 25 | chosen default |
 | `PROBE_TOOLS` | `rg fd jq gh python3 curl tree` | the tools a session is expected to have |
 
@@ -55,7 +56,7 @@ An uncommented line pins the value for this node. A commented line shows the shi
 
 - **Body word counts** exclude YAML frontmatter and `<!-- -->` header comments, so fixed per-file overhead never eats the fact budget. With two comments on one line the greedy strip also drops the words between them — a slight undercount on a review trigger.
 - **Bootstrap completion** is checked because guardrails left as template placeholders, and a `## Quality bar` left inside `contract.md` instead of split into `rules/quality-bar.md`, are the two judgement steps nothing else can tell apart from a finished node. A placeholder spans several words (`<exact command(s)>`). A filled-in line's own angle brackets are single-token (`--grep <name>`), so the required space is what keeps a real command from reading as a stub.
-- **Entry-point drift** compares only files that are actually dot-agent entry points, so a hand-written `AGENTS.md` of team instructions is left alone.
+- **Entry-point drift** compares only files that are actually dot-agent entry points, so a hand-written `AGENTS.md` of team instructions is left alone. The same set carries the `ENTRYPOINT_MAX_WORDS` threshold: an entry point is wiring, and what grows past the template's size is project scope, constraints, or architecture restated from `purpose.md` and `docs/`, which the load path opens two steps later anyway. It is the copy no check reads and no groom pass touches, paid on every message by every tool that keeps the file resident.
 - **`docs/<area>/references/`** is the never-auto-loaded depth tier: no routing entry, no size trigger. Its files open only by explicit path from the area doc that cites them, so neither check applies.
 - **The `INDEX:` section check is one-directional**: a routing entry may say more than the heading — a hand-written gloss routes better than a bare title — never less.
 - **The memory index check** parses only each index line's own link, the first `[title](memory/…)`, so a hook that mentions another memory path is never counted.
