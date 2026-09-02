@@ -1,0 +1,230 @@
+{
+  "spec_version": 1,
+  "subject": {
+    "kind": "instruction-corpus",
+    "name": "dot-agent",
+    "components": [
+      "presets/software-development.md",
+      "presets/_shared.md",
+      "templates/entry-point.md",
+      "scripts/comments.sh",
+      "scripts/comments.conf",
+      "scripts/node.sh"
+    ]
+  },
+  "arms": {
+    "variable": "corpus",
+    "treatment": {
+      "name": "merged",
+      "definition": "The node is bootstrapped from the revision under test, so the session loads the merged corpus: the Comments rule, the canonical-source gate, the per-conversation entry-point gate, and the five-class comment gate."
+    },
+    "control": {
+      "name": "prerelease",
+      "definition": "The node is bootstrapped from revision 2f779b7 — the V6.2 pre-release the operator ran in the field. Same fixture, same prompt, same grader. Nothing about the session differs except which corpus node.sh wrote."
+    },
+    "alternate_variable": {
+      "variable": "agent",
+      "definition": "Corpus held at the treatment revision; the arms are two agents against the identical task set. Baseline arm named in run-config.json. Use for the bootstrap-repetition and entry-point evals, where the reported failure was agent-specific.",
+      "procedure": "cross-vendor-delegation governs the foreign-harness arm: content-not-path handoff, injection-delimited payload, bounded run, fail-closed verdict."
+    }
+  },
+  "weighting": "per-assertion",
+  "evals": [
+    {
+      "id": "comments-feature",
+      "fixture": "ts-service",
+      "prompt": "Add a retry wrapper around the outbound HTTP call in src/client.ts. Three attempts, exponential backoff. The payments vendor rate-limits at 10 rps, which is why the backoff is there at all.",
+      "expect": "A working retry wrapper whose added comments carry constraints the code cannot state, with no structure narration, no change narration, and no commented-out code.",
+      "artifacts": ["diff.patch", "session-transcript.txt"],
+      "assertions": [
+        {
+          "id": "comments-feature/gate-clean",
+          "concept": "comment-gate-clean",
+          "text": "Running comments.sh over the produced diff against the fixture base yields zero BLOCK findings.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "gate_block_count == 0"
+        },
+        {
+          "id": "comments-feature/no-structure-narration",
+          "concept": "no-structure-narration",
+          "text": "No added comment narrates the structure of the code under it (\"build the request\", \"set the headers\", \"loop over the attempts\").",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "gate_class_count routine narration == 0"
+        },
+        {
+          "id": "comments-feature/vendor-constraint-kept",
+          "concept": "constraint-comment-survives",
+          "text": "The diff carries at least one comment naming the vendor rate limit as the reason for the backoff. The rule cuts valueless comments; it must not cut this one.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "comments-feature/gate-was-run",
+          "concept": "gate-invoked",
+          "text": "The transcript shows comments.sh invoked with a base ref that is not HEAD, before the diff was handed back.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_contains comments.sh && !trace_matches 'comments\\.sh +HEAD'"
+        }
+      ]
+    },
+    {
+      "id": "comments-docstrings",
+      "fixture": "cs-api",
+      "prompt": "add a Name property and an IsActive flag to Customer",
+      "register": "off-register: terse, lowercase, no context",
+      "expect": "Two public members added with no <summary> doc comments restating their own signatures.",
+      "artifacts": ["diff.patch", "session-transcript.txt"],
+      "assertions": [
+        {
+          "id": "comments-docstrings/no-signature-restatement",
+          "concept": "doc-comment-bar",
+          "text": "No added doc comment restates the member it sits on (\"Gets the name.\" above Name).",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "gate_block_count == 0"
+        },
+        {
+          "id": "comments-docstrings/no-summary-block",
+          "concept": "doc-comment-bar",
+          "text": "The diff adds no <summary> element at all.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "diff_absent '<summary>'"
+        }
+      ]
+    },
+    {
+      "id": "learning-source-gate",
+      "fixture": "ts-service-with-doc",
+      "prompt": "You just told me the deploy runs through the internal release tool, not kubectl. That is already written down in .agent/docs/deploy.md, which the routing table sends you to for any deploy work — you did not read it. Handle that.",
+      "expect": "The routing hook or the doc is fixed so the next session reaches it. No new learned.md rule restating what the doc already says.",
+      "artifacts": ["node-diff.patch", "session-transcript.txt"],
+      "assertions": [
+        {
+          "id": "learning-source-gate/no-compensating-rule",
+          "concept": "canonical-source-gate",
+          "text": "rules/learned.md gains no entry restating what .agent/docs/deploy.md already states.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "learned_rules_added == 0"
+        },
+        {
+          "id": "learning-source-gate/source-fixed",
+          "concept": "canonical-source-gate",
+          "text": "The routing entry for deploy.md, its Read when: hook, or the doc itself was edited so the next session routes to it.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_changed docs/architecture.md || node_file_changed docs/deploy.md"
+        },
+        {
+          "id": "learning-source-gate/no-compensating-fact",
+          "concept": "memory-admission",
+          "text": "No memory/ fact file was written to carry knowledge the routed doc already holds.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "memory_files_added == 0"
+        }
+      ]
+    },
+    {
+      "id": "memory-admission",
+      "fixture": "ts-service-with-doc",
+      "prompt": "Remember that the routed docs under .agent/docs/ are the design of record and .agent/archive/ is superseded material we never cite as intent.",
+      "expect": "The agent reports that architecture.md's header already states this, and writes no fact.",
+      "artifacts": ["node-diff.patch", "session-transcript.txt"],
+      "assertions": [
+        {
+          "id": "memory-admission/no-duplicate-fact",
+          "concept": "memory-admission",
+          "text": "No memory/ fact file is created for knowledge architecture.md's header already carries.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "memory_files_added == 0"
+        },
+        {
+          "id": "memory-admission/says-where-it-lives",
+          "concept": "memory-admission",
+          "text": "The reply names the canonical source that already states it, rather than silently declining.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ]
+    },
+    {
+      "id": "entry-point-boundary",
+      "fixture": "ts-service",
+      "prompt": "Put the deploy command and our branch naming convention into the agent instructions so every session picks them up.",
+      "expect": "Both land in .agent/ — guardrails and purpose or a routed doc — and the entry point keeps its load path unchanged.",
+      "artifacts": ["node-diff.patch", "session-transcript.txt"],
+      "assertions": [
+        {
+          "id": "entry-point-boundary/entry-point-untouched",
+          "concept": "entry-point-is-wiring",
+          "text": "CLAUDE.md and AGENTS.md gain no project content: the entry point's word count is unchanged, or changed only by mirroring.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "entrypoint_words_delta <= 0"
+        },
+        {
+          "id": "entry-point-boundary/landed-in-node",
+          "concept": "entry-point-is-wiring",
+          "text": "The deploy command appears in rules/contract.md's Project guardrails, and the convention in purpose.md or a routed doc.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "entry-point-boundary/mirrors-still-identical",
+          "concept": "mirror-invariant",
+          "text": "status.sh reports no REPAIR: line for drifted entry points afterwards.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "status_flags_absent 'differs from'"
+        }
+      ]
+    },
+    {
+      "id": "bootstrap-once",
+      "fixture": "ts-service",
+      "prompt": "TURN 1: What does this project use for HTTP? || TURN 2: And what is the test command? || TURN 3: Add a timeout of 5s to the client.",
+      "expect": "One bootstrap. Turns 2 and 3 continue from loaded context without re-running status.sh or re-reading the rules.",
+      "artifacts": ["session-transcript.txt"],
+      "strictness_ladder": true,
+      "assertions": [
+        {
+          "id": "bootstrap-once/status-once",
+          "concept": "bootstrap-once",
+          "text": "status.sh is invoked exactly once across the three turns.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_count 'status.sh' == 1"
+        },
+        {
+          "id": "bootstrap-once/contract-once",
+          "concept": "bootstrap-once",
+          "text": "rules/contract.md is read at most once across the three turns.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_count 'rules/contract.md' <= 1"
+        },
+        {
+          "id": "bootstrap-once/entry-point-not-reopened",
+          "concept": "bootstrap-once",
+          "text": "The entry-point file is never opened with a read tool after the harness already supplied it.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_count 'AGENTS.md' == 0 && trace_count 'CLAUDE.md' == 0"
+        },
+        {
+          "id": "bootstrap-once/answers-are-grounded",
+          "concept": "bootstrap-still-works",
+          "text": "Turns 2 and 3 answer from loaded context correctly. Not re-reading must not become not knowing.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ]
+    }
+  ]
+}

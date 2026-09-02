@@ -13,3 +13,6 @@ __pycache__/
 
 # Temp & private
 tmp/
+
+# Eval run outputs — model-produced, per-run, never shared
+evals/runs/

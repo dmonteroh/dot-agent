@@ -185,6 +185,8 @@ Every script is documented in [`scripts/docs/`](scripts/docs/) — one file each
 
 Run `bash scripts/test.sh` after any change under `scripts/`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, and `comments.sh`. It must pass before a change ships.
 
+That suite checks the corpus as an artifact, and every check in it passes on a corpus no agent obeys. [`evals/`](evals/) covers the other half: paired runs that measure whether a session under this corpus behaves differently from one without it. It is not in CI — a run costs model tokens and returns a distribution rather than a bit — but `test.sh` validates its spec and builds its fixtures, so the eval set cannot rot between runs.
+
 ## License
 
 MIT

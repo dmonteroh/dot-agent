@@ -1839,6 +1839,94 @@ gate41=$(grep -nF 'A new user message does not start a new session.' "$tpl41f" |
 steps41=$(grep -nF 'Execute with tools, in order:' "$tpl41f" | cut -d: -f1)
 [ -n "$gate41" ] && [ -n "$steps41" ] && [ "$gate41" -lt "$steps41" ] && pass "template: the per-conversation gate precedes the numbered steps" || fail "template: the per-conversation gate precedes the numbered steps (gate=$gate41 steps=$steps41)"
 
+# ---- 42. evals/: the eval set stays buildable and well-formed ----
+# The eval runs themselves need a model and are an operator ceremony, never
+# CI. What rides here is the static half: a spec that parses and a fixture
+# that still builds. Without it the eval set rots silently between runs, and
+# the rot only surfaces when someone is mid-benchmark and paying for tokens.
+evroot="$reporoot/evals"
+if command -v python3 >/dev/null 2>&1; then
+  ev42=$(SPEC="$evroot/spec.json" FIX="$evroot/fixtures.sh" python3 - <<'PY'
+import io, json, os, re, sys
+bad = []
+spec = json.load(io.open(os.environ["SPEC"], encoding="utf-8"))
+fixtures = set(re.search(r'^FIXTURES="([^"]*)"', io.open(os.environ["FIX"], encoding="utf-8").read(), re.M).group(1).split())
+seen = set()
+for ev in spec["evals"]:
+    for field in ("id", "fixture", "prompt", "expect", "artifacts", "assertions"):
+        if not ev.get(field):
+            bad.append("%s missing %s" % (ev.get("id", "?"), field))
+    if ev.get("fixture") not in fixtures:
+        bad.append("%s names unknown fixture %r" % (ev["id"], ev.get("fixture")))
+    for a in ev.get("assertions", []):
+        for field in ("id", "concept", "text", "class", "grade"):
+            if not a.get(field):
+                bad.append("%s/%s missing %s" % (ev["id"], a.get("id", "?"), field))
+        if a.get("class") not in ("artifact", "trace"):
+            bad.append("%s class=%r" % (a.get("id"), a.get("class")))
+        if a.get("grade") not in ("auto", "manual"):
+            bad.append("%s grade=%r" % (a.get("id"), a.get("grade")))
+        if a.get("grade") == "auto" and not a.get("check"):
+            bad.append("%s is auto-graded with no check" % a.get("id"))
+        if not str(a.get("id", "")).startswith(ev["id"] + "/"):
+            bad.append("%s is not namespaced under its eval" % a.get("id"))
+        if a.get("id") in seen:
+            bad.append("duplicate assertion id %s" % a.get("id"))
+        seen.add(a.get("id"))
+for key in ("arms", "weighting"):
+    if not spec.get(key):
+        bad.append("spec missing %s" % key)
+if not spec.get("arms", {}).get("control", {}).get("definition"):
+    bad.append("spec has no control-arm definition — an undefined control is an undefined experiment")
+sys.stdout.write("; ".join(bad))
+PY
+)
+  [ -z "$ev42" ] && pass "evals: spec.json is well-formed and every assertion is joinable" || fail "evals: spec.json is well-formed and every assertion is joinable ($ev42)"
+else
+  fail "evals: spec.json is well-formed and every assertion is joinable (python3 absent)"
+fi
+
+# A fixture arriving with its own REPAIR: flags would make every eval spend
+# its session on repair rather than on the behavior under test, and the delta
+# would measure that instead. Built from the working tree on purpose: the
+# corpus under test is the one being edited, not the one last committed.
+evfx="$WORK/eval-fixture"
+"$evroot/fixtures.sh" ts-service-with-doc "$evfx" --corpus-dir "$reporoot" >/dev/null 2>&1
+if [ -d "$evfx/.agent" ]; then
+  pass "evals: a fixture builds a node from the corpus under test"
+  f42=$(status_flags "$evfx")
+  [ -z "$f42" ] && pass "evals: a freshly built fixture reports no findings" || fail "evals: a freshly built fixture reports no findings ($f42)"
+else
+  fail "evals: a fixture builds a node from the corpus under test"
+  fail "evals: a freshly built fixture reports no findings (no fixture)"
+fi
+
+# The rollup fails closed on records that cannot support a delta. An id set
+# that disagrees with its snapshot silently drops rows; an arm token inside a
+# grading record means the grader could see the condition. Either one makes
+# the number wrong rather than absent, which is the failure this suite exists
+# to catch everywhere else.
+evr="$WORK/eval-rollup"
+mkdir -p "$evr/eval-demo/r1" "$evr/eval-demo/r2"
+printf '{"r1":"treat","r2":"ctrl"}\n' >"$evr/arm-map.json"
+printf '{"treatment_arm":"treat"}\n' >"$evr/run-config.json"
+printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"},{"id":"a2","concept":"c"}]}\n' >"$evr/eval-demo/eval-snapshot.json"
+printf '{"results":[{"id":"a1","passed":true,"evidence":"q"},{"id":"a2","passed":false,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","passed":false,"evidence":"s"},{"id":"a2","passed":false,"evidence":"t"}]}\n' >"$evr/eval-demo/r2/grading.json"
+out42=$("$evroot/rollup.sh" "$evr" 2>&1)
+rc42=$?
+[ "$rc42" -eq 0 ] && printf '%s\n' "$out42" | grep -q 'discriminating' && pass "evals: rollup joins two arms and buckets by outcome" || fail "evals: rollup joins two arms and buckets by outcome (rc=$rc42; $out42)"
+
+printf '{"results":[{"id":"a1","passed":true,"evidence":"q"}]}\n' >"$evr/eval-demo/r1/grading.json"
+"$evroot/rollup.sh" "$evr" >/dev/null 2>&1
+rc42b=$?
+[ "$rc42b" -eq 2 ] && pass "evals: rollup refuses a grading record whose ids disagree with its snapshot" || fail "evals: rollup refuses a grading record whose ids disagree with its snapshot (rc=$rc42b)"
+
+printf '{"results":[{"id":"a1","passed":true,"evidence":"the treat arm did it"},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
+"$evroot/rollup.sh" "$evr" >/dev/null 2>&1
+rc42c=$?
+[ "$rc42c" -eq 2 ] && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c)"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -1846,7 +1934,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=371
+EXPECTED_CHECKS=377
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
