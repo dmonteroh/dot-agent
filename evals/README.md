@@ -16,7 +16,7 @@ It is deliberately **not** in CI. `.github/workflows/ci.yml` runs `test.sh` and 
 
 **No provider API, SDK, or API key is used anywhere in this directory.** `run.sh` drives the `claude` and `codex` CLIs directly, through whatever session you already have logged in on this machine. `--list-arms` and `--probe-agent` only ever call those same CLIs — never a provider endpoint.
 
-The one part that does ride CI is static: `test.sh` validates `spec.json`'s shape, builds fixtures, drives `grade.sh` against hand-written artifacts to pin its check language, and asserts `run.sh` refuses an unconfigured agent. That keeps the eval set and its tooling from rotting between runs without ever invoking a model.
+The one part that does ride CI is static: `test.sh` validates `spec.json`'s shape, builds fixtures, drives `grade.py` against hand-written artifacts to pin its check language, and asserts `run.sh` refuses an unconfigured agent. That keeps the eval set and its tooling from rotting between runs without ever invoking a model.
 
 ## The method
 
@@ -72,9 +72,10 @@ That leaves manual grading for what genuinely needs judgment: whether a constrai
 | --- | --- |
 | `spec.json` — 20 evals, 58 assertions | complete |
 | `fixtures.sh` — 9 fixtures at a pinned corpus revision | complete |
+| `fixture_seed.py` — the contract and routing-table edits a fixture needs after bootstrap | complete |
 | `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades | complete |
-| `grade.sh` — executes the check language, writes evidence per assertion | complete |
-| `rollup.sh` — joins arms, buckets, reports the delta | complete |
+| `grade.py` — executes the check language, writes evidence per assertion | complete |
+| `rollup.py` — joins arms, buckets, reports the delta | complete |
 
 Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters drive the operator's own logged-in CLI session, the same one you already use interactively.
 
@@ -136,14 +137,14 @@ evals/run.sh --eval routing-catalog-first --arm merged --treatment-arm merged \
 evals/run.sh --eval routing-catalog-first --arm prerelease \
   --agent claude --corpus-ref 2f779b7 --workspace "$W"
 
-evals/rollup.sh "$W/iteration-1"
+evals/rollup.py "$W/iteration-1"
 ```
 
 Each invocation builds its own fixture from the corpus revision named, drives the agent through every turn of the eval's prompt in one session, captures the artifacts, and grades the auto assertions. `--iteration <n>` selects which single `iteration-<n>` directory this invocation targets (default `1`); it never selects a repeat. Within that one iteration, `run.sh` loops `REPEATS` times itself — each repeat is a cell, with its own fixture and run id, under `iteration-<n>/eval-<id>/`. `--dry-run` does everything except drive the agent, always runs exactly one repeat, and prints every turn verbatim — the way to run an eval by hand in a session you are watching.
 
 `--treatment-arm` names the treatment arm once per workspace; it is required on the first run into a fresh `iteration-<n>` and recorded in `run-config.json`, never guessed from which arm happened to run first. Every later run into that same iteration is checked against what got recorded — treatment arm, arm variable, repeat budget, each arm's agent and corpus ref, and each participating agent's resolved binary identity, CLI version, model, and effort. Binary identity includes the resolved path, canonical path, and SHA-256 digest; the complete first line of `--version` is retained beside the parsed version. A corpus-variable comparison also holds the agent and model constant; an agent-variable comparison holds the corpus ref constant. `run.sh` refuses a drift before touching a fixture.
 
-Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json` and the comparison design in `run-config.json`, neither of which the grader opens, and `rollup.sh` greps every record for arm tokens and voids the pass if it finds one.
+Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json` and the comparison design in `run-config.json`, neither of which the grader opens, and `rollup.py` greps every record for arm tokens and voids the pass if it finds one.
 
 ## What a run leaves behind
 
@@ -178,15 +179,15 @@ Nothing about the arm reaches a path or a grading record. The run id is a hash; 
                               # records above, never transcribed
 ```
 
-`rollup.sh` cross-validates `run-config.json` against `arm-map.json` before it joins anything: `treatment_arm` must name one of the two arms found there, and `repeats_per_cell` must be a positive integer that every assertion's per-arm repeat count matches exactly. A cell with too few or too many repeats fails the rollup rather than averaging over a shortfall.
+`rollup.py` cross-validates `run-config.json` against `arm-map.json` before it joins anything: `treatment_arm` must name one of the two arms found there, and `repeats_per_cell` must be a positive integer that every assertion's per-arm repeat count matches exactly. A cell with too few or too many repeats fails the rollup rather than averaging over a shortfall.
 
-Where a run's `run-meta.json` records a duration (`duration_s`, `duration_seconds`, or `duration` — the first present), `rollup.sh` keeps the two arms' timings separate and reports each arm's mean, population standard deviation, and sample size in `rollup.json`'s `duration_s` block and in the printed table. Arms are never pooled: a cost difference that shows up in one arm and not the other is exactly what pooling would hide. Coverage is all-or-nothing: once any run in the iteration records a duration, every run in both arms must, or the rollup fails closed naming the run that is missing it — a mean built from a subset of runs would understate one arm's cost without saying so. `rollup.json` also always carries a `cost` block (`input_tokens`, `output_tokens`, `usd`), each `"unavailable"` today — token and dollar cost are not yet captured per run, and the placeholder says so in the report itself rather than omitting the field silently.
+Where a run's `run-meta.json` records a duration (`duration_s`, `duration_seconds`, or `duration` — the first present), `rollup.py` keeps the two arms' timings separate and reports each arm's mean, population standard deviation, and sample size in `rollup.json`'s `duration_s` block and in the printed table. Arms are never pooled: a cost difference that shows up in one arm and not the other is exactly what pooling would hide. Coverage is all-or-nothing: once any run in the iteration records a duration, every run in both arms must, or the rollup fails closed naming the run that is missing it — a mean built from a subset of runs would understate one arm's cost without saying so. `rollup.json` also always carries a `cost` block (`input_tokens`, `output_tokens`, `usd`), each `"unavailable"` today — token and dollar cost are not yet captured per run, and the placeholder says so in the report itself rather than omitting the field silently.
 
-`grade.sh` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status, and no `outputs/` capture or `grading.json` is retained for it at all.
+`grade.py` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status, and no `outputs/` capture or `grading.json` is retained for it at all.
 
 ## Filling in the manual assertions
 
-10 of 58 need a human. `grade.sh` writes them with `passed: null`, and `rollup.sh` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
+10 of 58 need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
 
 Grade them from `outputs/` without opening `arm-map.json`. Each needs a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. "Assertion not met" is not evidence and cannot be re-derived.
 

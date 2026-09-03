@@ -57,10 +57,10 @@ done
 ## 4. Roll it up
 
 ```
-evals/rollup.sh "$W/iteration-1"
+evals/rollup.py "$W/iteration-1"
 ```
 
-This refuses to run while any manual assertion under that iteration is still ungraded. `grade.sh` writes those `passed: null`. For each one, open `$W/iteration-1/eval-<id>/<run-id>/outputs/`, read the artifacts, and fill in `passed` and a quoted `evidence` string by hand — blind to which run is which arm. `arm-map.json` holds that mapping, and `rollup.sh` voids the pass if a grading record leaks it.
+This refuses to run while any manual assertion under that iteration is still ungraded. `grade.py` writes those `passed: null`. For each one, open `$W/iteration-1/eval-<id>/<run-id>/outputs/`, read the artifacts, and fill in `passed` and a quoted `evidence` string by hand — blind to which run is which arm. `arm-map.json` holds that mapping, and `rollup.py` voids the pass if a grading record leaks it.
 
 ## 5. Read the result
 

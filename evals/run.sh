@@ -1708,7 +1708,7 @@ EOF
 
 Drive it by hand in the fixture directory, then capture the artifacts into
 $rundir/outputs/ and run:
-  evals/grade.sh $rundir $evaldir/eval-snapshot.json
+  evals/grade.py $rundir $evaldir/eval-snapshot.json
 EOF
     ACTIVE_RUN_DIR=""
     rep=$((rep + 1))
@@ -1876,7 +1876,7 @@ with open(path, "w", encoding="utf-8") as f:
     any_void=1; rep=$((rep + 1)); continue
   fi
 
-  "$selfdir/grade.sh" "$rundir" "$evaldir/eval-snapshot.json"
+  "$selfdir/grade.py" "$rundir" "$evaldir/eval-snapshot.json"
   stage_rc=$?
   if [ "$stage_rc" -ne 0 ]; then
     mark_stage_void "$rundir" grading_failed \

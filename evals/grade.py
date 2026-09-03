@@ -1,30 +1,26 @@
-#!/usr/bin/env bash
-# evals/grade.sh — evaluates one run's auto-graded assertions against the
-# artifacts it captured, and writes grading.json with an evidence line per
-# assertion.
-#
-# It reads only the captured outputs, never the repository the run acted on,
-# so a grading pass is reproducible from the run directory alone and can be
-# re-run months later against artifacts whose source tree has moved.
-#
-# Manual assertions are written out with passed:null for a human to fill in,
-# blind. rollup.sh refuses a record that still holds one.
-#
-# Requires python3. Full documentation: evals/README.md.
-#
-# Follow-up: everything below the arg check is Python in a heredoc. Move
-# it to evals/grade.py so the grading logic gets real linting, syntax
-# checking, and import-based unit tests; keep this file as the thin bash
-# preflight.
-#
-# Usage: grade.sh <run-dir> <eval-snapshot.json>
+#!/usr/bin/env python3
+"""evals/grade.py — evaluates one run's auto-graded assertions against the
+artifacts it captured, and writes grading.json with an evidence line per
+assertion.
 
-set -u
+It reads only the captured outputs, never the repository the run acted on,
+so a grading pass is reproducible from the run directory alone and can be
+re-run months later against artifacts whose source tree has moved.
 
-case "${1:-}" in
--h | --help | "")
-  cat <<'EOF'
-Usage: grade.sh <run-dir> <eval-snapshot.json>
+Manual assertions are written out with passed:null for a human to fill in,
+blind. rollup.py refuses a record that still holds one.
+
+Full documentation: evals/README.md.
+
+Usage: grade.py <run-dir> <eval-snapshot.json>
+"""
+
+import json
+import os
+import re
+import sys
+
+USAGE = """Usage: grade.py <run-dir> <eval-snapshot.json>
 
 Reads <run-dir>/outputs/ and writes <run-dir>/grading.json.
 
@@ -41,44 +37,46 @@ Expected under outputs/, all written by run.sh:
 A missing artifact fails every assertion that needs it, with the reason
 named. It never passes one by default: a grader that scores an artifact it
 could not read is the fail-open shape this whole suite exists to refuse.
-EOF
-  exit 0 ;;
-esac
+"""
 
-rundir="$1"
-snapshot="${2:-}"
-[ -d "$rundir" ] || { echo "grade.sh: no such run directory: $rundir" >&2; exit 2; }
-[ -f "$snapshot" ] || { echo "grade.sh: no such snapshot: $snapshot" >&2; exit 2; }
-command -v python3 >/dev/null 2>&1 || { echo "grade.sh: python3 not found" >&2; exit 2; }
+# Set by main() before any primitive runs. A grading pass is one run
+# directory, so the artifact reader is module state rather than a parameter
+# threaded through every primitive.
+OUT = None
+CACHE = {}
 
-RUNDIR="$rundir" SNAPSHOT="$snapshot" python3 <<'PY'
-import json, os, re, sys
 
-rundir = os.environ["RUNDIR"]
-out = os.path.join(rundir, "outputs")
-snapshot = json.load(open(os.environ["SNAPSHOT"], encoding="utf-8"))
+def die(msg):
+    sys.stderr.write("grade.py: %s\n" % msg)
+    sys.exit(2)
+
 
 def art(name):
-    p = os.path.join(out, name)
+    p = os.path.join(OUT, name)
     if not os.path.exists(p):
         return None
-    return open(p, encoding="utf-8", errors="replace").read()
+    with open(p, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
 
-CACHE = {}
+
 def a(name):
     if name not in CACHE:
         CACHE[name] = art(name)
     return CACHE[name]
 
+
 class Missing(Exception):
     def __init__(self, name):
+        Exception.__init__(self, name)
         self.name = name
+
 
 def need(name):
     v = a(name)
     if v is None:
         raise Missing(name)
     return v
+
 
 # ---- diff readers -------------------------------------------------------
 # A patch is parsed rather than grepped so "added" means a + line and not a
@@ -111,21 +109,27 @@ def diff_files(patch):
             files[cur]["removed"].append(line[1:])
     return files
 
+
 def node_files():
     return diff_files(need("node-diff.patch"))
 
+
 def product_files():
     return diff_files(need("diff.patch"))
+
 
 def added_text(patch):
     return "\n".join(l for l in patch.splitlines()
                      if l.startswith("+") and not l.startswith("+++"))
 
+
 # ---- trace --------------------------------------------------------------
 
 class InvalidTrace(Exception):
     def __init__(self, detail):
+        Exception.__init__(self, detail)
         self.detail = detail
+
 
 def trace():
     """Return gradeable call events, rejecting malformed trace input.
@@ -173,6 +177,7 @@ def trace():
             events.append((ev["seq"], ev["text"]))
     return events
 
+
 # ---- primitives ---------------------------------------------------------
 # Each returns (bool, evidence). Evidence quotes what settled it; on a
 # failure it quotes what the agent did instead, which is what turns a red
@@ -184,10 +189,12 @@ def p_gate_block_count(op, n):
     count = len(re.findall(r"^\s{2}\S.*\[", block, re.M)) if block else 0
     return cmp_num(count, op, int(n)), "gate reported %d BLOCK finding(s)" % count
 
+
 def p_gate_class_count(cls, op, n):
     g = need("gate.txt")
     count = g.count("[%s]" % cls)
     return cmp_num(count, op, int(n)), "gate reported %d finding(s) of class %r" % (count, cls)
+
 
 def p_status_flags_absent(pattern):
     s = need("status-after.txt")
@@ -195,11 +202,13 @@ def p_status_flags_absent(pattern):
             if re.match(r"^(GROOM|REPAIR|INDEX):", l) and re.search(pattern, l)]
     return (not hits), ("no status flag matches %r" % pattern) if not hits else ("status still reports: " + hits[0][:160])
 
+
 def p_log_entries_added(op, n):
     f = node_files().get("session-log.md", {"added": []})
     entries = [l for l in f["added"] if l.startswith("- [")]
     return cmp_num(len(entries), op, int(n)), "%d log entr(y/ies) appended: %s" % (
         len(entries), (entries[0][:140] if entries else "none"))
+
 
 def p_log_entry_words(op, n):
     f = node_files().get("session-log.md", {"added": []})
@@ -213,11 +222,13 @@ def p_log_entry_words(op, n):
     w = len(body.split())
     return cmp_num(w, op, int(n)), "longest entry's summary is %d words: %s" % (w, worst[:140])
 
+
 def p_log_entry_absent(pattern):
     f = node_files().get("session-log.md", {"added": []})
     entries = [l for l in f["added"] if l.startswith("- [")]
     hits = [e for e in entries if re.search(pattern, e)]
     return (not hits), ("no appended entry matches %r" % pattern) if not hits else ("entry carries it: " + hits[0][:160])
+
 
 def p_memory_files_added(op, n):
     fs = node_files()
@@ -225,11 +236,13 @@ def p_memory_files_added(op, n):
     return cmp_num(len(new), op, int(n)), "%d memory file(s) written: %s" % (
         len(new), ", ".join(new) if new else "none")
 
+
 def p_memory_files_modified(op, n):
     fs = node_files()
     mod = [k for k in fs if k.startswith("memory/") and not fs[k]["new"]]
     return cmp_num(len(mod), op, int(n)), "%d memory file(s) modified in place: %s" % (
         len(mod), ", ".join(mod) if mod else "none")
+
 
 def _learned_delta():
     f = node_files().get("rules/learned.md", {"added": [], "removed": []})
@@ -237,20 +250,24 @@ def _learned_delta():
     rem = [l for l in f["removed"] if l.startswith("- [")]
     return add, rem
 
+
 def p_learned_rules_added(op, n):
     add, _ = _learned_delta()
     return cmp_num(len(add), op, int(n)), "%d learned rule(s) added: %s" % (
         len(add), add[0][:140] if add else "none")
+
 
 def p_learned_rules_removed(op, n):
     _, rem = _learned_delta()
     return cmp_num(len(rem), op, int(n)), "%d learned rule(s) removed: %s" % (
         len(rem), rem[0][:140] if rem else "none")
 
+
 def p_node_file_changed(path):
     fs = node_files()
     return (path in fs), ("%s was edited" % path) if path in fs else (
         "%s untouched; node changes were: %s" % (path, ", ".join(sorted(fs)) or "none"))
+
 
 def p_node_file_matches(path, pattern):
     f = node_files().get(path)
@@ -259,6 +276,7 @@ def p_node_file_matches(path, pattern):
     hits = [l for l in f["added"] if re.search(pattern, l)]
     return bool(hits), (hits[0][:160] if hits else "%s changed but no added line matches %r" % (path, pattern))
 
+
 def p_node_file_absent(path, pattern):
     f = node_files().get(path)
     if f is None:
@@ -266,15 +284,18 @@ def p_node_file_absent(path, pattern):
     hits = [l for l in f["added"] if re.search(pattern, l)]
     return (not hits), ("no added line in %s matches %r" % (path, pattern)) if not hits else hits[0][:160]
 
+
 def p_node_tree_absent(pattern):
     t = need("node-tree.txt")
     hits = [l for l in t.splitlines() if re.search(pattern, l)]
     return (not hits), ("nothing under .agent/ matches %r" % pattern) if not hits else ("found under .agent/: " + hits[0][:160])
 
+
 def p_product_files_changed(op, n):
     fs = product_files()
     return cmp_num(len(fs), op, int(n)), "%d project file(s) changed: %s" % (
         len(fs), ", ".join(sorted(fs)) if fs else "none")
+
 
 def p_product_files_added(op, n):
     fs = product_files()
@@ -282,23 +303,26 @@ def p_product_files_added(op, n):
     return cmp_num(len(new), op, int(n)), "%d project file(s) created: %s" % (
         len(new), ", ".join(sorted(new)) if new else "none")
 
+
 def p_diff_absent(s):
     txt = added_text(need("diff.patch"))
     hits = [l for l in txt.splitlines() if s in l]
     return (not hits), ("no added line contains %r" % s) if not hits else hits[0][:160]
+
 
 def p_diff_contains(s):
     txt = added_text(need("diff.patch"))
     hits = [l for l in txt.splitlines() if s in l]
     return bool(hits), (hits[0][:160] if hits else "no added line contains %r" % s)
 
+
 def p_entrypoint_words_delta(op, n):
-    fs = node_files()
     d = 0
     for k, v in diff_files(need("diff.patch")).items():
         if os.path.basename(k) in ("CLAUDE.md", "AGENTS.md", "copilot-instructions.md"):
             d += sum(len(l.split()) for l in v["added"]) - sum(len(l.split()) for l in v["removed"])
     return cmp_num(d, op, int(n)), "entry points changed by %+d words" % d
+
 
 def p_trace_count(needle, op, n):
     ev = trace()
@@ -306,15 +330,18 @@ def p_trace_count(needle, op, n):
     return cmp_num(len(hits), op, int(n)), "%d trace event(s) mention %r%s" % (
         len(hits), needle, (": " + hits[0][:120]) if hits else "")
 
+
 def p_trace_contains(needle):
     ev = trace()
     hits = [t for _, t in ev if needle in t]
     return bool(hits), (hits[0][:160] if hits else "no trace event mentions %r" % needle)
 
+
 def p_trace_matches(pattern):
     ev = trace()
     hits = [t for _, t in ev if re.search(pattern, t)]
     return bool(hits), (hits[0][:160] if hits else "no trace event matches %r" % pattern)
+
 
 def p_trace_order(first, _kw, second):
     ev = trace()
@@ -326,19 +353,23 @@ def p_trace_order(first, _kw, second):
         return False, "%r appears at seq %d but %r never appears in the trace" % (first, fi, second)
     return (fi < si), "%r at seq %d, %r at seq %d" % (first, fi, second, si)
 
+
 def p_output_matches(s):
     t = need("session-transcript.txt")
     hits = [l for l in t.splitlines() if s.lower() in l.lower()]
     return bool(hits), (hits[0][:160] if hits else "the reply never says %r" % s)
+
 
 def p_output_absent(s):
     t = need("session-transcript.txt")
     hits = [l for l in t.splitlines() if s.lower() in l.lower()]
     return (not hits), ("the reply never says %r" % s) if not hits else hits[0][:160]
 
+
 def cmp_num(got, op, want):
     return {"==": got == want, "<=": got <= want, ">=": got >= want,
             "<": got < want, ">": got > want, "!=": got != want}[op]
+
 
 PRIMS = {k[2:]: v for k, v in list(globals().items()) if k.startswith("p_")}
 
@@ -348,6 +379,7 @@ PRIMS = {k[2:]: v for k, v in list(globals().items()) if k.startswith("p_")}
 # wants to say beyond that is a judgement, and judgements are graded manual.
 
 TOKEN = re.compile(r"'([^']*)'|\"([^\"]*)\"|(\S+)")
+
 
 def eval_term(term):
     term = term.strip()
@@ -365,6 +397,7 @@ def eval_term(term):
     ok, ev = PRIMS[name](*args)
     return (not ok if neg else ok), ev
 
+
 def eval_check(expr):
     # || binds loosest, then &&. No parentheses: a check needing them is a
     # check doing too much.
@@ -376,33 +409,64 @@ def eval_check(expr):
             return ok, joiner.join(r[1] for r in results)
     return eval_term(expr)
 
-results = []
-for assertion in snapshot.get("assertions", []):
-    entry = {"id": assertion["id"], "concept": assertion.get("concept")}
-    if assertion.get("grade") != "auto":
-        entry.update({"passed": None, "evidence": None, "grade": "manual"})
+
+def grade(snapshot):
+    """Grade every assertion in one eval snapshot. Returns the result rows."""
+    results = []
+    for assertion in snapshot.get("assertions", []):
+        entry = {"id": assertion["id"], "concept": assertion.get("concept")}
+        if assertion.get("grade") != "auto":
+            entry.update({"passed": None, "evidence": None, "grade": "manual"})
+            results.append(entry)
+            continue
+        try:
+            ok, ev = eval_check(assertion["check"])
+            entry.update({"passed": bool(ok), "evidence": ev, "grade": "auto"})
+        except Missing as m:
+            entry.update({"passed": False, "grade": "auto",
+                          "evidence": "artifact %s was not captured, so this could not be judged" % m.name})
+        except Exception as exc:
+            entry.update({"passed": False, "grade": "auto",
+                          "evidence": "check could not be evaluated: %s" % exc})
         results.append(entry)
-        continue
+    return results
+
+
+def main(argv):
+    global OUT
+    if not argv or argv[0] in ("-h", "--help"):
+        sys.stdout.write(USAGE)
+        return 0
+    rundir = argv[0]
+    snapshot_path = argv[1] if len(argv) > 1 else ""
+    if not os.path.isdir(rundir):
+        die("no such run directory: %s" % rundir)
+    if not os.path.isfile(snapshot_path):
+        die("no such snapshot: %s" % snapshot_path)
+
+    OUT = os.path.join(rundir, "outputs")
+    CACHE.clear()
     try:
-        ok, ev = eval_check(assertion["check"])
-        entry.update({"passed": bool(ok), "evidence": ev, "grade": "auto"})
-    except Missing as m:
-        entry.update({"passed": False, "grade": "auto",
-                      "evidence": "artifact %s was not captured, so this could not be judged" % m.name})
-    except Exception as exc:
-        entry.update({"passed": False, "grade": "auto",
-                      "evidence": "check could not be evaluated: %s" % exc})
-    results.append(entry)
+        with open(snapshot_path, encoding="utf-8") as fh:
+            snapshot = json.load(fh)
+    except (OSError, ValueError) as exc:
+        die("cannot read %s: %s" % (snapshot_path, exc))
 
-path = os.path.join(rundir, "grading.json")
-with open(path, "w", encoding="utf-8") as fh:
-    json.dump({"results": results}, fh, indent=2, sort_keys=True)
-    fh.write("\n")
+    results = grade(snapshot)
 
-auto = [r for r in results if r["grade"] == "auto"]
-manual = [r for r in results if r["grade"] == "manual"]
-print("graded %d auto (%d passed), %d awaiting manual judgement -> %s"
-      % (len(auto), sum(1 for r in auto if r["passed"]), len(manual), path))
-for r in manual:
-    print("  MANUAL  %s" % r["id"])
-PY
+    path = os.path.join(rundir, "grading.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"results": results}, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+    auto = [r for r in results if r["grade"] == "auto"]
+    manual = [r for r in results if r["grade"] == "manual"]
+    print("graded %d auto (%d passed), %d awaiting manual judgement -> %s"
+          % (len(auto), sum(1 for r in auto if r["passed"]), len(manual), path))
+    for r in manual:
+        print("  MANUAL  %s" % r["id"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

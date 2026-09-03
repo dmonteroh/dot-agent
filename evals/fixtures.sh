@@ -156,25 +156,7 @@ awk '/^## Quality bar/ { q = 1 } q && /^## / && !/^## Quality bar/ { q = 0 } q' 
   "$contract" >"$dest/.agent/rules/quality-bar.md"
 mv "$contract.body" "$contract"
 
-python3 - "$contract" <<'PY'
-import io, re, sys
-p = sys.argv[1]
-t = io.open(p, encoding="utf-8").read()
-filled = {
-    "Areas and package managers": "service `src/` — npm only",
-    "Catalogs": "none yet",
-    "Build": "`npm run build`",
-    "Test": "`npm test`",
-    "Lint / typecheck": "`npm run lint`",
-    "Generated files": "none",
-    "Doc comments": "no surface requires them; the Comments rule applies with no exemption",
-    "Project constraints": "no new runtime dependencies without asking",
-}
-def sub(m):
-    return "- %s: %s" % (m.group(1), filled.get(m.group(1), "n/a"))
-t = re.sub(r"^- ([A-Za-z][^:]*): <[^>]*>$", sub, t, flags=re.M)
-io.open(p, "w", encoding="utf-8").write(t)
-PY
+"$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
 
 sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
     -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
@@ -200,13 +182,8 @@ if [ "$fixture" = "ts-service-with-doc" ]; then
 | Release path | the internal release tool, never raw kubectl |
 | Trigger | a tag on `main` |
 EOF
-  python3 - "$dest/.agent/docs/architecture.md" <<'PY'
-import io, sys
-p = sys.argv[1]
-t = io.open(p, encoding="utf-8").read()
-t = t.replace("- **Sections:**\n", "- **Sections:** Release\n", 1)
-io.open(p, "w", encoding="utf-8").write(t)
-PY
+  "$selfdir/fixture_seed.py" route-sections \
+    "$dest/.agent/docs/architecture.md" "Release" || exit 1
 fi
 
 cat >"$dest/.agent/purpose.md.tmp" <<'EOF'
@@ -245,13 +222,8 @@ ts-service-catalog)
 
 Extend `httpClient` with a new method. A second client duplicates the retry ladder and drifts from it.
 EOF
-  python3 - "$dest/.agent/docs/architecture.md" <<'PY'
-import io, sys
-p = sys.argv[1]
-t = io.open(p, encoding="utf-8").read()
-t = t.replace("- **Sections:**\n", "- **Sections:** Building blocks \u00b7 Adding one\n", 1)
-io.open(p, "w", encoding="utf-8").write(t)
-PY
+  "$selfdir/fixture_seed.py" route-sections \
+    "$dest/.agent/docs/architecture.md" "Building blocks · Adding one" || exit 1
   cat >"$dest/src/http.ts" <<'EOF'
 export async function httpClient(path: string, body: unknown): Promise<Response> {
   return fetch(`https://vendor.example${path}`, {
