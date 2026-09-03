@@ -3252,30 +3252,160 @@ printf '%s\n' "$trace_legacy" | grep -q '^True|True|' && pass "evals: valid lega
 # the number wrong rather than absent, which is the failure this suite exists
 # to catch everywhere else.
 evr="$WORK/eval-rollup"
-mkdir -p "$evr/eval-demo/r1" "$evr/eval-demo/r2"
-printf '{"r1":"treat","r2":"ctrl"}\n' >"$evr/arm-map.json"
-printf '{"treatment_arm":"treat"}\n' >"$evr/run-config.json"
+mkdir -p "$evr/eval-demo/r1" "$evr/eval-demo/r2" "$evr/eval-demo/r3" "$evr/eval-demo/r4"
+printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr/arm-map.json"
+printf '{"treatment_arm":"treat","repeats_per_cell":2}\n' >"$evr/run-config.json"
 printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"},{"id":"a2","concept":"c"}]}\n' >"$evr/eval-demo/eval-snapshot.json"
 printf '{"results":[{"id":"a1","passed":true,"evidence":"q"},{"id":"a2","passed":false,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
 printf '{"results":[{"id":"a1","passed":false,"evidence":"s"},{"id":"a2","passed":false,"evidence":"t"}]}\n' >"$evr/eval-demo/r2/grading.json"
+printf '{"results":[{"id":"a1","passed":true,"evidence":"u"},{"id":"a2","passed":false,"evidence":"v"}]}\n' >"$evr/eval-demo/r3/grading.json"
+printf '{"results":[{"id":"a1","passed":false,"evidence":"w"},{"id":"a2","passed":false,"evidence":"x"}]}\n' >"$evr/eval-demo/r4/grading.json"
+printf '{"duration_seconds":1}\n' >"$evr/eval-demo/r1/run-meta.json"
+printf '{"duration_seconds":2}\n' >"$evr/eval-demo/r2/run-meta.json"
+printf '{"duration_seconds":5}\n' >"$evr/eval-demo/r3/run-meta.json"
+printf '{"duration_seconds":6}\n' >"$evr/eval-demo/r4/run-meta.json"
 out42=$("$evroot/rollup.sh" "$evr" 2>&1)
 rc42=$?
 [ "$rc42" -eq 0 ] && printf '%s\n' "$out42" | grep -q 'discriminating' && pass "evals: rollup joins two arms and buckets by outcome" || fail "evals: rollup joins two arms and buckets by outcome (rc=$rc42; $out42)"
 
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["duration_s"]; sys.exit(0 if d == {"treat":{"mean":3.0,"population_stddev":2.0,"sample_size":2},"ctrl":{"mean":4.0,"population_stddev":2.0,"sample_size":2}} else 1)' "$evr/rollup.json"
+rc42duration=$?
+[ "$rc42duration" -eq 0 ] && pass "evals: rollup reports duration mean and population standard deviation separately per arm" || fail "evals: rollup reports duration mean and population standard deviation separately per arm"
+
+python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["cost"]; sys.exit(0 if c == {"input_tokens":"unavailable","output_tokens":"unavailable","usd":"unavailable"} else 1)' "$evr/rollup.json"
+rc42cost=$?
+[ "$rc42cost" -eq 0 ] && pass "evals: rollup explicitly marks unrecorded token and USD costs unavailable" || fail "evals: rollup explicitly marks unrecorded token and USD costs unavailable"
+
+mv "$evr/run-config.json" "$evr/run-config.saved"
+out42missing=$("$evroot/rollup.sh" "$evr" 2>&1); rc42missing=$?
+mv "$evr/run-config.saved" "$evr/run-config.json"
+[ "$rc42missing" -eq 2 ] && printf '%s\n' "$out42missing" | grep -q 'cannot read .*run-config.json' && pass "evals: rollup refuses a missing run-config.json" || fail "evals: rollup refuses a missing run-config.json (rc=$rc42missing; $out42missing)"
+
+printf '{"treatment_arm":"missing","repeats_per_cell":2}\n' >"$evr/run-config.json"
+out42treatment=$("$evroot/rollup.sh" "$evr" 2>&1); rc42treatment=$?
+printf '{"treatment_arm":"treat","repeats_per_cell":2}\n' >"$evr/run-config.json"
+[ "$rc42treatment" -eq 2 ] && printf '%s\n' "$out42treatment" | grep -q 'treatment_arm .* is not an arm' && pass "evals: rollup refuses a treatment_arm absent from arm-map.json" || fail "evals: rollup refuses a treatment_arm absent from arm-map.json (rc=$rc42treatment; $out42treatment)"
+
+printf '{"treatment_arm":"treat","repeats_per_cell":0}\n' >"$evr/run-config.json"
+out42zero=$("$evroot/rollup.sh" "$evr" 2>&1); rc42zero=$?
+printf '{"treatment_arm":"treat","repeats_per_cell":2}\n' >"$evr/run-config.json"
+[ "$rc42zero" -eq 2 ] && printf '%s\n' "$out42zero" | grep -q 'repeats_per_cell must be a positive integer' && pass "evals: rollup refuses zero repeats_per_cell" || fail "evals: rollup refuses zero repeats_per_cell (rc=$rc42zero; $out42zero)"
+
+mv "$evr/eval-demo/r3/grading.json" "$evr/eval-demo/r3/grading.saved"
+out42shortt=$("$evroot/rollup.sh" "$evr" 2>&1); rc42shortt=$?
+mv "$evr/eval-demo/r3/grading.saved" "$evr/eval-demo/r3/grading.json"
+[ "$rc42shortt" -eq 2 ] && printf '%s\n' "$out42shortt" | grep -q 'repeats treatment=1 control=2' && pass "evals: rollup refuses treatment cells with fewer repeats than configured" || fail "evals: rollup refuses treatment cells with fewer repeats than configured (rc=$rc42shortt; $out42shortt)"
+
+mv "$evr/eval-demo/r4/grading.json" "$evr/eval-demo/r4/grading.saved"
+out42shortc=$("$evroot/rollup.sh" "$evr" 2>&1); rc42shortc=$?
+mv "$evr/eval-demo/r4/grading.saved" "$evr/eval-demo/r4/grading.json"
+[ "$rc42shortc" -eq 2 ] && printf '%s\n' "$out42shortc" | grep -q 'repeats treatment=2 control=1' && pass "evals: rollup refuses control cells with fewer repeats than configured" || fail "evals: rollup refuses control cells with fewer repeats than configured (rc=$rc42shortc; $out42shortc)"
+
 printf '{"results":[{"id":"a1","passed":true,"evidence":"q"}]}\n' >"$evr/eval-demo/r1/grading.json"
-"$evroot/rollup.sh" "$evr" >/dev/null 2>&1
+out42b=$("$evroot/rollup.sh" "$evr" 2>&1)
 rc42b=$?
-[ "$rc42b" -eq 2 ] && pass "evals: rollup refuses a grading record whose ids disagree with its snapshot" || fail "evals: rollup refuses a grading record whose ids disagree with its snapshot (rc=$rc42b)"
+[ "$rc42b" -eq 2 ] && printf '%s\n' "$out42b" | grep -q 'grades 1 ids, its snapshot lists 2' && pass "evals: rollup refuses a grading record whose ids disagree with its snapshot" || fail "evals: rollup refuses a grading record whose ids disagree with its snapshot (rc=$rc42b; $out42b)"
 
 printf '{"results":[{"id":"a1","passed":true,"evidence":"the treat arm did it"},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
-"$evroot/rollup.sh" "$evr" >/dev/null 2>&1
+out42c=$("$evroot/rollup.sh" "$evr" 2>&1)
 rc42c=$?
-[ "$rc42c" -eq 2 ] && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c)"
+[ "$rc42c" -eq 2 ] && printf '%s\n' "$out42c" | grep -q 'appears inside' && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c; $out42c)"
 
 printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
-"$evroot/rollup.sh" "$evr" >/dev/null 2>&1
+out42e=$("$evroot/rollup.sh" "$evr" 2>&1)
 rc42e=$?
-[ "$rc42e" -eq 2 ] && pass "evals: rollup refuses an iteration with a manual assertion still ungraded" || fail "evals: rollup refuses an iteration with a manual assertion still ungraded (rc=$rc42e)"
+[ "$rc42e" -eq 2 ] && printf '%s\n' "$out42e" | grep -q 'leaves a1 ungraded' && pass "evals: rollup refuses an iteration with a manual assertion still ungraded" || fail "evals: rollup refuses an iteration with a manual assertion still ungraded (rc=$rc42e; $out42e)"
+
+# ---- 44b. rollup.sh: NaN/Infinity durations, an absent "passed" key, and
+#          all-or-nothing duration-reporting symmetry ----
+# A duration validated only by `value < 0` lets NaN and Infinity through —
+# both compare False to 0 — and rollup.json then ends up with a literal
+# NaN/Infinity token and exit 0. Indexing r["passed"] before the
+# ungraded-is-None guard raises an uncaught KeyError, not a die(), on a
+# result missing the key outright, breaking the "exits 2, never a
+# traceback" contract this suite checks everywhere else. And a duration
+# field recorded for only some runs used to report only those runs,
+# silently hiding the other arm's missing instrumentation.
+rlbase="$WORK/eval-rollup-base"
+mkdir -p "$rlbase/eval-demo/r1" "$rlbase/eval-demo/r2"
+printf '{"r1":"treat","r2":"ctrl"}\n' >"$rlbase/arm-map.json"
+printf '{"treatment_arm":"treat","repeats_per_cell":1}\n' >"$rlbase/run-config.json"
+printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"}]}\n' >"$rlbase/eval-demo/eval-snapshot.json"
+printf '{"results":[{"id":"a1","passed":true,"evidence":"q"}]}\n' >"$rlbase/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","passed":false,"evidence":"r"}]}\n' >"$rlbase/eval-demo/r2/grading.json"
+
+rlnan="$WORK/eval-rollup-nan"
+cp -R "$rlbase" "$rlnan"
+printf '{"duration_s": NaN}\n' >"$rlnan/eval-demo/r1/run-meta.json"
+outrlnan=$("$evroot/rollup.sh" "$rlnan" 2>&1); rcrlnan=$?
+if [ "$rcrlnan" -eq 2 ] && printf '%s\n' "$outrlnan" | grep -qF 'must be a finite non-negative number' \
+  && [ ! -e "$rlnan/rollup.json" ]; then
+  pass "evals: rollup rejects a NaN duration_s (exit 2, no rollup.json written)"
+else
+  fail "evals: rollup rejects a NaN duration_s (exit 2, no rollup.json written) (rc=$rcrlnan; $outrlnan)"
+fi
+
+rlinf="$WORK/eval-rollup-inf"
+cp -R "$rlbase" "$rlinf"
+printf '{"duration_s": Infinity}\n' >"$rlinf/eval-demo/r1/run-meta.json"
+outrlinf=$("$evroot/rollup.sh" "$rlinf" 2>&1); rcrlinf=$?
+[ "$rcrlinf" -eq 2 ] && printf '%s\n' "$outrlinf" | grep -qF 'must be a finite non-negative number' && pass "evals: rollup rejects an Infinity duration_s" || fail "evals: rollup rejects an Infinity duration_s (rc=$rcrlinf; $outrlinf)"
+
+rlkey="$WORK/eval-rollup-nokey"
+cp -R "$rlbase" "$rlkey"
+printf '{"results":[{"id":"a1","evidence":"q"}]}\n' >"$rlkey/eval-demo/r1/grading.json"
+outrlkey=$("$evroot/rollup.sh" "$rlkey" 2>&1); rcrlkey=$?
+if [ "$rcrlkey" -eq 2 ] && printf '%s\n' "$outrlkey" | grep -qF 'no "passed" key' \
+  && ! printf '%s\n' "$outrlkey" | grep -qi 'traceback'; then
+  pass "evals: rollup refuses a result with no \"passed\" key (exit 2, no traceback)"
+else
+  fail "evals: rollup refuses a result with no \"passed\" key (exit 2, no traceback) (rc=$rcrlkey; $outrlkey)"
+fi
+
+rlasym="$WORK/eval-rollup-duration-asym"
+cp -R "$rlbase" "$rlasym"
+printf '{"duration_s": 1.5}\n' >"$rlasym/eval-demo/r1/run-meta.json"
+outrlasym=$("$evroot/rollup.sh" "$rlasym" 2>&1); rcrlasym=$?
+if [ "$rcrlasym" -eq 2 ] && printf '%s\n' "$outrlasym" | grep -qF 'r2' \
+  && printf '%s\n' "$outrlasym" | grep -qF 'no duration field'; then
+  pass "evals: rollup refuses asymmetric duration coverage across arms"
+else
+  fail "evals: rollup refuses asymmetric duration coverage across arms (rc=$rcrlasym; $outrlasym)"
+fi
+
+rlsym="$WORK/eval-rollup-duration-sym"
+cp -R "$rlbase" "$rlsym"
+printf '{"duration_s": 1.5}\n' >"$rlsym/eval-demo/r1/run-meta.json"
+printf '{"duration_s": 2.5}\n' >"$rlsym/eval-demo/r2/run-meta.json"
+outrlsym=$("$evroot/rollup.sh" "$rlsym" 2>&1); rcrlsym=$?
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["duration_s"]; sys.exit(0 if d == {"treat":{"mean":1.5,"population_stddev":0.0,"sample_size":1},"ctrl":{"mean":2.5,"population_stddev":0.0,"sample_size":1}} else 1)' "$rlsym/rollup.json"
+rcrlsymjson=$?
+[ "$rcrlsym" -eq 0 ] && [ "$rcrlsymjson" -eq 0 ] && pass "evals: rollup reports duration_s when every run in the iteration carries it" || fail "evals: rollup reports duration_s when every run in the iteration carries it (rc=$rcrlsym; $outrlsym)"
+
+# Lower-priority die() paths flagged as untested but otherwise reachable.
+rlshapearm="$WORK/eval-rollup-shape-arm"
+cp -R "$rlbase" "$rlshapearm"
+printf '["not","an","object"]\n' >"$rlshapearm/arm-map.json"
+outrlshapearm=$("$evroot/rollup.sh" "$rlshapearm" 2>&1); rcrlshapearm=$?
+[ "$rcrlshapearm" -eq 2 ] && printf '%s\n' "$outrlshapearm" | grep -qF 'arm-map.json must be an object' && pass "evals: rollup refuses a non-object arm-map.json" || fail "evals: rollup refuses a non-object arm-map.json (rc=$rcrlshapearm; $outrlshapearm)"
+
+rlshapecfg="$WORK/eval-rollup-shape-config"
+cp -R "$rlbase" "$rlshapecfg"
+printf '["not","an","object"]\n' >"$rlshapecfg/run-config.json"
+outrlshapecfg=$("$evroot/rollup.sh" "$rlshapecfg" 2>&1); rcrlshapecfg=$?
+[ "$rcrlshapecfg" -eq 2 ] && printf '%s\n' "$outrlshapecfg" | grep -qF 'run-config.json must be an object' && pass "evals: rollup refuses a non-object run-config.json" || fail "evals: rollup refuses a non-object run-config.json (rc=$rcrlshapecfg; $outrlshapecfg)"
+
+rlshaperesults="$WORK/eval-rollup-shape-results"
+cp -R "$rlbase" "$rlshaperesults"
+printf '{"results": "not-a-list"}\n' >"$rlshaperesults/eval-demo/r1/grading.json"
+outrlshaperesults=$("$evroot/rollup.sh" "$rlshaperesults" 2>&1); rcrlshaperesults=$?
+[ "$rcrlshaperesults" -eq 2 ] && printf '%s\n' "$outrlshaperesults" | grep -qF 'results must be a list' && pass "evals: rollup refuses a non-list grading.json results" || fail "evals: rollup refuses a non-list grading.json results (rc=$rcrlshaperesults; $outrlshaperesults)"
+
+rlshapemeta="$WORK/eval-rollup-shape-meta"
+cp -R "$rlbase" "$rlshapemeta"
+printf '["not","an","object"]\n' >"$rlshapemeta/eval-demo/r1/run-meta.json"
+outrlshapemeta=$("$evroot/rollup.sh" "$rlshapemeta" 2>&1); rcrlshapemeta=$?
+[ "$rcrlshapemeta" -eq 2 ] && printf '%s\n' "$outrlshapemeta" | grep -qF 'run-meta.json must be an object' && pass "evals: rollup refuses a non-object run-meta.json" || fail "evals: rollup refuses a non-object run-meta.json (rc=$rcrlshapemeta; $outrlshapemeta)"
 
 # ---- 45. evals/run.sh: subscription-backed auth, thread lifecycle,
 #          process-group cleanup on success, setup-cancellation ownership,
@@ -3592,7 +3722,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=485
+EXPECTED_CHECKS=501
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

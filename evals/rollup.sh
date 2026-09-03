@@ -11,10 +11,10 @@
 #
 # Full documentation: evals/README.md.
 #
-# Follow-up (post T2/T3): everything below the arg check is Python in a
-# heredoc. Move it to evals/rollup.py once the runner and rollup hardening
-# land, so the join/bucket logic gets real linting, syntax checking, and
-# import-based unit tests; keep this file as the thin bash preflight.
+# Follow-up: everything below the arg check is Python in a heredoc. Move
+# it to evals/rollup.py so the join/bucket logic gets real linting, syntax
+# checking, and import-based unit tests; keep this file as the thin bash
+# preflight.
 #
 # Usage: rollup.sh <iteration-dir>     # writes rollup.json, prints the table
 
@@ -25,13 +25,21 @@ case "${1:-}" in
   cat <<'EOF'
 Usage: rollup.sh <iteration-dir>
 
-Reads <iteration-dir>/arm-map.json and every eval-*/<run-id>/grading.json
-under it, joins the arms on assertion id, and writes rollup.json beside them.
+Reads <iteration-dir>/arm-map.json, run-config.json, and every
+eval-*/<run-id>/grading.json under it, joins the arms on assertion id, and
+writes rollup.json beside them.
 
-Exits 2 when the records cannot support a rollup: a grading record whose id
-set differs from its eval snapshot, a cell whose counts do not sum, or an arm
-token found inside a grading record. Each of those makes the delta wrong
-rather than absent, so none of them is warned about and carried past.
+Exits 2 when the records cannot support a rollup: missing experiment
+configuration, a grading record whose id set differs from its eval snapshot,
+a cell with incomplete repeats, or an arm token found inside a grading
+record. Each of those makes the delta wrong rather than absent, so none of
+them is warned about and carried past.
+
+Duration reporting (duration_s in rollup.json) is all-or-nothing: if any
+run's run-meta.json carries a duration_s/duration_seconds/duration field,
+every run in both arms for that iteration must carry one too, or the
+rollup exits 2 naming the run that is missing it. If no run anywhere
+carries the field, duration_s is omitted from rollup.json entirely.
 EOF
   exit 0 ;;
 esac
@@ -43,7 +51,7 @@ command -v python3 >/dev/null 2>&1 || {
   echo "rollup.sh: python3 not found" >&2; exit 2; }
 
 ITER="$iter" python3 <<'PY'
-import json, os, sys, collections
+import json, math, os, sys, collections
 
 iteration = os.environ["ITER"]
 
@@ -59,11 +67,28 @@ def load(path):
         die("cannot read %s: %s" % (path, exc))
 
 arm_map = load(os.path.join(iteration, "arm-map.json"))
+if not isinstance(arm_map, dict):
+    die("arm-map.json must be an object mapping run ids to arms")
 if not arm_map:
     die("arm-map.json is empty — nothing to join")
+if any(not isinstance(run_id, str) or not isinstance(arm, str)
+       for run_id, arm in arm_map.items()):
+    die("arm-map.json must map string run ids to string arms")
 arms = sorted(set(arm_map.values()))
 if len(arms) != 2:
     die("expected exactly 2 arms in arm-map.json, found %d: %s" % (len(arms), arms))
+
+config = load(os.path.join(iteration, "run-config.json"))
+if not isinstance(config, dict):
+    die("run-config.json must be an object")
+treatment = config.get("treatment_arm")
+if not isinstance(treatment, str) or treatment not in arms:
+    die("run-config.json treatment_arm %r is not an arm in arm-map.json" % treatment)
+repeats_per_cell = config.get("repeats_per_cell")
+if (isinstance(repeats_per_cell, bool) or
+        not isinstance(repeats_per_cell, int) or repeats_per_cell < 1):
+    die("run-config.json repeats_per_cell must be a positive integer")
+control = [arm for arm in arms if arm != treatment][0]
 
 # Blinding check. The condition must not have reached a grading record, its
 # filename, or its path: a grader that could see the arm is a threat to any
@@ -74,6 +99,13 @@ tokens = [a.lower() for a in arms]
 # assertion id -> arm -> list of pass bits (one per repeat)
 cells = collections.defaultdict(lambda: collections.defaultdict(list))
 concepts, evidence, eval_of = {}, collections.defaultdict(dict), {}
+# Durations come from each run's retained metadata. Keep arms separate:
+# combining them makes an arm-specific cost difference invisible. Coverage
+# is tracked separately and enforced all-or-nothing below: a duration that
+# only some runs carry would silently under-report the other arm's cost.
+durations = collections.defaultdict(list)
+duration_runs = []
+all_runs = []
 
 for eval_dir in sorted(os.listdir(iteration)):
     if not eval_dir.startswith("eval-"):
@@ -97,44 +129,83 @@ for eval_dir in sorted(os.listdir(iteration)):
             if tok in run_id.lower() or tok in grading_path.lower():
                 die("arm token %r appears in %s — grading was not blind, "
                     "re-run the grading pass" % (tok, grading_path))
+        # Follow-up: not wrapped in try/except — invalid UTF-8 here raises
+        # UnicodeDecodeError (exit 1, traceback) instead of the exit-2
+        # contract every other malformed-input path in this file honors.
+        # Mirror load()'s except-and-die pattern when this is picked up.
         raw = open(grading_path, encoding="utf-8").read()
         for tok in tokens:
             if tok in raw.lower():
                 die("arm token %r appears inside %s — grading was not blind, "
                     "re-run the grading pass" % (tok, grading_path))
-        grading = json.loads(raw)
+        try:
+            grading = json.loads(raw)
+        except ValueError as exc:
+            die("cannot read %s: %s" % (grading_path, exc))
 
         arm = arm_map.get(run_id)
         if arm is None:
             die("run id %r is in %s but not in arm-map.json" % (run_id, base))
+        all_runs.append((run_id, arm))
 
-        got = set(r["id"] for r in grading.get("results", []))
+        results = grading.get("results", [])
+        if not isinstance(results, list):
+            die("%s results must be a list" % grading_path)
+        try:
+            got = set(r["id"] for r in results)
+        except (KeyError, TypeError):
+            die("%s has a result without an assertion id" % grading_path)
+        if len(got) != len(results):
+            die("%s records an assertion more than once" % grading_path)
         if got != want:
             die("%s grades %d ids, its snapshot lists %d; missing=%s extra=%s"
                 % (grading_path, len(got), len(want),
                    sorted(want - got), sorted(got - want)))
 
-        for r in grading["results"]:
-            cells[r["id"]][arm].append(bool(r["passed"]))
-            if r.get("passed") is None:
+        for r in results:
+            if "passed" not in r:
+                die("%s has no \"passed\" key for %s — a result missing the "
+                    "field entirely cannot support a rollup" % (grading_path, r["id"]))
+            passed = r.get("passed")
+            if passed is None:
                 die("%s leaves %s ungraded. It is a manual assertion and a "
                     "human has to judge it, blind, before this iteration can "
                     "be rolled up" % (grading_path, r["id"]))
+            cells[r["id"]][arm].append(bool(passed))
             if not r.get("evidence"):
                 die("%s has no evidence for %s — a pass bit without a "
                     "quotation cannot be re-derived" % (grading_path, r["id"]))
             evidence[r["id"]][arm] = r["evidence"]
 
+        meta_path = os.path.join(run, "run-meta.json")
+        if os.path.exists(meta_path):
+            meta = load(meta_path)
+            if not isinstance(meta, dict):
+                die("%s must be an object" % meta_path)
+            for field in ("duration_s", "duration_seconds", "duration"):
+                if field in meta:
+                    value = meta[field]
+                    if (isinstance(value, bool) or
+                            not isinstance(value, (int, float)) or
+                            not math.isfinite(value) or value < 0):
+                        die("%s %s must be a finite non-negative number" % (meta_path, field))
+                    durations[arm].append(float(value))
+                    duration_runs.append((run_id, arm))
+                    break
+
 if not cells:
     die("no grading records found under %s" % iteration)
 
-treatment, control = arms[0], arms[1]
-cfg = os.path.join(iteration, "run-config.json")
-if os.path.exists(cfg):
-    named = load(cfg).get("treatment_arm")
-    if named in arms:
-        treatment = named
-        control = [a for a in arms if a != named][0]
+# Duration reporting is all-or-nothing: a mean built from a subset of runs
+# would understate one arm's cost without saying so. Once any run in this
+# iteration carries a duration field, every run must.
+if duration_runs:
+    have_duration = set(run_id for run_id, _arm in duration_runs)
+    for run_id, arm in all_runs:
+        if run_id not in have_duration:
+            die("run %r (arm %s) has no duration field, but other runs in "
+                "this iteration do — duration reporting requires complete "
+                "coverage or none" % (run_id, arm))
 
 def majority(bits):
     return sum(bits) * 2 > len(bits)
@@ -148,6 +219,9 @@ for aid in sorted(cells):
         die("%s was graded in %s only — an unpaired assertion has no delta"
             % (aid, sorted(per_arm)))
     t_bits, c_bits = per_arm[treatment], per_arm[control]
+    if len(t_bits) != repeats_per_cell or len(c_bits) != repeats_per_cell:
+        die("%s has repeats treatment=%d control=%d; run-config.json requires %d per cell"
+            % (aid, len(t_bits), len(c_bits), repeats_per_cell))
     t, c = majority(t_bits), majority(c_bits)
     unstable = len(set(t_bits)) > 1 or len(set(c_bits)) > 1
 
@@ -198,8 +272,26 @@ report = {
         "top_assertion": round(top1, 1),
         "top_two_assertions": round(top2, 1),
     },
+    "cost": {
+        "input_tokens": "unavailable",
+        "output_tokens": "unavailable",
+        "usd": "unavailable",
+    },
     "rows": rows,
 }
+if durations:
+    report["duration_s"] = {}
+    for arm in arms:
+        values = durations[arm]
+        if not values:
+            continue
+        duration_mean = sum(values) / len(values)
+        duration_variance = sum((value - duration_mean) ** 2 for value in values) / len(values)
+        report["duration_s"][arm] = {
+            "mean": round(duration_mean, 3),
+            "population_stddev": round(duration_variance ** 0.5, 3),
+            "sample_size": len(values),
+        }
 out = os.path.join(iteration, "rollup.json")
 with open(out, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
@@ -209,6 +301,16 @@ print("arms:      %s (treatment) vs %s (control)" % (treatment, control))
 print("checklist: %d assertions, weighted per-assertion" % n)
 print("pass rate: %s %.1f%%   %s %.1f%%   delta %+.1f pp"
       % (treatment, t_rate, control, c_rate, delta))
+if durations:
+    for arm in arms:
+        values = durations[arm]
+        if not values:
+            continue
+        duration_mean = sum(values) / len(values)
+        duration_variance = sum((value - duration_mean) ** 2 for value in values) / len(values)
+        print("duration:  %s mean %.3fs   population stddev %.3fs   n=%d"
+              % (arm, duration_mean, duration_variance ** 0.5, len(values)))
+print("cost:      unavailable (input tokens, output tokens, USD not recorded)")
 print("")
 for name in ("discriminating", "regression", "unstable", "non-discriminating"):
     ids = sorted(buckets[name])

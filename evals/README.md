@@ -173,8 +173,14 @@ Nothing about the arm reaches a path or a grading record. The run id is a hash; 
         gate.txt             # comments.sh over the diff
       grading.json           # one record per assertion, with evidence — absent
                               # entirely if the agent process failed or timed out
-  rollup.json
+  rollup.json                # pass rate, delta, buckets, concentration, and
+                              # per-arm duration stats — recomputed from the
+                              # records above, never transcribed
 ```
+
+`rollup.sh` cross-validates `run-config.json` against `arm-map.json` before it joins anything: `treatment_arm` must name one of the two arms found there, and `repeats_per_cell` must be a positive integer that every assertion's per-arm repeat count matches exactly. A cell with too few or too many repeats fails the rollup rather than averaging over a shortfall.
+
+Where a run's `run-meta.json` records a duration (`duration_s`, `duration_seconds`, or `duration` — the first present), `rollup.sh` keeps the two arms' timings separate and reports each arm's mean, population standard deviation, and sample size in `rollup.json`'s `duration_s` block and in the printed table. Arms are never pooled: a cost difference that shows up in one arm and not the other is exactly what pooling would hide. Coverage is all-or-nothing: once any run in the iteration records a duration, every run in both arms must, or the rollup fails closed naming the run that is missing it — a mean built from a subset of runs would understate one arm's cost without saying so. `rollup.json` also always carries a `cost` block (`input_tokens`, `output_tokens`, `usd`), each `"unavailable"` today — token and dollar cost are not yet captured per run, and the placeholder says so in the report itself rather than omitting the field silently.
 
 `grade.sh` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status, and no `outputs/` capture or `grading.json` is retained for it at all.
 
