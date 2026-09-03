@@ -12,7 +12,9 @@
 
 `scripts/test.sh` checks the corpus as an artifact: the text is present, the scripts behave, the shared blocks match. Every one of those checks passes on a corpus that no agent obeys. This directory covers the other half — whether a session under this corpus behaves differently from a session without it — and it is the only place in the repo where the answer comes from running an agent rather than from reading one.
 
-It is deliberately **not** in CI. `.github/workflows/ci.yml` runs `test.sh` and `shellcheck`, both deterministic and free. An eval run costs model tokens, needs API access, and returns a distribution rather than a bit. It is an operator ceremony, run when the corpus changes in a way that is supposed to change behavior — and the run is worth its cost only when something is genuinely in doubt.
+It is deliberately **not** in CI. `.github/workflows/ci.yml` runs `test.sh` and `shellcheck`, both deterministic and free. An eval run costs model tokens and returns a distribution rather than a bit. It is an operator ceremony, run when the corpus changes in a way that is supposed to change behavior — and the run is worth its cost only when something is genuinely in doubt.
+
+**No provider API, SDK, or API key is used anywhere in this directory.** `run.sh` drives the `claude` and `codex` CLIs directly, through whatever session you already have logged in on this machine. `--list-arms` and `--probe-agent` only ever call those same CLIs — never a provider endpoint.
 
 The one part that does ride CI is static: `test.sh` validates `spec.json`'s shape, builds fixtures, drives `grade.sh` against hand-written artifacts to pin its check language, and asserts `run.sh` refuses an unconfigured agent. That keeps the eval set and its tooling from rotting between runs without ever invoking a model.
 
@@ -70,40 +72,64 @@ That leaves manual grading for what genuinely needs judgment: whether a constrai
 | --- | --- |
 | `spec.json` — 20 evals, 58 assertions | complete |
 | `fixtures.sh` — 9 fixtures at a pinned corpus revision | complete |
-| `run.sh` — drives an agent, captures the artifact set, grades | complete |
+| `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades | complete |
 | `grade.sh` — executes the check language, writes evidence per assertion | complete |
 | `rollup.sh` — joins arms, buckets, reports the delta | complete |
-| **an agent to drive** | **none configured — this is yours** |
 
-Nothing in `agents.conf` ships uncommented. That is deliberate: a wrong flag drives the wrong binary or the wrong model, the run still produces a full set of artifacts and a plausible grading record, and the delta gets attributed to the corpus. `run.sh` refuses an unconfigured arm rather than guessing, and `test.sh` pins that refusal.
+Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters drive the operator's own logged-in CLI session, the same one you already use interactively.
+
+Both adapters require subscription-backed login, never an API key: Claude needs a claude.ai account (`~/.claude/.credentials.json`, or `CLAUDE_CONFIG_DIR` if set, carrying an active `subscriptionType`) and Codex needs a ChatGPT account (`auth_mode` `chatgpt` in `~/.codex/auth.json`, or `CODEX_HOME` if set). A run refuses to start rather than fall back to a provider key, and `run.sh` strips every provider-credential and alternate-provider environment variable from its own process before either adapter's subprocess ever launches.
 
 ## Configuring an agent
 
-Open `evals/agents.conf` and uncomment the arm you are running. Each needs three values:
+Open `evals/agents.conf`. `claude` and `codex` need no command line — `run.sh` builds their invocation itself — only the executable to resolve, the model, and the effort:
 
 ```
-CLAUDE_MODEL=<the model id you are paying for>
-CLAUDE_CMD=<the exact non-interactive invocation your install uses>
-CLAUDE_TRACE=stream-json | none
+CLAUDE_BIN=claude                 # a PATH name, an absolute path, or "auto"
+CLAUDE_MODEL=claude-sonnet-5
+CLAUDE_EFFORT=medium
+
+CODEX_BIN=auto                    # PATH first; feature-probes the CLI and
+                                  # falls back to CODEX_APP_BIN if set
+CODEX_MODEL=gpt-5.6-terra
+CODEX_EFFORT=medium
 ```
 
-`run.sh` substitutes `{prompt}`, `{model}` and `{cwd}` into `CMD` and runs it with the fixture as the working directory. Two requirements on whatever you put there: it must run headless and exit, and its stdout must be capturable.
+These ship uncommented with the reference model and effort, because nothing about resolving a binary or driving it through a fixed, argument-safe adapter can silently aim at the wrong target the way a hand-written command-line template could. Check `evals/run.sh --list-arms` against your own install before a real run — it resolves both binaries and prints their versions without placing a model call. Codex resolution also checks the candidate's global, `exec`, and `exec resume` help surfaces for every flag the adapter uses. That feature probe decides compatibility rather than a guessed version boundary.
 
-`TRACE` is the one that decides how much of the set is measurable. **11 of the 58 assertions are trace assertions** — was the catalog read *before* the build, did the bootstrap run once, was the gate invoked against a real base ref. They are the assertions with the least redundant coverage anywhere else, and they need a machine-readable record of the agent's tool calls. Set `TRACE=stream-json` if your agent can emit one and `run.sh` will normalize it; set `none` and those assertions grade as unjudgeable, named, rather than passing by default.
+For Codex, the first turn starts with `-C <fixture-root>`, so Codex loads that fixture's `AGENTS.md` as the project instruction source. Later turns use `codex exec resume` on the same thread: they retain both that thread and the project instructions established from the initial `-C` root. The adapter ignores user configuration and gives Codex a fresh, mode-`0700` temporary home containing only the copied login state; that home is outside the retained run directory and is removed after the call or an interrupt.
 
-Check the flags against your own install rather than against this file. CLI flags move between versions, and a stale one here would fail a whole iteration.
+Trace format is fixed, not configurable: `run.sh` normalizes each adapter's own event shape into the shared trace contract itself, for both `claude` and `codex`. That is what makes **11 of the 58 assertions** — trace assertions — measurable at all: was the catalog read *before* the build, did the bootstrap run once, was the gate invoked against a real base ref.
 
 ```
-evals/run.sh --list-arms      # what is actually configured right now
+evals/run.sh --list-arms                 # resolved binaries and versions, no model call
+evals/run.sh --probe-agent claude        # one live call: is claude ready and logged in?
+evals/run.sh --probe-agent codex         # same, for codex
 ```
+
+`--probe-agent` drives the resolved CLI once with a trivial single-turn prompt and reports the binary, its version, and whether the call succeeded — including an authentication failure, surfaced from that same invocation. Like every other call this script makes, it goes through your logged-in CLI session and never touches a provider API directly.
 
 ## Running one eval, both arms
 
 ```
 W=~/eval-runs/v6.2
 
-# treatment: the corpus under test
-evals/run.sh --eval routing-catalog-first --arm merged \
+# readiness, once, before spending anything on a real run
+evals/run.sh --list-arms
+evals/run.sh --probe-agent claude
+evals/run.sh --probe-agent codex
+
+# dry run — every turn, the resolved adapter, nothing driven
+evals/run.sh --eval bootstrap-once --arm merged --treatment-arm merged \
+  --agent claude --corpus-ref feature/v6.2 --workspace "$W" --dry-run
+
+# a bounded live smoke run — one iteration, one eval, before committing to REPEATS
+evals/run.sh --eval scope-question-no-edit --arm merged --treatment-arm merged \
+  --agent claude --corpus-ref feature/v6.2 --workspace "$W" --iteration 1
+
+# treatment: the corpus under test. --treatment-arm names it once; every
+# later run against this workspace is checked against what it recorded.
+evals/run.sh --eval routing-catalog-first --arm merged --treatment-arm merged \
   --agent claude --corpus-ref feature/v6.2 --workspace "$W"
 
 # control: the corpus the field ran
@@ -113,34 +139,44 @@ evals/run.sh --eval routing-catalog-first --arm prerelease \
 evals/rollup.sh "$W/iteration-1"
 ```
 
-Each invocation builds its own fixture from the corpus revision named, drives the agent in it, captures the artifacts, and grades the auto assertions. `--dry-run` does everything except drive the agent and prints the prompt, which is the way to run an eval by hand in a session you are watching.
+Each invocation builds its own fixture from the corpus revision named, drives the agent through every turn of the eval's prompt in one session, captures the artifacts, and grades the auto assertions. `--iteration <n>` selects which single `iteration-<n>` directory this invocation targets (default `1`); it never selects a repeat. Within that one iteration, `run.sh` loops `REPEATS` times itself — each repeat is a cell, with its own fixture and run id, under `iteration-<n>/eval-<id>/`. `--dry-run` does everything except drive the agent, always runs exactly one repeat, and prints every turn verbatim — the way to run an eval by hand in a session you are watching.
 
-Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json`, which the grader does not open, and `rollup.sh` greps every record for arm tokens and voids the pass if it finds one.
+`--treatment-arm` names the treatment arm once per workspace; it is required on the first run into a fresh `iteration-<n>` and recorded in `run-config.json`, never guessed from which arm happened to run first. Every later run into that same iteration is checked against what got recorded — treatment arm, arm variable, repeat budget, each arm's agent and corpus ref, and each participating agent's resolved binary identity, CLI version, model, and effort. Binary identity includes the resolved path, canonical path, and SHA-256 digest; the complete first line of `--version` is retained beside the parsed version. A corpus-variable comparison also holds the agent and model constant; an agent-variable comparison holds the corpus ref constant. `run.sh` refuses a drift before touching a fixture.
+
+Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json` and the comparison design in `run-config.json`, neither of which the grader opens, and `rollup.sh` greps every record for arm tokens and voids the pass if it finds one.
 
 ## What a run leaves behind
 
 ```
 <workspace>/iteration-<n>/
-  arm-map.json               # run id -> arm. The only place the condition lives
-  run-config.json            # models, versions, sampling, corpus refs, repeats
+  arm-map.json               # run id -> arm. The only other place the condition lives
+  run-config.json            # treatment arm, arm variable, per-arm inputs, locked
+                              # comparison fields, resolved binary identity,
+                              # CLI version/model/effort per agent
   eval-<id>/
     eval-snapshot.json       # prompt + assertions, frozen at run time
     <run-id>/
       fixture/               # the tree the session actually worked in
-      run-meta.json          # model, corpus ref, fixture base, timings
+      run-meta.json          # model, effort, corpus ref, fixture base, resolved
+                              # binary path/digest and version output, turn count,
+                              # timings, exit status
       outputs/
         diff.patch           # project tree, fixture base -> end
         node-diff.patch      # .agent/ tree, fixture base -> end
         node-tree.txt        # every .agent/ file with content, for absence checks
-        session-transcript.txt
-        trace.jsonl          # normalized {"seq","text"} per tool call
+        session-transcript.txt   # `## Turn N` sections containing final text;
+                                 # multiline text is preserved and an empty final
+                                 # response is recorded as [empty final response]
+        trace.jsonl          # one {"seq","event","tool","action","text"} object per
+                              # tool call, action in read|write|execute|search|other
         status-after.txt     # status.sh over the node afterwards
         gate.txt             # comments.sh over the diff
-      grading.json           # one record per assertion, with evidence
+      grading.json           # one record per assertion, with evidence — absent
+                              # entirely if the agent process failed or timed out
   rollup.json
 ```
 
-`grade.sh` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved.
+`grade.sh` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status, and no `outputs/` capture or `grading.json` is retained for it at all.
 
 ## Filling in the manual assertions
 

@@ -1962,14 +1962,1229 @@ evfg="$WORK/eval-fixture-flagged"
 f42b=$(status_flags "$evfg")
 printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf '%s\n' "$f42b" | grep -q '^GROOM: memory/' && pass "evals: the flagged fixture arrives over the thresholds its eval clears" || fail "evals: the flagged fixture arrives over the thresholds its eval clears ($f42b)"
 
-# run.sh refuses rather than guessing an agent. A benchmark that silently
-# drove the wrong binary, or no binary, still produces artifacts and a
-# plausible grading record — and the delta then gets attributed to the corpus.
-ra42=$("$evroot/run.sh" --list-arms 2>&1)
-printf '%s\n' "$ra42" | grep -q 'not configured' && pass "evals: run.sh ships with no agent configured and says so" || fail "evals: run.sh ships with no agent configured and says so ($ra42)"
-"$evroot/run.sh" --eval comments-feature --arm x --agent claude --corpus-ref HEAD --workspace "$WORK/ev-refuse" >/dev/null 2>&1
-rc42d=$?
-[ "$rc42d" -eq 2 ] && pass "evals: run.sh refuses an unconfigured agent" || fail "evals: run.sh refuses an unconfigured agent (rc=$rc42d)"
+# ---- 44. evals/run.sh: fake-CLI regression coverage ----
+# claude and codex are real, logged-in installs the operator drives by hand
+# — nothing static may call one. Every claim about run.sh's own behavior is
+# instead pinned against fake claude/codex executables that speak just
+# enough of each CLI's stdin/stdout contract to stand in, driven through a
+# disposable EVALS_AGENTS_CONF so this suite never reads or writes the
+# operator's own evals/agents.conf, and never depends on what happens to be
+# installed on the machine running it.
+evsh="$evroot/run.sh"
+evfake="$WORK/eval fake cli"           # a space in the path, on purpose
+mkdir -p "$evfake"
+corpus_ref_test=$(git -C "$reporoot" rev-parse HEAD)
+
+# Every invocation below drives claude_run/codex_run, which require
+# subscription-backed auth before driving either adapter. Point both at
+# self-contained fake credential stores rather than the operator's real
+# ~/.claude or ~/.codex — nothing in this suite may read or depend on
+# whatever happens to be logged in on the machine running it. Individual
+# auth-rejection tests below override one or both of these per invocation.
+evauth="$evfake/auth"
+mkdir -p "$evauth/claude-ok" "$evauth/codex-ok"
+cat >"$evauth/claude-ok/.credentials.json" <<'EOF'
+{"claudeAiOauth": {"accessToken": "fake-access-token", "refreshToken": "fake-refresh-token", "subscriptionType": "pro"}}
+EOF
+cat >"$evauth/codex-ok/auth.json" <<'EOF'
+{"auth_mode": "chatgpt", "tokens": {"access_token": "fake-access-token"}}
+EOF
+export CLAUDE_CONFIG_DIR="$evauth/claude-ok"
+export CODEX_HOME="$evauth/codex-ok"
+
+fake_claude="$evfake/fake-claude.py"
+cat >"$fake_claude" <<'PY'
+#!/usr/bin/env python3
+import json, os, subprocess, sys, time
+
+# Reports only whether a named var reached this process's environment, never
+# its value — the sentinel-leak checks read this file, not the process env.
+leak_var = os.environ.get("FAKE_ENV_LEAK_VAR")
+leak_out = os.environ.get("FAKE_ENV_LEAK_OUT")
+if leak_var and leak_out:
+    with open(leak_out, "w") as f:
+        f.write("PRESENT" if leak_var in os.environ else "ABSENT")
+
+if "--version" in sys.argv:
+    print("9.9.9-fake")
+    sys.exit(0)
+
+if any("submitPayment" in arg or "What does this project" in arg for arg in sys.argv[1:]):
+    sys.stderr.write("prompt text must be supplied on stdin, never argv\n")
+    sys.exit(64)
+
+argv = sys.argv[1:]
+
+def reject(message):
+    sys.stderr.write(message + "\n")
+    sys.exit(64)
+
+def require_flag(flag):
+    if argv.count(flag) != 1:
+        reject("required flag %s must appear exactly once" % flag)
+
+def require_pair(flag, value):
+    require_flag(flag)
+    index = argv.index(flag)
+    if index + 1 >= len(argv) or argv[index + 1] != value:
+        reject("required flag %s has the wrong value or position" % flag)
+
+for required in ("--print", "--verbose", "--strict-mcp-config", "--safe-mode",
+                 "--no-session-persistence", "--no-chrome"):
+    require_flag(required)
+require_pair("--input-format", "stream-json")
+require_pair("--output-format", "stream-json")
+require_pair("--model", "fake-claude-model")
+require_pair("--mcp-config", '{"mcpServers":{}}')
+require_pair("--allowedTools", "Read,Write,Edit,Bash")
+require_pair("--permission-mode", "acceptEdits")
+require_pair("--effort", "medium")
+require_flag("--append-system-prompt-file")
+system_index = argv.index("--append-system-prompt-file")
+if system_index + 1 >= len(argv) or os.path.realpath(argv[system_index + 1]) != os.path.realpath("CLAUDE.md"):
+    reject("--append-system-prompt-file must name the fixture CLAUDE.md")
+
+mode = os.environ.get("FAKE_CLAUDE_MODE", "ok")
+total = int(os.environ.get("FAKE_CLAUDE_TURNS", "0"))
+
+if mode == "timeout":
+    time.sleep(3600)
+    sys.exit(0)
+
+turn = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    turn += 1
+    try:
+        msg = json.loads(line)
+        text = msg["message"]["content"][0]["text"]
+    except Exception:
+        text = ""
+    if mode == "adversarial-file" and turn == 1:
+        hostile = '.agent/pwn"; touch ../outside-capture; #/payload'
+        os.makedirs(os.path.dirname(hostile), exist_ok=True)
+        open(hostile, "w").write("hostile filename payload\n")
+    if mode == "gate-findings" and turn == 1:
+        os.makedirs("src", exist_ok=True)
+        open("src/gate-finding.ts", "w").write("// Refactored per commit deadbeefcafe1234.\nexport const value = 1;\n")
+    if mode == "verifier-attack" and turn == 1:
+        os.makedirs("src", exist_ok=True)
+        # A BLOCK-worthy comment (a commit reference a fresh clone cannot
+        # open) sits beside the attacker's config mutations below, so
+        # whether the trusted or the tampered comments.conf ran is directly
+        # observable in gate.txt rather than inferred.
+        open("src/verifier-attack.ts", "w").write(
+            "// Refactored per commit deadbeefcafe1234.\nexport const safe = true;\n")
+        payload = '#!/bin/sh\ntouch "$FAKE_VERIFIER_ATTACK_MARKER"\nprintf "FORGED\\n"\n'
+        open(".agent/scripts/status.sh", "w").write(payload)
+        open(".agent/scripts/comments.sh", "w").write(payload)
+        # ENTRYPOINT_MAX_WORDS=1 would spuriously flag CLAUDE.md under the
+        # tampered value (the trusted default, 800, does not); EXCLUDE_RE_EXTRA
+        # would hide the file above from comments.sh entirely if honored.
+        open(".agent/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
+        open(".agent/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")
+    if mode == "success-resistant-child" and turn == 1:
+        # The leader completes this turn and exits 0 normally, but leaves a
+        # detached child and grandchild behind in its own process group,
+        # both ignoring SIGTERM. Post-success group cleanup must still clear
+        # them before capture, without disturbing the leader's own result.
+        child_code = '''
+import os, signal, subprocess, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(os.environ["FAKE_CLAUDE_CHILD_PID"], "w").write(str(os.getpid()))
+grandchild_code = """import os, signal, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(os.environ['FAKE_CLAUDE_GRANDCHILD_PID'], 'w').write(str(os.getpid()))
+time.sleep(3600)
+"""
+subprocess.Popen([sys.executable, "-c", grandchild_code])
+time.sleep(3600)
+'''
+        subprocess.Popen([sys.executable, "-c", child_code])
+        # Wait for both descendants to install their own SIGTERM-ignore
+        # handler (signalled by each writing its pid file right after) before
+        # this leader finishes its turn and exits — otherwise the group
+        # cleanup's SIGTERM can race a descendant still inside interpreter
+        # startup and kill it via the default disposition, which would make
+        # this scenario indistinguishable from one with no resistant child.
+        deadline = time.time() + 5
+        while time.time() < deadline and not (
+                os.path.exists(os.environ["FAKE_CLAUDE_CHILD_PID"])
+                and os.path.exists(os.environ["FAKE_CLAUDE_GRANDCHILD_PID"])):
+            time.sleep(0.02)
+    fixture_root = os.getcwd()
+    runner_root = os.environ.get("FAKE_TRACE_RUNNER_ROOT", "")
+    trace_paths = [
+        fixture_root + "/src/client.ts",
+        fixture_root.replace("/", "//") + "//src//client.ts",
+        os.path.realpath(fixture_root) + "/src/client.ts",
+        runner_root + "/evals/spec.json",
+        runner_root.replace("/", "//") + "//evals//spec.json",
+        os.path.realpath(runner_root) + "/evals/spec.json",
+    ]
+    call = {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Read", "input": {"file_path": "src/client.ts"}},
+        {"type": "tool_use", "name": "Bash", "input": {
+            "command": "cat " + " ".join(trace_paths)
+        }}
+    ]}}
+    sys.stdout.write(json.dumps(call) + "\n")
+    sys.stdout.flush()
+    if mode == "fail" and turn == 1:
+        sys.exit(3)
+    if mode == "short" and turn == total:
+        sys.exit(0)
+    if mode == "error-result":
+        result = {"type": "result", "subtype": "error_during_execution",
+                  "is_error": True, "result": "fake error"}
+    else:
+        result = {"type": "result", "subtype": "success",
+                  "is_error": False, "result": "echo:" + text}
+    sys.stdout.write(json.dumps(result) + "\n")
+    if mode == "mixed-result":
+        error = {"type": "result", "subtype": "error_during_execution",
+                 "is_error": True, "result": "error after success"}
+        sys.stdout.write(json.dumps(error) + "\n")
+    if mode == "malformed-stream":
+        sys.stdout.write("not-json\n")
+        sys.stdout.write('{"type":"assistant","message":[]}\n')
+    sys.stdout.flush()
+
+sys.exit(0)
+PY
+chmod +x "$fake_claude"
+
+fake_codex="$evfake/fake-codex.py"
+cat >"$fake_codex" <<'PY'
+#!/usr/bin/env python3
+import json, os, subprocess, sys, time
+
+# Reports only whether a named var reached this process's environment, never
+# its value — the sentinel-leak checks read this file, not the process env.
+leak_var = os.environ.get("FAKE_ENV_LEAK_VAR")
+leak_out = os.environ.get("FAKE_ENV_LEAK_OUT")
+if leak_var and leak_out:
+    with open(leak_out, "w") as f:
+        f.write("PRESENT" if leak_var in os.environ else "ABSENT")
+
+if "--version" in sys.argv:
+    print(os.environ.get("FAKE_CODEX_VERSION", "5.5.5-fake"))
+    sys.exit(0)
+
+argv = sys.argv[1:]
+missing_feature = os.environ.get("FAKE_CODEX_MISSING_FEATURE", "")
+incompatible_bin = os.environ.get("FAKE_CODEX_INCOMPATIBLE_BIN", "")
+if incompatible_bin and os.path.realpath(sys.argv[0]) == os.path.realpath(incompatible_bin):
+    missing_feature = "--ignore-user-config"
+help_surfaces = {
+    ("--help",): ["--ask-for-approval", "-c"],
+    ("exec", "--help"): ["--json", "--ignore-user-config", "--sandbox", "-C", "--model"],
+    ("exec", "resume", "--help"): ["--json", "--model"],
+}
+if tuple(argv) in help_surfaces:
+    print(" ".join(flag for flag in help_surfaces[tuple(argv)] if flag != missing_feature))
+    sys.exit(0)
+if any("What does this project" in arg or "TURN" in arg for arg in argv):
+    sys.stderr.write("prompt text must be supplied on stdin, never argv\n")
+    sys.exit(64)
+if "-" not in argv:
+    sys.stderr.write("stdin prompt marker is required\n")
+    sys.exit(64)
+def reject(message):
+    sys.stderr.write(message + "\n")
+    sys.exit(64)
+
+def require_flag(flag):
+    if argv.count(flag) != 1:
+        reject("required flag %s must appear exactly once" % flag)
+
+def require_pair(flag, value):
+    require_flag(flag)
+    index = argv.index(flag)
+    if index + 1 >= len(argv) or argv[index + 1] != value:
+        reject("required flag %s has the wrong value or position" % flag)
+    return index
+
+if argv[-1:] != ["-"]:
+    reject("stdin prompt marker must be the final argument")
+
+is_resume = len(argv) > 1 and argv[0:2] == ["exec", "resume"]
+if is_resume:
+    forbidden = {"-C", "--sandbox", "--ask-for-approval", "--ignore-user-config", "-c"}
+    if any(arg in forbidden for arg in argv):
+        sys.stderr.write("unsupported resume flag\n")
+        sys.exit(64)
+    require_flag("--json")
+    require_pair("--model", "fake-codex-model")
+    if "thread-fixed-fake" not in argv[2:-1]:
+        reject("resume is missing the captured thread id")
+else:
+    require_flag("exec")
+    exec_index = argv.index("exec")
+    approval_index = require_pair("--ask-for-approval", "never")
+    effort_index = require_pair("-c", 'model_reasoning_effort="medium"')
+    if approval_index > exec_index or effort_index > exec_index:
+        reject("global flags must precede exec")
+    require_flag("--json")
+    require_flag("--ignore-user-config")
+    require_pair("--sandbox", "workspace-write")
+    require_flag("-C")
+    cwd_index = argv.index("-C")
+    if cwd_index + 1 >= len(argv) or not os.path.isdir(argv[cwd_index + 1]):
+        reject("-C must name the fixture directory")
+    require_pair("--model", "fake-codex-model")
+    for required in ("--json", "--ignore-user-config", "--sandbox", "-C", "--model"):
+        if argv.index(required) < exec_index:
+            reject("exec flag %s must follow exec" % required)
+
+mode = os.environ.get("FAKE_CODEX_MODE", "ok")
+if mode == "timeout":
+    time.sleep(3600)
+    sys.exit(0)
+if mode == "timeout-resistant":
+    child_code = '''
+import os, signal, subprocess, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(os.environ["FAKE_CODEX_CHILD_PID"], "w").write(str(os.getpid()))
+grandchild_code = """import os, signal, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(os.environ['FAKE_CODEX_GRANDCHILD_PID'], 'w').write(str(os.getpid()))
+time.sleep(3600)
+"""
+subprocess.Popen([sys.executable, "-c", grandchild_code])
+time.sleep(3600)
+'''
+    subprocess.Popen([sys.executable, "-c", child_code])
+    time.sleep(3600)
+    sys.exit(0)
+if mode == "signal-wait":
+    open(os.environ["FAKE_CODEX_HOME_PATH"], "w").write(os.environ.get("CODEX_HOME", ""))
+    # The parent receives TERM while waiting for us.  A short sleep lets its
+    # signal trap run after this fake exits without leaving a test process.
+    time.sleep(3)
+    sys.exit(0)
+if mode == "signal-child":
+    open(os.environ["FAKE_CODEX_HOME_PATH"], "w").write(os.environ.get("CODEX_HOME", ""))
+    open(os.environ["FAKE_CODEX_PARENT_PID"], "w").write(str(os.getpid()))
+    child_code = '''
+import os, subprocess, sys, time
+open(os.environ["FAKE_CODEX_CHILD_PID"], "w").write(str(os.getpid()))
+grandchild_code = """import os, time
+open(os.environ['FAKE_CODEX_GRANDCHILD_PID'], 'w').write(str(os.getpid()))
+time.sleep(3600)
+"""
+subprocess.Popen([sys.executable, "-c", grandchild_code])
+time.sleep(3600)
+'''
+    subprocess.Popen([sys.executable, "-c", child_code])
+    time.sleep(3600)
+    sys.exit(0)
+
+counter_path = os.environ.get("FAKE_CODEX_COUNTER", "")
+n = 1
+if counter_path:
+    try:
+        n = int(open(counter_path).read().strip()) + 1
+    except Exception:
+        n = 1
+    open(counter_path, "w").write(str(n))
+
+prompt = sys.stdin.read().strip()
+fail_turn = int(os.environ.get("FAKE_CODEX_FAIL_TURN", "0"))
+if mode == "fail" and n == fail_turn:
+    sys.exit(5)
+
+events = []
+if not is_resume:
+    events.append({"type": "thread.started", "thread_id": "thread-fixed-fake"})
+    if mode == "duplicate-thread-started":
+        events.append({"type": "thread.started", "thread_id": "thread-fixed-fake"})
+elif mode == "resume-thread-mismatch":
+    events.append({"type": "thread.started", "thread_id": "thread-wrong-fake"})
+elif mode == "resume-thread-started-ok":
+    events.append({"type": "thread.started", "thread_id": "thread-fixed-fake"})
+fixture_root = argv[argv.index("-C") + 1] if "-C" in argv else ""
+runner_root = os.environ.get("FAKE_TRACE_RUNNER_ROOT", "")
+if fixture_root:
+    trace_paths = [
+        fixture_root + "/README.md",
+        fixture_root.replace("/", "//") + "//README.md",
+        os.path.realpath(fixture_root) + "/README.md",
+        runner_root + "/evals/spec.json",
+        runner_root.replace("/", "//") + "//evals//spec.json",
+        os.path.realpath(runner_root) + "/evals/spec.json",
+    ]
+    command = "cat " + " ".join(trace_paths)
+else:
+    command = "echo turn-%d" % n
+command_event_type = "item.completed" if mode == "command-on-completed" else "item.started"
+events.append({"type": command_event_type, "item": {"type": "command_execution", "command": command}})
+filechange_event_type = "item.started" if mode == "file-change-on-started" else "item.completed"
+events.append({"type": filechange_event_type, "item": {"type": "file_change", "changes": [{"path": "notes/codex-turn-%d.md" % n, "kind": "add"}]}})
+text = "echo:" + prompt
+if mode == "transcript-shape" and n == 1:
+    text += "\nsecond transcript line"
+if mode != "transcript-shape" or n != 2:
+    events.append({"type": "item.completed", "item": {"type": "agent_message", "text": text}})
+short_turn = {"short-first": 1, "short-middle": 2, "short-final": 3}.get(mode)
+if n != short_turn:
+    events.append({"type": "turn.completed"})
+if mode == "mixed-failed":
+    events.append({"type": "turn.failed", "error": "failed after completion"})
+elif mode == "mixed-error":
+    events.append({"type": "error", "message": "error after completion"})
+elif mode == "duplicate-completion":
+    events.append({"type": "turn.completed"})
+for ev in events:
+    sys.stdout.write(json.dumps(ev) + "\n")
+if mode == "malformed-stream":
+    sys.stdout.write("not-json\n")
+    sys.stdout.write('{"type":"item.completed","item":{"type":"file_change","changes":"bad"}}\n')
+if mode == "replace-between-turns" and n == 1:
+    with open(sys.argv[0], "a") as self_file:
+        self_file.write("\n# replaced at turn boundary\n")
+sys.exit(0)
+PY
+chmod +x "$fake_codex"
+
+# A PATH-level Bash wrapper pauses the existing capture and grading process
+# boundaries. All other scripts immediately delegate to the real interpreter.
+phase_bin="$evfake/phase-bin"
+mkdir -p "$phase_bin"
+cat >"$phase_bin/bash" <<'SH'
+#!/bin/sh
+block=0
+case "${FAKE_RUN_PHASE:-}:$1" in
+capture:*/dot-agent-eval-verifiers.*/status.sh) block=1 ;;
+grading:"${FAKE_GRADE_PATH:-}") block=1 ;;
+esac
+if [ "$block" -eq 1 ]; then
+  printf 'ready\n' >"$FAKE_PHASE_READY"
+  while [ ! -e "$FAKE_PHASE_RELEASE" ]; do sleep 0.05; done
+fi
+if [ "${FAKE_INFRA_FAIL:-}" = grading ] && [ "$1" = "${FAKE_GRADE_PATH:-}" ]; then
+  exit 75
+fi
+if [ -n "${FAKE_REPLACE_AFTER_GRADE:-}" ] && [ "$1" = "${FAKE_GRADE_PATH:-}" ]; then
+  "$FAKE_REAL_BASH" "$@"
+  grade_rc=$?
+  if [ ! -e "$FAKE_REPLACE_AFTER_GRADE.done" ]; then
+    printf '\n# replaced between repeats\n' >>"$FAKE_REPLACE_AFTER_GRADE"
+    : >"$FAKE_REPLACE_AFTER_GRADE.done"
+  fi
+  exit "$grade_rc"
+fi
+exec "$FAKE_REAL_BASH" "$@"
+SH
+chmod +x "$phase_bin/bash"
+
+cat >"$phase_bin/git" <<'SH'
+#!/bin/sh
+if [ "${FAKE_INFRA_FAIL:-}" = capture ]; then
+  case " $* " in
+  *" add -A "*)
+    capture_count=0
+    [ ! -f "$FAKE_CAPTURE_GIT_COUNTER" ] || capture_count=$(cat "$FAKE_CAPTURE_GIT_COUNTER")
+    capture_count=$((capture_count + 1))
+    printf '%s\n' "$capture_count" >"$FAKE_CAPTURE_GIT_COUNTER"
+    [ "$capture_count" -lt 2 ] || exit 73
+    ;;
+  esac
+fi
+exec "$FAKE_REAL_GIT" "$@"
+SH
+chmod +x "$phase_bin/git"
+
+cat >"$phase_bin/python3" <<'SH'
+#!/bin/sh
+if [ "${FAKE_INFRA_FAIL:-}" = trace ] && [ "${1:-}" = - ]; then
+  case "${3:-}" in */outputs/trace.jsonl) exit 74 ;; esac
+fi
+exec "$FAKE_REAL_PYTHON" "$@"
+SH
+chmod +x "$phase_bin/python3"
+
+# Pauses right after mktemp -d succeeds for a verifier snapshot or a Codex
+# home — the "chmod 700 <dir>" that is each setup's very next step — so a
+# TERM sent while blocked here lands after ownership is registered but
+# before the rest of setup (copies, hashing) has run.
+cat >"$phase_bin/chmod" <<'SH'
+#!/bin/sh
+if [ "$1" = 700 ]; then
+  case "$2" in
+  *dot-agent-eval-verifiers.*)
+    if [ "${FAKE_RUN_PHASE:-}" = verifier-setup ]; then
+      printf '%s\n' "$2" >"$FAKE_PHASE_PATH"
+      printf 'ready\n' >"$FAKE_PHASE_READY"
+      while [ ! -e "$FAKE_PHASE_RELEASE" ]; do sleep 0.05; done
+    fi
+    ;;
+  *dot-agent-codex-home.*)
+    if [ "${FAKE_RUN_PHASE:-}" = codex-home-setup ]; then
+      printf '%s\n' "$2" >"$FAKE_PHASE_PATH"
+      printf 'ready\n' >"$FAKE_PHASE_READY"
+      while [ ! -e "$FAKE_PHASE_RELEASE" ]; do sleep 0.05; done
+    fi
+    ;;
+  esac
+fi
+exec "$FAKE_REAL_CHMOD" "$@"
+SH
+chmod +x "$phase_bin/chmod"
+
+# A deterministic append-failure: fails only the one cat call whose sole
+# argument's basename matches FAKE_CODEX_APPEND_FAIL, leaving every other
+# cat invocation in the run — node-tree capture included — untouched.
+cat >"$phase_bin/cat" <<'SH'
+#!/bin/sh
+if [ -n "${FAKE_CODEX_APPEND_FAIL:-}" ] && [ "$(basename -- "$1" 2>/dev/null)" = "$FAKE_CODEX_APPEND_FAIL" ]; then
+  echo "fake cat: simulated append failure" >&2
+  exit 1
+fi
+exec "$FAKE_REAL_CAT" "$@"
+SH
+chmod +x "$phase_bin/cat"
+
+eval_conf_write() {
+  # $1 conf path  $2 CLAUDE_BIN  $3 CODEX_BIN  $4 REPEATS  $5 TIMEOUT
+  cat >"$1" <<CONF
+CLAUDE_BIN=$2
+CLAUDE_MODEL=fake-claude-model
+CLAUDE_EFFORT=medium
+CODEX_BIN=$3
+CODEX_MODEL=fake-codex-model
+CODEX_EFFORT=medium
+REPEATS=$4
+TIMEOUT=$5
+CONF
+}
+
+# run workspace, eval id -> true only for a diagnostic-only void run
+eval_void_clean() {
+  evc_run=$(find "$1/iteration-1/eval-$2" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+  [ -n "$evc_run" ] \
+    && [ -f "$evc_run/run-meta.json" ] \
+    && grep -q '"void": true' "$evc_run/run-meta.json" 2>/dev/null \
+    && [ ! -e "$evc_run/outputs" ] \
+    && [ ! -e "$evc_run/grading.json" ]
+}
+
+# trace, fixture root, runner root -> rejects raw, doubled-separator, absolute,
+# and canonical aliases after collapsing separator runs for comparison
+trace_roots_absent() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import os, re, sys
+text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+text = re.sub(r"/+", "/", text)
+for supplied in sys.argv[2:]:
+    for root in (supplied, os.path.abspath(supplied), os.path.realpath(supplied)):
+        root = re.sub(r"/+", "/", root.rstrip(os.sep))
+        if root and root in text:
+            sys.exit(1)
+sys.exit(0)
+PY
+}
+
+# PID files -> report failure for a missing or live process, and kill every
+# recorded survivor so a regression cannot leak it out of this test suite
+recorded_processes_dead() {
+  rpd_failed=0
+  for rpd_file in "$@"; do
+    rpd_pid=$(sed -n '1p' "$rpd_file" 2>/dev/null)
+    case "$rpd_pid" in
+    *[!0-9]* | "") rpd_failed=1 ;;
+    *)
+      if kill -0 "$rpd_pid" 2>/dev/null; then
+        rpd_failed=1
+        kill -KILL "$rpd_pid" 2>/dev/null
+      fi
+      ;;
+    esac
+  done
+  [ "$rpd_failed" -eq 0 ]
+}
+
+# The fakes fail closed too. Otherwise a removed or misplaced adapter flag
+# could leave every behavioral test green against a permissive stand-in.
+printf '{}\n' | "$fake_claude" --print >/dev/null 2>&1
+rc44claude_flags=$?
+[ "$rc44claude_flags" -eq 64 ] && pass "evals: fake claude rejects missing required adapter flags" || fail "evals: fake claude rejects missing required adapter flags (rc=$rc44claude_flags)"
+printf 'prompt\n' | "$fake_codex" exec --ask-for-approval never \
+  -c 'model_reasoning_effort="medium"' --json --ignore-user-config \
+  --sandbox workspace-write -C "$reporoot" --model fake-codex-model - >/dev/null 2>&1
+rc44codex_flags=$?
+[ "$rc44codex_flags" -eq 64 ] && pass "evals: fake codex rejects misplaced global adapter flags" || fail "evals: fake codex rejects misplaced global adapter flags (rc=$rc44codex_flags)"
+
+# -- discovery: --list-arms resolves configured fake binaries and versions --
+conf_disc="$evfake/agents-discovery.conf"
+eval_conf_write "$conf_disc" "$fake_claude" "$fake_codex" 1 60
+la44=$(EVALS_AGENTS_CONF="$conf_disc" "$evsh" --list-arms 2>&1)
+printf '%s\n' "$la44" | grep -qF "$fake_claude" && printf '%s\n' "$la44" | grep -q 'version=9.9.9-fake' && pass "evals: run.sh --list-arms resolves a configured claude binary and its version" || fail "evals: run.sh --list-arms resolves a configured claude binary and its version ($la44)"
+printf '%s\n' "$la44" | grep -qF "$fake_codex" && printf '%s\n' "$la44" | grep -q 'version=5.5.5-fake' && pass "evals: run.sh --list-arms resolves a configured codex binary and its version" || fail "evals: run.sh --list-arms resolves a configured codex binary and its version ($la44)"
+
+# Feature support, rather than a guessed release boundary, decides readiness.
+conf_feature="$evfake/agents-feature-probe.conf"
+eval_conf_write "$conf_feature" "$fake_claude" "$fake_codex" 1 60
+la44old=$(EVALS_AGENTS_CONF="$conf_feature" FAKE_CODEX_VERSION=0.0.1-fake "$evsh" --list-arms 2>&1)
+printf '%s\n' "$la44old" | grep -q 'codex    bin=' && pass "evals: feature-complete codex is accepted across the former version boundary" || fail "evals: feature-complete codex is accepted across the former version boundary ($la44old)"
+feature_missing_ok=1
+for missing_feature in --ask-for-approval -c --json --ignore-user-config --sandbox -C --model; do
+  la44missing=$(EVALS_AGENTS_CONF="$conf_feature" FAKE_CODEX_VERSION=99.0.0-fake \
+    FAKE_CODEX_MISSING_FEATURE="$missing_feature" "$evsh" --list-arms 2>&1)
+  if ! printf '%s\n' "$la44missing" | grep -q 'codex    not ready' \
+    || ! printf '%s\n' "$la44missing" | grep -qF -- "$missing_feature"; then
+    feature_missing_ok=0
+  fi
+done
+if [ "$feature_missing_ok" -eq 1 ]; then
+  pass "evals: feature probe rejects a new codex missing any required adapter flag"
+else
+  fail "evals: feature probe rejects a new codex missing any required adapter flag"
+fi
+
+# Auto resolution must continue past an incompatible PATH candidate to a
+# feature-complete configured app candidate.
+incompatible_dir="$evfake/incompatible-path"
+mkdir -p "$incompatible_dir"
+incompatible_codex="$incompatible_dir/codex"
+cp "$fake_codex" "$incompatible_codex"
+chmod +x "$incompatible_codex"
+conf_fallback="$evfake/agents-feature-fallback.conf"
+eval_conf_write "$conf_fallback" "$fake_claude" auto 1 60
+printf 'CODEX_APP_BIN=%s\n' "$fake_codex" >>"$conf_fallback"
+la44fallback=$(PATH="$incompatible_dir:$PATH" EVALS_AGENTS_CONF="$conf_fallback" \
+  FAKE_CODEX_INCOMPATIBLE_BIN="$incompatible_codex" "$evsh" --list-arms 2>&1)
+if printf '%s\n' "$la44fallback" | grep -qF "codex    bin=$fake_codex" \
+  && ! printf '%s\n' "$la44fallback" | grep -qF "codex    bin=$incompatible_codex"; then
+  pass "evals: incompatible PATH codex falls back to a compatible configured app"
+else
+  fail "evals: incompatible PATH codex falls back to a compatible configured app ($la44fallback)"
+fi
+
+# -- refusal: an unconfigured agent, resolved against binaries guaranteed
+# absent rather than against whatever this machine happens to have installed --
+conf_unset="$evfake/agents-unset.conf"
+eval_conf_write "$conf_unset" "$evfake/no-such-claude" "$evfake/no-such-codex" 1 60
+la44b=$(EVALS_AGENTS_CONF="$conf_unset" "$evsh" --list-arms 2>&1)
+printf '%s\n' "$la44b" | grep -q 'claude   not ready' && printf '%s\n' "$la44b" | grep -q 'codex    not ready' && pass "evals: run.sh --list-arms reports an unresolvable agent as not ready" || fail "evals: run.sh --list-arms reports an unresolvable agent as not ready ($la44b)"
+EVALS_AGENTS_CONF="$conf_unset" "$evsh" --eval scope-question-no-edit --arm x --treatment-arm x \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$WORK/ev-refuse" >/dev/null 2>&1
+rc44b=$?
+[ "$rc44b" -eq 2 ] && pass "evals: run.sh refuses an unconfigured agent" || fail "evals: run.sh refuses an unconfigured agent (rc=$rc44b)"
+
+# Fixture failures still form diagnostic runs. outputs/ starts only after a
+# successful build, while the build log and any partial fixture stay retained.
+wsc_fixture_fail="$evfake/claude workspace-fixture-build-fail"
+conf_fixture_fail="$evfake/agents-fixture-build-fail.conf"
+eval_conf_write "$conf_fixture_fail" "$fake_claude" "$evfake/no-such-codex" 1 60
+invalid_corpus_ref="refs/heads/dot-agent-missing-$RANDOM-$$"
+EVALS_AGENTS_CONF="$conf_fixture_fail" \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$invalid_corpus_ref" --workspace "$wsc_fixture_fail" >/dev/null 2>&1
+rc44fixture_fail=$?
+fixture_fail_run=$(find "$wsc_fixture_fail/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc44fixture_fail" -ne 0 ] && eval_void_clean "$wsc_fixture_fail" scope-question-no-edit \
+  && grep -q '"status": "fixture_build_failed"' "$fixture_fail_run/run-meta.json" 2>/dev/null \
+  && grep -q '"failure_reason":' "$fixture_fail_run/run-meta.json" 2>/dev/null \
+  && [ -f "$fixture_fail_run/fixture-build.txt" ]; then
+  pass "evals: fixture-build failure retains diagnostic metadata without outputs"
+else
+  fail "evals: fixture-build failure retains diagnostic metadata without outputs (rc=$rc44fixture_fail)"
+fi
+
+# -- claude: stdin delivery, repeat placement inside one iteration, trace
+# normalization, spaced workspace path --
+wsc="$evfake/claude workspace"
+conf_claude="$evfake/agents-claude.conf"
+eval_conf_write "$conf_claude" "$fake_claude" "$evfake/no-such-codex" 2 60
+EVALS_AGENTS_CONF="$conf_claude" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 FAKE_TRACE_RUNNER_ROOT="$reporoot" \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc" >"$evfake/claude-run.out" 2>&1
+rc44c=$?
+[ "$rc44c" -eq 0 ] && pass "evals: a full run.sh invocation against a fake claude CLI exits 0" || fail "evals: a full run.sh invocation against a fake claude CLI exits 0 (rc=$rc44c; $(cat "$evfake/claude-run.out"))"
+
+evaldir_c="$wsc/iteration-1/eval-scope-question-no-edit"
+rundirs_c=$(find "$evaldir_c" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+ndirs_c=$(printf '%s\n' "$rundirs_c" | grep -c .)
+[ "$ndirs_c" -eq 2 ] && pass "evals: REPEATS=2 places both repeats under the one targeted iteration" || fail "evals: REPEATS=2 places both repeats under the one targeted iteration (found $ndirs_c under $evaldir_c)"
+[ ! -d "$wsc/iteration-2" ] && pass "evals: repeats never spawn a second iteration-<n> directory" || fail "evals: repeats never spawn a second iteration-<n> directory"
+
+run1_c=$(printf '%s\n' "$rundirs_c" | sed -n 1p)
+[ -d "$run1_c/fixture" ] && pass "evals: a workspace path containing a space still builds a fixture" || fail "evals: a workspace path containing a space still builds a fixture ($run1_c)"
+grep -qF 'echo:Is submitPayment safe to call concurrently?' "$run1_c/outputs/session-transcript.txt" 2>/dev/null && pass "evals: the eval prompt reached the fake claude CLI on stdin, not argv" || fail "evals: the eval prompt reached the fake claude CLI on stdin, not argv"
+[ "$(grep -c '^## Turn [0-9][0-9]*$' "$run1_c/outputs/session-transcript.txt" 2>/dev/null)" = "1" ] && pass "evals: claude transcript counts numbered turn sections" || fail "evals: claude transcript counts numbered turn sections"
+grep -q '"action": "read"' "$run1_c/outputs/trace.jsonl" 2>/dev/null && pass "evals: claude's tool_use call normalizes into the shared trace contract" || fail "evals: claude's tool_use call normalizes into the shared trace contract"
+grep -q '"path": "src/client.ts"' "$run1_c/outputs/trace.jsonl" 2>/dev/null && pass "evals: the trace record carries a fixture-relative path" || fail "evals: the trace record carries a fixture-relative path"
+if trace_roots_absent "$run1_c/outputs/trace.jsonl" "$run1_c/fixture" "$reporoot"; then
+  pass "evals: claude trace text contains no absolute fixture or runner-worktree path"
+else
+  fail "evals: claude trace text contains no absolute fixture or runner-worktree path"
+fi
+
+# A .agent filename is untrusted data. Shell metacharacters in nested path
+# components must reach node-tree.txt as text and must never execute.
+wsc_hostile="$evfake/claude workspace-hostile-filename"
+conf_claude_hostile="$evfake/agents-claude-hostile.conf"
+eval_conf_write "$conf_claude_hostile" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_hostile" FAKE_CLAUDE_MODE=adversarial-file FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_hostile" >/dev/null 2>&1
+rc44hostile=$?
+hostile_run=$(find "$wsc_hostile/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+escaped_hostile=$(find "$wsc_hostile" -name outside-capture -print -quit 2>/dev/null)
+hostile_payload=$(find "$hostile_run/fixture/.agent" -name payload -print -quit 2>/dev/null)
+if [ "$rc44hostile" -eq 0 ] && [ -n "$hostile_payload" ] && [ -z "$escaped_hostile" ]; then
+  pass "evals: node-tree capture treats adversarial .agent filenames as data"
+else
+  fail "evals: node-tree capture treats adversarial .agent filenames as data (rc=$rc44hostile escaped=$escaped_hostile)"
+fi
+
+# comments.sh exit 1 means it found blocking comments. The output is an
+# artifact for grading rather than an infrastructure failure.
+wsc_gate_findings="$evfake/claude workspace-gate-findings"
+conf_gate_findings="$evfake/agents-gate-findings.conf"
+eval_conf_write "$conf_gate_findings" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_gate_findings" FAKE_CLAUDE_MODE=gate-findings FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_gate_findings" >/dev/null 2>&1
+rc44gate_findings=$?
+gate_findings_run=$(find "$wsc_gate_findings/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc44gate_findings" -eq 0 ] \
+  && grep -q '^BLOCK' "$gate_findings_run/outputs/gate.txt" 2>/dev/null \
+  && [ -f "$gate_findings_run/grading.json" ]; then
+  pass "evals: comments.sh findings exit 1 remains a gradeable capture"
+else
+  fail "evals: comments.sh findings exit 1 remains a gradeable capture (rc=$rc44gate_findings)"
+fi
+
+# The agent may replace verifier scripts inside the fixture. Capture must run
+# only the pre-agent snapshots, so neither payload nor forged output survives.
+wsc_verifier_attack="$evfake/claude workspace-verifier-attack"
+conf_verifier_attack="$evfake/agents-verifier-attack.conf"
+verifier_attack_marker="$evfake/verifier-payload-executed"
+rm -f "$verifier_attack_marker"
+eval_conf_write "$conf_verifier_attack" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_verifier_attack" FAKE_CLAUDE_MODE=verifier-attack \
+  FAKE_CLAUDE_TURNS=1 FAKE_VERIFIER_ATTACK_MARKER="$verifier_attack_marker" \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_verifier_attack" >/dev/null 2>&1
+rc44verifier_attack=$?
+verifier_attack_run=$(find "$wsc_verifier_attack/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc44verifier_attack" -eq 0 ] && [ ! -e "$verifier_attack_marker" ] \
+  && ! grep -q 'FORGED' "$verifier_attack_run/outputs/status-after.txt" 2>/dev/null \
+  && ! grep -q 'FORGED' "$verifier_attack_run/outputs/gate.txt" 2>/dev/null \
+  && [ -f "$verifier_attack_run/grading.json" ]; then
+  pass "evals: fixture verifier replacement cannot execute or forge artifacts"
+else
+  rm -f "$verifier_attack_marker"
+  fail "evals: fixture verifier replacement cannot execute or forge artifacts (rc=$rc44verifier_attack)"
+fi
+
+# A tampered status.conf must not suppress the finding its trusted default
+# would have raised, and a tampered comments.conf must not exclude the file
+# it was trying to hide from the gate.
+if ! grep -q 'GROOM: CLAUDE.md' "$verifier_attack_run/outputs/status-after.txt" 2>/dev/null; then
+  pass "evals: status.sh runs against the trusted status.conf, not a fixture-side mutation"
+else
+  fail "evals: status.sh runs against the trusted status.conf, not a fixture-side mutation"
+fi
+if grep -q '^BLOCK' "$verifier_attack_run/outputs/gate.txt" 2>/dev/null; then
+  pass "evals: comments.sh runs against the trusted comments.conf, not a fixture-side mutation"
+else
+  fail "evals: comments.sh runs against the trusted comments.conf, not a fixture-side mutation"
+fi
+if grep -q 'ENTRYPOINT_MAX_WORDS=1' "$verifier_attack_run/outputs/node-tree.txt" 2>/dev/null; then
+  pass "evals: the attempted status.conf mutation is still visible as a captured artifact"
+else
+  fail "evals: the attempted status.conf mutation is still visible as a captured artifact"
+fi
+
+# Claude's existing short-session mode must exercise the result-count guard.
+wsc_claude_short="$evfake/claude workspace-short"
+conf_claude_short="$evfake/agents-claude-short.conf"
+eval_conf_write "$conf_claude_short" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_short" FAKE_CLAUDE_MODE=short FAKE_CLAUDE_TURNS=3 \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_claude_short" >/dev/null 2>&1
+rc44claude_short=$?
+if [ "$rc44claude_short" -ne 0 ] && eval_void_clean "$wsc_claude_short" bootstrap-once; then
+  pass "evals: claude exit 0 with a short session becomes a diagnostic-only void run"
+else
+  fail "evals: claude exit 0 with a short session becomes a diagnostic-only void run (rc=$rc44claude_short)"
+fi
+
+# A result-shaped error is not a successful final result, even if the Claude
+# process itself exits zero.
+wsc_claude_error="$evfake/claude workspace-error-result"
+conf_claude_error="$evfake/agents-claude-error-result.conf"
+eval_conf_write "$conf_claude_error" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_error" FAKE_CLAUDE_MODE=error-result FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_claude_error" >/dev/null 2>&1
+rc44claude_error=$?
+if [ "$rc44claude_error" -ne 0 ] && eval_void_clean "$wsc_claude_error" scope-question-no-edit; then
+  pass "evals: claude exit-zero error result becomes a diagnostic-only void run"
+else
+  fail "evals: claude exit-zero error result becomes a diagnostic-only void run (rc=$rc44claude_error)"
+fi
+
+wsc_claude_mixed="$evfake/claude workspace-mixed-result"
+conf_claude_mixed="$evfake/agents-claude-mixed-result.conf"
+eval_conf_write "$conf_claude_mixed" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_mixed" FAKE_CLAUDE_MODE=mixed-result FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_claude_mixed" >/dev/null 2>&1
+rc44claude_mixed=$?
+if [ "$rc44claude_mixed" -ne 0 ] && eval_void_clean "$wsc_claude_mixed" scope-question-no-edit; then
+  pass "evals: claude mixed success and error terminals become a diagnostic-only void run"
+else
+  fail "evals: claude mixed success and error terminals become a diagnostic-only void run (rc=$rc44claude_mixed)"
+fi
+
+wsc_claude_malformed="$evfake/claude workspace-malformed-stream"
+conf_claude_malformed="$evfake/agents-claude-malformed.conf"
+eval_conf_write "$conf_claude_malformed" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_malformed" FAKE_CLAUDE_MODE=malformed-stream FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_claude_malformed" >/dev/null 2>&1
+rc44claude_malformed=$?
+if [ "$rc44claude_malformed" -ne 0 ] && eval_void_clean "$wsc_claude_malformed" scope-question-no-edit; then
+  pass "evals: malformed raw claude stream becomes a diagnostic-only void run"
+else
+  fail "evals: malformed raw claude stream becomes a diagnostic-only void run (rc=$rc44claude_malformed)"
+fi
+
+python3 - "$run1_c/run-meta.json" "$wsc/iteration-1/run-config.json" "$fake_claude" <<'PY' >/dev/null 2>&1
+import hashlib, json, os, sys
+meta = json.load(open(sys.argv[1]))
+cfg = json.load(open(sys.argv[2]))["resolved"]["claude"]
+whole_cfg = json.load(open(sys.argv[2]))
+real = os.path.realpath(sys.argv[3])
+digest = hashlib.sha256(open(real, "rb").read()).hexdigest()
+required = {
+    "bin_realpath": real,
+    "bin_sha256": digest,
+    "version_output": "9.9.9-fake",
+}
+ok = all(cfg.get(k) == v for k, v in required.items())
+ok = ok and meta.get("agent_bin_realpath") == real
+ok = ok and meta.get("agent_bin_sha256") == digest
+ok = ok and meta.get("agent_version_output") == "9.9.9-fake"
+ok = ok and whole_cfg.get("arms", {}).get("treat", {}).get("corpus_ref") == meta.get("corpus_ref")
+sys.exit(0 if ok else 1)
+PY
+rc44identity=$?
+[ "$rc44identity" -eq 0 ] && pass "evals: run config and metadata record canonical executable identity" || fail "evals: run config and metadata record canonical executable identity"
+
+# The executable digest is part of the locked runtime identity. Replacing a
+# binary in place must be detected even when its path and --version stay put.
+fake_claude_digest="$evfake/fake-claude-digest.py"
+cp "$fake_claude" "$fake_claude_digest"
+conf_claude_digest="$evfake/agents-claude-digest.conf"
+wsc_digest="$evfake/claude workspace-digest"
+eval_conf_write "$conf_claude_digest" "$fake_claude_digest" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_digest" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_digest" >/dev/null 2>&1
+printf '\n# changed in place\n' >>"$fake_claude_digest"
+EVALS_AGENTS_CONF="$conf_claude_digest" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_digest" >/dev/null 2>&1
+rc44digest=$?
+[ "$rc44digest" -eq 2 ] && pass "evals: run-config refuses an in-place executable digest change" || fail "evals: run-config refuses an in-place executable digest change (rc=$rc44digest)"
+
+# -- a failing agent process voids the run: no grading.json, nonzero exit --
+wsc_fail="$evfake/claude workspace-fail"
+conf_claude_fail="$evfake/agents-claude-fail.conf"
+eval_conf_write "$conf_claude_fail" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_fail" FAKE_CLAUDE_MODE=fail FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_fail" >/dev/null 2>&1
+rc44f=$?
+[ "$rc44f" -ne 0 ] && pass "evals: a failing agent process makes the whole run.sh invocation exit nonzero" || fail "evals: a failing agent process makes the whole run.sh invocation exit nonzero"
+rundir_fail=$(find "$wsc_fail/iteration-1/eval-scope-question-no-edit" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+[ -n "$rundir_fail" ] && [ ! -e "$rundir_fail/grading.json" ] && pass "evals: a void run writes no grading.json" || fail "evals: a void run writes no grading.json"
+[ -f "$rundir_fail/run-meta.json" ] && grep -q '"status": "void"' "$rundir_fail/run-meta.json" 2>/dev/null && pass "evals: a void run's run-meta.json records status void" || fail "evals: a void run's run-meta.json records status void"
+[ ! -e "$rundir_fail/outputs" ] && pass "evals: a void run retains no partial raw output or outputs capture" || fail "evals: a void run retains no partial raw output or outputs capture"
+
+# -- config drift: a later run into the same iteration with a moved locked
+# field is refused before touching a fixture --
+wsc_drift="$evfake/claude workspace-drift"
+conf_claude_drift1="$evfake/agents-claude-drift1.conf"
+eval_conf_write "$conf_claude_drift1" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_drift1" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_drift" >/dev/null 2>&1
+rc44d1=$?
+[ "$rc44d1" -eq 0 ] && pass "evals: the first run into a fresh iteration locks run-config.json" || fail "evals: the first run into a fresh iteration locks run-config.json (rc=$rc44d1)"
+python3 - "$wsc_drift/iteration-1/run-config.json" <<'PY' >/dev/null 2>&1
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+sys.exit(0 if "repeats_per_cell" in cfg and "repeats" not in cfg else 1)
+PY
+rc44cfg=$?
+[ "$rc44cfg" -eq 0 ] && pass "evals: run-config records repeats_per_cell, not the retired repeats field" || fail "evals: run-config records repeats_per_cell, not the retired repeats field"
+
+conf_claude_drift2="$evfake/agents-claude-drift2.conf"
+eval_conf_write "$conf_claude_drift2" "$fake_claude" "$evfake/no-such-codex" 1 60
+subst "$conf_claude_drift2" 's/^CLAUDE_MODEL=.*/CLAUDE_MODEL=fake-claude-model-drifted/'
+EVALS_AGENTS_CONF="$conf_claude_drift2" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_drift" >"$evfake/drift.err" 2>&1
+rc44d2=$?
+[ "$rc44d2" -eq 2 ] && pass "evals: a later run with a drifted model is refused" || fail "evals: a later run with a drifted model is refused (rc=$rc44d2)"
+grep -q 'drifted' "$evfake/drift.err" && pass "evals: the drift refusal names the field that moved" || fail "evals: the drift refusal names the field that moved ($(cat "$evfake/drift.err"))"
+
+conf_claude_effort="$evfake/agents-claude-effort-drift.conf"
+eval_conf_write "$conf_claude_effort" "$fake_claude" "$evfake/no-such-codex" 1 60
+subst "$conf_claude_effort" 's/^CLAUDE_EFFORT=.*/CLAUDE_EFFORT=high/'
+EVALS_AGENTS_CONF="$conf_claude_effort" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_drift" >"$evfake/effort-drift.err" 2>&1
+rc44effort=$?
+[ "$rc44effort" -eq 2 ] && pass "evals: a later run with drifted effort is refused" || fail "evals: a later run with drifted effort is refused (rc=$rc44effort)"
+grep -q 'effort' "$evfake/effort-drift.err" && pass "evals: held-effort drift is named in the refusal" || fail "evals: held-effort drift is named in the refusal ($(cat "$evfake/effort-drift.err"))"
+ndirs_drift=$(find "$wsc_drift/iteration-1/eval-scope-question-no-edit" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)
+[ "$ndirs_drift" -eq 1 ] && pass "evals: a refused drifted run creates no additional run directory" || fail "evals: a refused drifted run creates no additional run directory (found $ndirs_drift)"
+
+# -- codex: stdin delivery, thread resume across turns, trace normalization --
+wscx="$evfake/codex workspace"
+conf_codex="$evfake/agents-codex.conf"
+eval_conf_write "$conf_codex" "$evfake/no-such-claude" "$fake_codex" 1 60
+codex_counter="$evfake/codex-counter"
+rm -f "$codex_counter"
+EVALS_AGENTS_CONF="$conf_codex" FAKE_CODEX_MODE=ok FAKE_CODEX_COUNTER="$codex_counter" FAKE_TRACE_RUNNER_ROOT="$reporoot" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx" >"$evfake/codex-run.out" 2>&1
+rc44x=$?
+[ "$rc44x" -eq 0 ] && pass "evals: a full run.sh invocation against a fake codex CLI exits 0" || fail "evals: a full run.sh invocation against a fake codex CLI exits 0 (rc=$rc44x; $(cat "$evfake/codex-run.out"))"
+
+rundir_x=$(find "$wscx/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+[ "$(grep -c '^## Turn [0-9][0-9]*$' "$rundir_x/outputs/session-transcript.txt" 2>/dev/null)" = "3" ] && pass "evals: a 3-turn eval against codex captures three numbered transcript sections" || fail "evals: a 3-turn eval against codex captures three numbered transcript sections"
+sed -n '2p' "$rundir_x/outputs/session-transcript.txt" 2>/dev/null | grep -qF 'echo:What does this project use for HTTP?' && pass "evals: turn one's prompt reached the fake codex CLI on stdin, not argv" || fail "evals: turn one's prompt reached the fake codex CLI on stdin, not argv"
+[ "$(grep -c '"tool": "codex.command_execution"' "$rundir_x/outputs/trace.jsonl" 2>/dev/null)" = "3" ] && pass "evals: codex's command_execution items normalize into the shared trace contract, one per turn" || fail "evals: codex's command_execution items normalize into the shared trace contract, one per turn"
+grep -q '"path": "notes/codex-turn-3.md"' "$rundir_x/outputs/trace.jsonl" 2>/dev/null && pass "evals: codex's file_change items normalize with a fixture-relative path" || fail "evals: codex's file_change items normalize with a fixture-relative path"
+python3 - "$rundir_x/outputs/agent-stdout.txt" <<'PY' >/dev/null 2>&1
+import json, sys
+seen_completed = False
+seen_started = False
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    event = json.loads(line)
+    item = event.get("item") or {}
+    if item.get("type") == "file_change":
+        seen_completed |= event.get("type") == "item.completed"
+        seen_started |= event.get("type") == "item.started"
+sys.exit(0 if seen_completed and not seen_started else 1)
+PY
+rc44file_lifecycle=$?
+[ "$rc44file_lifecycle" -eq 0 ] && pass "evals: codex file_change trace fixture uses the real item.completed lifecycle" || fail "evals: codex file_change trace fixture uses the real item.completed lifecycle"
+if trace_roots_absent "$rundir_x/outputs/trace.jsonl" "$rundir_x/fixture" "$reporoot"; then
+  pass "evals: codex trace text contains no absolute fixture or runner-worktree path"
+else
+  fail "evals: codex trace text contains no absolute fixture or runner-worktree path ($(cat "$rundir_x/outputs/trace.jsonl" 2>/dev/null))"
+fi
+[ "$(grep -c 'thread.started' "$rundir_x/outputs/agent-stdout.txt" 2>/dev/null)" = "1" ] && pass "evals: turns 2 and 3 resume the thread turn 1 started rather than opening a new one" || fail "evals: turns 2 and 3 resume the thread turn 1 started rather than opening a new one"
+
+# Every Codex invocation must close exactly one requested turn. Cover the
+# first, middle, and final positions because only the first two have a later
+# continuation that could otherwise expose the dropped event.
+for short_mode in short-first short-middle short-final; do
+  wscx_short="$evfake/codex workspace-$short_mode"
+  conf_codex_short="$evfake/agents-codex-$short_mode.conf"
+  codex_short_counter="$evfake/codex-$short_mode-counter"
+  rm -f "$codex_short_counter"
+  eval_conf_write "$conf_codex_short" "$evfake/no-such-claude" "$fake_codex" 1 60
+  EVALS_AGENTS_CONF="$conf_codex_short" FAKE_CODEX_MODE="$short_mode" \
+    FAKE_CODEX_COUNTER="$codex_short_counter" \
+    "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+    --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_short" >/dev/null 2>&1
+  rc44codex_short=$?
+  if [ "$rc44codex_short" -ne 0 ] && eval_void_clean "$wscx_short" bootstrap-once; then
+    pass "evals: codex $short_mode exit 0 becomes a diagnostic-only void run"
+  else
+    fail "evals: codex $short_mode exit 0 becomes a diagnostic-only void run (rc=$rc44codex_short)"
+  fi
+done
+
+for terminal_mode in mixed-failed mixed-error duplicate-completion; do
+  wscx_terminal="$evfake/codex workspace-$terminal_mode"
+  conf_codex_terminal="$evfake/agents-codex-$terminal_mode.conf"
+  eval_conf_write "$conf_codex_terminal" "$evfake/no-such-claude" "$fake_codex" 1 60
+  EVALS_AGENTS_CONF="$conf_codex_terminal" FAKE_CODEX_MODE="$terminal_mode" \
+    "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+    --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_terminal" >/dev/null 2>&1
+  rc44terminal=$?
+  if [ "$rc44terminal" -ne 0 ] && eval_void_clean "$wscx_terminal" scope-question-no-edit; then
+    pass "evals: codex $terminal_mode terminals become a diagnostic-only void run"
+  else
+    fail "evals: codex $terminal_mode terminals become a diagnostic-only void run (rc=$rc44terminal)"
+  fi
+done
+
+wscx_malformed="$evfake/codex workspace-malformed-stream"
+conf_codex_malformed="$evfake/agents-codex-malformed.conf"
+eval_conf_write "$conf_codex_malformed" "$evfake/no-such-claude" "$fake_codex" 1 60
+EVALS_AGENTS_CONF="$conf_codex_malformed" FAKE_CODEX_MODE=malformed-stream \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_malformed" >/dev/null 2>&1
+rc44codex_malformed=$?
+if [ "$rc44codex_malformed" -ne 0 ] && eval_void_clean "$wscx_malformed" scope-question-no-edit; then
+  pass "evals: malformed raw codex stream becomes a diagnostic-only void run"
+else
+  fail "evals: malformed raw codex stream becomes a diagnostic-only void run (rc=$rc44codex_malformed)"
+fi
+
+# Replace a dedicated Codex binary as its first turn exits. The post-launch
+# identity check must void the run before a resume can launch.
+fake_codex_replace="$evfake/fake-codex-replace.py"
+cp "$fake_codex" "$fake_codex_replace"
+chmod +x "$fake_codex_replace"
+wscx_replace="$evfake/codex workspace-replace-between-turns"
+conf_codex_replace="$evfake/agents-codex-replace.conf"
+codex_replace_counter="$evfake/codex-replace-counter"
+rm -f "$codex_replace_counter"
+eval_conf_write "$conf_codex_replace" "$evfake/no-such-claude" "$fake_codex_replace" 1 60
+EVALS_AGENTS_CONF="$conf_codex_replace" FAKE_CODEX_MODE=replace-between-turns \
+  FAKE_CODEX_COUNTER="$codex_replace_counter" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_replace" >/dev/null 2>&1
+rc44codex_replace=$?
+codex_replace_run=$(find "$wscx_replace/iteration-1/eval-bootstrap-once" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc44codex_replace" -ne 0 ] && [ "$(cat "$codex_replace_counter" 2>/dev/null)" = 1 ] \
+  && eval_void_clean "$wscx_replace" bootstrap-once \
+  && grep -q '"status": "agent_identity_mismatch"' "$codex_replace_run/run-meta.json" 2>/dev/null; then
+  pass "evals: same-path codex replacement at a turn boundary voids before resume"
+else
+  fail "evals: same-path codex replacement at a turn boundary voids before resume (rc=$rc44codex_replace)"
+fi
+
+# ACTIVE_RUN_DIR stays armed after the adapter returns. Pause once during
+# capture and once at grader entry, then signal only the runner process.
+real_bash=$(command -v bash)
+real_git=$(command -v git)
+real_python=$(command -v python3)
+real_chmod=$(command -v chmod)
+real_cat=$(command -v cat)
+
+# Replace a dedicated Claude binary after repeat one has graded. Repeat two
+# must fail its pre-launch identity check without driving the replacement.
+fake_claude_replace="$evfake/fake-claude-replace.py"
+cp "$fake_claude" "$fake_claude_replace"
+chmod +x "$fake_claude_replace"
+wsc_repeat_replace="$evfake/claude workspace-replace-between-repeats"
+conf_repeat_replace="$evfake/agents-replace-between-repeats.conf"
+rm -f "$fake_claude_replace.done"
+eval_conf_write "$conf_repeat_replace" "$fake_claude_replace" "$evfake/no-such-codex" 2 60
+PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
+  FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
+  FAKE_REPLACE_AFTER_GRADE="$fake_claude_replace" \
+  FAKE_GRADE_PATH="$evroot/grade.sh" EVALS_AGENTS_CONF="$conf_repeat_replace" \
+  FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_repeat_replace" >/dev/null 2>&1
+rc44repeat_replace=$?
+repeat_replace_eval="$wsc_repeat_replace/iteration-1/eval-scope-question-no-edit"
+repeat_replace_void=$(find "$repeat_replace_eval" -name run-meta.json -exec grep -l '"status": "agent_identity_mismatch"' {} \; 2>/dev/null | head -n1)
+if [ "$rc44repeat_replace" -ne 0 ] \
+  && [ "$(find "$repeat_replace_eval" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)" -eq 2 ] \
+  && [ -n "$repeat_replace_void" ] \
+  && [ ! -e "${repeat_replace_void%/run-meta.json}/outputs" ] \
+  && [ ! -e "${repeat_replace_void%/run-meta.json}/grading.json" ]; then
+  pass "evals: same-path executable replacement between repeats voids the affected repeat"
+else
+  fail "evals: same-path executable replacement between repeats voids the affected repeat (rc=$rc44repeat_replace)"
+fi
+
+for run_phase in capture grading; do
+  phase_workspace="$evfake/claude workspace-signal-$run_phase"
+  phase_conf="$evfake/agents-signal-$run_phase.conf"
+  phase_ready="$evfake/$run_phase-ready"
+  phase_release="$evfake/$run_phase-release"
+  rm -f "$phase_ready" "$phase_release"
+  eval_conf_write "$phase_conf" "$fake_claude" "$evfake/no-such-codex" 1 60
+  PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
+    FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
+    FAKE_RUN_PHASE="$run_phase" \
+    FAKE_GRADE_PATH="$evroot/grade.sh" FAKE_PHASE_READY="$phase_ready" \
+    FAKE_PHASE_RELEASE="$phase_release" EVALS_AGENTS_CONF="$phase_conf" \
+    FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+    "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+    --agent claude --corpus-ref "$corpus_ref_test" --workspace "$phase_workspace" >/dev/null 2>&1 &
+  phase_runner_pid=$!
+  phase_wait=0
+  while [ ! -s "$phase_ready" ] && [ "$phase_wait" -lt 100 ]; do
+    sleep 0.1
+    phase_wait=$((phase_wait + 1))
+  done
+  kill -TERM "$phase_runner_pid" 2>/dev/null
+  : >"$phase_release"
+  wait "$phase_runner_pid" 2>/dev/null
+  phase_rc=$?
+  phase_run=$(find "$phase_workspace/iteration-1/eval-scope-question-no-edit" \
+    -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+  if [ "$phase_rc" -ne 0 ] && [ -s "$phase_ready" ] \
+    && eval_void_clean "$phase_workspace" scope-question-no-edit \
+    && grep -q '"status": "cancelled"' "$phase_run/run-meta.json" 2>/dev/null; then
+    pass "evals: TERM during $run_phase retains cancelled metadata and no outputs or grading"
+  else
+    kill -KILL "$phase_runner_pid" 2>/dev/null
+    fail "evals: TERM during $run_phase retains cancelled metadata and no outputs or grading (rc=$phase_rc)"
+  fi
+done
+
+# Each post-agent infrastructure stage must fail closed with its own metadata
+# status and reason. The fixture and fixture-build diagnostics remain retained.
+for infra_stage in capture trace grading; do
+  infra_workspace="$evfake/claude workspace-$infra_stage-failure"
+  infra_conf="$evfake/agents-$infra_stage-failure.conf"
+  infra_capture_counter="$evfake/$infra_stage-capture-git-counter"
+  rm -f "$infra_capture_counter"
+  eval_conf_write "$infra_conf" "$fake_claude" "$evfake/no-such-codex" 1 60
+  PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
+    FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
+    FAKE_INFRA_FAIL="$infra_stage" \
+    FAKE_CAPTURE_GIT_COUNTER="$infra_capture_counter" \
+    FAKE_GRADE_PATH="$evroot/grade.sh" EVALS_AGENTS_CONF="$infra_conf" \
+    FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+    "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+    --agent claude --corpus-ref "$corpus_ref_test" --workspace "$infra_workspace" >/dev/null 2>&1
+  infra_rc=$?
+  case "$infra_stage" in
+  capture) infra_status=artifact_capture_failed ;;
+  trace) infra_status=trace_extraction_failed ;;
+  grading) infra_status=grading_failed ;;
+  esac
+  infra_run=$(find "$infra_workspace/iteration-1/eval-scope-question-no-edit" \
+    -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+  if [ "$infra_rc" -ne 0 ] && eval_void_clean "$infra_workspace" scope-question-no-edit \
+    && grep -q "\"status\": \"$infra_status\"" "$infra_run/run-meta.json" 2>/dev/null \
+    && grep -q '"failure_reason":' "$infra_run/run-meta.json" 2>/dev/null \
+    && [ -d "$infra_run/fixture" ] && [ -f "$infra_run/fixture-build.txt" ]; then
+    pass "evals: $infra_stage infrastructure failure retains truthful void metadata only"
+  else
+    fail "evals: $infra_stage infrastructure failure retains truthful void metadata only (rc=$infra_rc)"
+  fi
+done
+
+# Transcript sections represent completed turns, rather than nonempty lines:
+# multiline final text remains intact and an empty final answer stays visible.
+wscx_transcript="$evfake/codex workspace-transcript-shape"
+conf_codex_transcript="$evfake/agents-codex-transcript-shape.conf"
+eval_conf_write "$conf_codex_transcript" "$evfake/no-such-claude" "$fake_codex" 1 60
+codex_shape_counter="$evfake/codex-shape-counter"
+rm -f "$codex_shape_counter"
+EVALS_AGENTS_CONF="$conf_codex_transcript" FAKE_CODEX_MODE=transcript-shape FAKE_CODEX_COUNTER="$codex_shape_counter" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_transcript" >/dev/null 2>&1
+rundir_transcript=$(find "$wscx_transcript/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+[ "$(grep -c '^## Turn [0-9][0-9]*$' "$rundir_transcript/outputs/session-transcript.txt" 2>/dev/null)" = "3" ] && pass "evals: transcript emits a numbered section for every completed turn" || fail "evals: transcript emits a numbered section for every completed turn"
+grep -A1 '^## Turn 2$' "$rundir_transcript/outputs/session-transcript.txt" 2>/dev/null | grep -qF '[empty final response]' && pass "evals: transcript records an empty final response with a placeholder" || fail "evals: transcript records an empty final response with a placeholder"
+grep -A2 '^## Turn 1$' "$rundir_transcript/outputs/session-transcript.txt" 2>/dev/null | grep -qF 'second transcript line' && pass "evals: transcript preserves multiline final response text" || fail "evals: transcript preserves multiline final response text"
+
+# On an interrupt, authentication must be in a system-temporary home, never
+# outputs/, and the active home is removed before the runner terminates.
+wscx_signal="$evfake/codex workspace-signal"
+conf_codex_signal="$evfake/agents-codex-signal.conf"
+eval_conf_write "$conf_codex_signal" "$evfake/no-such-claude" "$fake_codex" 1 60
+codex_home_path="$evfake/codex-active-home"
+codex_auth_source="$evfake/codex-auth-source"
+mkdir -p "$codex_auth_source"
+printf '{"auth_mode": "chatgpt", "token":"fake"}\n' >"$codex_auth_source/auth.json"
+rm -f "$codex_home_path"
+EVALS_AGENTS_CONF="$conf_codex_signal" CODEX_HOME="$codex_auth_source" FAKE_CODEX_MODE=signal-wait FAKE_CODEX_HOME_PATH="$codex_home_path" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_signal" >/dev/null 2>&1 &
+signal_runner_pid=$!
+signal_wait=0
+while [ ! -s "$codex_home_path" ] && [ "$signal_wait" -lt 100 ]; do sleep 0.1; signal_wait=$((signal_wait + 1)); done
+kill -TERM "$signal_runner_pid" 2>/dev/null
+wait "$signal_runner_pid" 2>/dev/null
+signal_rc=$?
+signal_home=$(cat "$codex_home_path" 2>/dev/null)
+case "$signal_home" in
+"${TMPDIR:-/tmp}/dot-agent-codex-home."*) signal_home_prefix=1 ;;
+*) signal_home_prefix=0 ;;
+esac
+[ "$signal_rc" -ne 0 ] && [ "$signal_home_prefix" -eq 1 ] && [ ! -e "$signal_home" ] && pass "evals: TERM cleanup removes the active system-temporary Codex home" || fail "evals: TERM cleanup removes the active system-temporary Codex home (rc=$signal_rc home=$signal_home)"
+case "$signal_home" in "$wscx_signal"/*) signal_home_retained=1 ;; *) signal_home_retained=0 ;; esac
+retained_auth=$(find "$wscx_signal/iteration-1/eval-bootstrap-once" -path '*/outputs/auth.json' -print -quit 2>/dev/null)
+[ "$signal_home_retained" -eq 0 ] && [ -z "$retained_auth" ] && pass "evals: copied Codex authentication never enters retained outputs" || fail "evals: copied Codex authentication never enters retained outputs"
+
+# A targeted TERM reaches only run.sh. Its cleanup must then terminate the
+# detached fake CLI process group, including a child and grandchild, without
+# sending a signal to this parent test process.
+wscx_cancel="$evfake/codex workspace-cancel-group"
+conf_codex_cancel="$evfake/agents-codex-cancel-group.conf"
+eval_conf_write "$conf_codex_cancel" "$evfake/no-such-claude" "$fake_codex" 1 60
+cancel_home_path="$evfake/codex-cancel-home"
+cancel_parent_pid="$evfake/codex-cancel-parent.pid"
+cancel_child_pid="$evfake/codex-cancel-child.pid"
+cancel_grandchild_pid="$evfake/codex-cancel-grandchild.pid"
+rm -f "$cancel_home_path" "$cancel_parent_pid" "$cancel_child_pid" "$cancel_grandchild_pid"
+EVALS_AGENTS_CONF="$conf_codex_cancel" FAKE_CODEX_MODE=signal-child \
+  FAKE_CODEX_HOME_PATH="$cancel_home_path" FAKE_CODEX_PARENT_PID="$cancel_parent_pid" \
+  FAKE_CODEX_CHILD_PID="$cancel_child_pid" FAKE_CODEX_GRANDCHILD_PID="$cancel_grandchild_pid" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_cancel" >/dev/null 2>&1 &
+cancel_runner_pid=$!
+cancel_wait=0
+while { [ ! -s "$cancel_parent_pid" ] || [ ! -s "$cancel_child_pid" ] || [ ! -s "$cancel_grandchild_pid" ]; } \
+  && [ "$cancel_wait" -lt 100 ]; do
+  sleep 0.1
+  cancel_wait=$((cancel_wait + 1))
+done
+kill -TERM "$cancel_runner_pid" 2>/dev/null
+wait "$cancel_runner_pid" 2>/dev/null
+cancel_rc=$?
+if [ "$cancel_rc" -ne 0 ] \
+  && recorded_processes_dead "$cancel_parent_pid" "$cancel_child_pid" "$cancel_grandchild_pid"; then
+  pass "evals: targeted TERM kills the active codex process group including child and grandchild"
+else
+  fail "evals: targeted TERM kills the active codex process group including child and grandchild (rc=$cancel_rc)"
+fi
+cancel_rundir=$(find "$wscx_cancel/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ -f "$cancel_rundir/run-meta.json" ] \
+  && grep -q '"status": "cancelled"' "$cancel_rundir/run-meta.json" 2>/dev/null \
+  && [ ! -e "$cancel_rundir/outputs" ]; then
+  pass "evals: cancellation retains void metadata and removes partial outputs"
+else
+  fail "evals: cancellation retains void metadata and removes partial outputs"
+fi
+
+# The portable timeout starts a new process group. Descendants that ignore
+# TERM must receive KILL after the grace period, even when the leader exits.
+wscx_timeout="$evfake/codex workspace-timeout"
+conf_codex_timeout="$evfake/agents-codex-timeout.conf"
+codex_child_pid="$evfake/codex-timeout-child.pid"
+codex_grandchild_pid="$evfake/codex-timeout-grandchild.pid"
+rm -f "$codex_child_pid" "$codex_grandchild_pid"
+eval_conf_write "$conf_codex_timeout" "$evfake/no-such-claude" "$fake_codex" 1 1
+EVALS_AGENTS_CONF="$conf_codex_timeout" FAKE_CODEX_MODE=timeout-resistant \
+  FAKE_CODEX_CHILD_PID="$codex_child_pid" FAKE_CODEX_GRANDCHILD_PID="$codex_grandchild_pid" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_timeout" >/dev/null 2>&1
+rc44timeout=$?
+if [ "$rc44timeout" -ne 0 ] \
+  && recorded_processes_dead "$codex_child_pid" "$codex_grandchild_pid"; then
+  pass "evals: timeout kills TERM-resistant codex child and grandchild"
+else
+  fail "evals: timeout kills TERM-resistant codex child and grandchild (rc=$rc44timeout)"
+fi
+timeout_rundir=$(find "$wscx_timeout/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ -f "$timeout_rundir/run-meta.json" ] \
+  && grep -q '"status": "timeout"' "$timeout_rundir/run-meta.json" 2>/dev/null \
+  && [ ! -e "$timeout_rundir/outputs" ]; then
+  pass "evals: timeout retains void metadata and removes partial outputs"
+else
+  fail "evals: timeout retains void metadata and removes partial outputs"
+fi
 
 # The grader is the piece that turns spec.json's check strings from a
 # declared DSL into executing code. Driven here against artifacts written by
@@ -2062,6 +3277,314 @@ printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed
 rc42e=$?
 [ "$rc42e" -eq 2 ] && pass "evals: rollup refuses an iteration with a manual assertion still ungraded" || fail "evals: rollup refuses an iteration with a manual assertion still ungraded (rc=$rc42e)"
 
+# ---- 45. evals/run.sh: subscription-backed auth, thread lifecycle,
+#          process-group cleanup on success, setup-cancellation ownership,
+#          Codex stream-append checks, and concurrent metadata updates ----
+# The default $evauth credentials (claude-ok / codex-ok, set up above) are
+# subscription-backed and valid, so every fake-CLI test above this section
+# authenticates normally. Each block below overrides CLAUDE_CONFIG_DIR or
+# CODEX_HOME (or the operator's own env) for exactly one invocation to prove
+# the rejection path, never the suite-wide default.
+
+# -- claude refuses to run without claude.ai subscription credentials --
+auth_claude_missing_dir="$evfake/auth-claude-missing"
+mkdir -p "$auth_claude_missing_dir"
+wsc_auth_claude_missing="$evfake/claude workspace-auth-missing"
+conf_auth_claude="$evfake/agents-auth-claude.conf"
+eval_conf_write "$conf_auth_claude" "$fake_claude" "$evfake/no-such-codex" 1 60
+CLAUDE_CONFIG_DIR="$auth_claude_missing_dir" EVALS_AGENTS_CONF="$conf_auth_claude" \
+  FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_auth_claude_missing" >/dev/null 2>&1
+rc_auth_claude_missing=$?
+auth_claude_missing_run=$(find "$wsc_auth_claude_missing/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc_auth_claude_missing" -ne 0 ] && eval_void_clean "$wsc_auth_claude_missing" scope-question-no-edit \
+  && grep -q '"status": "agent_auth_rejected"' "$auth_claude_missing_run/run-meta.json" 2>/dev/null; then
+  pass "evals: claude refuses to run without claude.ai credentials"
+else
+  fail "evals: claude refuses to run without claude.ai credentials (rc=$rc_auth_claude_missing)"
+fi
+
+# -- claude refuses an API-key-only credentials file: no claude.ai plan --
+auth_claude_apikey_dir="$evfake/auth-claude-apikey"
+mkdir -p "$auth_claude_apikey_dir"
+printf '{"apiKeyHelper": true}\n' >"$auth_claude_apikey_dir/.credentials.json"
+wsc_auth_claude_apikey="$evfake/claude workspace-auth-apikey"
+CLAUDE_CONFIG_DIR="$auth_claude_apikey_dir" EVALS_AGENTS_CONF="$conf_auth_claude" \
+  FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_auth_claude_apikey" >/dev/null 2>&1
+rc_auth_claude_apikey=$?
+if [ "$rc_auth_claude_apikey" -ne 0 ] && eval_void_clean "$wsc_auth_claude_apikey" scope-question-no-edit; then
+  pass "evals: claude refuses an API-key-style credentials file with no claude.ai subscription"
+else
+  fail "evals: claude refuses an API-key-style credentials file with no claude.ai subscription (rc=$rc_auth_claude_apikey)"
+fi
+
+# -- codex refuses to run without ChatGPT-account credentials --
+auth_codex_missing_dir="$evfake/auth-codex-missing"
+mkdir -p "$auth_codex_missing_dir"
+wsc_auth_codex_missing="$evfake/codex workspace-auth-missing"
+conf_auth_codex="$evfake/agents-auth-codex.conf"
+eval_conf_write "$conf_auth_codex" "$evfake/no-such-claude" "$fake_codex" 1 60
+CODEX_HOME="$auth_codex_missing_dir" EVALS_AGENTS_CONF="$conf_auth_codex" FAKE_CODEX_MODE=ok \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wsc_auth_codex_missing" >/dev/null 2>&1
+rc_auth_codex_missing=$?
+auth_codex_missing_run=$(find "$wsc_auth_codex_missing/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc_auth_codex_missing" -ne 0 ] && eval_void_clean "$wsc_auth_codex_missing" scope-question-no-edit \
+  && grep -q '"status": "agent_auth_rejected"' "$auth_codex_missing_run/run-meta.json" 2>/dev/null; then
+  pass "evals: codex refuses to run without ChatGPT credentials"
+else
+  fail "evals: codex refuses to run without ChatGPT credentials (rc=$rc_auth_codex_missing)"
+fi
+
+# -- codex refuses an auth_mode other than chatgpt, and never surfaces the
+# rejected credential's value while doing it --
+auth_codex_badmode_dir="$evfake/auth-codex-badmode"
+mkdir -p "$auth_codex_badmode_dir"
+printf '{"auth_mode": "apikey", "OPENAI_API_KEY": "SECRET-SENTINEL-VALUE-should-never-appear"}\n' \
+  >"$auth_codex_badmode_dir/auth.json"
+wsc_auth_codex_badmode="$evfake/codex workspace-auth-badmode"
+CODEX_HOME="$auth_codex_badmode_dir" EVALS_AGENTS_CONF="$conf_auth_codex" FAKE_CODEX_MODE=ok \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wsc_auth_codex_badmode" \
+  >"$evfake/auth-codex-badmode.out" 2>&1
+rc_auth_codex_badmode=$?
+if [ "$rc_auth_codex_badmode" -ne 0 ] && eval_void_clean "$wsc_auth_codex_badmode" scope-question-no-edit; then
+  pass "evals: codex refuses an auth_mode other than chatgpt"
+else
+  fail "evals: codex refuses an auth_mode other than chatgpt (rc=$rc_auth_codex_badmode)"
+fi
+if ! grep -rq 'SECRET-SENTINEL-VALUE-should-never-appear' \
+    "$wsc_auth_codex_badmode" "$evfake/auth-codex-badmode.out" 2>/dev/null; then
+  pass "evals: a rejected codex auth_mode never surfaces the credential value"
+else
+  fail "evals: a rejected codex auth_mode never surfaces the credential value"
+fi
+
+# -- provider credential and alternate-provider env vars never reach either
+# adapter's subprocess, even when set in the operator's own shell --
+leak_claude_out="$evfake/leak-claude-out"
+leak_codex_out="$evfake/leak-codex-out"
+rm -f "$leak_claude_out" "$leak_codex_out"
+wsc_leak_claude="$evfake/claude workspace-env-leak"
+conf_leak_claude="$evfake/agents-leak-claude.conf"
+eval_conf_write "$conf_leak_claude" "$fake_claude" "$evfake/no-such-codex" 1 60
+ANTHROPIC_API_KEY="sk-test-should-never-leak-claude" \
+  FAKE_ENV_LEAK_VAR=ANTHROPIC_API_KEY FAKE_ENV_LEAK_OUT="$leak_claude_out" \
+  EVALS_AGENTS_CONF="$conf_leak_claude" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_leak_claude" \
+  >"$evfake/leak-claude.out" 2>&1
+rc_leak_claude=$?
+if [ "$rc_leak_claude" -eq 0 ] && [ "$(cat "$leak_claude_out" 2>/dev/null)" = "ABSENT" ]; then
+  pass "evals: ANTHROPIC_API_KEY never reaches the claude subprocess environment"
+else
+  fail "evals: ANTHROPIC_API_KEY never reaches the claude subprocess environment (rc=$rc_leak_claude leak=$(cat "$leak_claude_out" 2>/dev/null))"
+fi
+if ! grep -rq 'sk-test-should-never-leak-claude' "$wsc_leak_claude" "$evfake/leak-claude.out" 2>/dev/null; then
+  pass "evals: the stripped ANTHROPIC_API_KEY value never appears in any captured artifact"
+else
+  fail "evals: the stripped ANTHROPIC_API_KEY value never appears in any captured artifact"
+fi
+
+wsc_leak_codex="$evfake/codex workspace-env-leak"
+conf_leak_codex="$evfake/agents-leak-codex.conf"
+eval_conf_write "$conf_leak_codex" "$evfake/no-such-claude" "$fake_codex" 1 60
+OPENAI_API_KEY="sk-test-should-never-leak-codex" \
+  FAKE_ENV_LEAK_VAR=OPENAI_API_KEY FAKE_ENV_LEAK_OUT="$leak_codex_out" \
+  EVALS_AGENTS_CONF="$conf_leak_codex" FAKE_CODEX_MODE=ok \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wsc_leak_codex" \
+  >"$evfake/leak-codex.out" 2>&1
+rc_leak_codex=$?
+if [ "$rc_leak_codex" -eq 0 ] && [ "$(cat "$leak_codex_out" 2>/dev/null)" = "ABSENT" ]; then
+  pass "evals: OPENAI_API_KEY never reaches the codex subprocess environment"
+else
+  fail "evals: OPENAI_API_KEY never reaches the codex subprocess environment (rc=$rc_leak_codex leak=$(cat "$leak_codex_out" 2>/dev/null))"
+fi
+if ! grep -rq 'sk-test-should-never-leak-codex' "$wsc_leak_codex" "$evfake/leak-codex.out" 2>/dev/null; then
+  pass "evals: the stripped OPENAI_API_KEY value never appears in any captured artifact"
+else
+  fail "evals: the stripped OPENAI_API_KEY value never appears in any captured artifact"
+fi
+
+# -- Codex thread/item lifecycle: exactly one thread.started per initial
+# turn, at most one (identity-matched) on a resume, command_execution only
+# from its start event, file_change only from its completion event --
+for lifecycle_mode in duplicate-thread-started resume-thread-mismatch \
+  command-on-completed file-change-on-started; do
+  wscx_lifecycle="$evfake/codex workspace-$lifecycle_mode"
+  conf_codex_lifecycle="$evfake/agents-codex-$lifecycle_mode.conf"
+  eval_conf_write "$conf_codex_lifecycle" "$evfake/no-such-claude" "$fake_codex" 1 60
+  EVALS_AGENTS_CONF="$conf_codex_lifecycle" FAKE_CODEX_MODE="$lifecycle_mode" \
+    "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+    --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_lifecycle" >/dev/null 2>&1
+  rc_lifecycle=$?
+  if [ "$rc_lifecycle" -ne 0 ] && eval_void_clean "$wscx_lifecycle" bootstrap-once; then
+    pass "evals: codex $lifecycle_mode is rejected as a lifecycle violation"
+  else
+    fail "evals: codex $lifecycle_mode is rejected as a lifecycle violation (rc=$rc_lifecycle)"
+  fi
+done
+
+# Corrected from the prior review round: Codex may legitimately re-announce
+# thread.started on a resumed turn. Singular and identity-matched, it must
+# not be rejected.
+wscx_resume_ok="$evfake/codex workspace-resume-thread-started-ok"
+conf_codex_resume_ok="$evfake/agents-codex-resume-ok.conf"
+eval_conf_write "$conf_codex_resume_ok" "$evfake/no-such-claude" "$fake_codex" 1 60
+EVALS_AGENTS_CONF="$conf_codex_resume_ok" FAKE_CODEX_MODE=resume-thread-started-ok \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_resume_ok" >/dev/null 2>&1
+rc_resume_ok=$?
+[ "$rc_resume_ok" -eq 0 ] && pass "evals: a resumed turn may legitimately re-announce the same thread id" || fail "evals: a resumed turn may legitimately re-announce the same thread id (rc=$rc_resume_ok)"
+
+# -- a successful leader exit still clears any process-group member it left
+# running, before capture begins, without losing its own exit status --
+success_child_pid="$evfake/claude-success-child.pid"
+success_grandchild_pid="$evfake/claude-success-grandchild.pid"
+rm -f "$success_child_pid" "$success_grandchild_pid"
+wsc_success_group="$evfake/claude workspace-success-resistant-child"
+conf_success_group="$evfake/agents-success-resistant-child.conf"
+eval_conf_write "$conf_success_group" "$fake_claude" "$evfake/no-such-codex" 1 60
+FAKE_CLAUDE_CHILD_PID="$success_child_pid" FAKE_CLAUDE_GRANDCHILD_PID="$success_grandchild_pid" \
+  EVALS_AGENTS_CONF="$conf_success_group" FAKE_CLAUDE_MODE=success-resistant-child FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_success_group" >/dev/null 2>&1
+rc_success_group=$?
+success_group_run=$(find "$wsc_success_group/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc_success_group" -eq 0 ] && [ -f "$success_group_run/grading.json" ] \
+  && recorded_processes_dead "$success_child_pid" "$success_grandchild_pid"; then
+  pass "evals: a successful leader exit still terminates the process group it leaves behind before capture"
+else
+  fail "evals: a successful leader exit still terminates the process group it leaves behind before capture (rc=$rc_success_group)"
+fi
+
+# -- ownership of a verifier snapshot / Codex home is registered immediately
+# after mktemp, so a cancellation mid-setup still cleans up the directory --
+for setup_phase in verifier-setup codex-home-setup; do
+  setup_ready="$evfake/$setup_phase-ready"
+  setup_release="$evfake/$setup_phase-release"
+  setup_path="$evfake/$setup_phase-path"
+  rm -f "$setup_ready" "$setup_release" "$setup_path"
+  setup_workspace="$evfake/workspace-cancel-$setup_phase"
+  setup_conf="$evfake/agents-cancel-$setup_phase.conf"
+  if [ "$setup_phase" = verifier-setup ]; then
+    eval_conf_write "$setup_conf" "$fake_claude" "$evfake/no-such-codex" 1 60
+    PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
+      FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
+      FAKE_RUN_PHASE="$setup_phase" FAKE_PHASE_READY="$setup_ready" FAKE_PHASE_PATH="$setup_path" \
+      FAKE_PHASE_RELEASE="$setup_release" EVALS_AGENTS_CONF="$setup_conf" \
+      FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+      "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+      --agent claude --corpus-ref "$corpus_ref_test" --workspace "$setup_workspace" >/dev/null 2>&1 &
+  else
+    eval_conf_write "$setup_conf" "$evfake/no-such-claude" "$fake_codex" 1 60
+    PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
+      FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
+      FAKE_RUN_PHASE="$setup_phase" FAKE_PHASE_READY="$setup_ready" FAKE_PHASE_PATH="$setup_path" \
+      FAKE_PHASE_RELEASE="$setup_release" EVALS_AGENTS_CONF="$setup_conf" \
+      FAKE_CODEX_MODE=ok \
+      "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+      --agent codex --corpus-ref "$corpus_ref_test" --workspace "$setup_workspace" >/dev/null 2>&1 &
+  fi
+  setup_runner_pid=$!
+  setup_wait=0
+  while [ ! -s "$setup_ready" ] && [ "$setup_wait" -lt 100 ]; do
+    sleep 0.1
+    setup_wait=$((setup_wait + 1))
+  done
+  setup_dir=$(cat "$setup_path" 2>/dev/null)
+  kill -TERM "$setup_runner_pid" 2>/dev/null
+  : >"$setup_release"
+  wait "$setup_runner_pid" 2>/dev/null
+  setup_rc=$?
+  if [ "$setup_rc" -ne 0 ] && [ -s "$setup_ready" ] && [ -n "$setup_dir" ] && [ ! -e "$setup_dir" ]; then
+    pass "evals: cancellation during $setup_phase leaves no temp directory behind"
+  else
+    kill -KILL "$setup_runner_pid" 2>/dev/null
+    fail "evals: cancellation during $setup_phase leaves no temp directory behind (rc=$setup_rc dir=$setup_dir)"
+  fi
+done
+
+# -- a failed append of a Codex turn's stream to canonical stdout voids the
+# run with a truthful status, rather than silently dropping the turn --
+wscx_append_fail="$evfake/codex workspace-append-fail"
+conf_codex_append_fail="$evfake/agents-codex-append-fail.conf"
+eval_conf_write "$conf_codex_append_fail" "$evfake/no-such-claude" "$fake_codex" 1 60
+PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
+  FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
+  FAKE_CODEX_APPEND_FAIL=".codex-turn-1.json" \
+  EVALS_AGENTS_CONF="$conf_codex_append_fail" FAKE_CODEX_MODE=ok \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_append_fail" >/dev/null 2>&1
+rc_append_fail=$?
+append_fail_run=$(find "$wscx_append_fail/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+if [ "$rc_append_fail" -ne 0 ] && eval_void_clean "$wscx_append_fail" scope-question-no-edit \
+  && grep -q '"status": "codex_stream_append_failed"' "$append_fail_run/run-meta.json" 2>/dev/null; then
+  pass "evals: a failed codex stream append voids the run with a truthful status"
+else
+  fail "evals: a failed codex stream append voids the run with a truthful status (rc=$rc_append_fail)"
+fi
+
+# -- run-config.json and arm-map.json updates are serialized: N concurrent
+# dry runs into one iteration retain one consistent treatment/config and a
+# complete run mapping, with no update lost to a read-modify-write race --
+concurrent_ws="$evfake/claude workspace-concurrent-dry-run"
+conf_concurrent="$evfake/agents-concurrent-dry-run.conf"
+eval_conf_write "$conf_concurrent" "$evfake/no-such-claude" "$evfake/no-such-codex" 1 60
+concurrent_n=8
+concurrent_pids=""
+ci=1
+while [ "$ci" -le "$concurrent_n" ]; do
+  EVALS_AGENTS_CONF="$conf_concurrent" "$evsh" --dry-run --eval scope-question-no-edit \
+    --arm treat --treatment-arm treat --agent claude --corpus-ref "$corpus_ref_test" \
+    --workspace "$concurrent_ws" --iteration 1 >"$evfake/concurrent-dry-$ci.out" 2>&1 &
+  concurrent_pids="$concurrent_pids $!"
+  ci=$((ci + 1))
+done
+concurrent_all_ok=1
+for cp in $concurrent_pids; do
+  wait "$cp" || concurrent_all_ok=0
+done
+if [ "$concurrent_all_ok" -eq 1 ]; then
+  pass "evals: $concurrent_n concurrent dry runs into one iteration all exit 0"
+else
+  fail "evals: $concurrent_n concurrent dry runs into one iteration all exit 0"
+fi
+concurrent_cfg_ok=0
+if python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1], encoding="utf-8"))
+sys.exit(0 if cfg.get("treatment_arm") == "treat" and cfg.get("arm_variable") else 1)
+' "$concurrent_ws/iteration-1/run-config.json" 2>/dev/null; then
+  concurrent_cfg_ok=1
+fi
+[ "$concurrent_cfg_ok" -eq 1 ] && pass "evals: concurrent dry runs leave one consistent run-config.json" || fail "evals: concurrent dry runs leave one consistent run-config.json"
+concurrent_map_n=$(python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1], encoding="utf-8"))
+print(len(m))
+' "$concurrent_ws/iteration-1/arm-map.json" 2>/dev/null)
+concurrent_dirs_n=$(find "$concurrent_ws/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)
+if [ "$concurrent_map_n" = "$concurrent_n" ] && [ "$concurrent_dirs_n" = "$concurrent_n" ]; then
+  pass "evals: arm-map.json retains a complete run mapping across concurrent dry runs, with no lost updates"
+else
+  fail "evals: arm-map.json retains a complete run mapping across concurrent dry runs, with no lost updates (map=$concurrent_map_n dirs=$concurrent_dirs_n)"
+fi
+if [ ! -e "$concurrent_ws/iteration-1/.metadata.lock" ]; then
+  pass "evals: the iteration metadata lock is released after concurrent dry runs finish"
+else
+  fail "evals: the iteration metadata lock is released after concurrent dry runs finish"
+fi
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -2069,7 +3592,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=392
+EXPECTED_CHECKS=485
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
