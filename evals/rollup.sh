@@ -11,6 +11,11 @@
 #
 # Full documentation: evals/README.md.
 #
+# Follow-up (post T2/T3): everything below the arg check is Python in a
+# heredoc. Move it to evals/rollup.py once the runner and rollup hardening
+# land, so the join/bucket logic gets real linting, syntax checking, and
+# import-based unit tests; keep this file as the thin bash preflight.
+#
 # Usage: rollup.sh <iteration-dir>     # writes rollup.json, prints the table
 
 set -u

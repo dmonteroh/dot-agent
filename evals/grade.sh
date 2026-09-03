@@ -12,6 +12,11 @@
 #
 # Requires python3. Full documentation: evals/README.md.
 #
+# Follow-up (post T2/T3): everything below the arg check is Python in a
+# heredoc. Move it to evals/grade.py once the runner and rollup hardening
+# land, so the grading logic gets real linting, syntax checking, and
+# import-based unit tests; keep this file as the thin bash preflight.
+#
 # Usage: grade.sh <run-dir> <eval-snapshot.json>
 
 set -u
