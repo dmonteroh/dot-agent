@@ -27,7 +27,7 @@ Expected under outputs/, all written by run.sh:
   diff.patch              project tree diff, fixture base -> run end
   node-diff.patch         .agent/ diff, fixture base -> run end
   session-transcript.txt  the agent's own reply text
-  trace.jsonl             one JSON object per tool call: {"seq","text"}
+  trace.jsonl             one JSON object per tool-call event (see spec.json)
   status-after.txt        status.sh output after the session
   gate.txt                comments.sh output over diff.patch
   node-tree.txt           every path under .agent/ with its content, for
@@ -118,18 +118,54 @@ def added_text(patch):
 
 # ---- trace --------------------------------------------------------------
 
+class InvalidTrace(Exception):
+    def __init__(self, detail):
+        self.detail = detail
+
 def trace():
+    """Return gradeable call events, rejecting malformed trace input.
+
+    The runner owns the current trace contract.  Older captured runs used
+    only integer seq and string text; accept exactly that shape as a call so
+    historical artifacts remain gradeable without letting partial records
+    masquerade as calls.
+    """
     raw = need("trace.jsonl")
     events = []
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    for line_no, line in enumerate(raw.splitlines(), 1):
+        if not line.strip():
+            raise InvalidTrace("trace.jsonl line %d is blank, not a JSON object" % line_no)
         try:
             ev = json.loads(line)
-            events.append((int(ev.get("seq", len(events))), str(ev.get("text", ""))))
-        except ValueError:
-            events.append((len(events), line))
+        except (TypeError, ValueError) as exc:
+            raise InvalidTrace("trace.jsonl line %d is malformed JSON: %s" % (line_no, exc))
+        if not isinstance(ev, dict):
+            raise InvalidTrace("trace.jsonl line %d is not a JSON object" % line_no)
+
+        legacy = set(ev) == set(("seq", "text"))
+        if legacy:
+            if isinstance(ev["seq"], bool) or not isinstance(ev["seq"], int):
+                raise InvalidTrace("trace.jsonl line %d has non-integer legacy seq" % line_no)
+            if not isinstance(ev["text"], str):
+                raise InvalidTrace("trace.jsonl line %d has non-string legacy text" % line_no)
+            events.append((ev["seq"], ev["text"]))
+            continue
+
+        required = ("seq", "event", "tool", "action", "text")
+        absent = [field for field in required if field not in ev]
+        if absent:
+            raise InvalidTrace("trace.jsonl line %d is missing required field(s): %s" %
+                               (line_no, ", ".join(absent)))
+        if isinstance(ev["seq"], bool) or not isinstance(ev["seq"], int):
+            raise InvalidTrace("trace.jsonl line %d has non-integer seq" % line_no)
+        for field in ("event", "tool", "action", "text"):
+            if not isinstance(ev[field], str):
+                raise InvalidTrace("trace.jsonl line %d has non-string %s" % (line_no, field))
+        if ev["action"] not in ("read", "write", "execute", "search", "other"):
+            raise InvalidTrace("trace.jsonl line %d has invalid action %r" %
+                               (line_no, ev["action"]))
+        if ev["event"] == "call":
+            events.append((ev["seq"], ev["text"]))
     return events
 
 # ---- primitives ---------------------------------------------------------
@@ -282,7 +318,7 @@ def p_trace_order(first, _kw, second):
     if fi is None:
         return False, "%r never appears in the trace" % first
     if si is None:
-        return True, "%r appears at seq %d and %r never happened" % (first, fi, second)
+        return False, "%r appears at seq %d but %r never appears in the trace" % (first, fi, second)
     return (fi < si), "%r at seq %d, %r at seq %d" % (first, fi, second, si)
 
 def p_output_matches(s):

@@ -1989,7 +1989,7 @@ EOF
 # "has no removed lines" — the defect that read an append as a creation.
 printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$gd/outputs/diff.patch"
 printf -- '--- a/memory/x.md\n+++ b/memory/x.md\n+a line\n' >"$gd/outputs/node-diff.patch"
-printf '{"seq":0,"text":"read catalog"}\n{"seq":1,"text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
+printf '{"seq":0,"event":"call","tool":"read_file","action":"read","text":"read catalog"}\n{"seq":1,"event":"call","tool":"write_file","action":"write","text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
 printf 'nothing sensitive here\n' >"$gd/outputs/node-tree.txt"
 "$evroot/grade.sh" "$gd" "$gd/snap.json" >/dev/null 2>&1
 g42=$(python3 -c '
@@ -2004,6 +2004,32 @@ if r["g/missing"]["passed"]: bad.append("missing-artifact-passed-by-default")
 if r["g/human"]["passed"] is not None: bad.append("manual-was-auto-graded")
 print(" ".join(bad))' "$gd/grading.json" 2>&1)
 [ -z "$g42" ] && pass "evals: the grader evaluates its check language and fails closed on a missing artifact" || fail "evals: the grader evaluates its check language and fails closed on a missing artifact ($g42)"
+
+# Trace calls are controller-owned evidence.  In particular, ordering cannot
+# infer a missing second call, malformed records cannot be searched, and
+# result/non-call records cannot stand in for a tool call.
+trace_snapshot="$gd/trace-snapshot.json"
+printf '{"id":"trace","assertions":[{"id":"trace/order","concept":"c","class":"trace","grade":"auto","check":"trace_order '\''catalog'\'' before '\''write:'\''"},{"id":"trace/product","concept":"c","class":"artifact","grade":"auto","check":"product_files_added == 1"}]}' >"$trace_snapshot"
+trace_result() {
+  "$evroot/grade.sh" "$gd" "$trace_snapshot" >/dev/null 2>&1
+  python3 -c 'import json,sys; r={x["id"]:x for x in json.load(open(sys.argv[1]))["results"]}; print("%s|%s|%s" % (r["trace/order"]["passed"], r["trace/product"]["passed"], r["trace/order"]["evidence"]))' "$gd/grading.json"
+}
+
+printf '{"seq":0,"event":"call","tool":"read_file","action":"read","text":"read catalog"}\n' >"$gd/outputs/trace.jsonl"
+trace_missing=$(trace_result)
+printf '%s\n' "$trace_missing" | grep -q '^False|True|.*write:.*never appears' && pass "evals: trace_order fails when its second call is missing" || fail "evals: trace_order fails when its second call is missing ($trace_missing)"
+
+printf '{"seq":0,"event":"call","tool":"read_file","action":"read","text":"read catalog"}\nnot-json\n' >"$gd/outputs/trace.jsonl"
+trace_malformed=$(trace_result)
+printf '%s\n' "$trace_malformed" | grep -q '^False|True|.*malformed JSON' && pass "evals: malformed trace JSON fails trace checks without aborting artifact checks" || fail "evals: malformed trace JSON fails trace checks without aborting artifact checks ($trace_malformed)"
+
+printf '{"seq":0,"event":"result","tool":"read_file","action":"read","text":"read catalog"}\n{"seq":1,"event":"result","tool":"write_file","action":"write","text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
+trace_noncall=$(trace_result)
+printf '%s\n' "$trace_noncall" | grep -q '^False|True|.*catalog.*never appears' && pass "evals: non-call trace records cannot satisfy trace_order" || fail "evals: non-call trace records cannot satisfy trace_order ($trace_noncall)"
+
+printf '{"seq":0,"text":"read catalog"}\n{"seq":1,"text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
+trace_legacy=$(trace_result)
+printf '%s\n' "$trace_legacy" | grep -q '^True|True|' && pass "evals: valid legacy seq/text traces remain gradeable" || fail "evals: valid legacy seq/text traces remain gradeable ($trace_legacy)"
 
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
@@ -2043,7 +2069,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=388
+EXPECTED_CHECKS=392
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
