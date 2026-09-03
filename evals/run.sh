@@ -86,12 +86,7 @@ have_cmd() { command -v "$1" >/dev/null 2>&1; }
 # reported as resolved, with version left blank rather than guessed.
 bin_version() {
   local bin="$1"
-  "$bin" --version 2>/dev/null | head -n 1 | python3 -c '
-import re, sys
-t = sys.stdin.read()
-m = re.search(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?", t)
-print(m.group(0) if m else "")
-'
+  "$bin" --version 2>/dev/null | head -n 1 | "$selfdir/run_lib.py" bin-version
 }
 
 bin_version_output() {
@@ -100,24 +95,17 @@ bin_version_output() {
 }
 
 canonical_path() {
-  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+  "$selfdir/run_lib.py" canonical-path "$1"
 }
 
 file_sha256() {
-  python3 -c '
-import hashlib, sys
-h = hashlib.sha256()
-with open(sys.argv[1], "rb") as f:
-    for chunk in iter(lambda: f.read(1024 * 1024), b""):
-        h.update(chunk)
-print(h.hexdigest())
-' "$1"
+  "$selfdir/run_lib.py" file-sha256 "$1"
 }
 
 # Generates an opaque run id: "r" + 128 random bits as hex. Long enough that
 # a collision under a live workspace is a signal, not an expectation — the
 # caller refuses rather than reusing or overwriting one.
-gen_run_id() { python3 -c 'import secrets; print("r" + secrets.token_hex(16))'; }
+gen_run_id() { "$selfdir/run_lib.py" gen-run-id; }
 
 # ---------------------------------------------------------------------------
 # executable resolution — never hardcodes a path on this machine except the
@@ -615,16 +603,23 @@ trap 'runner_signal TERM' TERM
 # object carrying a non-empty subscriptionType. An API-key login (billed
 # through the console, not a claude.ai plan) has no such object and is
 # rejected rather than silently accepted as a fallback.
+#
+# Current Claude Code CLI versions store this credential in the macOS
+# Keychain (service "Claude Code-credentials") rather than the on-disk file
+# once a Keychain is available. That storage is global to the machine, not
+# namespaced per config dir, so the Keychain fallback below only applies
+# when CLAUDE_CONFIG_DIR is unset — the default-location case a real
+# operator hits. An explicit CLAUDE_CONFIG_DIR (as every auth test below
+# uses, to isolate from the operator's real login) is file-only: it names an
+# isolated credentials file, not a request to also consult the machine-wide
+# Keychain.
 claude_auth_check() {
   local dir cred
   dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   cred="$dir/.credentials.json"
   AUTH_ERR=""
-  if [ ! -f "$cred" ]; then
-    AUTH_ERR="no Claude credentials at $cred — run 'claude login' with a claude.ai account"
-    return 1
-  fi
-  if ! CRED_PATH="$cred" python3 -c '
+  if [ -f "$cred" ]; then
+    if ! CRED_PATH="$cred" python3 -c '
 import json, os, sys
 try:
     data = json.load(open(os.environ["CRED_PATH"], encoding="utf-8"))
@@ -634,10 +629,35 @@ oauth = data.get("claudeAiOauth")
 sub = oauth.get("subscriptionType") if isinstance(oauth, dict) else None
 sys.exit(0 if isinstance(sub, str) and sub.strip() else 1)
 ' 2>/dev/null; then
-    AUTH_ERR="Claude credentials at $cred are not a claude.ai subscription login (no active subscriptionType) — API-key auth is not accepted"
+      AUTH_ERR="Claude credentials at $cred are not a claude.ai subscription login (no active subscriptionType) — API-key auth is not accepted"
+      return 1
+    fi
+    return 0
+  fi
+  if [ -z "${CLAUDE_CONFIG_DIR+set}" ] && [ "$(uname -s)" = "Darwin" ] && command -v security >/dev/null 2>&1; then
+    local keychain_json
+    keychain_json="$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)"
+    if [ -n "$keychain_json" ]; then
+      if printf '%s' "$keychain_json" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+oauth = data.get("claudeAiOauth")
+sub = oauth.get("subscriptionType") if isinstance(oauth, dict) else None
+sys.exit(0 if isinstance(sub, str) and sub.strip() else 1)
+' 2>/dev/null; then
+        return 0
+      fi
+      AUTH_ERR="Claude credentials in the macOS Keychain (service \"Claude Code-credentials\") are not a claude.ai subscription login (no active subscriptionType) — API-key auth is not accepted"
+      return 1
+    fi
+    AUTH_ERR="no Claude credentials at $cred or in the macOS Keychain — run 'claude login' with a claude.ai account"
     return 1
   fi
-  return 0
+  AUTH_ERR="no Claude credentials at $cred — run 'claude login' with a claude.ai account"
+  return 1
 }
 
 # Requires Codex's own auth.json to record auth_mode "chatgpt": a ChatGPT
