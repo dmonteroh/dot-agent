@@ -2388,8 +2388,10 @@ chmod +x "$phase_bin/git"
 
 cat >"$phase_bin/python3" <<'SH'
 #!/bin/sh
-if [ "${FAKE_INFRA_FAIL:-}" = trace ] && [ "${1:-}" = - ]; then
-  case "${3:-}" in */outputs/trace.jsonl) exit 74 ;; esac
+if [ "${FAKE_INFRA_FAIL:-}" = trace ]; then
+  case "${1:-}:${2:-}" in
+  */run_lib.py:extract-claude-trace | */run_lib.py:extract-codex-trace) exit 74 ;;
+  esac
 fi
 # grade.py reaches this wrapper through its own shebang, so the grading
 # process boundary is intercepted here rather than in the Bash wrapper.

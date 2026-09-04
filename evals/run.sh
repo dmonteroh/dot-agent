@@ -153,12 +153,8 @@ codex_feature_probe() {
     resume) help_text="$resume_help"; flags="--json --model" ;;
     esac
     for flag in $flags; do
-      HELP_TEXT="$help_text" FLAG="$flag" python3 -c '
-import os, re, sys
-flag = re.escape(os.environ["FLAG"])
-text = os.environ["HELP_TEXT"]
-sys.exit(0 if re.search(r"(?<![A-Za-z0-9_-])" + flag + r"(?=$|[\s,=<\[])", text) else 1)
-' || missing="$missing $surface:$flag"
+      HELP_TEXT="$help_text" FLAG="$flag" "$selfdir/run_lib.py" codex-flag-check \
+        || missing="$missing $surface:$flag"
     done
   done
   if [ -n "$missing" ]; then
@@ -269,91 +265,7 @@ run_with_timeout() {
   secs="$1"; stdinfile="$2"; cwd="$3"; pidfile="$4"; shift 4
   ACTIVE_PROCESS_PID_FILE="$pidfile"
   rm -f "$pidfile"
-  python3 - "$secs" "$stdinfile" "$cwd" "$pidfile" "$@" <<'PY' &
-import os, signal, subprocess, sys, time
-
-secs = float(sys.argv[1])
-stdin_path = sys.argv[2]
-cwd = None if sys.argv[3] == "-" else sys.argv[3]
-pid_path = sys.argv[4]
-argv = sys.argv[5:]
-
-stdin_fh = None
-if stdin_path != "-":
-    stdin_fh = open(stdin_path, "rb")
-
-proc = None
-
-def group_exists():
-    try:
-        os.killpg(proc.pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-
-def terminate_process():
-    if proc is None:
-        return
-
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-
-    deadline = time.monotonic() + 5
-    while group_exists() and time.monotonic() < deadline:
-        proc.poll()
-        time.sleep(0.05)
-    if group_exists():
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        deadline = time.monotonic() + 5
-        while group_exists() and time.monotonic() < deadline:
-            proc.poll()
-            time.sleep(0.05)
-
-    if proc.poll() is None:
-        proc.wait()
-
-def interrupted(signum, _frame):
-    terminate_process()
-    raise SystemExit(128 + signum)
-
-for handled in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
-    signal.signal(handled, interrupted)
-
-proc = subprocess.Popen(argv, stdin=stdin_fh, cwd=cwd, start_new_session=True)
-with open(pid_path, "w", encoding="ascii") as pf:
-    pf.write(str(proc.pid))
-timed_out = False
-try:
-    rc = proc.wait(timeout=secs)
-except subprocess.TimeoutExpired:
-    timed_out = True
-    terminate_process()
-    rc = 124
-finally:
-    if stdin_fh is not None:
-        stdin_fh.close()
-
-if not timed_out:
-    # The leader exiting on its own — success or failure — does not reap
-    # any process-group member it left running. Clear the group before
-    # returning control to the caller's artifact capture, the same way a
-    # timeout or a forwarded signal already does above.
-    terminate_process()
-
-if group_exists():
-    # Cleanup itself failed to clear the group: fail closed rather than
-    # report the leader's exit status as if capture were now safe to run
-    # against a group that still has live members.
-    sys.exit(97)
-sys.exit(rc)
-PY
+  "$selfdir/run_lib.py" run-with-timeout "$secs" "$stdinfile" "$cwd" "$pidfile" "$@" &
   ACTIVE_WRAPPER_PID=$!
   wait "$ACTIVE_WRAPPER_PID"
   rc=$?
@@ -538,18 +450,7 @@ cancel_active_run() {
   meta="$ACTIVE_RUN_DIR/run-meta.json"
   if [ -f "$meta" ]; then
     META_PATH="$meta" RC="$((128 + signal_number))" ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      DURATION="$(( $(date +%s) - start_epoch ))" python3 -c '
-import json, os
-path = os.environ["META_PATH"]
-m = json.load(open(path, encoding="utf-8"))
-m["ended"] = os.environ["ENDED"]
-m["exit_status"] = int(os.environ["RC"])
-m["duration_seconds"] = int(os.environ["DURATION"])
-m["status"] = "cancelled"
-m["void"] = True
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(m, f, indent=2, sort_keys=True)
-' 2>/dev/null
+      DURATION="$(( $(date +%s) - start_epoch ))" "$selfdir/run_lib.py" cancel-run-meta 2>/dev/null
   fi
   rm -rf "$ACTIVE_RUN_DIR/outputs"
   rm -f "$ACTIVE_RUN_DIR/grading.json"
@@ -560,19 +461,8 @@ mark_stage_void() {
   local rundir="$1" status="$2" reason="$3" rc="$4" duration
   duration=$(( $(date +%s) - start_epoch ))
   META_PATH="$rundir/run-meta.json" STATUS="$status" REASON="$reason" RC="$rc" \
-    ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" DURATION="$duration" python3 -c '
-import json, os
-path = os.environ["META_PATH"]
-m = json.load(open(path, encoding="utf-8"))
-m["ended"] = os.environ["ENDED"]
-m["exit_status"] = int(os.environ["RC"])
-m["duration_seconds"] = int(os.environ["DURATION"])
-m["status"] = os.environ["STATUS"]
-m["failure_reason"] = os.environ["REASON"]
-m["void"] = True
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(m, f, indent=2, sort_keys=True)
-' 2>/dev/null
+    ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" DURATION="$duration" \
+    "$selfdir/run_lib.py" mark-stage-void-meta 2>/dev/null
   rm -rf "$rundir/outputs"
   rm -f "$rundir/grading.json"
   verifier_cleanup
@@ -619,16 +509,7 @@ claude_auth_check() {
   cred="$dir/.credentials.json"
   AUTH_ERR=""
   if [ -f "$cred" ]; then
-    if ! CRED_PATH="$cred" python3 -c '
-import json, os, sys
-try:
-    data = json.load(open(os.environ["CRED_PATH"], encoding="utf-8"))
-except Exception:
-    sys.exit(1)
-oauth = data.get("claudeAiOauth")
-sub = oauth.get("subscriptionType") if isinstance(oauth, dict) else None
-sys.exit(0 if isinstance(sub, str) and sub.strip() else 1)
-' 2>/dev/null; then
+    if ! CRED_PATH="$cred" "$selfdir/run_lib.py" claude-auth-check-file 2>/dev/null; then
       AUTH_ERR="Claude credentials at $cred are not a claude.ai subscription login (no active subscriptionType) — API-key auth is not accepted"
       return 1
     fi
@@ -638,16 +519,7 @@ sys.exit(0 if isinstance(sub, str) and sub.strip() else 1)
     local keychain_json
     keychain_json="$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)"
     if [ -n "$keychain_json" ]; then
-      if printf '%s' "$keychain_json" | python3 -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(1)
-oauth = data.get("claudeAiOauth")
-sub = oauth.get("subscriptionType") if isinstance(oauth, dict) else None
-sys.exit(0 if isinstance(sub, str) and sub.strip() else 1)
-' 2>/dev/null; then
+      if printf '%s' "$keychain_json" | "$selfdir/run_lib.py" claude-auth-check-stdin 2>/dev/null; then
         return 0
       fi
       AUTH_ERR="Claude credentials in the macOS Keychain (service \"Claude Code-credentials\") are not a claude.ai subscription login (no active subscriptionType) — API-key auth is not accepted"
@@ -673,14 +545,7 @@ codex_auth_check() {
     AUTH_ERR="no Codex credentials at $auth — run 'codex login' with a ChatGPT account"
     return 1
   fi
-  if ! AUTH_PATH="$auth" python3 -c '
-import json, os, sys
-try:
-    data = json.load(open(os.environ["AUTH_PATH"], encoding="utf-8"))
-except Exception:
-    sys.exit(1)
-sys.exit(0 if data.get("auth_mode") == "chatgpt" else 1)
-' 2>/dev/null; then
+  if ! AUTH_PATH="$auth" "$selfdir/run_lib.py" codex-auth-check 2>/dev/null; then
     AUTH_ERR="Codex credentials at $auth are not auth_mode=chatgpt — API-key auth is not accepted"
     return 1
   fi
@@ -779,10 +644,7 @@ claude_run() {
   : >"$inputfile"
 
   for turntext in "${turns[@]}"; do
-    json=$(TXT="$turntext" python3 -c '
-import json, os
-print(json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": os.environ["TXT"]}]}}))
-')
+    json=$(TXT="$turntext" "$selfdir/run_lib.py" claude-turn-json)
     printf '%s\n' "$json" >>"$inputfile"
   done
 
@@ -814,47 +676,7 @@ print(json.dumps({"type": "user", "message": {"role": "user", "content": [{"type
   # A session that ended with fewer results than turns sent — a crash, a
   # dropped continuation — must not report success just because the process
   # itself happened to exit 0.
-  counts=$(python3 - "$stdout" <<'PY'
-import json, sys
-terminals = 0
-successes = 0
-invalid = 0
-for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
-    if not line.strip():
-        continue
-    try:
-        event = json.loads(line)
-    except ValueError:
-        invalid += 1
-        continue
-    if not isinstance(event, dict):
-        invalid += 1
-        continue
-    etype = event.get("type")
-    if etype == "assistant":
-        message = event.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            invalid += 1
-            continue
-        for item in content:
-            if not isinstance(item, dict):
-                invalid += 1
-            elif item.get("type") == "tool_use" and (
-                    not isinstance(item.get("name"), str) or not item.get("name")
-                    or not isinstance(item.get("input"), dict)):
-                invalid += 1
-    if etype != "result":
-        continue
-    terminals += 1
-    if not isinstance(event.get("subtype"), str) or not isinstance(event.get("is_error"), bool):
-        invalid += 1
-        continue
-    if event.get("subtype") == "success" and event.get("is_error") is False:
-        successes += 1
-print("%d %d %d" % (terminals, successes, invalid))
-PY
-)
+  counts=$("$selfdir/run_lib.py" claude-count-results "$stdout")
   terminals=${counts%% *}
   counts=${counts#* }
   successes=${counts%% *}
@@ -963,68 +785,8 @@ codex_run() {
     # thread than the one requested. command_execution is only accepted from
     # its start lifecycle event and file_change only from its completion
     # lifecycle event — the shapes trace extraction itself already assumes.
-    terminal_counts=$(TURNINDEX="$turnindex" EXPECTED_THREAD="$thread_id" python3 -c '
-import json, os, sys
-completed = failed = errors = invalid = 0
-turnindex = int(os.environ["TURNINDEX"])
-expected_thread = os.environ.get("EXPECTED_THREAD", "")
-thread_started_ids = []
-for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
-    if not line.strip():
-        continue
-    try:
-        event = json.loads(line)
-    except ValueError:
-        invalid += 1
-        continue
-    if not isinstance(event, dict):
-        invalid += 1
-        continue
-    etype = event.get("type")
-    if etype == "thread.started":
-        tid = event.get("thread_id") or event.get("id")
-        if not isinstance(tid, str) or not tid:
-            invalid += 1
-        else:
-            thread_started_ids.append(tid)
-    if etype in ("item.started", "item.completed"):
-        item = event.get("item")
-        if not isinstance(item, dict) or not isinstance(item.get("type") or item.get("item_type"), str):
-            invalid += 1
-        else:
-            itype = item.get("type") or item.get("item_type")
-            if itype == "command_execution":
-                if etype != "item.started":
-                    invalid += 1
-                elif not isinstance(item.get("command") or item.get("cmd"), str):
-                    invalid += 1
-            elif itype == "file_change":
-                if etype != "item.completed":
-                    invalid += 1
-                else:
-                    changes = item.get("changes")
-                    if not isinstance(changes, list) or any(
-                            not isinstance(change, dict) or not isinstance(change.get("path"), str)
-                            for change in changes):
-                        invalid += 1
-            elif itype == "agent_message" and not isinstance(item.get("text") or item.get("message") or "", str):
-                invalid += 1
-    if etype == "turn.completed":
-        completed += 1
-    elif etype == "turn.failed":
-        failed += 1
-    elif etype == "error":
-        errors += 1
-if turnindex == 1:
-    if len(thread_started_ids) != 1:
-        invalid += 1
-else:
-    if len(thread_started_ids) > 1:
-        invalid += 1
-    elif len(thread_started_ids) == 1 and thread_started_ids[0] != expected_thread:
-        invalid += 1
-print("%d %d %d %d" % (completed, failed, errors, invalid))
-' "$turnout")
+    terminal_counts=$(TURNINDEX="$turnindex" EXPECTED_THREAD="$thread_id" \
+      "$selfdir/run_lib.py" codex-terminal-counts "$turnout")
     rm -f "$turnout"
     if [ "$terminal_counts" != "1 0 0 0" ]; then
       echo "run.sh: codex turn $turnindex completed/failed/error/malformed counts were $terminal_counts; expected 1 0 0 0" >&2
@@ -1033,22 +795,7 @@ print("%d %d %d %d" % (completed, failed, errors, invalid))
     fi
 
     if [ "$turnindex" -eq 1 ]; then
-      thread_id=$(python3 -c '
-import json, sys
-tid = ""
-for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
-    line = line.strip()
-    if not line.startswith("{"):
-        continue
-    try:
-        ev = json.loads(line)
-    except ValueError:
-        continue
-    if ev.get("type") == "thread.started":
-        tid = ev.get("thread_id") or ev.get("id") or ""
-        break
-print(tid)
-' "$stdout")
+      thread_id=$("$selfdir/run_lib.py" codex-thread-id "$stdout")
     fi
   done
   codex_home_cleanup
@@ -1070,198 +817,18 @@ extract_claude_trace() {
   local rundir fixdir runid runner_root
   rundir="$1"; fixdir="$2"; runid="$3"; runner_root="$4"
   : >"$rundir/outputs/session-transcript.txt"
-  python3 - "$rundir/outputs/agent-stdout.txt" "$rundir/outputs/trace.jsonl" \
-    "$rundir/outputs/session-transcript.txt" "$fixdir" "$runid" "$runner_root" <<'PY'
-import datetime, json, os, re, sys
-
-src, trace_out, transcript_out, fixdir, run_id, runner_root = sys.argv[1:7]
-fixdir_real = os.path.realpath(fixdir)
-fixture_roots = sorted({fixdir.rstrip(os.sep), os.path.abspath(fixdir), fixdir_real}, key=len, reverse=True)
-runner_roots = sorted({runner_root.rstrip(os.sep), os.path.abspath(runner_root), os.path.realpath(runner_root)}, key=len, reverse=True)
-
-def normalize_text(value):
-    value = value or ""
-
-    def root_pattern(root):
-        parts = [re.escape(part) for part in root.split(os.sep) if part]
-        return r"/+" + r"/+".join(parts)
-
-    for root in fixture_roots:
-        pattern = root_pattern(root)
-        value = re.sub(pattern + r"/+", "", value)
-        value = re.sub(pattern, ".", value)
-    for root in runner_roots:
-        pattern = root_pattern(root)
-        value = re.sub(pattern + r"/+", "<runner-root>/", value)
-        value = re.sub(pattern, "<runner-root>", value)
-    return value
-
-def relpath(p):
-    if not p:
-        return p
-    ap = p if os.path.isabs(p) else os.path.join(fixdir_real, p)
-    ap = os.path.realpath(ap)
-    if ap.startswith(fixdir_real + os.sep):
-        return ap[len(fixdir_real) + 1:]
-    return normalize_text(p)
-
-TOOL_ACTION = {"Read": "read", "Write": "write", "Edit": "write",
-               "Bash": "execute", "Grep": "search", "Glob": "search"}
-
-seq = 0
-transcript = []
-with open(trace_out, "w", encoding="utf-8") as tf:
-    for line in open(src, encoding="utf-8", errors="replace"):
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            ev = json.loads(line)
-        except ValueError:
-            continue
-        etype = ev.get("type")
-
-        # The turn's transcript line is its final result, never an
-        # intermediate assistant text block — those can be planning prose
-        # the harness itself never treated as the deliverable.
-        if etype == "result":
-            t = (ev.get("result") or "").strip()
-            transcript.append(t)
-            continue
-
-        if etype != "assistant":
-            continue
-        for item in (ev.get("message", {}) or {}).get("content", []) or []:
-            if not isinstance(item, dict) or item.get("type") != "tool_use":
-                continue
-            name = item.get("name", "")
-            inp = item.get("input", {}) or {}
-            action = TOOL_ACTION.get(name, "other")
-            rec = {"seq": seq, "event": "call", "tool": name, "action": action,
-                   "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                   "run_id": run_id}
-            if action in ("read", "write", "search"):
-                path = relpath(inp.get("file_path") or inp.get("path") or inp.get("pattern") or "")
-                rec["text"] = "%s:%s" % (action, path) if path else "%s:%s" % (action, name)
-                if path:
-                    rec["path"] = path
-            elif action == "execute":
-                command = normalize_text(inp.get("command", ""))
-                rec["text"] = "execute:%s" % command
-                rec["command"] = command
-            else:
-                rec["text"] = "other:%s" % name
-            tf.write(json.dumps(rec) + "\n")
-            seq += 1
-
-with open(transcript_out, "a", encoding="utf-8") as xf:
-    for n, t in enumerate(transcript, 1):
-        xf.write("## Turn %d\n" % n)
-        xf.write((t if t else "[empty final response]") + "\n\n")
-PY
+  "$selfdir/run_lib.py" extract-claude-trace "$rundir/outputs/agent-stdout.txt" \
+    "$rundir/outputs/trace.jsonl" "$rundir/outputs/session-transcript.txt" \
+    "$fixdir" "$runid" "$runner_root"
 }
 
 extract_codex_trace() {
   local rundir fixdir runid runner_root
   rundir="$1"; fixdir="$2"; runid="$3"; runner_root="$4"
   : >"$rundir/outputs/session-transcript.txt"
-  python3 - "$rundir/outputs/agent-stdout.txt" "$rundir/outputs/trace.jsonl" \
-    "$rundir/outputs/session-transcript.txt" "$fixdir" "$runid" "$runner_root" <<'PY'
-import datetime, json, os, re, sys
-
-src, trace_out, transcript_out, fixdir, run_id, runner_root = sys.argv[1:7]
-fixdir_real = os.path.realpath(fixdir)
-fixture_roots = sorted({fixdir.rstrip(os.sep), os.path.abspath(fixdir), fixdir_real}, key=len, reverse=True)
-runner_roots = sorted({runner_root.rstrip(os.sep), os.path.abspath(runner_root), os.path.realpath(runner_root)}, key=len, reverse=True)
-
-def normalize_text(value):
-    value = value or ""
-
-    def root_pattern(root):
-        parts = [re.escape(part) for part in root.split(os.sep) if part]
-        return r"/+" + r"/+".join(parts)
-
-    for root in fixture_roots:
-        pattern = root_pattern(root)
-        value = re.sub(pattern + r"/+", "", value)
-        value = re.sub(pattern, ".", value)
-    for root in runner_roots:
-        pattern = root_pattern(root)
-        value = re.sub(pattern + r"/+", "<runner-root>/", value)
-        value = re.sub(pattern, "<runner-root>", value)
-    return value
-
-def relpath(p):
-    if not p:
-        return p
-    ap = p if os.path.isabs(p) else os.path.join(fixdir_real, p)
-    ap = os.path.realpath(ap)
-    if ap.startswith(fixdir_real + os.sep):
-        return ap[len(fixdir_real) + 1:]
-    return normalize_text(p)
-
-def ts():
-    return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-seq = 0
-transcript = []
-last_agent_message = None
-with open(trace_out, "w", encoding="utf-8") as tf:
-    for line in open(src, encoding="utf-8", errors="replace"):
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            ev = json.loads(line)
-        except ValueError:
-            continue
-        etype = ev.get("type")
-
-        if etype == "turn.completed":
-            # The last agent_message seen before this turn closes is that
-            # turn's deliverable; nothing before it and nothing after.
-            transcript.append(last_agent_message or "")
-            last_agent_message = None
-            continue
-
-        item = ev.get("item") if isinstance(ev.get("item"), dict) else None
-        if item is None:
-            continue
-        itype = item.get("item_type") or item.get("type")
-
-        if etype == "item.completed" and itype == "agent_message":
-            t = (item.get("text") or item.get("message") or "").strip()
-            if t:
-                last_agent_message = t
-            continue
-
-        # Current Codex emits command execution when it starts and file
-        # changes only when they complete. Normalize each on that lifecycle.
-        if etype == "item.started" and itype == "command_execution":
-            command = normalize_text(item.get("command") or item.get("cmd") or "")
-            rec = {"seq": seq, "event": "call", "tool": "codex.command_execution",
-                   "action": "execute", "text": "execute:%s" % command, "command": command,
-                   "timestamp": ts(), "run_id": run_id}
-            tf.write(json.dumps(rec) + "\n")
-            seq += 1
-        elif etype == "item.completed" and itype == "file_change":
-            for chg in item.get("changes") or []:
-                if not isinstance(chg, dict):
-                    continue
-                path = relpath(chg.get("path") or "")
-                kind = (chg.get("kind") or "modify").lower()
-                action = "read" if kind == "read" else "write"
-                rec = {"seq": seq, "event": "call", "tool": "codex.file_change",
-                       "action": action, "text": "%s:%s" % (action, path), "path": path,
-                       "timestamp": ts(), "run_id": run_id}
-                tf.write(json.dumps(rec) + "\n")
-                seq += 1
-
-with open(transcript_out, "a", encoding="utf-8") as xf:
-    for n, t in enumerate(transcript, 1):
-        xf.write("## Turn %d\n" % n)
-        xf.write((t if t else "[empty final response]") + "\n\n")
-PY
+  "$selfdir/run_lib.py" extract-codex-trace "$rundir/outputs/agent-stdout.txt" \
+    "$rundir/outputs/trace.jsonl" "$rundir/outputs/session-transcript.txt" \
+    "$fixdir" "$runid" "$runner_root"
 }
 
 # ---------------------------------------------------------------------------
@@ -1290,90 +857,15 @@ lock_run_config() {
     fi
     IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
       CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-      AR="$bin_real" AH="$bin_hash" AO="$ver_output" python3 -c '
-import json, os
-av = os.environ["AV"]
-cfg = {
-    "treatment_arm": os.environ["TA"],
-    "arm_variable": av,
-    "locked_agent": os.environ["AG"] if av == "corpus" else None,
-    "locked_model": os.environ["MD"] if av == "corpus" else None,
-    "locked_corpus_ref": os.environ["CR"] if av == "agent" else None,
-    "repeats_per_cell": int(os.environ["RP"]),
-    "arms": {
-        os.environ["AM"]: {"agent": os.environ["AG"], "corpus_ref": os.environ["CR"],
-                            "model": os.environ["MD"], "effort": os.environ["AE"] or None}
-    },
-    "resolved": {
-        os.environ["AG"]: {"bin": os.environ["AB"] or None,
-                            "bin_realpath": os.environ["AR"] or None,
-                            "bin_sha256": os.environ["AH"] or None,
-                            "version": os.environ["AV2"] or None,
-                            "version_output": os.environ["AO"] or None,
-                            "model": os.environ["MD"], "effort": os.environ["AE"] or None}
-    },
-}
-path = os.path.join(os.environ["IT"], "run-config.json")
-tmp = path + ".tmp-%d" % os.getpid()
-with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2, sort_keys=True)
-os.replace(tmp, path)
-' || return 2
+      AR="$bin_real" AH="$bin_hash" AO="$ver_output" \
+      "$selfdir/run_lib.py" lock-run-config-create || return 2
     return 0
   fi
 
   IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
     CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-    AR="$bin_real" AH="$bin_hash" AO="$ver_output" python3 -c '
-import json, os, sys
-path = os.path.join(os.environ["IT"], "run-config.json")
-cfg = json.load(open(path, encoding="utf-8"))
-errs = []
-ta = os.environ.get("TA")
-if ta and ta != cfg["treatment_arm"]:
-    errs.append("treatment arm %r != recorded %r" % (ta, cfg["treatment_arm"]))
-if os.environ["AV"] != cfg["arm_variable"]:
-    errs.append("arm variable %r != recorded %r" % (os.environ["AV"], cfg["arm_variable"]))
-if int(os.environ["RP"]) != cfg["repeats_per_cell"]:
-    errs.append("repeat budget %s != recorded %s" % (os.environ["RP"], cfg["repeats_per_cell"]))
-if cfg["arm_variable"] == "corpus":
-    if os.environ["AG"] != cfg["locked_agent"]:
-        errs.append("agent %r != recorded %r for a corpus-variable comparison" % (os.environ["AG"], cfg["locked_agent"]))
-    if os.environ["MD"] != cfg["locked_model"]:
-        errs.append("model %r != recorded %r for a corpus-variable comparison" % (os.environ["MD"], cfg["locked_model"]))
-else:
-    if os.environ["CR"] != cfg["locked_corpus_ref"]:
-        errs.append("corpus-ref (target revision) %r != recorded %r for an agent-variable comparison" % (os.environ["CR"], cfg["locked_corpus_ref"]))
-resolved = cfg.setdefault("resolved", {})
-ag = os.environ["AG"]
-arms = cfg.setdefault("arms", {})
-arm = os.environ["AM"]
-arm_entry = {"agent": ag, "corpus_ref": os.environ["CR"],
-             "model": os.environ["MD"], "effort": os.environ["AE"] or None}
-prior_arm = arms.get(arm)
-if prior_arm is not None and prior_arm != arm_entry:
-    errs.append("arm %r configuration drifted: %r != recorded %r" % (arm, arm_entry, prior_arm))
-new_entry = {"bin": os.environ["AB"] or None,
-             "bin_realpath": os.environ["AR"] or None,
-             "bin_sha256": os.environ["AH"] or None,
-             "version": os.environ["AV2"] or None,
-             "version_output": os.environ["AO"] or None,
-             "model": os.environ["MD"], "effort": os.environ["AE"] or None}
-prior = resolved.get(ag)
-if prior is not None and prior != new_entry:
-    errs.append("resolved %s configuration drifted: %r != recorded %r — binary identity, CLI version, model and effort are held constant for the life of this iteration" % (ag, new_entry, prior))
-if errs:
-    sys.stderr.write("run.sh: this run violates the comparison recorded in %s:\n" % path)
-    for e in errs:
-        sys.stderr.write("  - %s\n" % e)
-    sys.exit(2)
-resolved[ag] = new_entry
-arms[arm] = arm_entry
-tmp = path + ".tmp-%d" % os.getpid()
-with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2, sort_keys=True)
-os.replace(tmp, path)
-'
+    AR="$bin_real" AH="$bin_hash" AO="$ver_output" \
+    "$selfdir/run_lib.py" lock-run-config-update
   return $?
 }
 
@@ -1496,43 +988,19 @@ done
 
 command -v python3 >/dev/null 2>&1 || { echo "run.sh: python3 not found" >&2; exit 2; }
 
-entry=$(EVALID="$evalid" SPEC="$spec" python3 -c '
-import json, os, sys
-spec = json.load(open(os.environ["SPEC"], encoding="utf-8"))
-for e in spec["evals"]:
-    if e["id"] == os.environ["EVALID"]:
-        json.dump(e, sys.stdout); break
-else:
-    sys.exit(1)') || {
+entry=$(EVALID="$evalid" SPEC="$spec" "$selfdir/run_lib.py" eval-lookup) || {
   echo "run.sh: no eval with id '$evalid' in spec.json" >&2; exit 2; }
 
-fixture=$(printf '%s' "$entry" | python3 -c 'import json,sys; print(json.load(sys.stdin)["fixture"])')
+fixture=$(printf '%s' "$entry" | "$selfdir/run_lib.py" fixture-name)
 
-arm_variable=$(printf '%s' "$entry" | SPEC="$spec" python3 -c '
-import json, os, sys
-e = json.load(sys.stdin)
-default = json.load(open(os.environ["SPEC"], encoding="utf-8"))["arms"]["variable"]
-print(e.get("arm_variable") or default)
-')
+arm_variable=$(printf '%s' "$entry" | SPEC="$spec" "$selfdir/run_lib.py" arm-variable)
 
 # Turns: a "turns" array if the spec entry carries one, else the current
 # bootstrap-once " || TURN n: " delimiter split into turns, else the prompt
 # as a single turn. NUL-delimited on disk — bash strings cannot hold a NUL.
 turnstmp=$(mktemp "${TMPDIR:-/tmp}/dot-agent-eval-turns.XXXXXX") || exit 1
 TURNSTMP="$turnstmp"
-printf '%s' "$entry" | python3 -c '
-import json, re, sys
-e = json.load(sys.stdin)
-turns = e.get("turns")
-if not turns:
-    prompt = e.get("prompt", "")
-    if " || " in prompt:
-        parts = [p.strip() for p in prompt.split(" || ")]
-        turns = [re.sub(r"^TURN\s+\d+:\s*", "", p) for p in parts]
-    else:
-        turns = [prompt]
-sys.stdout.buffer.write(("\0".join(turns) + "\0").encode("utf-8"))
-' >"$turnstmp"
+printf '%s' "$entry" | "$selfdir/run_lib.py" split-turns >"$turnstmp"
 
 turns=()
 while IFS= read -r -d '' t; do turns+=("$t"); done <"$turnstmp"
@@ -1629,45 +1097,10 @@ while [ "$rep" -le "$repeats_eff" ]; do
     MODEL="${agent_model:-not recorded}" EFFORT="${agent_effort:-not recorded}" \
     TRACE_FORMAT="$trace_format" TURNS="${#turns[@]}" ARM_VARIABLE="$arm_variable" \
     TIMEOUT_S="$TIMEOUT" REPEATS_PER_CELL="$REPEATS" STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    META_PATH="$rundir/run-meta.json" python3 -c '
-import json, os
-cfg = {
-    "run_id": os.environ["RUNID"],
-    "eval": os.environ["EVALID"],
-    "fixture": os.environ["FIXTURE"],
-    "fixture_base": None,
-    "corpus_ref": os.environ["CORPUS_REF"],
-    "agent": os.environ["AGENT"],
-    "agent_bin": os.environ["AGENT_BIN"],
-    "agent_bin_realpath": os.environ["AGENT_BIN_REAL"],
-    "agent_bin_sha256": os.environ["AGENT_BIN_HASH"],
-    "agent_version": os.environ["AGENT_VERSION"],
-    "agent_version_output": os.environ["AGENT_VERSION_OUTPUT"],
-    "model": os.environ["MODEL"],
-    "effort": os.environ["EFFORT"],
-    "trace_format": os.environ["TRACE_FORMAT"],
-    "turns": int(os.environ["TURNS"]),
-    "arm_variable": os.environ["ARM_VARIABLE"],
-    "timeout_s": int(os.environ["TIMEOUT_S"]),
-    "repeats_per_cell": int(os.environ["REPEATS_PER_CELL"]),
-    "started": os.environ["STARTED"],
-    "status": "building_fixture",
-}
-with open(os.environ["META_PATH"], "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2, sort_keys=True)
-'
+    META_PATH="$rundir/run-meta.json" "$selfdir/run_lib.py" run-meta-init
 
   acquire_iter_lock "$iterdir/.metadata.lock" || exit 1
-  python3 - "$iterdir/arm-map.json" "$runid" "$arm" <<'PY'
-import json, os, sys
-path, runid, arm = sys.argv[1], sys.argv[2], sys.argv[3]
-m = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-m[runid] = arm
-tmp = path + ".tmp-%d" % os.getpid()
-with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(m, f, indent=2, sort_keys=True)
-os.replace(tmp, path)
-PY
+  "$selfdir/run_lib.py" arm-map-update "$iterdir/arm-map.json" "$runid" "$arm"
   arm_map_rc=$?
   release_iter_lock
   [ "$arm_map_rc" -eq 0 ] || exit 1
@@ -1691,15 +1124,8 @@ PY
       "fixture base resolution failed (exit $stage_rc)" "$stage_rc"
     any_void=1; rep=$((rep + 1)); continue
   fi
-  META_PATH="$rundir/run-meta.json" FIXTURE_BASE="$base" python3 -c '
-import json, os
-path = os.environ["META_PATH"]
-m = json.load(open(path, encoding="utf-8"))
-m["fixture_base"] = os.environ["FIXTURE_BASE"]
-m["status"] = "running"
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(m, f, indent=2, sort_keys=True)
-' || exit 1
+  META_PATH="$rundir/run-meta.json" FIXTURE_BASE="$base" \
+    "$selfdir/run_lib.py" run-meta-set-fixture-base || exit 1
   mkdir -p "$rundir/outputs" || {
     mark_stage_void "$rundir" artifact_capture_failed \
       "could not create outputs directory" 1
@@ -1760,20 +1186,8 @@ EOF
   [ "$rc" -eq 97 ] && status="process_group_cleanup_failed"
   [ -n "$AGENT_FAILURE_STATUS" ] && status="$AGENT_FAILURE_STATUS"
   META_PATH="$rundir/run-meta.json" RC="$rc" ENDED="$end_ts" DURATION="$duration" \
-    STATUS="$status" REASON="$AGENT_FAILURE_REASON" python3 -c '
-import json, os
-path = os.environ["META_PATH"]
-m = json.load(open(path, encoding="utf-8"))
-m["ended"] = os.environ["ENDED"]
-m["exit_status"] = int(os.environ["RC"])
-m["duration_seconds"] = int(os.environ["DURATION"])
-m["status"] = os.environ["STATUS"]
-m["void"] = int(os.environ["RC"]) != 0
-if os.environ["REASON"]:
-    m["failure_reason"] = os.environ["REASON"]
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(m, f, indent=2, sort_keys=True)
-'
+    STATUS="$status" REASON="$AGENT_FAILURE_REASON" \
+    "$selfdir/run_lib.py" run-meta-finalize
 
   # A run that drove nothing to completion — a timeout, a nonzero exit, a
   # dropped session continuation — must not produce a grading record that
