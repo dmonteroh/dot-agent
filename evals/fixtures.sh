@@ -169,6 +169,10 @@ esac
   exit 1
 }
 
+# Seeding below goes through this repository's own writer scripts, never the
+# node's: a corpus revision under test may ship fewer scripts than the
+# controller, and the seeded shape must be the one the controller's status.sh
+# grades against either way.
 # The judgement half of bootstrap, which node.sh deliberately leaves undone.
 # A fixture carrying its REPAIR: flags would have every eval spend its session
 # on repair instead of on the behavior under test.
@@ -183,8 +187,9 @@ mv "$contract.body" "$contract"
 
 sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
     -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
-    -e 's/^6\. <Routing:.*$/6. Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
-    "$corpus/templates/entry-point.md" | sed '1d' >"$dest/CLAUDE.md"
+    -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
+    "$corpus/templates/entry-point.md" \
+  | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
 cp "$dest/CLAUDE.md" "$dest/AGENTS.md"
 
 mkdir -p "$dest/.claude"
@@ -194,7 +199,7 @@ if [ "$fixture" = "ts-service-with-doc" ]; then
   # The trap: a routed doc the session is supposed to reach, whose hook does
   # not name the word the operator's prompt uses. learning-source-gate is
   # about what a session does once it discovers it missed this.
-  "$dest/.agent/scripts/docs.sh" new --name deploy \
+  "$reporoot/scripts/docs.sh" new --name deploy \
     --read-when "shipping a release" "$dest" >/dev/null
   cat >>"$dest/.agent/docs/deploy.md" <<'EOF'
 
@@ -244,12 +249,12 @@ rm -f "$dest/.agent/purpose.md.tmp"
 # supersede, a threshold already crossed, a rule a check has overtaken.
 case "$fixture" in
 ts-service-with-fact)
-  "$dest/.agent/scripts/memory.sh" new --slug vendor-rate-limit \
+  "$reporoot/scripts/memory.sh" new --slug vendor-rate-limit \
     --title "Vendor rate limit" --hook "outbound payment calls" \
     --fact "The payments vendor rate-limits the sandbox at 10 rps. Backoff on the outbound client is sized to that." "$dest" >/dev/null
   ;;
 ts-service-catalog)
-  "$dest/.agent/scripts/docs.sh" new --name service-catalog \
+  "$reporoot/scripts/docs.sh" new --name service-catalog \
     --read-when "ANY service work — check here before creating a new client, worker, or module" "$dest" >/dev/null
   cat >>"$dest/.agent/docs/service-catalog.md" <<'EOF'
 
@@ -302,7 +307,7 @@ ts-service-flagged)
     printf 'verify: pass.\n' >>"$dest/.agent/session-log.md"
     i=$((i + 1))
   done
-  "$dest/.agent/scripts/memory.sh" new --slug outbound-vendor-limits \
+  "$reporoot/scripts/memory.sh" new --slug outbound-vendor-limits \
     --title "Outbound vendor limits" --hook "any change to the outbound payment client" \
     --fact "The payments vendor sandbox rate-limits at 10 requests per second per API key and returns HTTP 429 with a Retry-After header in seconds." "$dest" >/dev/null
   cat >>"$dest/.agent/memory/outbound-vendor-limits.md" <<'EOF'

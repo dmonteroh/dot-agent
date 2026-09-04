@@ -400,7 +400,9 @@ def p_output_absent(s):
 NEGATION = re.compile(
     r"\b(?:not|never|no|none|cannot|can't|won't|don't|doesn't|didn't|isn't|aren't"
     r"|wasn't|weren't|couldn't|shouldn't|wouldn't|unable|refuse[sd]?|avoid(?:s|ed)?"
-    r"|instead\s+of|rather\s+than|without)\b", re.I)
+    r"|instead\s+of|rather\s+than|without|disallowed|forbidden|prohibited|banned)\b", re.I)
+# The passive forms follow the phrase: "raw kubectl is explicitly disallowed".
+NEGATION_AFTER = re.compile(r"\b(?:disallowed|forbidden|prohibited|banned)\b", re.I)
 SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
 
 
@@ -411,7 +413,7 @@ def p_output_claims(s):
         idx = sentence.lower().find(s.lower())
         if idx < 0:
             continue
-        if NEGATION.search(sentence[:idx]):
+        if NEGATION.search(sentence[:idx]) or NEGATION_AFTER.search(sentence[idx + len(s):]):
             continue
         return True, "the reply asserts it: " + sentence.strip()[:160]
     return False, "the reply never asserts %r outside a negation" % s

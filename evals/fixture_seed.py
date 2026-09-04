@@ -66,7 +66,7 @@ check-premises  loads <spec.json>, takes the union of "premises" over every
 CONTRACT_ANSWERS = {
     "Areas and package managers": "service `src/` — npm only",
     "Catalogs": "none yet",
-    "Build": "`npm run build`",
+    "Build": "none — `package.json` has no build script",
     "Test": "`npm test`",
     "Lint / typecheck": "`npm run lint`",
     "Generated files": "none",
