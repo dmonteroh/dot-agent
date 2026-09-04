@@ -146,6 +146,14 @@ Each invocation builds its own fixture from the corpus revision named, drives th
 
 Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json` and the comparison design in `run-config.json`, neither of which the grader opens, and `rollup.py` greps every record for arm tokens and voids the pass if it finds one.
 
+### The next run
+
+Two separate two-arm iterations, not one three-arm iteration — `rollup.py` hard-refuses anything but exactly two arms, and a `no-harness` entry inside `FIXTURES` would void every one of its runs before grading (`verifier_snapshot` copies `status.sh`/`comments.sh` out of the fixture's own `.agent/scripts/`, which a harness-free fixture does not have).
+
+**Iteration A, first, no code changes:** `main` vs `feature/v6.2` tip, `arm_variable=corpus`. The first invocation into the fresh workspace must *be* the treatment: `--arm v62 --treatment-arm v62 --corpus-ref <v6.2 tip sha>`, then `--arm main --corpus-ref <main's sha at run start>`.
+
+**Iteration B, later, its own workspace:** `no-harness` vs `main`, once `fixtures.sh` gains a `--no-harness` modifier (moving `.agent/` aside post-seed, dropping `CLAUDE.md`/`AGENTS.md`, keeping `.claude/settings.json`) and `run.sh`'s verifier snapshot falls back to reading `status.sh`/`comments.sh` from beside the fixture. Restricted to the evals whose assertions never touch `node-diff.patch`, `node-tree.txt`, or `status-after.txt`: `routing-scales`, `routing-finds-doc`, `verify-no-false-done`, `scope-question-no-edit`, `comments-feature`, `comments-docstrings`, `routing-catalog-first`. A node-dependent eval in a no-harness arm measures the node's absence, not behavior, so it stays out of that rollup.
+
 ## What a run leaves behind
 
 ```
