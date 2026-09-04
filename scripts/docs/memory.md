@@ -5,11 +5,21 @@ Scaffolds a fact file and its `memory.md` index line as one operation. This is a
 ```
 Usage: memory.sh new --slug <slug> --title <title> --hook <hook> --fact "…" \
          [--scope <project|package|root>] [--type <fact|reference>] [root]
+       memory.sh supersede --slug <slug> --fact "…" \
+         [--scope <project|package|root>] [--type <fact|reference>] [root]
 ```
 
 `root` defaults to `.` and `scope` defaults to `project`, `type` to `fact`. Writes `<root>/.agent/memory/<slug>.md` and appends its index line to `<root>/.agent/memory.md` — both or neither: every check runs before any write happens.
 
 No size gate. Writes are never refused for length. `status.sh` flags outliers on the load path for grooming.
+
+## Superseding
+
+`memory.sh supersede --slug <slug> --fact "…"` rewrites an existing fact file's body and restamps its `date` frontmatter to today. The filename is kept, which is what makes it a supersede rather than a new fact, and the `memory.md` index line is left alone — a superseded fact usually keeps the same title and hook, and when it does not, that line is one hand edit. `scope` and `type` carry forward from the file unless `--scope` or `--type` overrides them.
+
+It refuses a fact file that does not exist (use `new`) and one `memory.md` does not index. The second refusal is the point: rewriting an unindexed file leaves the two-place write exactly as split as writing it by hand does. Add the index line, then supersede.
+
+The rewrite goes to a temporary file beside the fact and is renamed over it, so a write that fails leaves the previous fact intact rather than half-gone.
 
 ## The fact file carries no header contract
 

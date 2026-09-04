@@ -402,6 +402,65 @@ rc=$?
 flags9c=$(status_flags "$memroot")
 printf '%s\n' "$flags9c" | grep -q '^GROOM: memory/outlier\.md' && pass "memory.sh new: outlier fact draws a GROOM flag" || fail "memory.sh new: outlier fact draws a GROOM flag ($flags9c)"
 
+# memory.sh supersede — the fact contract says rewrite the fact and the
+# date and keep the filename. Until this subcommand existed the only path
+# was by hand, and the date was the half that got forgotten every time.
+# The fixture is hand-written with a stale date so the restamp is visible:
+# a fact written by `new` already carries today's.
+printf -- '---\ndate: 2020-01-01\nscope: package\ntype: reference\n---\n\nthe superseded body, stale\n' >"$memroot/.agent/memory/vendor-rate-limit.md"
+printf -- '- [Vendor Rate Limit](memory/vendor-rate-limit.md) — calling the vendor API\n' >>"$memroot/.agent/memory.md"
+supfile="$memroot/.agent/memory/vendor-rate-limit.md"
+supindex_before=$(cat "$memroot/.agent/memory.md")
+
+out9s=$("$memcopy" supersede --slug vendor-rate-limit --fact "the vendor allows 240 requests a minute per key, burst 40." "$memroot" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && pass "memory.sh supersede: valid supersede exits 0" || fail "memory.sh supersede: valid supersede exits 0 ($out9s)"
+grep -qF 'the vendor allows 240 requests a minute per key' "$supfile" && pass "memory.sh supersede: the new body replaces the old" || fail "memory.sh supersede: the new body replaces the old"
+grep -qF 'the superseded body, stale' "$supfile" && fail "memory.sh supersede: the old body is gone" || pass "memory.sh supersede: the old body is gone"
+grep -qxF -- "date: $(today)" "$supfile" && pass "memory.sh supersede: the date is restamped to today" || fail "memory.sh supersede: the date is restamped to today ($(grep '^date:' "$supfile"))"
+grep -qxF -- "scope: package" "$supfile" && grep -qxF -- "type: reference" "$supfile" && pass "memory.sh supersede: scope and type carry forward unchanged" || fail "memory.sh supersede: scope and type carry forward unchanged"
+[ "$supindex_before" = "$(cat "$memroot/.agent/memory.md")" ] && pass "memory.sh supersede: the index line is left alone" || fail "memory.sh supersede: the index line is left alone"
+grep -q '<!--' "$supfile" && fail "memory.sh supersede: the rewritten fact carries no header contract" || pass "memory.sh supersede: the rewritten fact carries no header contract"
+flags9s=$(status_flags "$memroot" | grep '^REPAIR:')
+[ -z "$flags9s" ] && pass "memory.sh supersede: the node draws no REPAIR afterward" || fail "memory.sh supersede: the node draws no REPAIR afterward ($flags9s)"
+
+# An override still validates the way new's does.
+"$memcopy" supersede --slug vendor-rate-limit --fact "narrowed to one project" --scope project --type fact "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && grep -qxF -- "scope: project" "$supfile" && grep -qxF -- "type: fact" "$supfile" && pass "memory.sh supersede: --scope and --type override the carried values" || fail "memory.sh supersede: --scope and --type override the carried values"
+"$memcopy" supersede --slug vendor-rate-limit --fact "bogus scope attempt" --scope everywhere "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && grep -qF 'narrowed to one project' "$supfile" && pass "memory.sh supersede: an unknown --scope is rejected, the fact unchanged" || fail "memory.sh supersede: an unknown --scope is rejected, the fact unchanged"
+
+# Every refusal leaves the fact and the index exactly as they were.
+"$memcopy" supersede --slug never-written --fact "no such fact" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$memroot/.agent/memory/never-written.md" ] && pass "memory.sh supersede: a missing fact file is rejected, nothing created" || fail "memory.sh supersede: a missing fact file is rejected, nothing created"
+
+printf -- '---\ndate: 2020-01-01\nscope: project\ntype: fact\n---\n\nunindexed body\n' >"$memroot/.agent/memory/unindexed.md"
+"$memcopy" supersede --slug unindexed --fact "should not land" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && grep -qF 'unindexed body' "$memroot/.agent/memory/unindexed.md" && pass "memory.sh supersede: an unindexed fact file is rejected, unchanged" || fail "memory.sh supersede: an unindexed fact file is rejected, unchanged"
+rm -f "$memroot/.agent/memory/unindexed.md"
+
+"$memcopy" supersede --slug vendor-rate-limit "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "memory.sh supersede: a missing --fact is rejected" || fail "memory.sh supersede: a missing --fact is rejected"
+"$memcopy" supersede --slug vendor-rate-limit --fact --scope "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && grep -qF 'narrowed to one project' "$supfile" && pass "memory.sh supersede: a flag is not accepted as another flag's value" || fail "memory.sh supersede: a flag is not accepted as another flag's value"
+"$memcopy" supersede --slug "Bad_Slug" --fact "invalid slug attempt" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "memory.sh supersede: an invalid slug is rejected" || fail "memory.sh supersede: an invalid slug is rejected"
+"$memcopy" supersede --slug vendor-rate-limit --title "Renamed" --fact "titles are not supersede's" "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "memory.sh supersede: --title is not a supersede flag" || fail "memory.sh supersede: --title is not a supersede flag"
+
+# new's refusal now names the subcommand rather than sending the writer to
+# do it by hand.
+out9t=$("$memcopy" new --slug vendor-rate-limit --title "Dup" --hook "dup" --fact "duplicate attempt" "$memroot" 2>&1)
+printf '%s\n' "$out9t" | grep -qF 'memory.sh supersede --slug vendor-rate-limit' && pass "memory.sh new: the overwrite refusal points at supersede" || fail "memory.sh new: the overwrite refusal points at supersede ($out9t)"
+
 # ---- 10. docs.sh new ----
 docroot="$WORK/docs-tests"
 mkdir -p "$docroot"
@@ -3747,7 +3806,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=504
+EXPECTED_CHECKS=521
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
