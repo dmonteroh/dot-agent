@@ -60,7 +60,7 @@ The default is no comment. Write one only where a competent reader of this file 
 ## Verification contract
 
 - Run the verification suite for changed scope: tests, lint, typecheck, build as applicable (exact commands in Project guardrails).
-- Before handing back a diff, run `.agent/scripts/comments.sh <base-ref>` (the comment gate) against the change's true parent — the branch base, never `HEAD`, which diffs a committed change against itself and reads nothing. Delete every comment it blocks: dead citations, commented-out code, change narration, structure narration, replies to the prompt. Justify or delete every comment it lists. Its vocabulary (base ref, ticket and narration patterns, path exclusions) lives in `.agent/scripts/comments.conf`, plain KEY=value, parsed and never executed.
+- Before handing back a diff, run `.agent/scripts/comments.sh <base-ref>` (the comment gate) against the change's true parent — the branch base, or `HEAD` when the change is still uncommitted; never `HEAD` on a clean tree, which diffs a committed change against itself and reads nothing. Delete every comment it blocks: dead citations, commented-out code, change narration, structure narration, replies to the prompt. Justify or delete every comment it lists. Its vocabulary (base ref, ticket and narration patterns, path exclusions) lives in `.agent/scripts/comments.conf`, plain KEY=value, parsed and never executed.
 - If a required tool is unavailable, state the gap instead of silently skipping.
 - If verification fails, classify: caused-by-change, pre-existing, environmental, or unknown. Investigate unknown before reporting.
 - Fix failures within task scope. For unrelated baseline failures, report command, status, blocker, and residual risk.

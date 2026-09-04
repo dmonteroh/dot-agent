@@ -33,6 +33,8 @@ The preset's Self-learning section is part of `rules/contract.md`. A trigger sta
 
 Search the contract, routed docs, relevant source, tooling, and existing learned rules for the behavior and its cause. If one already owns it, fix that source and write no compensating rule. If this session made the behavior mechanically enforceable, remove any learned rule that only asked the agent to do the same thing. Version control keeps the incident history.
 
+A doc that exists and was never opened is a failing source too. Check its `Read when:` hook and its `architecture.md` routing row against the words the task actually used. A hook that names the occasion — "shipping a release" — and never the thing asked about — "deploy" — is the defect: fix the routing line, and write no rule telling the agent to search harder.
+
 Only after that source check, ask what check or behavior would have prevented the failure. For a plan deviation, ask what the plan missed.
 
 If the answer generalizes past the source fix and this session, draft a rule. Otherwise the outcome belongs in the session log. A useful test: try to state the rule in one imperative sentence before writing anything down. If it only makes sense with a paragraph of backstory attached, keep asking until the generalizable version surfaces.

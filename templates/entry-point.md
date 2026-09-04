@@ -16,7 +16,7 @@ Execute with tools, in order:
 
 The one re-run: after a context compaction or handoff, run steps 1–5 again. A summary is lossy by construction, so a compacted session is a session operating without them, and it is not in a position to judge what it kept. Re-route step 6 only if the work moved.
 
-Before handing back a diff, run `bash .agent/scripts/comments.sh <base-ref>` against the change's true parent — the branch base, never `HEAD`, which diffs a committed change against itself and reads nothing. Delete every comment it blocks. Justify or delete every comment it lists. Its vocabulary lives in `.agent/scripts/comments.conf`.
+Before handing back a diff, run `bash .agent/scripts/comments.sh <base-ref>` against the change's true parent — the branch base, or `HEAD` when the change is still uncommitted; never `HEAD` on a clean tree, which diffs a committed change against itself and reads nothing. Delete every comment it blocks. Justify or delete every comment it lists. Its vocabulary lives in `.agent/scripts/comments.conf`.
 
 Exception — subagents: skip step 1 (flags are the orchestrator's to handle). Read everything else. Never edit `.agent/` unless explicitly assigned — the orchestrator is the single session-log writer.
 
