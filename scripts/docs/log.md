@@ -12,6 +12,8 @@ Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "�
 
 One line: `- [date] (tool) summary (area). verify: …`
 
+`verify:` is the change's own verification result. A baseline failure that predates the change is not that result: name it in the summary text and leave the tag reporting what the change itself did.
+
 Newlines are refused because they would forge extra entries, and parentheses in the tags are refused because they would corrupt the `(tool)` and `(area)` delimiters.
 
 Words are counted, not punctuation: a free-standing separator — an em dash, a lone hyphen — does not spend the ceiling. Separators are matched as literal bytes rather than by asking the locale what counts as a letter. That is because under a locale whose alphanumeric table covers the em dash's leading byte `0xE2`, such as ISO-8859-1 or UTF-8, `[[:alnum:]]` treats that byte as a letter and the dash spends a word. `LC_ALL=C` is not such a locale, so the bug hides there.
