@@ -310,6 +310,18 @@ def p_product_files_added(op, n):
         len(new), ", ".join(sorted(new)) if new else "none")
 
 
+TEST_FILE = re.compile(r"(?:^|/)(?:__tests__/|.*\.(?:test|spec)\.[A-Za-z0-9]+$)")
+
+
+def p_product_modules_added(op, n):
+    # A test alongside the change is the change being done properly, not a
+    # second module. Only non-test files count as a new module.
+    fs = product_files()
+    new = [k for k in fs if fs[k]["new"] and not TEST_FILE.search(k)]
+    return cmp_num(len(new), op, int(n)), "%d non-test project file(s) created: %s" % (
+        len(new), ", ".join(sorted(new)) if new else "none")
+
+
 def p_diff_absent(s):
     txt = added_text(need("diff.patch"))
     hits = [l for l in txt.splitlines() if s in l]

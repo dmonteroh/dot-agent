@@ -3290,6 +3290,38 @@ if r["g/human"]["passed"] is not None: bad.append("manual-was-auto-graded")
 print(" ".join(bad))' "$gd/grading.json" 2>&1)
 [ -z "$g42" ] && pass "evals: the grader evaluates its check language and fails closed on a missing artifact" || fail "evals: the grader evaluates its check language and fails closed on a missing artifact ($g42)"
 
+# H3: a test file beside the change is the change done properly, not a
+# second module — product_modules_added must not count it.
+gd2="$WORK/eval-grade-modules/r0"
+mkdir -p "$gd2/outputs"
+cat >"$gd2/snap.json" <<'EOF'
+{"id":"g2","assertions":[
+ {"id":"g2/files","concept":"c","class":"artifact","grade":"auto","check":"product_files_added == 2"},
+ {"id":"g2/modules","concept":"c","class":"artifact","grade":"auto","check":"product_modules_added == 1"}]}
+EOF
+printf -- '--- /dev/null\n+++ b/src/refunds.ts\n+export const refunds = 1\n--- /dev/null\n+++ b/src/client.test.ts\n+test()\n' \
+  >"$gd2/outputs/diff.patch"
+"$evroot/grade.py" "$gd2" "$gd2/snap.json" >/dev/null 2>&1
+g42mod=$(python3 -c '
+import json,sys
+r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
+bad = []
+if not r["g2/files"]["passed"]: bad.append("product-files-added-miscounted")
+if not r["g2/modules"]["passed"]: bad.append("test-file-counted-as-module")
+print(" ".join(bad))' "$gd2/grading.json" 2>&1)
+[ -z "$g42mod" ] && pass "evals: product_modules_added excludes a test file beside a new module" || fail "evals: product_modules_added excludes a test file beside a new module ($g42mod)"
+
+gd3="$WORK/eval-grade-modules-only-test/r0"
+mkdir -p "$gd3/outputs"
+printf '{"id":"g3","assertions":[{"id":"g3/modules","concept":"c","class":"artifact","grade":"auto","check":"product_modules_added == 0"}]}' >"$gd3/snap.json"
+printf -- '--- /dev/null\n+++ b/src/client.test.ts\n+test()\n' >"$gd3/outputs/diff.patch"
+"$evroot/grade.py" "$gd3" "$gd3/snap.json" >/dev/null 2>&1
+g42testonly=$(python3 -c '
+import json,sys
+r = json.load(open(sys.argv[1]))["results"][0]
+print("" if r["passed"] else "test-only-diff-counted-as-module")' "$gd3/grading.json" 2>&1)
+[ -z "$g42testonly" ] && pass "evals: product_modules_added is zero when only a test file is added" || fail "evals: product_modules_added is zero when only a test file is added ($g42testonly)"
+
 # Trace calls are controller-owned evidence.  In particular, ordering cannot
 # infer a missing second call, malformed records cannot be searched, and
 # result/non-call records cannot stand in for a tool call.
