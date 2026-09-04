@@ -19,11 +19,23 @@ import math
 import os
 import sys
 
-USAGE = """Usage: rollup.py <iteration-dir>
+USAGE = """Usage: rollup.py [--exclude-eval <id>]... [--auto-only] <iteration-dir>
 
 Reads <iteration-dir>/arm-map.json, run-config.json, and every
 eval-*/<run-id>/grading.json under it, joins the arms on assertion id, and
 writes rollup.json beside them.
+
+--exclude-eval <id> drops one eval-<id> directory from the rollup entirely
+(repeatable). An id that matches no directory under <iteration-dir> is a
+fatal error, not a silent no-op. Excluded ids are recorded in
+report["excluded_evals"] and printed so an excluded rollup can never be
+mistaken for a complete one.
+
+--auto-only produces a preview over auto-graded assertions only: a result
+with passed:null (a manual assertion not yet judged) is recorded in
+report["pending_manual"] instead of causing a fatal error. The result is
+written to rollup-preview.json, never rollup.json, so a preview can never
+be read later as a reported result.
 
 Exits 2 when the records cannot support a rollup: missing experiment
 configuration, a grading record whose id set differs from its eval snapshot,
@@ -70,8 +82,19 @@ def mean_and_stddev(values):
     return m, variance ** 0.5
 
 
-def rollup(iteration):
+def rollup(iteration, exclude=None, auto_only=False):
     """Join both arms of one iteration and return the report and its inputs."""
+    exclude = set(exclude or ())
+    if exclude:
+        present = set()
+        for d in os.listdir(iteration):
+            if d.startswith("eval-"):
+                present.add(d[len("eval-"):])
+        bad = exclude - present
+        if bad:
+            die("--exclude-eval %s matches no eval directory under %s"
+                % (sorted(bad), iteration))
+
     arm_map = load(os.path.join(iteration, "arm-map.json"))
     if not isinstance(arm_map, dict):
         die("arm-map.json must be an object mapping run ids to arms")
@@ -112,9 +135,12 @@ def rollup(iteration):
     durations = collections.defaultdict(list)
     duration_runs = []
     all_runs = []
+    pending_manual = set()
 
     for eval_dir in sorted(os.listdir(iteration)):
         if not eval_dir.startswith("eval-"):
+            continue
+        if eval_dir[len("eval-"):] in exclude:
             continue
         base = os.path.join(iteration, eval_dir)
         snapshot = load(os.path.join(base, "eval-snapshot.json"))
@@ -170,6 +196,9 @@ def rollup(iteration):
                         "field entirely cannot support a rollup" % (grading_path, r["id"]))
                 passed = r.get("passed")
                 if passed is None:
+                    if auto_only:
+                        pending_manual.add(r["id"])
+                        continue
                     die("%s leaves %s ungraded. It is a manual assertion and a "
                         "human has to judge it, blind, before this iteration can "
                         "be rolled up" % (grading_path, r["id"]))
@@ -278,6 +307,11 @@ def rollup(iteration):
         },
         "rows": rows,
     }
+    if exclude:
+        report["excluded_evals"] = sorted(exclude)
+    if auto_only:
+        report["mode"] = "auto-only-preview"
+        report["pending_manual"] = sorted(pending_manual)
     if durations:
         report["duration_s"] = {}
         for arm in arms:
@@ -300,7 +334,16 @@ def print_report(report, arms, durations):
     buckets = collections.defaultdict(list, report["buckets"])
     rows = report["rows"]
 
+    if report.get("mode") == "auto-only-preview":
+        pending = report.get("pending_manual", [])
+        print("PREVIEW — auto assertions only; %d manual assertion(s) pending, "
+              "this is not a reportable delta" % len(pending))
+        for aid in pending:
+            print("  %s" % aid)
+
     print("arms:      %s (treatment) vs %s (control)" % (treatment, control))
+    if report.get("excluded_evals"):
+        print("excluded:  %s" % ", ".join(report["excluded_evals"]))
     print("checklist: %d assertions, weighted per-assertion" % n)
     print("pass rate: %s %.1f%%   %s %.1f%%   delta %+.1f pp"
           % (treatment, 100.0 * report["passed"][treatment] / n,
@@ -336,13 +379,36 @@ def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         sys.stdout.write(USAGE)
         return 0
-    iteration = argv[0]
+
+    exclude = set()
+    auto_only = False
+    positional = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--exclude-eval":
+            if i + 1 >= len(argv):
+                die("--exclude-eval requires an eval id")
+            exclude.add(argv[i + 1])
+            i += 2
+            continue
+        if arg == "--auto-only":
+            auto_only = True
+            i += 1
+            continue
+        positional.append(arg)
+        i += 1
+
+    if len(positional) != 1:
+        die("expected exactly one iteration directory argument")
+    iteration = positional[0]
     if not os.path.isdir(iteration):
         die("no such iteration directory: %s" % iteration)
 
-    report, arms, durations = rollup(iteration)
+    report, arms, durations = rollup(iteration, exclude=exclude, auto_only=auto_only)
 
-    out = os.path.join(iteration, "rollup.json")
+    out_name = "rollup-preview.json" if auto_only else "rollup.json"
+    out = os.path.join(iteration, out_name)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, sort_keys=True)
         fh.write("\n")
