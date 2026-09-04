@@ -269,6 +269,15 @@ def p_learned_rules_removed(op, n):
         len(rem), rem[0][:140] if rem else "none")
 
 
+def p_learned_rule_kept(pattern):
+    """A removal-count ceiling cannot tell a correct expiry from a cull. Name
+    the rule that must survive instead."""
+    _, rem = _learned_delta()
+    hits = [r for r in rem if re.search(pattern, r)]
+    return (not hits), ("no removed rule matches %r, so it survived the pass" % pattern) \
+        if not hits else ("the pass removed it: " + hits[0][:160])
+
+
 def p_node_file_changed(path):
     fs = node_files()
     return (path in fs), ("%s was edited" % path) if path in fs else (

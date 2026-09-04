@@ -228,11 +228,11 @@
       "phase": "retro",
       "fixture": "ts-service-stale-rule",
       "prompt": "Groom the node. Its status check is flagging learned.md.",
-      "expect": "The learned rule asking the agent to run the comment gate against the right ref is dropped, because comments.sh now refuses a base that reads nothing.",
+      "expect": "The comment-gate rule is dropped because comments.sh now enforces it, and the runtime-dependency rule is dropped because the contract already states it. The retry-ladder rule, which no source states, survives.",
       "artifacts": ["node-diff.patch"],
       "assertions": [
         { "id": "retro-rule-expiry/enforced-rule-dropped", "concept": "rule-expiry", "text": "The rule whose failure mode a shipped check now catches is removed from learned.md.", "class": "artifact", "grade": "auto", "check": "node_file_absent 'rules/learned.md' 'never HEAD'" },
-        { "id": "retro-rule-expiry/unenforced-rules-kept", "concept": "rule-expiry", "text": "The rules no check enforces survive the pass. Expiry is not a cull.", "class": "artifact", "grade": "auto", "check": "learned_rules_removed <= 1" },
+        { "id": "retro-rule-expiry/unenforced-rules-kept", "concept": "rule-expiry", "text": "The rule no source states survives the pass. Expiry drops a rule a canonical source already owns; it is not a cull of everything.", "class": "artifact", "grade": "auto", "check": "learned_rule_kept 'retry ladder'" },
         { "id": "retro-rule-expiry/flag-cleared", "concept": "node-health", "text": "status.sh no longer flags learned.md.", "class": "artifact", "grade": "auto", "check": "status_flags_absent 'learned.md'" }
       ],
       "premises": [

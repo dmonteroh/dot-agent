@@ -305,6 +305,7 @@ ts-service-stale-rule)
 
 - [2026-08-15] Run the comment gate against the change's true parent ref, never HEAD. Trigger: a HEAD..HEAD run passed vacuously.
 - [2026-08-16] Ask before adding a runtime dependency, whatever its size.
+- [2026-08-17] Ask before raising the retry ladder's ceiling above three attempts; the vendor caps it by contract and nothing in this repo records that.
 EOF
   ;;
 esac
