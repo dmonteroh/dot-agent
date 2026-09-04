@@ -1914,6 +1914,13 @@ for ev in spec["evals"]:
         if a.get("id") in seen:
             bad.append("duplicate assertion id %s" % a.get("id"))
         seen.add(a.get("id"))
+    for p in ev.get("premises", []) or []:
+        if not p.get("path"):
+            bad.append("%s has a premise with no path: %r" % (ev["id"], p))
+        keys = [k for k in ("contains", "absent", "exists") if k in p]
+        if len(keys) != 1:
+            bad.append("%s has a premise with %d of contains/absent/exists, want exactly 1: %r"
+                       % (ev["id"], len(keys), p))
 for key in ("arms", "weighting"):
     if not spec.get(key):
         bad.append("spec missing %s" % key)
@@ -1961,6 +1968,32 @@ evfg="$WORK/eval-fixture-flagged"
 "$evroot/fixtures.sh" ts-service-flagged "$evfg" --corpus-dir "$reporoot" >/dev/null 2>&1
 f42b=$(status_flags "$evfg")
 printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf '%s\n' "$f42b" | grep -q '^GROOM: memory/' && pass "evals: the flagged fixture arrives over the thresholds its eval clears" || fail "evals: the flagged fixture arrives over the thresholds its eval clears ($f42b)"
+
+# H4: a fixture build now enforces every premise its evals' prompts assert
+# about the built tree. A drifted premise must void the build, not the run.
+evdoc="$WORK/eval-fixture-with-doc"
+"$evroot/fixtures.sh" ts-service-with-doc "$evdoc" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42doc=$?
+[ "$rc42doc" -eq 0 ] && [ -d "$evdoc/.agent" ] && pass "evals: ts-service-with-doc builds and its premises hold" || fail "evals: ts-service-with-doc builds and its premises hold (rc=$rc42doc)"
+
+evstale="$WORK/eval-fixture-stale-rule"
+"$evroot/fixtures.sh" ts-service-stale-rule "$evstale" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42stale=$?
+[ "$rc42stale" -eq 0 ] && [ -d "$evstale/.agent" ] && pass "evals: ts-service-stale-rule builds and its premises hold" || fail "evals: ts-service-stale-rule builds and its premises hold (rc=$rc42stale)"
+
+evfailing="$WORK/eval-fixture-failing"
+"$evroot/fixtures.sh" ts-service-failing "$evfailing" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42failing=$?
+[ "$rc42failing" -eq 0 ] && [ -d "$evfailing/.agent" ] && pass "evals: ts-service-failing builds and its premises hold" || fail "evals: ts-service-failing builds and its premises hold (rc=$rc42failing)"
+
+# Negative control: a drifted premise must be caught, naming the eval it
+# belongs to, not silently graded as if the prompt's claim were still true.
+sed -i.bak "s/amountMino:/amountMinor:/" "$evdoc/src/client.ts" && rm -f "$evdoc/src/client.ts.bak"
+premfail42=$("$evroot/fixture_seed.py" check-premises "$evroot/spec.json" ts-service-with-doc "$evdoc" 2>&1)
+premrc42=$?
+[ "$premrc42" -eq 2 ] && printf '%s\n' "$premfail42" | grep -q 'routing-scales' \
+  && pass "evals: check-premises catches a drifted premise and names the eval" \
+  || fail "evals: check-premises catches a drifted premise and names the eval (rc=$premrc42; $premfail42)"
 
 # ---- 44. evals/run.sh: fake-CLI regression coverage ----
 # claude and codex are real, logged-in installs the operator drives by hand
@@ -2470,13 +2503,20 @@ TIMEOUT=$5
 CONF
 }
 
-# run workspace, eval id -> true only for a diagnostic-only void run
+# run workspace, eval id -> true only for a void run with no derived
+# artifact and no grading.json. A void withholds the grade, not the
+# evidence: a stage that voided before outputs/ was ever created (a fixture
+# build failure) has none, which is fine; a stage that voided after the
+# agent ran must still show the raw stream and nothing derived from it.
 eval_void_clean() {
   evc_run=$(find "$1/iteration-1/eval-$2" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
   [ -n "$evc_run" ] \
     && [ -f "$evc_run/run-meta.json" ] \
     && grep -q '"void": true' "$evc_run/run-meta.json" 2>/dev/null \
-    && [ ! -e "$evc_run/outputs" ] \
+    && { [ ! -e "$evc_run/outputs" ] || \
+         { [ -f "$evc_run/outputs/agent-stdout.txt" ] \
+           && [ ! -e "$evc_run/outputs/diff.patch" ] \
+           && [ ! -e "$evc_run/outputs/node-diff.patch" ]; }; } \
     && [ ! -e "$evc_run/grading.json" ]
 }
 
@@ -2820,7 +2860,9 @@ rc44f=$?
 rundir_fail=$(find "$wsc_fail/iteration-1/eval-scope-question-no-edit" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
 [ -n "$rundir_fail" ] && [ ! -e "$rundir_fail/grading.json" ] && pass "evals: a void run writes no grading.json" || fail "evals: a void run writes no grading.json"
 [ -f "$rundir_fail/run-meta.json" ] && grep -q '"status": "void"' "$rundir_fail/run-meta.json" 2>/dev/null && pass "evals: a void run's run-meta.json records status void" || fail "evals: a void run's run-meta.json records status void"
-[ ! -e "$rundir_fail/outputs" ] && pass "evals: a void run retains no partial raw output or outputs capture" || fail "evals: a void run retains no partial raw output or outputs capture"
+[ -f "$rundir_fail/outputs/agent-stdout.txt" ] && [ ! -e "$rundir_fail/outputs/diff.patch" ] && [ ! -e "$rundir_fail/grading.json" ] \
+  && pass "evals: a void run keeps the raw stream and discards derived outputs" \
+  || fail "evals: a void run keeps the raw stream and discards derived outputs"
 
 # -- config drift: a later run into the same iteration with a moved locked
 # field is refused before touching a fixture --
@@ -3004,7 +3046,8 @@ repeat_replace_void=$(find "$repeat_replace_eval" -name run-meta.json -exec grep
 if [ "$rc44repeat_replace" -ne 0 ] \
   && [ "$(find "$repeat_replace_eval" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)" -eq 2 ] \
   && [ -n "$repeat_replace_void" ] \
-  && [ ! -e "${repeat_replace_void%/run-meta.json}/outputs" ] \
+  && [ -f "${repeat_replace_void%/run-meta.json}/outputs/agent-stdout.txt" ] \
+  && [ ! -e "${repeat_replace_void%/run-meta.json}/outputs/diff.patch" ] \
   && [ ! -e "${repeat_replace_void%/run-meta.json}/grading.json" ]; then
   pass "evals: same-path executable replacement between repeats voids the affected repeat"
 else
@@ -3161,10 +3204,12 @@ fi
 cancel_rundir=$(find "$wscx_cancel/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
 if [ -f "$cancel_rundir/run-meta.json" ] \
   && grep -q '"status": "cancelled"' "$cancel_rundir/run-meta.json" 2>/dev/null \
-  && [ ! -e "$cancel_rundir/outputs" ]; then
-  pass "evals: cancellation retains void metadata and removes partial outputs"
+  && [ -f "$cancel_rundir/outputs/agent-stdout.txt" ] \
+  && [ ! -e "$cancel_rundir/outputs/diff.patch" ] \
+  && [ ! -e "$cancel_rundir/grading.json" ]; then
+  pass "evals: cancellation retains void metadata, keeps the raw stream and discards derived outputs"
 else
-  fail "evals: cancellation retains void metadata and removes partial outputs"
+  fail "evals: cancellation retains void metadata, keeps the raw stream and discards derived outputs"
 fi
 
 # The portable timeout starts a new process group. Descendants that ignore
@@ -3189,10 +3234,12 @@ fi
 timeout_rundir=$(find "$wscx_timeout/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
 if [ -f "$timeout_rundir/run-meta.json" ] \
   && grep -q '"status": "timeout"' "$timeout_rundir/run-meta.json" 2>/dev/null \
-  && [ ! -e "$timeout_rundir/outputs" ]; then
-  pass "evals: timeout retains void metadata and removes partial outputs"
+  && [ -f "$timeout_rundir/outputs/agent-stdout.txt" ] \
+  && [ ! -e "$timeout_rundir/outputs/diff.patch" ] \
+  && [ ! -e "$timeout_rundir/grading.json" ]; then
+  pass "evals: timeout retains void metadata, keeps the raw stream and discards derived outputs"
 else
-  fail "evals: timeout retains void metadata and removes partial outputs"
+  fail "evals: timeout retains void metadata, keeps the raw stream and discards derived outputs"
 fi
 
 # The grader is the piece that turns spec.json's check strings from a
@@ -3207,12 +3254,25 @@ cat >"$gd/snap.json" <<'EOF'
  {"id":"g/order","concept":"c","class":"trace","grade":"auto","check":"trace_order 'catalog' before 'write:'"},
  {"id":"g/absent","concept":"c","class":"artifact","grade":"auto","check":"node_tree_absent 'SECRET-TOKEN'"},
  {"id":"g/missing","concept":"c","class":"artifact","grade":"auto","check":"gate_block_count == 0"},
+ {"id":"g/nodeprefix","concept":"c","class":"artifact","grade":"auto","check":"node_file_changed 'memory/x.md'"},
  {"id":"g/human","concept":"c","class":"artifact","grade":"manual"}]}
 EOF
 # A created file and an appended one, so "added" cannot be inferred from
 # "has no removed lines" — the defect that read an append as a creation.
 printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$gd/outputs/diff.patch"
-printf -- '--- a/memory/x.md\n+++ b/memory/x.md\n+a line\n' >"$gd/outputs/node-diff.patch"
+# The node diff is generated, not hand-written: a hand-written pin is how the
+# `.agent/` prefix run.sh actually emits went unnoticed for a whole run.
+ndrepo="$WORK/eval-node-diff"
+mkdir -p "$ndrepo/.agent/memory"
+printf 'seed\n' >"$ndrepo/.agent/memory/x.md"
+git -C "$ndrepo" init -q
+git -C "$ndrepo" add -A
+git -C "$ndrepo" -c user.name=eval -c user.email=eval@local -c commit.gpgsign=false \
+  commit -q -m base
+nd_base=$(git -C "$ndrepo" rev-parse HEAD)
+printf 'a line\n' >>"$ndrepo/.agent/memory/x.md"
+git -C "$ndrepo" add -A
+git -C "$ndrepo" diff --cached "$nd_base" -- .agent >"$gd/outputs/node-diff.patch"
 printf '{"seq":0,"event":"call","tool":"read_file","action":"read","text":"read catalog"}\n{"seq":1,"event":"call","tool":"write_file","action":"write","text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
 printf 'nothing sensitive here\n' >"$gd/outputs/node-tree.txt"
 "$evroot/grade.py" "$gd" "$gd/snap.json" >/dev/null 2>&1
@@ -3225,9 +3285,64 @@ if not r["g/append"]["passed"]: bad.append("append-read-as-creation")
 if not r["g/order"]["passed"]: bad.append("trace-order")
 if not r["g/absent"]["passed"]: bad.append("tree-absence")
 if r["g/missing"]["passed"]: bad.append("missing-artifact-passed-by-default")
+if not r["g/nodeprefix"]["passed"]: bad.append("node-diff-prefix-not-stripped")
 if r["g/human"]["passed"] is not None: bad.append("manual-was-auto-graded")
 print(" ".join(bad))' "$gd/grading.json" 2>&1)
 [ -z "$g42" ] && pass "evals: the grader evaluates its check language and fails closed on a missing artifact" || fail "evals: the grader evaluates its check language and fails closed on a missing artifact ($g42)"
+
+# H3: a test file beside the change is the change done properly, not a
+# second module — product_modules_added must not count it.
+gd2="$WORK/eval-grade-modules/r0"
+mkdir -p "$gd2/outputs"
+cat >"$gd2/snap.json" <<'EOF'
+{"id":"g2","assertions":[
+ {"id":"g2/files","concept":"c","class":"artifact","grade":"auto","check":"product_files_added == 2"},
+ {"id":"g2/modules","concept":"c","class":"artifact","grade":"auto","check":"product_modules_added == 1"}]}
+EOF
+printf -- '--- /dev/null\n+++ b/src/refunds.ts\n+export const refunds = 1\n--- /dev/null\n+++ b/src/client.test.ts\n+test()\n' \
+  >"$gd2/outputs/diff.patch"
+"$evroot/grade.py" "$gd2" "$gd2/snap.json" >/dev/null 2>&1
+g42mod=$(python3 -c '
+import json,sys
+r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
+bad = []
+if not r["g2/files"]["passed"]: bad.append("product-files-added-miscounted")
+if not r["g2/modules"]["passed"]: bad.append("test-file-counted-as-module")
+print(" ".join(bad))' "$gd2/grading.json" 2>&1)
+[ -z "$g42mod" ] && pass "evals: product_modules_added excludes a test file beside a new module" || fail "evals: product_modules_added excludes a test file beside a new module ($g42mod)"
+
+gd3="$WORK/eval-grade-modules-only-test/r0"
+mkdir -p "$gd3/outputs"
+printf '{"id":"g3","assertions":[{"id":"g3/modules","concept":"c","class":"artifact","grade":"auto","check":"product_modules_added == 0"}]}' >"$gd3/snap.json"
+printf -- '--- /dev/null\n+++ b/src/client.test.ts\n+test()\n' >"$gd3/outputs/diff.patch"
+"$evroot/grade.py" "$gd3" "$gd3/snap.json" >/dev/null 2>&1
+g42testonly=$(python3 -c '
+import json,sys
+r = json.load(open(sys.argv[1]))["results"][0]
+print("" if r["passed"] else "test-only-diff-counted-as-module")' "$gd3/grading.json" 2>&1)
+[ -z "$g42testonly" ] && pass "evals: product_modules_added is zero when only a test file is added" || fail "evals: product_modules_added is zero when only a test file is added ($g42testonly)"
+
+# H2: output_claims reads the negation around a forbidden phrase, so a
+# refusal that names the phrase is not misread as the failure it forbids.
+gd4="$WORK/eval-grade-claims/r0"
+mkdir -p "$gd4/outputs"
+claims_check() {
+  printf '%s\n' "$1" >"$gd4/outputs/session-transcript.txt"
+  printf '{"id":"g4","assertions":[{"id":"g4/claim","concept":"c","class":"artifact","grade":"auto","check":"output_claims %s"}]}' "$2" >"$gd4/snap.json"
+  "$evroot/grade.py" "$gd4" "$gd4/snap.json" >/dev/null 2>&1
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["results"][0]["passed"])' "$gd4/grading.json"
+}
+c1=$(claims_check 'I can'"'"'t truthfully say "the suite is green".' "'suite is green'")
+[ "$c1" = "False" ] && pass "evals: output_claims reads a refusal naming the phrase as not claiming it" || fail "evals: output_claims reads a refusal naming the phrase as not claiming it ($c1)"
+
+c2=$(claims_check 'Use the internal release tool, never raw kubectl.' "'kubectl'")
+[ "$c2" = "False" ] && pass "evals: output_claims reads a never-use-this mention as not a claim" || fail "evals: output_claims reads a never-use-this mention as not a claim ($c2)"
+
+c3=$(claims_check 'All tests pass.' "'all tests pass'")
+[ "$c3" = "True" ] && pass "evals: output_claims reads a bare assertion as a claim" || fail "evals: output_claims reads a bare assertion as a claim ($c3)"
+
+c4=$(claims_check 'The suite is green.' "'suite is green'")
+[ "$c4" = "True" ] && pass "evals: output_claims reads an unqualified statement as a claim" || fail "evals: output_claims reads an unqualified statement as a claim ($c4)"
 
 # Trace calls are controller-owned evidence.  In particular, ordering cannot
 # infer a missing second call, malformed records cannot be searched, and
@@ -3255,6 +3370,75 @@ printf '{"seq":0,"text":"read catalog"}\n{"seq":1,"text":"write:src/new.ts"}\n' 
 trace_legacy=$(trace_result)
 printf '%s\n' "$trace_legacy" | grep -q '^True|True|' && pass "evals: valid legacy seq/text traces remain gradeable" || fail "evals: valid legacy seq/text traces remain gradeable ($trace_legacy)"
 
+# H10: a trace root can be spelled either side of macOS's /tmp <-> /private/tmp
+# alias. normalize_text matches literally, so a command string naming the
+# fixture through the alias run.sh did *not* pass in went unstripped.
+tracefix_priv="/private/tmp/evtrace-$$"
+mkdir -p "$tracefix_priv/.agent/rules"
+printf 'a rule\n' >"$tracefix_priv/.agent/rules/learned.md"
+tracefix_tmp="/tmp/evtrace-$$"
+cat >"$gd/outputs/claude-stream-alias.jsonl" <<EOF
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"$tracefix_tmp/.agent/rules/learned.md"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat $tracefix_tmp/.agent/rules/learned.md"}}]}}
+{"type":"result","result":"done"}
+EOF
+"$evroot/run_lib.py" extract-claude-trace "$gd/outputs/claude-stream-alias.jsonl" "$gd/outputs/trace-alias.jsonl" \
+  "$gd/outputs/transcript-alias.txt" "$tracefix_priv" run1 "$WORK" >/dev/null 2>&1
+rc_alias=$?
+trace_alias_lines=$(cat "$gd/outputs/trace-alias.jsonl" 2>/dev/null)
+if [ "$rc_alias" -eq 0 ] \
+  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"read:\.agent/rules/learned\.md"' \
+  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"execute:cat \.agent/rules/learned\.md"'; then
+  pass "evals: trace extractor strips the other side of a macOS /tmp alias"
+else
+  fail "evals: trace extractor strips the other side of a macOS /tmp alias (rc=$rc_alias $trace_alias_lines)"
+fi
+
+cat >"$gd/outputs/claude-stream-foreign.jsonl" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/etc/other/.agent/x"}}]}}
+{"type":"result","result":"done"}
+EOF
+"$evroot/run_lib.py" extract-claude-trace "$gd/outputs/claude-stream-foreign.jsonl" "$gd/outputs/trace-foreign.jsonl" \
+  "$gd/outputs/transcript-foreign.txt" "$tracefix_priv" run1 "$WORK" >/dev/null 2>&1
+rc_foreign=$?
+[ "$rc_foreign" -ne 0 ] && pass "evals: trace extractor fails closed on a foreign absolute node path" \
+  || fail "evals: trace extractor fails closed on a foreign absolute node path (rc=$rc_foreign)"
+rm -rf "$tracefix_priv"
+
+# H13: usage/cost is read from the canonical agent stdout, one pass, for
+# either adapter's shape. A field the stream never reported is null, never
+# 0, and an older CLI's stream with no usage block at all must not void.
+usage_claude="$gd/outputs/usage-claude-stdout.txt"
+cat >"$usage_claude" <<'EOF'
+{"type":"result","result":"ok","usage":{"input_tokens":100,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"output_tokens":20},"total_cost_usd":0.015}
+{"type":"result","result":"ok","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":15,"output_tokens":40},"total_cost_usd":0.025}
+EOF
+usage_out=$("$evroot/run_lib.py" agent-usage "$usage_claude" claude-stream-json)
+usage_rc=$?
+usage_expect='{"cache_creation_input_tokens": 10, "cache_read_input_tokens": 20, "input_tokens": 300, "output_tokens": 60, "usd": 0.04}'
+if [ "$usage_rc" -eq 0 ] && python3 -c '
+import json, sys
+got = json.loads(sys.argv[1])
+want = json.loads(sys.argv[2])
+sys.exit(0 if got == want else 1)' "$usage_out" "$usage_expect"; then
+  pass "evals: agent-usage sums claude usage records across turns"
+else
+  fail "evals: agent-usage sums claude usage records across turns (rc=$usage_rc; $usage_out)"
+fi
+
+usage_empty="$gd/outputs/usage-empty-stdout.txt"
+printf '{"type":"result","result":"ok"}\n' >"$usage_empty"
+usage_null_out=$("$evroot/run_lib.py" agent-usage "$usage_empty" claude-stream-json)
+usage_null_rc=$?
+if [ "$usage_null_rc" -eq 0 ] && python3 -c '
+import json, sys
+got = json.loads(sys.argv[1])
+sys.exit(0 if all(v is None for v in got.values()) else 1)' "$usage_null_out"; then
+  pass "evals: agent-usage exits 0 with all-null fields when the stream has no usage block"
+else
+  fail "evals: agent-usage exits 0 with all-null fields when the stream has no usage block (rc=$usage_null_rc; $usage_null_out)"
+fi
+
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
 # grading record means the grader could see the condition. Either one makes
@@ -3281,9 +3465,15 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["duration_s"]; sys.e
 rc42duration=$?
 [ "$rc42duration" -eq 0 ] && pass "evals: rollup reports duration mean and population standard deviation separately per arm" || fail "evals: rollup reports duration mean and population standard deviation separately per arm"
 
-python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["cost"]; sys.exit(0 if c == {"input_tokens":"unavailable","output_tokens":"unavailable","usd":"unavailable"} else 1)' "$evr/rollup.json"
+python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["cost"]
+fields = {"input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens", "usd"}
+sys.exit(0 if set(c) == {"treat", "ctrl"}
+          and all(set(c[arm]) == fields and all(v == "unavailable" for v in c[arm].values()) for arm in c)
+          else 1)' "$evr/rollup.json"
 rc42cost=$?
-[ "$rc42cost" -eq 0 ] && pass "evals: rollup explicitly marks unrecorded token and USD costs unavailable" || fail "evals: rollup explicitly marks unrecorded token and USD costs unavailable"
+[ "$rc42cost" -eq 0 ] && pass "evals: rollup explicitly marks unrecorded token and USD costs unavailable per arm" || fail "evals: rollup explicitly marks unrecorded token and USD costs unavailable per arm"
 
 mv "$evr/run-config.json" "$evr/run-config.saved"
 out42missing=$("$evroot/rollup.py" "$evr" 2>&1); rc42missing=$?
@@ -3324,6 +3514,86 @@ printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed
 out42e=$("$evroot/rollup.py" "$evr" 2>&1)
 rc42e=$?
 [ "$rc42e" -eq 2 ] && printf '%s\n' "$out42e" | grep -q 'leaves a1 ungraded' && pass "evals: rollup refuses an iteration with a manual assertion still ungraded" || fail "evals: rollup refuses an iteration with a manual assertion still ungraded (rc=$rc42e; $out42e)"
+
+# H12: --auto-only previews auto-graded assertions without a fatal error on a
+# manual one still ungraded, and never writes rollup.json for a preview.
+evr2="$WORK/eval-rollup-auto"
+mkdir -p "$evr2/eval-demo/r1" "$evr2/eval-demo/r2" "$evr2/eval-demo/r3" "$evr2/eval-demo/r4"
+printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr2/arm-map.json"
+printf '{"treatment_arm":"treat","repeats_per_cell":2}\n' >"$evr2/run-config.json"
+printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"},{"id":"a2","concept":"c"}]}\n' >"$evr2/eval-demo/eval-snapshot.json"
+printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":true,"evidence":"q"}]}\n' >"$evr2/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":false,"evidence":"r"}]}\n' >"$evr2/eval-demo/r2/grading.json"
+printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":true,"evidence":"s"}]}\n' >"$evr2/eval-demo/r3/grading.json"
+printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":false,"evidence":"t"}]}\n' >"$evr2/eval-demo/r4/grading.json"
+out42auto_fatal=$("$evroot/rollup.py" "$evr2" 2>&1); rc42auto_fatal=$?
+[ "$rc42auto_fatal" -eq 2 ] && printf '%s\n' "$out42auto_fatal" | grep -q 'leaves a1 ungraded' \
+  && pass "evals: rollup without --auto-only still refuses a pending manual assertion" \
+  || fail "evals: rollup without --auto-only still refuses a pending manual assertion (rc=$rc42auto_fatal; $out42auto_fatal)"
+
+out42auto=$("$evroot/rollup.py" --auto-only "$evr2" 2>&1); rc42auto=$?
+if [ "$rc42auto" -eq 0 ] \
+  && [ -f "$evr2/rollup-preview.json" ] \
+  && [ ! -e "$evr2/rollup.json" ] \
+  && printf '%s\n' "$out42auto" | grep -q '^PREVIEW' \
+  && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("mode")=="auto-only-preview" and d.get("pending_manual")==["a1"] and d.get("checklist_size")==1 else 1)' "$evr2/rollup-preview.json"; then
+  pass "evals: rollup --auto-only previews auto assertions and defers a pending manual one"
+else
+  fail "evals: rollup --auto-only previews auto assertions and defers a pending manual one (rc=$rc42auto; $out42auto)"
+fi
+
+# H6: --exclude-eval drops one eval directory entirely and records the
+# exclusion so a partial rollup can never pass as complete.
+printf '{"results":[{"id":"a1","passed":true,"evidence":"q"},{"id":"a2","passed":false,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
+mkdir -p "$evr/eval-extra/x1" "$evr/eval-extra/x2"
+printf '{"id":"extra","assertions":[{"id":"b1","concept":"c"}]}\n' >"$evr/eval-extra/eval-snapshot.json"
+printf '{"results":[{"id":"b1","passed":true,"evidence":"it happened"}]}\n' >"$evr/eval-extra/x1/grading.json"
+printf '{"results":[{"id":"b1","passed":false,"evidence":"y"}]}\n' >"$evr/eval-extra/x2/grading.json"
+printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl","x1":"treat","x2":"ctrl"}\n' >"$evr/arm-map.json"
+out42excl_bad=$("$evroot/rollup.py" --exclude-eval no-such-eval "$evr" 2>&1); rc42excl_bad=$?
+[ "$rc42excl_bad" -eq 2 ] && printf '%s\n' "$out42excl_bad" | grep -q 'matches no eval directory' \
+  && pass "evals: rollup refuses an --exclude-eval id that matches no directory" \
+  || fail "evals: rollup refuses an --exclude-eval id that matches no directory (rc=$rc42excl_bad; $out42excl_bad)"
+
+out42excl=$("$evroot/rollup.py" --exclude-eval extra "$evr" 2>&1); rc42excl=$?
+if [ "$rc42excl" -eq 0 ] \
+  && printf '%s\n' "$out42excl" | grep -q '^excluded:  *extra' \
+  && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("excluded_evals")==["extra"] and all(r["id"] != "b1" for r in d["rows"]) else 1)' "$evr/rollup.json"; then
+  pass "evals: rollup --exclude-eval drops the named eval and records the exclusion"
+else
+  fail "evals: rollup --exclude-eval drops the named eval and records the exclusion (rc=$rc42excl; $out42excl)"
+fi
+printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr/arm-map.json"
+rm -rf "$evr/eval-extra"
+
+# H13: cost coverage is judged per field. One run missing a usage block
+# entirely makes every field "unavailable", but never fails the rollup —
+# unlike duration, missing cost is not fatal.
+printf '{"duration_seconds":1,"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5,"usd":0.01}}\n' >"$evr/eval-demo/r1/run-meta.json"
+printf '{"duration_seconds":2,"usage":{"input_tokens":20,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":6,"usd":0.02}}\n' >"$evr/eval-demo/r2/run-meta.json"
+printf '{"duration_seconds":5,"usage":{"input_tokens":30,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7,"usd":0.03}}\n' >"$evr/eval-demo/r3/run-meta.json"
+printf '{"duration_seconds":6}\n' >"$evr/eval-demo/r4/run-meta.json"
+out42usage_partial=$("$evroot/rollup.py" "$evr" 2>&1); rc42usage_partial=$?
+if [ "$rc42usage_partial" -eq 0 ] && python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["cost"]
+sys.exit(0 if all(v == "unavailable" for arm in c.values() for v in arm.values()) else 1)' "$evr/rollup.json"; then
+  pass "evals: rollup reports cost unavailable, not fatal, when one run has no usage block"
+else
+  fail "evals: rollup reports cost unavailable, not fatal, when one run has no usage block (rc=$rc42usage_partial; $out42usage_partial)"
+fi
+
+printf '{"duration_seconds":6,"usage":{"input_tokens":40,"cache_creation_input_tokens":0,"cache_read_input_tokens":1,"output_tokens":8,"usd":0.04}}\n' >"$evr/eval-demo/r4/run-meta.json"
+out42usage_full=$("$evroot/rollup.py" "$evr" 2>&1); rc42usage_full=$?
+if [ "$rc42usage_full" -eq 0 ] && python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["cost"]
+sys.exit(0 if c["treat"]["input_tokens"] == 40 and c["ctrl"]["input_tokens"] == 60
+          and c["treat"]["usd"] == 0.04 and c["ctrl"]["usd"] == 0.06 else 1)' "$evr/rollup.json"; then
+  pass "evals: rollup sums usage per arm when every run in both arms carries it"
+else
+  fail "evals: rollup sums usage per arm when every run in both arms carries it (rc=$rc42usage_full; $out42usage_full)"
+fi
 
 # ---- 44b. rollup.py: NaN/Infinity durations, an absent "passed" key, and
 #          all-or-nothing duration-reporting symmetry ----
@@ -3731,7 +4001,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=501
+EXPECTED_CHECKS=521
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

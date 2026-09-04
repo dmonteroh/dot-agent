@@ -452,9 +452,21 @@ cancel_active_run() {
     META_PATH="$meta" RC="$((128 + signal_number))" ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       DURATION="$(( $(date +%s) - start_epoch ))" "$selfdir/run_lib.py" cancel-run-meta 2>/dev/null
   fi
-  rm -rf "$ACTIVE_RUN_DIR/outputs"
+  discard_derived_outputs "$ACTIVE_RUN_DIR"
   rm -f "$ACTIVE_RUN_DIR/grading.json"
   ACTIVE_RUN_DIR=""
+}
+
+# A void withholds the grade, not the evidence. The raw agent stream is the
+# only artifact that can explain why a cell voided — a second terminal
+# `result` record, an auth rejection, a truncated turn — so it survives while
+# every derived artifact is discarded.
+discard_derived_outputs() {
+  local outdir="$1/outputs"
+  [ -d "$outdir" ] || return 0
+  find "$outdir" -mindepth 1 -maxdepth 1 \
+    ! -name agent-stdout.txt ! -name agent-stderr.txt -exec rm -rf {} + 2>/dev/null
+  return 0
 }
 
 mark_stage_void() {
@@ -463,11 +475,11 @@ mark_stage_void() {
   META_PATH="$rundir/run-meta.json" STATUS="$status" REASON="$reason" RC="$rc" \
     ENDED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" DURATION="$duration" \
     "$selfdir/run_lib.py" mark-stage-void-meta 2>/dev/null
-  rm -rf "$rundir/outputs"
+  discard_derived_outputs "$rundir"
   rm -f "$rundir/grading.json"
   verifier_cleanup
   ACTIVE_RUN_DIR=""
-  echo "run.sh: $reason. Run marked $status; no outputs or grading retained." >&2
+  echo "run.sh: $reason. Run marked $status; the raw agent stream is retained, no grading." >&2
 }
 
 # shellcheck disable=SC2329  # invoked from HUP, INT, and TERM traps
@@ -1200,8 +1212,8 @@ EOF
     [ "$rc" -eq 127 ] && reason="command not found — check the resolved binary"
     [ "$rc" -eq 97 ] && reason="left live process-group members behind that could not be cleaned up before capture"
     [ -n "$AGENT_FAILURE_REASON" ] && reason="$AGENT_FAILURE_REASON"
-    echo "run.sh: $evalid iteration $iteration repeat $rep void — $reason. No artifacts captured, no grading.json written." >&2
-    rm -rf "$rundir/outputs"
+    echo "run.sh: $evalid iteration $iteration repeat $rep void — $reason. Raw agent stream retained under outputs/; no grading.json written." >&2
+    discard_derived_outputs "$rundir"
     verifier_cleanup
     ACTIVE_RUN_DIR=""
     any_void=1
@@ -1255,6 +1267,17 @@ EOF
       "artifact capture failed while reading node files (exit $stage_rc)" "$stage_rc"
     any_void=1; rep=$((rep + 1)); continue
   fi
+
+  "$selfdir/run_lib.py" agent-usage "$rundir/outputs/agent-stdout.txt" "$trace_format" \
+    >"$rundir/outputs/usage.json"
+  stage_rc=$?
+  if [ "$stage_rc" -ne 0 ]; then
+    mark_stage_void "$rundir" artifact_capture_failed \
+      "artifact capture failed while reading the agent usage block (exit $stage_rc)" "$stage_rc"
+    any_void=1; rep=$((rep + 1)); continue
+  fi
+  META_PATH="$rundir/run-meta.json" "$selfdir/run_lib.py" run-meta-set-usage \
+    <"$rundir/outputs/usage.json"
 
   if ! verifier_integrity_check; then
     mark_stage_void "$rundir" verifier_snapshot_failed \
