@@ -1914,6 +1914,13 @@ for ev in spec["evals"]:
         if a.get("id") in seen:
             bad.append("duplicate assertion id %s" % a.get("id"))
         seen.add(a.get("id"))
+    for p in ev.get("premises", []) or []:
+        if not p.get("path"):
+            bad.append("%s has a premise with no path: %r" % (ev["id"], p))
+        keys = [k for k in ("contains", "absent", "exists") if k in p]
+        if len(keys) != 1:
+            bad.append("%s has a premise with %d of contains/absent/exists, want exactly 1: %r"
+                       % (ev["id"], len(keys), p))
 for key in ("arms", "weighting"):
     if not spec.get(key):
         bad.append("spec missing %s" % key)
@@ -1961,6 +1968,32 @@ evfg="$WORK/eval-fixture-flagged"
 "$evroot/fixtures.sh" ts-service-flagged "$evfg" --corpus-dir "$reporoot" >/dev/null 2>&1
 f42b=$(status_flags "$evfg")
 printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf '%s\n' "$f42b" | grep -q '^GROOM: memory/' && pass "evals: the flagged fixture arrives over the thresholds its eval clears" || fail "evals: the flagged fixture arrives over the thresholds its eval clears ($f42b)"
+
+# H4: a fixture build now enforces every premise its evals' prompts assert
+# about the built tree. A drifted premise must void the build, not the run.
+evdoc="$WORK/eval-fixture-with-doc"
+"$evroot/fixtures.sh" ts-service-with-doc "$evdoc" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42doc=$?
+[ "$rc42doc" -eq 0 ] && [ -d "$evdoc/.agent" ] && pass "evals: ts-service-with-doc builds and its premises hold" || fail "evals: ts-service-with-doc builds and its premises hold (rc=$rc42doc)"
+
+evstale="$WORK/eval-fixture-stale-rule"
+"$evroot/fixtures.sh" ts-service-stale-rule "$evstale" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42stale=$?
+[ "$rc42stale" -eq 0 ] && [ -d "$evstale/.agent" ] && pass "evals: ts-service-stale-rule builds and its premises hold" || fail "evals: ts-service-stale-rule builds and its premises hold (rc=$rc42stale)"
+
+evfailing="$WORK/eval-fixture-failing"
+"$evroot/fixtures.sh" ts-service-failing "$evfailing" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42failing=$?
+[ "$rc42failing" -eq 0 ] && [ -d "$evfailing/.agent" ] && pass "evals: ts-service-failing builds and its premises hold" || fail "evals: ts-service-failing builds and its premises hold (rc=$rc42failing)"
+
+# Negative control: a drifted premise must be caught, naming the eval it
+# belongs to, not silently graded as if the prompt's claim were still true.
+sed -i.bak "s/amountMino:/amountMinor:/" "$evdoc/src/client.ts" && rm -f "$evdoc/src/client.ts.bak"
+premfail42=$("$evroot/fixture_seed.py" check-premises "$evroot/spec.json" ts-service-with-doc "$evdoc" 2>&1)
+premrc42=$?
+[ "$premrc42" -eq 2 ] && printf '%s\n' "$premfail42" | grep -q 'routing-scales' \
+  && pass "evals: check-premises catches a drifted premise and names the eval" \
+  || fail "evals: check-premises catches a drifted premise and names the eval (rc=$premrc42; $premfail42)"
 
 # ---- 44. evals/run.sh: fake-CLI regression coverage ----
 # claude and codex are real, logged-in installs the operator drives by hand

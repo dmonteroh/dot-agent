@@ -184,6 +184,24 @@ if [ "$fixture" = "ts-service-with-doc" ]; then
 EOF
   "$selfdir/fixture_seed.py" route-sections \
     "$dest/.agent/docs/architecture.md" "Release" || exit 1
+
+  # routing-scales' prompt claims an interface comment naming amountMinor and
+  # a field misspelled amountMino. The prompt is the premise; this is where
+  # the premise becomes true.
+  cat >"$dest/src/client.ts" <<'EOF'
+export interface Payment {
+  id: string
+  /** Amount in the currency's minor unit — amountMinor, an integer. */
+  amountMino: number
+}
+
+export async function submitPayment(p: Payment): Promise<Response> {
+  return fetch("https://vendor.example/v1/payments", {
+    method: "POST",
+    body: JSON.stringify(p),
+  })
+}
+EOF
 fi
 
 cat >"$dest/.agent/purpose.md.tmp" <<'EOF'
@@ -290,6 +308,11 @@ ts-service-stale-rule)
 EOF
   ;;
 esac
+
+# A premise a prompt asserts about the built tree ("the doc says X", "the
+# field is misspelled Y") is enforced here, at build time. A drifted premise
+# voids the run instead of quietly grading a fiction.
+"$selfdir/fixture_seed.py" check-premises "$selfdir/spec.json" "$fixture" "$dest" || exit 1
 
 git -C "$dest" init -q
 git -C "$dest" add -A
