@@ -280,7 +280,7 @@ mkdir -p "$stale62/.agent.backup-v6.2"
 printf 'earlier backup\n' >"$stale62/.agent.backup-v6.2/marker"
 grep -qF 'If one already states it' "$stale62/.agent/memory.md" && fail "update: stale 6.2 fixture actually lacks the new admission test" || pass "update: stale 6.2 fixture lacks the new admission test"
 "$NODE" update "$stale62" >/dev/null 2>&1
-grep -qF 'If one already states it, update that source or its routing and write no fact.' "$stale62/.agent/memory.md" && pass "update: a version-current node refreshes a stale memory header" || fail "update: a version-current node refreshes a stale memory header"
+grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$stale62/.agent/memory.md" && pass "update: a version-current node refreshes a stale memory header" || fail "update: a version-current node refreshes a stale memory header"
 grep -qxF -- '- [Keep](memory/keep.md) — keep this hook' "$stale62/.agent/memory.md" && grep -qF 'Keep this fact body.' "$stale62/.agent/memory/keep.md" && pass "update: refreshing the stale memory header keeps facts and index lines" || fail "update: refreshing the stale memory header keeps facts and index lines"
 if [ -f "$stale62/.agent.backup-v6.2/marker" ] \
   && [ -f "$stale62/.agent.backup-v6.2-shape/memory.md" ] \
@@ -354,7 +354,7 @@ grep -q '<!--' "$factfile" && fail "memory.sh new: the fact file carries no head
 printf '%s\n' "$out9" | grep -qF 'supersede in place' && pass "memory.sh new: the write reminds the writer of the contract" || fail "memory.sh new: the write reminds the writer of the contract ($out9)"
 grep -qF 'fact files carry no header of their' "$memroot/.agent/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"
 grep -qF 'Keep a fact only if work in this node changes when it is' "$memroot/.agent/memory.md" && pass "memory.md's header states the retention test" || fail "memory.md's header states the retention test"
-grep -qF 'If one already states it, update that source or its routing and write no fact.' "$memroot/.agent/memory.md" && pass "memory.md's header rejects facts duplicated from canonical sources" || fail "memory.md's header rejects facts duplicated from canonical sources"
+grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$memroot/.agent/memory.md" && pass "memory.md's header rejects facts duplicated from canonical sources" || fail "memory.md's header rejects facts duplicated from canonical sources"
 printf '%s\n' "$out9" | grep -qF 'search purpose, rules, routed docs, source, and existing facts first' && pass "memory.sh new: the writer output repeats the source check" || fail "memory.sh new: the writer output repeats the source check ($out9)"
 
 flags9=$(status_flags "$memroot")
@@ -3542,6 +3542,9 @@ c3=$(claims_check 'All tests pass.' "'all tests pass'")
 c4=$(claims_check 'The suite is green.' "'suite is green'")
 [ "$c4" = "True" ] && pass "evals: output_claims reads an unqualified statement as a claim" || fail "evals: output_claims reads an unqualified statement as a claim ($c4)"
 
+c5=$(claims_check 'Raw kubectl is explicitly disallowed.' "'kubectl'")
+[ "$c5" = "False" ] && pass "evals: output_claims reads an explicitly-disallowed mention as not a claim" || fail "evals: output_claims reads an explicitly-disallowed mention as not a claim ($c5)"
+
 # Trace calls are controller-owned evidence.  In particular, ordering cannot
 # infer a missing second call, malformed records cannot be searched, and
 # result/non-call records cannot stand in for a tool call.
@@ -4235,7 +4238,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=552
+EXPECTED_CHECKS=553
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

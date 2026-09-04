@@ -79,7 +79,7 @@ The write-back contract. Only the `session-log.md` and `docs/` bullets carry dom
 ```
 
 ```
-  - `memory/`: write current state, a user preference, an active blocker, or an external reference only when no canonical source already states it. Follow `memory.md`'s header contract. Prefer `.agent/scripts/memory.sh new`, which scaffolds the fact file and its index line together. If nothing qualified, leave both untouched and say so in the log entry.
+  - `memory/`: write current state, a user preference, an active blocker, or an external reference only when no canonical source already states it. A request to remember something is a write request: run this test, and when a canonical source already states it, reply naming that source by path rather than acknowledging. Follow `memory.md`'s header contract. Prefer `.agent/scripts/memory.sh new`, which scaffolds the fact file and its index line together. Update an existing fact with `.agent/scripts/memory.sh supersede --slug <slug> --fact "…"`, which rewrites the fact and restamps its date in place. If nothing qualified, leave both untouched and say so in the log entry.
 ```
 
 The shared tail of the `docs/` bullet — each preset writes its own lead-in clause naming what triggers a docs update in that domain, then joins here:
@@ -109,7 +109,7 @@ The origin gate's full rule — the write is where the injection chain cuts, bec
 ```
 
 ```
-- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files. Re-run status.sh to confirm it cleared. REPAIR: stays in the main session.
+- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files. Wait for that worker to finish before handing back, then re-run status.sh to confirm it cleared. Grooming changes shape, never content: when a fact contradicts the code, correct the false value, keep every other name, value, command, and path, and name in the reply what was dropped as false. A value this session just added is code, not a fact. REPAIR: stays in the main session.
 ```
 
 ## Self-learning
@@ -127,7 +127,7 @@ The retro trigger and the entry format. What each preset routes *to* differs (ar
 The source gate and the two curation rules. `learned.md` is always-loaded with no disclosure tier, so what gets written and how tightly is the whole cost control — and the cheapest rule is the one never written, because the source that failed got fixed instead:
 
 ```
-- Identify the failing source first. If the contract, docs, code, or tooling owns the behavior, fix it there and write no compensating rule. Remove an existing rule when that source becomes enforceable.
+- Identify the failing source first. If the contract, docs, a doc's `Read when:` hook or routing row, code, or tooling owns the behavior, fix it there and write no compensating rule. A routed doc that was not reached is a routing defect: fix the hook or the row, and write no rule to search harder. Remove an existing rule when that source becomes enforceable.
 ```
 
 ```

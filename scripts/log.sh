@@ -6,7 +6,7 @@
 # Tunables: log.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/log.md in the dot-agent repo.
 #
-# Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
+# Usage: log.sh --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
 #
 # root defaults to . — appends to <root>/.agent/session-log.md. Refuses to
 # run if that file does not already exist (an uninitialized node).
@@ -21,7 +21,7 @@ LOG_INCLUDE_BRANCH=false
 
 usage() {
   cat <<'EOF'
-Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
+Usage: log.sh --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
 
 root defaults to . — appends to <root>/.agent/session-log.md
 EOF

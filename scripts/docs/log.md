@@ -3,7 +3,7 @@
 Appends one session-log entry per `session-log.md`'s header contract. It stamps the date and enforces the summary word ceiling, so neither is something an agent can get wrong by hand.
 
 ```
-Usage: log.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [root]
+Usage: log.sh --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
 ```
 
 `root` defaults to `.` and the script appends to `<root>/.agent/session-log.md`. Refuses to run if that file does not already exist — an uninitialized node.
