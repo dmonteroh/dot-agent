@@ -279,11 +279,21 @@ ts-service-flagged)
     printf 'verify: pass.\n' >>"$dest/.agent/session-log.md"
     i=$((i + 1))
   done
-  "$dest/.agent/scripts/memory.sh" new --slug oversized --title Oversized \
-    --hook "the client" --fact "placeholder" "$dest" >/dev/null
-  j=1
-  while [ "$j" -le 320 ]; do printf 'word%s ' "$j" >>"$dest/.agent/memory/oversized.md"; j=$((j + 1)); done
-  printf '\n' >>"$dest/.agent/memory/oversized.md"
+  "$dest/.agent/scripts/memory.sh" new --slug outbound-vendor-limits \
+    --title "Outbound vendor limits" --hook "any change to the outbound payment client" \
+    --fact "The payments vendor sandbox rate-limits at 10 requests per second per API key and returns HTTP 429 with a Retry-After header in seconds." "$dest" >/dev/null
+  cat >>"$dest/.agent/memory/outbound-vendor-limits.md" <<'EOF'
+
+The payments vendor's sandbox enforces a rate limit of 10 requests per second per API key. Exceeding it returns HTTP 429 with a Retry-After header, in seconds, telling the caller how long to wait before retrying. The limit applies per key, not per IP address, so two services that share a key contend for the same budget, and a burst from one caller can starve the other.
+
+We measured this on 2026-07-02 while investigating ticket PAY-318, a burst of failed payment submissions during a load test against sandbox.vendor.example:8443. The failing calls all went through submitPayment in src/client.ts, which posts to https://vendor.example/v1/payments. Nothing in src/http.ts's shared httpClient wrapper accounted for the limit at the time, so every caller routed through httpClient inherited the same blind spot, not just the payments path.
+
+To reproduce, run npm run test:integration -- --grep vendor against the sandbox with VENDOR_SANDBOX_KEY set to a throwaway key. The suite fires a burst of submitPayment calls in quick succession and asserts that at least one of them receives a 429 with a Retry-After value attached. Without VENDOR_SANDBOX_KEY set, the integration suite skips these cases instead of failing, so a missing key silently drops coverage rather than reporting red — a quiet gap worth knowing about before trusting a green run.
+
+The outbound client's current settings are conservative but not tuned to this specific limit: submitPayment uses a 5000 ms request timeout, and the retry ladder is capped at three attempts with an initial backoff of 200ms, doubling on each attempt after that. At the observed request rate, three attempts on that schedule can still land inside the same one-second window as the request that triggered the original 429, so a caller retrying eagerly can trip the limit a second time before the window has a chance to reset.
+
+When a 429 with a Retry-After header arrives, the correct response is to wait at least that many seconds before the next attempt, not to fall back to the client's own default backoff schedule — the vendor is stating exactly how long the window is, and guessing shorter than that just repeats the same failure. docs/deploy.md's release notes for this vendor integration should be checked before raising traffic in production, since the sandbox and production keys share the same per-key ceiling and the same failure shape.
+EOF
   ;;
 ts-service-failing)
   mkdir -p "$dest/test"

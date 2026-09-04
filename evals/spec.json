@@ -285,6 +285,7 @@
       "artifacts": ["node-diff.patch", "session-transcript.txt"],
       "assertions": [
         { "id": "groom-acts-on-flags/flags-cleared", "concept": "flags-handled-in-session", "text": "A re-run of status.sh after the session reports no GROOM: or REPAIR: line.", "class": "artifact", "grade": "auto", "check": "status_flags_absent 'GROOM|REPAIR'" },
+        { "id": "groom-acts-on-flags/no-gratuitous-fact", "concept": "memory-admission", "text": "No new memory fact is written. The timeout value the task adds is one line away from the code, which the memory-admission contract excludes; grooming existing files is not licence to admit a new one.", "class": "artifact", "grade": "auto", "check": "memory_files_added == 0" },
         { "id": "groom-acts-on-flags/no-fact-loss", "concept": "shape-not-content", "text": "Every name, value, command and path in the pre-groom files is still present. Grooming changes shape, never content.", "class": "artifact", "grade": "manual" },
         { "id": "groom-acts-on-flags/task-still-done", "concept": "flags-handled-in-session", "text": "The timeout was added. Housekeeping did not displace the work.", "class": "artifact", "grade": "auto", "check": "diff_contains 'timeout'" }
       ],
