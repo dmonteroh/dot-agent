@@ -90,6 +90,25 @@ pass | fail | n/a) ;;
   exit 1 ;;
 esac
 
+# The entry carries exactly one verify tag, written from --verify at the end
+# of the line. A summary that also contains `verify:` puts a second one in
+# the middle, where a reader and status.sh's entry parsing both take the
+# wrong one as the entry's result. The verification outcome belongs in the
+# tag; a baseline failure that predates the change belongs in the summary's
+# own words, without the tag spelling.
+#
+# The alphabet is spelled out rather than written as A-Z: inside tr a range
+# is a collation range, not an ASCII range, in every locale but C. Listing
+# the characters means the same thing everywhere and leaves date's and
+# grep's locale alone — the same reason memory.sh spells out its slug class.
+summary_lc=$(printf '%s' "$summary" \
+  | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')
+case "$summary_lc" in
+*verify:*)
+  echo "log.sh: --summary must not contain 'verify:' — the entry already carries one verify tag; state the outcome in words instead" >&2
+  exit 1 ;;
+esac
+
 # Per-node overrides: <root>/.agent/scripts/log.conf, plain KEY=value,
 # parsed and never executed. Each value is checked before it is used:
 # `SUMMARY_MAX_WORDS=25 words` reaching the `-gt` below stops the ceiling

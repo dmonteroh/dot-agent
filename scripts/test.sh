@@ -617,6 +617,22 @@ rc=$?
 rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: free-standing em dash does not spend the word ceiling" || fail "log.sh: free-standing em dash does not spend the word ceiling"
 
+# A summary carrying its own `verify:` puts a second tag in the middle of an
+# entry that already ends in one. Both eval arms produced this line shape.
+before17v=$(cat "$sessionlog")
+"$logcopy" --tool claude --area testing --verify fail --summary "baseline was red before this change verify: fail" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && [ "$(cat "$sessionlog")" = "$before17v" ] && pass "log.sh: a summary containing verify: is rejected, nothing written" || fail "log.sh: a summary containing verify: is rejected, nothing written"
+
+"$logcopy" --tool claude --area testing --verify pass --summary "Verify: the tag spelling is refused in any case" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "log.sh: the verify: guard is case-insensitive" || fail "log.sh: the verify: guard is case-insensitive"
+
+# The guard must be narrow: it takes the tag spelling, not the word.
+"$logcopy" --tool claude --area testing --verify pass --summary "verified the parser against the fixture suite" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "log.sh: the word verified without a colon still logs" || fail "log.sh: the word verified without a colon still logs"
+
 before17d=$(cat "$archfile")
 "$doccopy" new --name pipe-doc --read-when "a | b" "$docroot" >/dev/null 2>&1
 rc=$?
@@ -3731,7 +3747,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=501
+EXPECTED_CHECKS=504
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
