@@ -51,6 +51,10 @@ carries the field, duration_s is omitted from rollup.json entirely.
 """
 
 
+USAGE_FIELDS = ("input_tokens", "cache_creation_input_tokens",
+                 "cache_read_input_tokens", "output_tokens", "usd")
+
+
 def die(msg):
     sys.stderr.write("rollup.py: %s\n" % msg)
     sys.exit(2)
@@ -136,6 +140,14 @@ def rollup(iteration, exclude=None, auto_only=False):
     duration_runs = []
     all_runs = []
     pending_manual = set()
+    # Cost is reported per field, all-or-nothing within that field only: a
+    # field every run in both arms carried is summed per arm; a field even
+    # one run left null is "unavailable" for that field alone. Unlike
+    # duration, a missing cost field never voids the rollup — an older CLI
+    # that reports no usage block at all must not block the delta it drove.
+    usage_sums = collections.defaultdict(lambda: collections.defaultdict(float))
+    usage_have = {field: set() for field in USAGE_FIELDS}
+    usage_runs = []
 
     for eval_dir in sorted(os.listdir(iteration)):
         if not eval_dir.startswith("eval-"):
@@ -223,6 +235,19 @@ def rollup(iteration, exclude=None, auto_only=False):
                         durations[arm].append(float(value))
                         duration_runs.append((run_id, arm))
                         break
+                usage = meta.get("usage")
+                if isinstance(usage, dict):
+                    usage_runs.append((run_id, arm))
+                    for field in USAGE_FIELDS:
+                        value = usage.get(field)
+                        if value is None:
+                            continue
+                        if (isinstance(value, bool) or
+                                not isinstance(value, (int, float)) or
+                                not math.isfinite(value)):
+                            die("%s usage.%s must be a finite number" % (meta_path, field))
+                        usage_sums[arm][field] += float(value)
+                        usage_have[field].add(run_id)
 
     if not cells:
         die("no grading records found under %s" % iteration)
@@ -287,6 +312,20 @@ def rollup(iteration, exclude=None, auto_only=False):
     top1 = per_point / delta * 100 if delta > 0 else 0.0
     top2 = (2 * per_point) / delta * 100 if delta > 0 and gain >= 2 else top1
 
+    # Cost coverage is judged per field, against every run this rollup
+    # actually joined (both arms) — not just the runs that carried a usage
+    # block at all, so one arm silently missing usage cannot pass as covered.
+    all_run_ids = set(run_id for run_id, _arm in all_runs)
+    cost = {arm: {} for arm in arms}
+    for field in USAGE_FIELDS:
+        covered = bool(all_run_ids) and usage_have[field] >= all_run_ids
+        for arm in arms:
+            if covered:
+                value = usage_sums[arm][field]
+                cost[arm][field] = round(value, 2) if field == "usd" else int(round(value))
+            else:
+                cost[arm][field] = "unavailable"
+
     report = {
         "iteration": os.path.basename(os.path.abspath(iteration)),
         "arms": {"treatment": treatment, "control": control},
@@ -300,11 +339,7 @@ def rollup(iteration, exclude=None, auto_only=False):
             "top_assertion": round(top1, 1),
             "top_two_assertions": round(top2, 1),
         },
-        "cost": {
-            "input_tokens": "unavailable",
-            "output_tokens": "unavailable",
-            "usd": "unavailable",
-        },
+        "cost": cost,
         "rows": rows,
     }
     if exclude:
@@ -357,7 +392,18 @@ def print_report(report, arms, durations):
             duration_mean, duration_stddev = mean_and_stddev(values)
             print("duration:  %s mean %.3fs   population stddev %.3fs   n=%d"
                   % (arm, duration_mean, duration_stddev, len(values)))
-    print("cost:      unavailable (input tokens, output tokens, USD not recorded)")
+    def fmt_cost(value, is_usd):
+        if value == "unavailable":
+            return "unavailable"
+        return "%.2f" % value if is_usd else str(value)
+
+    for arm in arms:
+        c = report["cost"][arm]
+        print("cost:      %-10s in %-10s out %-10s cache-read %-10s usd %s"
+              % (arm, fmt_cost(c.get("input_tokens", "unavailable"), False),
+                 fmt_cost(c.get("output_tokens", "unavailable"), False),
+                 fmt_cost(c.get("cache_read_input_tokens", "unavailable"), False),
+                 fmt_cost(c.get("usd", "unavailable"), True)))
     print("")
     for name in ("discriminating", "regression", "unstable", "non-discriminating"):
         ids = sorted(buckets[name])

@@ -62,6 +62,10 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
                                                EFFORT TRACE_FORMAT TURNS ARM_VARIABLE
                                                TIMEOUT_S REPEATS_PER_CELL STARTED META_PATH
   run-meta-set-fixture-base              env: META_PATH, FIXTURE_BASE
+  agent-usage <stdout-path> <trace-format>  trace-format: claude-stream-json | codex-json
+                                             -> stdout: JSON usage totals (null fields, not 0,
+                                                for anything the stream never reported)
+  run-meta-set-usage                     env: META_PATH   stdin: JSON from agent-usage
   run-meta-finalize                      env: META_PATH RC ENDED DURATION STATUS REASON
 """
 
@@ -802,6 +806,65 @@ def cmd_run_meta_set_fixture_base(args):
     return 0
 
 
+_USAGE_FIELDS = ("input_tokens", "cache_creation_input_tokens",
+                  "cache_read_input_tokens", "output_tokens", "usd")
+
+
+def cmd_agent_usage(args):
+    # One pass over the canonical stdout, whichever adapter wrote it. A field
+    # no record carried is null, never 0 — a 0 claims the run used nothing, a
+    # null admits the CLI never reported the field. A stream with no usage
+    # block at all still exits 0: an older CLI must not void a run over a
+    # field it never had.
+    stdout_path, trace_format = args[0], args[1]
+    totals = {k: None for k in _USAGE_FIELDS}
+
+    def add(field, value):
+        if value is None:
+            return
+        totals[field] = (totals[field] or 0) + value
+
+    with open(stdout_path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if trace_format == "claude-stream-json":
+                if ev.get("type") != "result":
+                    continue
+                usage = ev.get("usage") or {}
+                add("input_tokens", usage.get("input_tokens"))
+                add("cache_creation_input_tokens", usage.get("cache_creation_input_tokens"))
+                add("cache_read_input_tokens", usage.get("cache_read_input_tokens"))
+                add("output_tokens", usage.get("output_tokens"))
+                add("usd", ev.get("total_cost_usd"))
+            elif trace_format == "codex-json":
+                if ev.get("type") != "turn.completed":
+                    continue
+                usage = ev.get("usage") or {}
+                add("input_tokens", usage.get("input_tokens"))
+                add("output_tokens", usage.get("output_tokens"))
+                add("cache_read_input_tokens", usage.get("cached_input_tokens"))
+                # Codex reports no cost; usd stays null.
+
+    print(json.dumps(totals, sort_keys=True))
+    return 0
+
+
+def cmd_run_meta_set_usage(args):
+    path = os.environ["META_PATH"]
+    usage = json.load(sys.stdin)
+    m = json.load(open(path, encoding="utf-8"))
+    m["usage"] = usage
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(m, f, indent=2, sort_keys=True)
+    return 0
+
+
 def cmd_run_meta_finalize(args):
     path = os.environ["META_PATH"]
     m = json.load(open(path, encoding="utf-8"))
@@ -844,6 +907,8 @@ COMMANDS = {
     "arm-map-update": cmd_arm_map_update,
     "run-meta-init": cmd_run_meta_init,
     "run-meta-set-fixture-base": cmd_run_meta_set_fixture_base,
+    "agent-usage": cmd_agent_usage,
+    "run-meta-set-usage": cmd_run_meta_set_usage,
     "run-meta-finalize": cmd_run_meta_finalize,
 }
 

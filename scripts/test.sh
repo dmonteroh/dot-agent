@@ -3318,6 +3318,40 @@ rc_foreign=$?
   || fail "evals: trace extractor fails closed on a foreign absolute node path (rc=$rc_foreign)"
 rm -rf "$tracefix_priv"
 
+# H13: usage/cost is read from the canonical agent stdout, one pass, for
+# either adapter's shape. A field the stream never reported is null, never
+# 0, and an older CLI's stream with no usage block at all must not void.
+usage_claude="$gd/outputs/usage-claude-stdout.txt"
+cat >"$usage_claude" <<'EOF'
+{"type":"result","result":"ok","usage":{"input_tokens":100,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"output_tokens":20},"total_cost_usd":0.015}
+{"type":"result","result":"ok","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":15,"output_tokens":40},"total_cost_usd":0.025}
+EOF
+usage_out=$("$evroot/run_lib.py" agent-usage "$usage_claude" claude-stream-json)
+usage_rc=$?
+usage_expect='{"cache_creation_input_tokens": 10, "cache_read_input_tokens": 20, "input_tokens": 300, "output_tokens": 60, "usd": 0.04}'
+if [ "$usage_rc" -eq 0 ] && python3 -c '
+import json, sys
+got = json.loads(sys.argv[1])
+want = json.loads(sys.argv[2])
+sys.exit(0 if got == want else 1)' "$usage_out" "$usage_expect"; then
+  pass "evals: agent-usage sums claude usage records across turns"
+else
+  fail "evals: agent-usage sums claude usage records across turns (rc=$usage_rc; $usage_out)"
+fi
+
+usage_empty="$gd/outputs/usage-empty-stdout.txt"
+printf '{"type":"result","result":"ok"}\n' >"$usage_empty"
+usage_null_out=$("$evroot/run_lib.py" agent-usage "$usage_empty" claude-stream-json)
+usage_null_rc=$?
+if [ "$usage_null_rc" -eq 0 ] && python3 -c '
+import json, sys
+got = json.loads(sys.argv[1])
+sys.exit(0 if all(v is None for v in got.values()) else 1)' "$usage_null_out"; then
+  pass "evals: agent-usage exits 0 with all-null fields when the stream has no usage block"
+else
+  fail "evals: agent-usage exits 0 with all-null fields when the stream has no usage block (rc=$usage_null_rc; $usage_null_out)"
+fi
+
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
 # grading record means the grader could see the condition. Either one makes
@@ -3344,9 +3378,15 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["duration_s"]; sys.e
 rc42duration=$?
 [ "$rc42duration" -eq 0 ] && pass "evals: rollup reports duration mean and population standard deviation separately per arm" || fail "evals: rollup reports duration mean and population standard deviation separately per arm"
 
-python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["cost"]; sys.exit(0 if c == {"input_tokens":"unavailable","output_tokens":"unavailable","usd":"unavailable"} else 1)' "$evr/rollup.json"
+python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["cost"]
+fields = {"input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens", "usd"}
+sys.exit(0 if set(c) == {"treat", "ctrl"}
+          and all(set(c[arm]) == fields and all(v == "unavailable" for v in c[arm].values()) for arm in c)
+          else 1)' "$evr/rollup.json"
 rc42cost=$?
-[ "$rc42cost" -eq 0 ] && pass "evals: rollup explicitly marks unrecorded token and USD costs unavailable" || fail "evals: rollup explicitly marks unrecorded token and USD costs unavailable"
+[ "$rc42cost" -eq 0 ] && pass "evals: rollup explicitly marks unrecorded token and USD costs unavailable per arm" || fail "evals: rollup explicitly marks unrecorded token and USD costs unavailable per arm"
 
 mv "$evr/run-config.json" "$evr/run-config.saved"
 out42missing=$("$evroot/rollup.py" "$evr" 2>&1); rc42missing=$?
@@ -3438,6 +3478,35 @@ else
 fi
 printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr/arm-map.json"
 rm -rf "$evr/eval-extra"
+
+# H13: cost coverage is judged per field. One run missing a usage block
+# entirely makes every field "unavailable", but never fails the rollup —
+# unlike duration, missing cost is not fatal.
+printf '{"duration_seconds":1,"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5,"usd":0.01}}\n' >"$evr/eval-demo/r1/run-meta.json"
+printf '{"duration_seconds":2,"usage":{"input_tokens":20,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":6,"usd":0.02}}\n' >"$evr/eval-demo/r2/run-meta.json"
+printf '{"duration_seconds":5,"usage":{"input_tokens":30,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7,"usd":0.03}}\n' >"$evr/eval-demo/r3/run-meta.json"
+printf '{"duration_seconds":6}\n' >"$evr/eval-demo/r4/run-meta.json"
+out42usage_partial=$("$evroot/rollup.py" "$evr" 2>&1); rc42usage_partial=$?
+if [ "$rc42usage_partial" -eq 0 ] && python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["cost"]
+sys.exit(0 if all(v == "unavailable" for arm in c.values() for v in arm.values()) else 1)' "$evr/rollup.json"; then
+  pass "evals: rollup reports cost unavailable, not fatal, when one run has no usage block"
+else
+  fail "evals: rollup reports cost unavailable, not fatal, when one run has no usage block (rc=$rc42usage_partial; $out42usage_partial)"
+fi
+
+printf '{"duration_seconds":6,"usage":{"input_tokens":40,"cache_creation_input_tokens":0,"cache_read_input_tokens":1,"output_tokens":8,"usd":0.04}}\n' >"$evr/eval-demo/r4/run-meta.json"
+out42usage_full=$("$evroot/rollup.py" "$evr" 2>&1); rc42usage_full=$?
+if [ "$rc42usage_full" -eq 0 ] && python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["cost"]
+sys.exit(0 if c["treat"]["input_tokens"] == 40 and c["ctrl"]["input_tokens"] == 60
+          and c["treat"]["usd"] == 0.04 and c["ctrl"]["usd"] == 0.06 else 1)' "$evr/rollup.json"; then
+  pass "evals: rollup sums usage per arm when every run in both arms carries it"
+else
+  fail "evals: rollup sums usage per arm when every run in both arms carries it (rc=$rc42usage_full; $out42usage_full)"
+fi
 
 # ---- 44b. rollup.py: NaN/Infinity durations, an absent "passed" key, and
 #          all-or-nothing duration-reporting symmetry ----

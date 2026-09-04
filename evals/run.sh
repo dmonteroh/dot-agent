@@ -1268,6 +1268,17 @@ EOF
     any_void=1; rep=$((rep + 1)); continue
   fi
 
+  "$selfdir/run_lib.py" agent-usage "$rundir/outputs/agent-stdout.txt" "$trace_format" \
+    >"$rundir/outputs/usage.json"
+  stage_rc=$?
+  if [ "$stage_rc" -ne 0 ]; then
+    mark_stage_void "$rundir" artifact_capture_failed \
+      "artifact capture failed while reading the agent usage block (exit $stage_rc)" "$stage_rc"
+    any_void=1; rep=$((rep + 1)); continue
+  fi
+  META_PATH="$rundir/run-meta.json" "$selfdir/run_lib.py" run-meta-set-usage \
+    <"$rundir/outputs/usage.json"
+
   if ! verifier_integrity_check; then
     mark_stage_void "$rundir" verifier_snapshot_failed \
       "trusted verifier snapshot changed before status capture" 1
