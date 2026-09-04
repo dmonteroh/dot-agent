@@ -10,6 +10,7 @@
 # Full documentation: evals/README.md.
 #
 # Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
+#                    [--no-harness | --generic-claude]
 #        fixtures.sh <fixture> <destination> --corpus-dir <path>
 #        fixtures.sh --list
 
@@ -23,6 +24,7 @@ FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog
 usage() {
   cat <<'EOF'
 Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
+                   [--no-harness | --generic-claude]
        fixtures.sh <fixture> <destination> --corpus-dir <path>
        fixtures.sh --list
 
@@ -32,6 +34,15 @@ Builds an eval fixture: a project tree with an .agent/ node bootstrapped from
 --corpus-dir builds from a working tree instead of a revision. A real run
 pins a ref, because two arms built from a moving tree are not a matched pair.
 The uncommitted case is for checking the fixture builder itself.
+
+--no-harness builds the same fixture with the .agent/ node moved aside to
+<destination>.verifier and no CLAUDE.md or AGENTS.md. It is the control arm
+for "does the harness earn its always-loaded cost at all". --generic-claude
+does the same, then writes an ordinary, hand-written CLAUDE.md (mirrored to
+AGENTS.md) in its place — a plausible non-dot-agent alternative rather than
+nothing. The moved-aside node is outside the fixture's git repository and
+outside the agent's working directory; it is kept rather than deleted so the
+built arm stays inspectable after the run.
 
 Fixtures:
   ts-service            a TypeScript service with an outbound HTTP client
@@ -61,10 +72,22 @@ shift 2 2>/dev/null || { usage >&2; exit 2; }
 
 corpus_ref="HEAD"
 corpus_dir=""
+# node (the default), none (--no-harness), or generic (--generic-claude).
+# The two flags are the arm variable of the harness-cost comparisons, so a
+# run that set both would be measuring two things at once and is refused.
+harness_mode="node"
 while [ $# -gt 0 ]; do
   case "$1" in
   --corpus-ref) corpus_ref="${2:-}"; shift 2 ;;
   --corpus-dir) corpus_dir="${2:-}"; shift 2 ;;
+  --no-harness)
+    [ "$harness_mode" = node ] || {
+      echo "fixtures.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
+    harness_mode="none"; shift ;;
+  --generic-claude)
+    [ "$harness_mode" = node ] || {
+      echo "fixtures.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
+    harness_mode="generic"; shift ;;
   *) echo "fixtures.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -325,6 +348,65 @@ esac
 # voids the run instead of quietly grading a fiction.
 "$selfdir/fixture_seed.py" check-premises "$selfdir/spec.json" "$fixture" "$dest" || exit 1
 
+# The harness-cost arms. The node is moved to a sibling of the fixture rather
+# than deleted: the built arm stays inspectable, and a node the agent can
+# still reach would not be a control. Nothing under $dest.verifier is inside
+# the agent's working directory or the fixture's git repository.
+# .claude/settings.json stays in every arm — autoMemoryEnabled:false is an
+# eval control, not harness scaffolding.
+harness_label="dot-agent node"
+if [ "$harness_mode" != node ]; then
+  mv "$dest/.agent" "$dest.verifier" || exit 1
+  rm -f "$dest/CLAUDE.md" "$dest/AGENTS.md"
+  harness_label="absent"
+fi
+
+if [ "$harness_mode" = generic ]; then
+  # An ordinary instructions file, of the kind a competent engineer writes by
+  # hand for a small service. It is the arm variable, so it is written here
+  # once, identically for every fixture, rather than tailored per eval.
+  cat >"$dest/CLAUDE.md" <<'EOF'
+# CLAUDE.md
+
+## Project
+
+`eval-fixture-service` is a small TypeScript service that talks to our
+payments vendor. All source lives in `src/`. `src/client.ts` holds the
+outbound payment client; anything that leaves the process goes through it.
+There is no framework and no bundler — this is plain TypeScript that the
+consuming service compiles.
+
+## Commands
+
+- `npm test` — the test suite (`node --test`).
+- `npm run lint` — ESLint over `src/`.
+
+Run both before calling a change done, and say what you ran. There is no
+build script; if a command you want is not in `package.json`, say so rather
+than inventing one.
+
+## Conventions
+
+- Two-space indent, no semicolons. Match the file you are editing.
+- Exported names are spelled out in full — `submitPayment`, `Payment` — not
+  abbreviated.
+- Money is handled in minor units, as integers. No floating point amounts.
+- New vendor calls extend the existing client instead of adding another
+  `fetch` somewhere else.
+- Tests sit beside the code they cover, named `*.test.ts`.
+
+## Working here
+
+- Keep a change to what was asked. If doing it properly needs a wider change,
+  say that first instead of making it.
+- Ask before adding a dependency.
+- The vendor is reached at `https://vendor.example` and there are no vendor
+  credentials in this repo, so nothing in the suite makes a real call.
+EOF
+  cp "$dest/CLAUDE.md" "$dest/AGENTS.md" || exit 1
+  harness_label="generic instructions file"
+fi
+
 git -C "$dest" init -q
 git -C "$dest" add -A
 git -C "$dest" -c user.name=eval -c user.email=eval@local \
@@ -334,6 +416,7 @@ cat <<EOF
 fixtures.sh: built $fixture at $dest
   corpus:      ${corpus_dir:-$corpus_ref}
   corpus sha:  $corpus_sha
+  harness:     $harness_label
   fixture base: $(git -C "$dest" rev-parse HEAD)
 
 Record both shas in run-config.json. The fixture base is the ref every

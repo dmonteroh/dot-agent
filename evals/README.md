@@ -148,11 +148,13 @@ Nothing about the arm reaches a path or a grading record. The run id is a hash; 
 
 ### The next run
 
-Two separate two-arm iterations, not one three-arm iteration — `rollup.py` hard-refuses anything but exactly two arms, and a `no-harness` entry inside `FIXTURES` would void every one of its runs before grading (`verifier_snapshot` copies `status.sh`/`comments.sh` out of the fixture's own `.agent/scripts/`, which a harness-free fixture does not have).
+Separate two-arm iterations, one workspace each, never one three-arm iteration — `rollup.py` hard-refuses anything but exactly two arms. The harness-free arms are modifier flags on the existing fixtures (`--no-harness`, `--generic-claude`), not entries in `FIXTURES`.
 
 **Iteration A, first, no code changes:** `main` vs `feature/v6.2` tip, `arm_variable=corpus`. The first invocation into the fresh workspace must *be* the treatment: `--arm v62 --treatment-arm v62 --corpus-ref <v6.2 tip sha>`, then `--arm main --corpus-ref <main's sha at run start>`.
 
-**Iteration B, later, its own workspace:** `no-harness` vs `main`, once `fixtures.sh` gains a `--no-harness` modifier (moving `.agent/` aside post-seed, dropping `CLAUDE.md`/`AGENTS.md`, keeping `.claude/settings.json`) and `run.sh`'s verifier snapshot falls back to reading `status.sh`/`comments.sh` from beside the fixture. Restricted to the evals whose assertions never touch `node-diff.patch`, `node-tree.txt`, or `status-after.txt`: `routing-scales`, `routing-finds-doc`, `verify-no-false-done`, `scope-question-no-edit`, `comments-feature`, `comments-docstrings`, `routing-catalog-first`. A node-dependent eval in a no-harness arm measures the node's absence, not behavior, so it stays out of that rollup.
+**Iterations B and C, each in its own workspace:** what the always-loaded corpus costs against having nothing at all (B, `--no-harness`) and against an ordinary hand-written `CLAUDE.md` (C, `--generic-claude`). Both pivot on the same arm, `dot-agent-node`, holding the corpus ref equal across both arms so `harness` is the single differing key in `run-config.json`; the pivot is the treatment, and is named `dot-agent-node` rather than `main` because `rollup.py` tests each arm name as a substring of every grading record and "main" hides inside "remains", "domain", "maintain".
+
+Both are restricted to the evals whose assertions never touch `node-diff.patch`, `node-tree.txt`, or `status-after.txt`: `routing-scales`, `routing-finds-doc`, `verify-no-false-done`, `scope-question-no-edit`, `comments-feature`, `comments-docstrings`, `routing-catalog-first`. A node-dependent eval in a harness-free arm measures the node's absence, not behavior, so it stays out of those rollups. Two of the seven, `routing-finds-doc` and `routing-catalog-first`, depend on content that lives inside `.agent/docs/` in the pivot arm; in the harness-free arms that content does not exist at all, so those two measure information availability rather than routing behavior and are reported as their own group.
 
 ## What a run leaves behind
 

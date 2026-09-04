@@ -2070,6 +2070,50 @@ premrc42=$?
   && pass "evals: check-premises catches a drifted premise and names the eval" \
   || fail "evals: check-premises catches a drifted premise and names the eval (rc=$premrc42; $premfail42)"
 
+# The harness-cost arms: the same fixture built without the node, so the
+# comparison has a control for "does the always-loaded corpus earn its cost".
+# The node moves aside rather than being deleted, so the built arm stays
+# inspectable and nothing the agent can reach still carries it.
+evbare="$WORK/eval-fixture-bare"
+"$evroot/fixtures.sh" ts-service "$evbare" --corpus-dir "$reporoot" --no-harness >/dev/null 2>&1
+rc42bare=$?
+[ "$rc42bare" -eq 0 ] && [ ! -d "$evbare/.agent" ] \
+  && [ -f "$evbare.verifier/scripts/status.sh" ] && [ -f "$evbare.verifier/scripts/comments.sh" ] \
+  && pass "evals: --no-harness builds a fixture with no node and the verifier beside it" \
+  || fail "evals: --no-harness builds a fixture with no node and the verifier beside it (rc=$rc42bare)"
+
+# .claude/settings.json is an eval control (autoMemoryEnabled:false), not
+# harness scaffolding, so it survives the strip in every arm — and the
+# fixture must still commit a base for the diff assertions to grade against.
+[ ! -e "$evbare/CLAUDE.md" ] && [ ! -e "$evbare/AGENTS.md" ] \
+  && [ -f "$evbare/.claude/settings.json" ] \
+  && git -C "$evbare" rev-parse HEAD >/dev/null 2>&1 \
+  && pass "evals: --no-harness drops the instruction files, keeps the settings control, and still commits a base" \
+  || fail "evals: --no-harness drops the instruction files, keeps the settings control, and still commits a base"
+
+evgen="$WORK/eval-fixture-generic"
+"$evroot/fixtures.sh" ts-service "$evgen" --corpus-dir "$reporoot" --generic-claude >/dev/null 2>&1
+rc42gen=$?
+[ "$rc42gen" -eq 0 ] && [ ! -d "$evgen/.agent" ] && [ -f "$evgen/CLAUDE.md" ] \
+  && cmp -s "$evgen/CLAUDE.md" "$evgen/AGENTS.md" \
+  && pass "evals: --generic-claude writes an instructions file and mirrors it to AGENTS.md" \
+  || fail "evals: --generic-claude writes an instructions file and mirrors it to AGENTS.md (rc=$rc42gen)"
+
+# The control arm is only a control if it is an ordinary hand-written file:
+# dot-agent vocabulary in it would leak the treatment into the comparison,
+# and a command that does not exist would measure the fixture, not the file.
+! grep -qiE '\.agent|entry point|routing|learned rule|session log' "$evgen/CLAUDE.md" \
+  && grep -q 'npm run lint' "$evgen/CLAUDE.md" \
+  && pass "evals: the generic instructions file names real commands and no node scaffolding" \
+  || fail "evals: the generic instructions file names real commands and no node scaffolding"
+
+"$evroot/fixtures.sh" ts-service "$WORK/eval-fixture-both" --corpus-dir "$reporoot" \
+  --no-harness --generic-claude >/dev/null 2>&1
+rc42both=$?
+[ "$rc42both" -eq 2 ] \
+  && pass "evals: --no-harness and --generic-claude together are refused" \
+  || fail "evals: --no-harness and --generic-claude together are refused (rc=$rc42both)"
+
 # ---- 44. evals/run.sh: fake-CLI regression coverage ----
 # claude and codex are real, logged-in installs the operator drives by hand
 # — nothing static may call one. Every claim about run.sh's own behavior is
@@ -2147,13 +2191,26 @@ require_pair("--mcp-config", '{"mcpServers":{}}')
 require_pair("--allowedTools", "Read,Write,Edit,Bash")
 require_pair("--permission-mode", "acceptEdits")
 require_pair("--effort", "medium")
-require_flag("--append-system-prompt-file")
-system_index = argv.index("--append-system-prompt-file")
-if system_index + 1 >= len(argv) or os.path.realpath(argv[system_index + 1]) != os.path.realpath("CLAUDE.md"):
-    reject("--append-system-prompt-file must name the fixture CLAUDE.md")
+# The fixture carries a CLAUDE.md in every arm but the harness-free ones,
+# where there is no instructions file to append and the flag must be absent
+# rather than pointing at nothing.
+if os.path.exists("CLAUDE.md"):
+    require_flag("--append-system-prompt-file")
+    system_index = argv.index("--append-system-prompt-file")
+    if system_index + 1 >= len(argv) or os.path.realpath(argv[system_index + 1]) != os.path.realpath("CLAUDE.md"):
+        reject("--append-system-prompt-file must name the fixture CLAUDE.md")
+elif "--append-system-prompt-file" in argv:
+    reject("--append-system-prompt-file was passed for a fixture with no CLAUDE.md")
 
 mode = os.environ.get("FAKE_CLAUDE_MODE", "ok")
 total = int(os.environ.get("FAKE_CLAUDE_TURNS", "0"))
+
+# A background Agent's completion comes back to the main loop as a turn of its
+# own, carrying its own terminal result. Shape copied from a real claude
+# 2.1.245 stream, origin field and all.
+INJECTED_RESULT = {"type": "result", "subtype": "success", "is_error": False,
+                   "result": "Agent completed with result: PONG",
+                   "origin": {"kind": "task-notification"}}
 
 if mode == "timeout":
     time.sleep(3600)
@@ -2244,6 +2301,13 @@ time.sleep(3600)
         sys.exit(3)
     if mode == "short" and turn == total:
         sys.exit(0)
+    if mode == "background-subagent-short" and turn == total:
+        # The last turn dies without its own result, but a background agent's
+        # result lands anyway. The count must not let that stand in for the
+        # turn that never finished.
+        sys.stdout.write(json.dumps(INJECTED_RESULT) + "\n")
+        sys.stdout.flush()
+        sys.exit(0)
     if mode == "error-result":
         result = {"type": "result", "subtype": "error_during_execution",
                   "is_error": True, "result": "fake error"}
@@ -2255,6 +2319,8 @@ time.sleep(3600)
         error = {"type": "result", "subtype": "error_during_execution",
                  "is_error": True, "result": "error after success"}
         sys.stdout.write(json.dumps(error) + "\n")
+    if mode in ("background-subagent", "background-subagent-short"):
+        sys.stdout.write(json.dumps(INJECTED_RESULT) + "\n")
     if mode == "malformed-stream":
         sys.stdout.write("not-json\n")
         sys.stdout.write('{"type":"assistant","message":[]}\n')
@@ -2869,6 +2935,63 @@ if [ "$rc44claude_mixed" -ne 0 ] && eval_void_clean "$wsc_claude_mixed" scope-qu
   pass "evals: claude mixed success and error terminals become a diagnostic-only void run"
 else
   fail "evals: claude mixed success and error terminals become a diagnostic-only void run (rc=$rc44claude_mixed)"
+fi
+
+# A background subagent's completion is a turn the CLI ran for itself, with a
+# terminal result of its own. That is not a dropped continuation, and voiding
+# it cost the one eval that exercises grooming its whole treatment cell.
+wsc_claude_bgsub="$evfake/claude workspace-background-subagent"
+conf_claude_bgsub="$evfake/agents-claude-background-subagent.conf"
+eval_conf_write "$conf_claude_bgsub" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_bgsub" FAKE_CLAUDE_MODE=background-subagent FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_claude_bgsub" \
+  >"$evfake/claude-bgsub.out" 2>&1
+rc44claude_bgsub=$?
+if [ "$rc44claude_bgsub" -eq 0 ]; then
+  pass "evals: a background subagent's extra terminal result does not void the run"
+else
+  fail "evals: a background subagent's extra terminal result does not void the run (rc=$rc44claude_bgsub; $(cat "$evfake/claude-bgsub.out"))"
+fi
+
+# ... and an injected result must not stand in for a turn that never came back.
+wsc_claude_bgshort="$evfake/claude workspace-background-subagent-short"
+conf_claude_bgshort="$evfake/agents-claude-background-subagent-short.conf"
+eval_conf_write "$conf_claude_bgshort" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_bgshort" FAKE_CLAUDE_MODE=background-subagent-short FAKE_CLAUDE_TURNS=3 \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_claude_bgshort" >/dev/null 2>&1
+rc44claude_bgshort=$?
+if [ "$rc44claude_bgshort" -ne 0 ] && eval_void_clean "$wsc_claude_bgshort" bootstrap-once; then
+  pass "evals: an injected result cannot stand in for a turn the session never finished"
+else
+  fail "evals: an injected result cannot stand in for a turn the session never finished (rc=$rc44claude_bgshort)"
+fi
+
+# A harness-free arm has no .agent/ anywhere under the fixture, and four
+# capture paths used to assume one: the verifier snapshot, the status.conf
+# restore, the node file listing, and status.sh itself, which refuses a
+# rootless tree. Any one of them voids every run in the arm before grading,
+# so the control would silently measure nothing.
+wsc_bare="$evfake/claude workspace-no-harness"
+conf_bare="$evfake/agents-claude-no-harness.conf"
+eval_conf_write "$conf_bare" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_bare" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm bare --treatment-arm bare \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_bare" --no-harness \
+  >"$evfake/claude-bare.out" 2>&1
+rc44bare=$?
+bare_run=$(find "$wsc_bare/iteration-1/eval-scope-question-no-edit" \
+  -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+bare_harness=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["arms"]["bare"].get("harness"))' \
+  "$wsc_bare/iteration-1/run-config.json" 2>/dev/null)
+if [ "$rc44bare" -eq 0 ] && [ -n "$bare_run" ] && [ -f "$bare_run/grading.json" ] \
+  && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("void"))' "$bare_run/run-meta.json" 2>/dev/null)" = "False" ] \
+  && grep -q 'no .agent directory' "$bare_run/outputs/status-after.txt" 2>/dev/null \
+  && [ "$bare_harness" = "none" ]; then
+  pass "evals: a no-harness run grades instead of voiding, and records its harness mode"
+else
+  fail "evals: a no-harness run grades instead of voiding, and records its harness mode (rc=$rc44bare; harness=$bare_harness; $(cat "$evfake/claude-bare.out"))"
 fi
 
 wsc_claude_malformed="$evfake/claude workspace-malformed-stream"
@@ -3514,6 +3637,42 @@ else
   fail "evals: agent-usage exits 0 with all-null fields when the stream has no usage block (rc=$usage_null_rc; $usage_null_out)"
 fi
 
+# The void detector counts turn boundaries, and the CLI runs turns of its own:
+# a background subagent's completion comes back to the main loop as a fresh
+# turn with its own terminal result, marked origin.kind "task-notification"
+# (claude 2.1.245). Counting those voided a grooming run that had succeeded.
+# The one-sided rule stays: fewer results than turns sent is still a crash.
+countstream="$gd/outputs/count-results.jsonl"
+
+cat >"$countstream" <<'EOF'
+{"type":"system","subtype":"init","session_id":"s1"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"LAUNCHED"}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"LAUNCHED","session_id":"s1"}
+{"type":"system","subtype":"init","session_id":"s1"}
+{"type":"result","subtype":"success","is_error":false,"result":"Agent completed","session_id":"s1","origin":{"kind":"task-notification"}}
+EOF
+count_bg=$("$evroot/run_lib.py" claude-count-results "$countstream")
+[ "$count_bg" = "1 1 0 1" ] \
+  && pass "evals: a background subagent's own result is not counted as a turn boundary" \
+  || fail "evals: a background subagent's own result is not counted as a turn boundary ($count_bg)"
+
+cat >"$countstream" <<'EOF'
+{"type":"result","subtype":"success","is_error":false,"result":"one","session_id":"s1"}
+EOF
+count_trunc=$("$evroot/run_lib.py" claude-count-results "$countstream")
+[ "$count_trunc" = "1 1 0 0" ] \
+  && pass "evals: a stream one result short of the turns sent still counts one terminal" \
+  || fail "evals: a stream one result short of the turns sent still counts one terminal ($count_trunc)"
+
+cat >"$countstream" <<'EOF'
+{"type":"result","subtype":"success","is_error":false,"result":"one","session_id":"s1"}
+{"type":"result","is_error":false,"session_id":"s1","origin":{"kind":"task-notification"}}
+EOF
+count_badinj=$("$evroot/run_lib.py" claude-count-results "$countstream")
+[ "$count_badinj" = "1 1 1 1" ] \
+  && pass "evals: a malformed injected result still counts as a malformed record" \
+  || fail "evals: a malformed injected result still counts as a malformed record ($count_badinj)"
+
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
 # grading record means the grader could see the condition. Either one makes
@@ -4076,7 +4235,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=541
+EXPECTED_CHECKS=552
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

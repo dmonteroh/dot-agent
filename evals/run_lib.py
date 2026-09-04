@@ -44,13 +44,13 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
   claude-auth-check-stdin                stdin: credential JSON
   codex-auth-check                       env: AUTH_PATH
   claude-turn-json                       env: TXT
-  claude-count-results <stdout-path>
+  claude-count-results <stdout-path>     -> "<terminals> <successes> <invalid> <injected>"
   codex-terminal-counts <turnout-path>   env: TURNINDEX, EXPECTED_THREAD
   codex-thread-id <stdout-path>
   extract-claude-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
   extract-codex-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
-  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO
-  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO
+  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM
+  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM
   eval-lookup                            env: EVALID, SPEC
   fixture-name                           stdin: eval entry JSON
   arm-variable                           env: SPEC   stdin: eval entry JSON
@@ -290,10 +290,38 @@ def cmd_claude_turn_json(args):
     return 0
 
 
+def _claude_result_is_injected(event):
+    """True for a result that closes a turn the harness did not send.
+
+    Claude Code emits one top-level `result` per turn its main loop ran, and
+    that is not the same as one per turn fed in over --input-format
+    stream-json. A session that dispatches a background subagent gets the
+    agent's completion delivered back as a turn of its own: a fresh
+    system/init, its own assistant messages, and its own `result`. Counting
+    those as turn boundaries voided `groom-acts-on-flags` for doing exactly
+    what the eval asks of it (2 terminal results for 1 turn sent, both
+    successful) — a false positive in the crash detector, not a failure.
+
+    The turn's initiator is on the result itself, in `origin.kind`: an
+    injected continuation carries "task-notification" (also "auto-continuation",
+    "channel", "peer" and friends), while a turn this harness wrote onto the
+    CLI's stdin carries no `origin` at all. Verified against claude 2.1.245:
+    one prompt that launched a background Agent produced two success results,
+    the second and only the second carrying {"origin": {"kind":
+    "task-notification"}}. Anything with an origin other than a plain human
+    turn came from somewhere other than our input stream.
+    """
+    origin = event.get("origin")
+    if not isinstance(origin, dict):
+        return False
+    return origin.get("kind") not in (None, "human")
+
+
 def cmd_claude_count_results(args):
     terminals = 0
     successes = 0
     invalid = 0
+    injected = 0
     for line in open(args[0], encoding="utf-8", errors="replace"):
         if not line.strip():
             continue
@@ -321,13 +349,21 @@ def cmd_claude_count_results(args):
                     invalid += 1
         if etype != "result":
             continue
-        terminals += 1
-        if not isinstance(event.get("subtype"), str) or not isinstance(event.get("is_error"), bool):
+        # Shape is checked on every result, ours or injected: a malformed one
+        # is evidence about the stream itself, whoever's turn it closed.
+        malformed = (not isinstance(event.get("subtype"), str)
+                     or not isinstance(event.get("is_error"), bool))
+        if malformed:
             invalid += 1
+        if _claude_result_is_injected(event):
+            injected += 1
+            continue
+        terminals += 1
+        if malformed:
             continue
         if event.get("subtype") == "success" and event.get("is_error") is False:
             successes += 1
-    print("%d %d %d" % (terminals, successes, invalid))
+    print("%d %d %d %d" % (terminals, successes, invalid, injected))
     return 0
 
 
@@ -644,7 +680,8 @@ def cmd_lock_run_config_create(args):
         "repeats_per_cell": int(os.environ["RP"]),
         "arms": {
             os.environ["AM"]: {"agent": os.environ["AG"], "corpus_ref": os.environ["CR"],
-                                "model": os.environ["MD"], "effort": os.environ["AE"] or None}
+                                "model": os.environ["MD"], "effort": os.environ["AE"] or None,
+                                "harness": os.environ.get("HM") or "node"}
         },
         "resolved": {
             os.environ["AG"]: {"bin": os.environ["AB"] or None,
@@ -687,7 +724,8 @@ def cmd_lock_run_config_update(args):
     arms = cfg.setdefault("arms", {})
     arm = os.environ["AM"]
     arm_entry = {"agent": ag, "corpus_ref": os.environ["CR"],
-                 "model": os.environ["MD"], "effort": os.environ["AE"] or None}
+                 "model": os.environ["MD"], "effort": os.environ["AE"] or None,
+                 "harness": os.environ.get("HM") or "node"}
     prior_arm = arms.get(arm)
     if prior_arm is not None and prior_arm != arm_entry:
         errs.append("arm %r configuration drifted: %r != recorded %r" % (arm, arm_entry, prior_arm))

@@ -39,6 +39,13 @@ evals/run.sh --eval scope-question-no-edit --arm merged --treatment-arm merged \
 
 `REPEATS` in `agents.conf` sets how many repeat cells `run.sh` builds per eval per arm. One repeat shows whether an assertion passed, never whether that result is stable — at `REPEATS=1` every assertion buckets as stable whether it is or not. Three is the smallest count that can show a split.
 
+There is no `--repeats` flag: `run.sh` reads the count once, from `agents.conf`, and it is locked into `run-config.json` as `repeats_per_cell`, so it cannot change part-way through an iteration either. To raise it for one comparison without editing the checked-in conf, copy it, edit the copy's `REPEATS=` line, and export `EVALS_AGENTS_CONF` pointing at the copy — for **every** invocation of both arms of that iteration:
+
+```
+cp evals/agents.conf /tmp/agents-this-run.conf   # then edit REPEATS= in the copy
+export EVALS_AGENTS_CONF=/tmp/agents-this-run.conf
+```
+
 Loop every eval id in `spec.json` against both arms, into one workspace:
 
 ```

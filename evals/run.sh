@@ -22,7 +22,7 @@
 #
 # Usage: run.sh --eval <id> --arm <name> --agent <claude|codex>
 #                --corpus-ref <ref> --workspace <dir> [--iteration <n>]
-#                [--treatment-arm <name>]
+#                [--treatment-arm <name>] [--no-harness | --generic-claude]
 #        run.sh --dry-run ...        # build and print every turn, drive nothing
 #        run.sh --list-arms          # resolved executables and versions, no model call
 #        run.sh --probe-agent <claude|codex>   # one live readiness call
@@ -31,6 +31,13 @@
 # (default 1); it never selects a repeat. REPEATS (agents.conf) is how many
 # repeat run directories one invocation creates *inside* that one iteration,
 # each with its own fixture and run id, all under iteration-<n>/eval-<id>/.
+#
+# --no-harness and --generic-claude build the fixture without the .agent/
+# node: the first with no instructions file at all, the second with an
+# ordinary hand-written CLAUDE.md in its place. Both are recorded in the
+# arm's run-config.json entry, so a mixed arm is refused rather than
+# averaged. Run them only over evals whose assertions never read
+# node-diff.patch, node-tree.txt or status-after.txt.
 
 set -u
 
@@ -335,11 +342,19 @@ verifier_cleanup() {
 # safe rather than redundant.
 verifier_snapshot() {
   local fixdir="$1" snapshot
+  # The script logic (status.sh, comments.sh) comes from this repo's own
+  # scripts/, not the fixture's .agent/scripts: a verifier that trusts the
+  # corpus under test to ship a working copy of the checking tool isn't a
+  # verifier. main lacks comments.sh entirely (a feature never merged from
+  # feature/v6.1), which is exactly the case this must still grade. Only the
+  # *config* (status.conf/comments.conf) legitimately varies per corpus and
+  # still comes from the fixture, snapshotted before the agent runs and
+  # restored after, so an agent-modified conf can't quietly disable a check.
   snapshot=$(mktemp -d "${VERIFIER_TEMP_PREFIX}XXXXXX") || return 1
   VERIFIER_ACTIVE_DIR="$snapshot"
   chmod 700 "$snapshot" || return 1
-  cp "$fixdir/.agent/scripts/status.sh" "$snapshot/status.sh" || return 1
-  cp "$fixdir/.agent/scripts/comments.sh" "$snapshot/comments.sh" || return 1
+  cp "$selfdir/../scripts/status.sh" "$snapshot/status.sh" || return 1
+  cp "$selfdir/../scripts/comments.sh" "$snapshot/comments.sh" || return 1
   if [ -f "$fixdir/.agent/scripts/status.conf" ]; then
     cp "$fixdir/.agent/scripts/status.conf" "$snapshot/status.conf" || return 1
   fi
@@ -394,6 +409,10 @@ verifier_integrity_check() {
 # be the one the trusted status.sh binary reads.
 verifier_restore_status_conf() {
   local fixdir="$1" target
+  # Nothing to restore when the fixture has no node: status.sh is not run
+  # against it at all (see the status capture below), and there is no
+  # $fixdir/.agent/scripts to write into.
+  [ -d "$fixdir/.agent/scripts" ] || return 0
   target="$fixdir/.agent/scripts/status.conf"
   if [ -n "$VERIFIER_STATUS_CONF_HASH" ]; then
     cp "$VERIFIER_ACTIVE_DIR/status.conf" "$target"
@@ -647,7 +666,7 @@ release_iter_lock() {
 
 claude_run() {
   local fixdir outdir model effort bin stdout stderr claude_args sysfile inputfile
-  local json counts terminals successes invalid rc turntext
+  local json counts terminals successes invalid injected rc turntext
   fixdir="$1"; outdir="$2"; model="$3"; effort="$4"; bin="$5"
 
   stdout="$outdir/agent-stdout.txt"; stderr="$outdir/agent-stderr.txt"
@@ -687,15 +706,20 @@ claude_run() {
 
   # A session that ended with fewer results than turns sent — a crash, a
   # dropped continuation — must not report success just because the process
-  # itself happened to exit 0.
+  # itself happened to exit 0. Only the results that closed a turn *we* sent
+  # count: the CLI also runs turns of its own, one per background subagent
+  # completion, each with its own terminal result (see
+  # _claude_result_is_injected in run_lib.py). Counting those voided a
+  # grooming run that had done everything right. The counts below are already
+  # net of them, so the rule itself is unchanged: one successful terminal per
+  # turn we sent, no malformed records.
   counts=$("$selfdir/run_lib.py" claude-count-results "$stdout")
-  terminals=${counts%% *}
-  counts=${counts#* }
-  successes=${counts%% *}
-  invalid=${counts##* }
+  read -r terminals successes invalid injected <<EOF
+$counts
+EOF
   if [ "$rc" -eq 0 ] \
     && { [ "$terminals" -ne "${#turns[@]}" ] || [ "$successes" -ne "${#turns[@]}" ] || [ "$invalid" -ne 0 ]; }; then
-    echo "run.sh: claude stream had $terminals terminal result(s), $successes successful, and $invalid malformed record(s) for ${#turns[@]} turn(s)" >&2
+    echo "run.sh: claude stream had $terminals terminal result(s), $successes successful, $invalid malformed record(s) and $injected injected turn(s) for ${#turns[@]} turn(s) sent" >&2
     return 1
   fi
   return "$rc"
@@ -852,10 +876,10 @@ extract_codex_trace() {
 
 lock_run_config() {
   local iterdir arm_variable treatment agent arm model corpus_ref repeats bin ver effort cfgfile
-  local bin_real bin_hash ver_output
+  local bin_real bin_hash ver_output harness
   iterdir="$1"; arm_variable="$2"; treatment="$3"; agent="$4"; arm="$5"; model="$6"
   corpus_ref="$7"; repeats="$8"; bin="$9"; ver="${10}"; effort="${11}"
-  bin_real="${12}"; bin_hash="${13}"; ver_output="${14}"
+  bin_real="${12}"; bin_hash="${13}"; ver_output="${14}"; harness="${15}"
   cfgfile="$iterdir/run-config.json"
 
   if [ ! -f "$cfgfile" ]; then
@@ -869,14 +893,14 @@ lock_run_config() {
     fi
     IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
       CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-      AR="$bin_real" AH="$bin_hash" AO="$ver_output" \
+      AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" \
       "$selfdir/run_lib.py" lock-run-config-create || return 2
     return 0
   fi
 
   IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
     CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-    AR="$bin_real" AH="$bin_hash" AO="$ver_output" \
+    AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" \
     "$selfdir/run_lib.py" lock-run-config-update
   return $?
 }
@@ -979,6 +1003,7 @@ case "${1:-}" in -h | --help | "") usage; exit 0 ;; esac
 # ---------------------------------------------------------------------------
 
 evalid=""; arm=""; agent=""; corpus_ref=""; workspace=""; iteration=""; dry=0; treatment=""
+harness_mode="node"
 while [ $# -gt 0 ]; do
   case "$1" in
   --eval) evalid="${2:-}"; shift 2 ;;
@@ -988,6 +1013,14 @@ while [ $# -gt 0 ]; do
   --workspace) workspace="${2:-}"; shift 2 ;;
   --iteration) iteration="${2:-}"; shift 2 ;;
   --treatment-arm) treatment="${2:-}"; shift 2 ;;
+  --no-harness)
+    [ "$harness_mode" = node ] || {
+      echo "run.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
+    harness_mode="none"; shift ;;
+  --generic-claude)
+    [ "$harness_mode" = node ] || {
+      echo "run.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
+    harness_mode="generic"; shift ;;
   --dry-run) dry=1; shift ;;
   *) echo "run.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -1079,7 +1112,7 @@ mkdir -p "$iterdir" || exit 1
 acquire_iter_lock "$iterdir/.metadata.lock" || exit 2
 lock_run_config "$iterdir" "$arm_variable" "$treatment" "$agent" "$arm" "$agent_model" \
   "$corpus_ref" "$REPEATS" "$agent_bin" "$agent_ver" "$agent_effort" \
-  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output"
+  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode"
 lock_run_config_rc=$?
 release_iter_lock
 [ "$lock_run_config_rc" -eq 0 ] || exit 2
@@ -1121,7 +1154,12 @@ while [ "$rep" -le "$repeats_eff" ]; do
   # corpus ref still leaves a diagnostic run rather than an unshaped directory.
   ACTIVE_RUN_DIR="$rundir"
   fixdir="$rundir/fixture"
-  "$selfdir/fixtures.sh" "$fixture" "$fixdir" --corpus-ref "$corpus_ref" \
+  fixture_args=("$fixture" "$fixdir" --corpus-ref "$corpus_ref")
+  case "$harness_mode" in
+  none) fixture_args+=(--no-harness) ;;
+  generic) fixture_args+=(--generic-claude) ;;
+  esac
+  "$selfdir/fixtures.sh" "${fixture_args[@]}" \
     >"$rundir/fixture-build.txt" 2>&1
   stage_rc=$?
   if [ "$stage_rc" -ne 0 ]; then
@@ -1247,7 +1285,11 @@ EOF
   fi
 
   node_files="$rundir/outputs/.node-files"
-  ( cd "$fixdir" && find .agent -type f -print0 2>/dev/null ) >"$node_files"
+  if [ -d "$fixdir/.agent" ]; then
+    ( cd "$fixdir" && find .agent -type f -print0 2>/dev/null ) >"$node_files"
+  else
+    : >"$node_files"
+  fi
   stage_rc=$?
   if [ "$stage_rc" -ne 0 ]; then
     mark_stage_void "$rundir" artifact_capture_failed \
@@ -1289,18 +1331,27 @@ EOF
   # restored into the fixture right before this call, overwriting whatever
   # the agent may have left there. Hashing the snapshot alone would not
   # stop status.sh from reading a mutated fixture-side status.conf.
-  if ! verifier_restore_status_conf "$fixdir"; then
-    mark_stage_void "$rundir" verifier_snapshot_failed \
-      "could not restore the trusted status.conf before status capture" 1
-    any_void=1; rep=$((rep + 1)); continue
-  fi
-  bash "$VERIFIER_ACTIVE_DIR/status.sh" "$fixdir" \
-    >"$rundir/outputs/status-after.txt" 2>&1
-  stage_rc=$?
-  if [ "$stage_rc" -ne 0 ]; then
-    mark_stage_void "$rundir" artifact_capture_failed \
-      "artifact capture failed while running status.sh (exit $stage_rc)" "$stage_rc"
-    any_void=1; rep=$((rep + 1)); continue
+  if [ -d "$fixdir/.agent" ]; then
+    if ! verifier_restore_status_conf "$fixdir"; then
+      mark_stage_void "$rundir" verifier_snapshot_failed \
+        "could not restore the trusted status.conf before status capture" 1
+      any_void=1; rep=$((rep + 1)); continue
+    fi
+    bash "$VERIFIER_ACTIVE_DIR/status.sh" "$fixdir" \
+      >"$rundir/outputs/status-after.txt" 2>&1
+    stage_rc=$?
+    if [ "$stage_rc" -ne 0 ]; then
+      mark_stage_void "$rundir" artifact_capture_failed \
+        "artifact capture failed while running status.sh (exit $stage_rc)" "$stage_rc"
+      any_void=1; rep=$((rep + 1)); continue
+    fi
+  else
+    # status.sh refuses a root with no .agent/ and exits 1, which would void
+    # every run in a harness-free arm. The artifact is written, empty of
+    # findings and saying why: a grader that reaches for it gets a reason,
+    # and every assertion that reads it is excluded from this comparison.
+    printf 'status.sh was not run: this fixture has no .agent directory.\n' \
+      >"$rundir/outputs/status-after.txt"
   fi
 
   if [ ! -s "$rundir/outputs/diff.patch" ]; then
