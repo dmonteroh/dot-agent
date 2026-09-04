@@ -111,7 +111,13 @@ def diff_files(patch):
 
 
 def node_files():
-    return diff_files(need("node-diff.patch"))
+    # run.sh captures the node diff with `git diff -- .agent`, so every
+    # header is `+++ b/.agent/<path>`. Assertions name node paths from the
+    # node root (`session-log.md`, `memory/x.md`), so the prefix is stripped
+    # here, once, rather than in nine predicates.
+    files = diff_files(need("node-diff.patch"))
+    return {(k[len(".agent/"):] if k.startswith(".agent/") else k): v
+            for k, v in files.items()}
 
 
 def product_files():
