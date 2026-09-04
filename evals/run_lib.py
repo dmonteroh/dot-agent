@@ -427,6 +427,31 @@ def _root_pattern(root):
     return r"/+" + r"/+".join(parts)
 
 
+def _root_aliases(root):
+    """Every spelling one root can wear: as given, absolute, resolved, and
+    both sides of macOS's /private alias. normalize_text matches literally,
+    so a root it was never told about is a root it cannot strip."""
+    out = {root.rstrip(os.sep), os.path.abspath(root), os.path.realpath(root)}
+    for r in list(out):
+        if r.startswith("/private/"):
+            out.add(r[len("/private"):])
+        else:
+            out.add("/private" + r)
+    return sorted({r for r in out if r and r != "/"}, key=len, reverse=True)
+
+
+_NODE_PATH_RE = re.compile(r"(?:^|\s)/\S*/\.agent/")
+
+
+def _reject_absolute(rec):
+    for field in ("text", "path", "command"):
+        v = rec.get(field)
+        if isinstance(v, str) and _NODE_PATH_RE.search(v):
+            die("trace record %d still carries an absolute node path (%s=%r) — "
+                "the fixture root was not stripped, and a grader cannot read "
+                "a path it cannot match" % (rec["seq"], field, v[:200]))
+
+
 def _normalize_text_fn(fixture_roots, runner_roots):
     def normalize_text(value):
         value = value or ""
@@ -445,8 +470,8 @@ def _normalize_text_fn(fixture_roots, runner_roots):
 def cmd_extract_claude_trace(args):
     src, trace_out, transcript_out, fixdir, run_id, runner_root = args[:6]
     fixdir_real = os.path.realpath(fixdir)
-    fixture_roots = sorted({fixdir.rstrip(os.sep), os.path.abspath(fixdir), fixdir_real}, key=len, reverse=True)
-    runner_roots = sorted({runner_root.rstrip(os.sep), os.path.abspath(runner_root), os.path.realpath(runner_root)}, key=len, reverse=True)
+    fixture_roots = _root_aliases(fixdir)
+    runner_roots = _root_aliases(runner_root)
     normalize_text = _normalize_text_fn(fixture_roots, runner_roots)
 
     def relpath(p):
@@ -494,8 +519,8 @@ def cmd_extract_claude_trace(args):
                        "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                        "run_id": run_id}
                 if action in ("read", "write", "search"):
-                    path = relpath(inp.get("file_path") or inp.get("path") or inp.get("pattern") or "")
-                    rec["text"] = "%s:%s" % (action, path) if path else "%s:%s" % (action, name)
+                    path = normalize_text(relpath(inp.get("file_path") or inp.get("path") or inp.get("pattern") or ""))
+                    rec["text"] = normalize_text("%s:%s" % (action, path) if path else "%s:%s" % (action, name))
                     if path:
                         rec["path"] = path
                 elif action == "execute":
@@ -504,6 +529,7 @@ def cmd_extract_claude_trace(args):
                     rec["command"] = command
                 else:
                     rec["text"] = "other:%s" % name
+                _reject_absolute(rec)
                 tf.write(json.dumps(rec) + "\n")
                 seq += 1
 
@@ -517,8 +543,8 @@ def cmd_extract_claude_trace(args):
 def cmd_extract_codex_trace(args):
     src, trace_out, transcript_out, fixdir, run_id, runner_root = args[:6]
     fixdir_real = os.path.realpath(fixdir)
-    fixture_roots = sorted({fixdir.rstrip(os.sep), os.path.abspath(fixdir), fixdir_real}, key=len, reverse=True)
-    runner_roots = sorted({runner_root.rstrip(os.sep), os.path.abspath(runner_root), os.path.realpath(runner_root)}, key=len, reverse=True)
+    fixture_roots = _root_aliases(fixdir)
+    runner_roots = _root_aliases(runner_root)
     normalize_text = _normalize_text_fn(fixture_roots, runner_roots)
 
     def relpath(p):
@@ -572,18 +598,20 @@ def cmd_extract_codex_trace(args):
                 rec = {"seq": seq, "event": "call", "tool": "codex.command_execution",
                        "action": "execute", "text": "execute:%s" % command, "command": command,
                        "timestamp": ts(), "run_id": run_id}
+                _reject_absolute(rec)
                 tf.write(json.dumps(rec) + "\n")
                 seq += 1
             elif etype == "item.completed" and itype == "file_change":
                 for chg in item.get("changes") or []:
                     if not isinstance(chg, dict):
                         continue
-                    path = relpath(chg.get("path") or "")
+                    path = normalize_text(relpath(chg.get("path") or ""))
                     kind = (chg.get("kind") or "modify").lower()
                     action = "read" if kind == "read" else "write"
                     rec = {"seq": seq, "event": "call", "tool": "codex.file_change",
-                           "action": action, "text": "%s:%s" % (action, path), "path": path,
+                           "action": action, "text": normalize_text("%s:%s" % (action, path)), "path": path,
                            "timestamp": ts(), "run_id": run_id}
+                    _reject_absolute(rec)
                     tf.write(json.dumps(rec) + "\n")
                     seq += 1
 

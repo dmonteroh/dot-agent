@@ -3269,6 +3269,41 @@ printf '{"seq":0,"text":"read catalog"}\n{"seq":1,"text":"write:src/new.ts"}\n' 
 trace_legacy=$(trace_result)
 printf '%s\n' "$trace_legacy" | grep -q '^True|True|' && pass "evals: valid legacy seq/text traces remain gradeable" || fail "evals: valid legacy seq/text traces remain gradeable ($trace_legacy)"
 
+# H10: a trace root can be spelled either side of macOS's /tmp <-> /private/tmp
+# alias. normalize_text matches literally, so a command string naming the
+# fixture through the alias run.sh did *not* pass in went unstripped.
+tracefix_priv="/private/tmp/evtrace-$$"
+mkdir -p "$tracefix_priv/.agent/rules"
+printf 'a rule\n' >"$tracefix_priv/.agent/rules/learned.md"
+tracefix_tmp="/tmp/evtrace-$$"
+cat >"$gd/outputs/claude-stream-alias.jsonl" <<EOF
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"$tracefix_tmp/.agent/rules/learned.md"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat $tracefix_tmp/.agent/rules/learned.md"}}]}}
+{"type":"result","result":"done"}
+EOF
+"$evroot/run_lib.py" extract-claude-trace "$gd/outputs/claude-stream-alias.jsonl" "$gd/outputs/trace-alias.jsonl" \
+  "$gd/outputs/transcript-alias.txt" "$tracefix_priv" run1 "$WORK" >/dev/null 2>&1
+rc_alias=$?
+trace_alias_lines=$(cat "$gd/outputs/trace-alias.jsonl" 2>/dev/null)
+if [ "$rc_alias" -eq 0 ] \
+  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"read:\.agent/rules/learned\.md"' \
+  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"execute:cat \.agent/rules/learned\.md"'; then
+  pass "evals: trace extractor strips the other side of a macOS /tmp alias"
+else
+  fail "evals: trace extractor strips the other side of a macOS /tmp alias (rc=$rc_alias $trace_alias_lines)"
+fi
+
+cat >"$gd/outputs/claude-stream-foreign.jsonl" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/etc/other/.agent/x"}}]}}
+{"type":"result","result":"done"}
+EOF
+"$evroot/run_lib.py" extract-claude-trace "$gd/outputs/claude-stream-foreign.jsonl" "$gd/outputs/trace-foreign.jsonl" \
+  "$gd/outputs/transcript-foreign.txt" "$tracefix_priv" run1 "$WORK" >/dev/null 2>&1
+rc_foreign=$?
+[ "$rc_foreign" -ne 0 ] && pass "evals: trace extractor fails closed on a foreign absolute node path" \
+  || fail "evals: trace extractor fails closed on a foreign absolute node path (rc=$rc_foreign)"
+rm -rf "$tracefix_priv"
+
 # The rollup fails closed on records that cannot support a delta. An id set
 # that disagrees with its snapshot silently drops rows; an arm token inside a
 # grading record means the grader could see the condition. Either one makes
