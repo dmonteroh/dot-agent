@@ -252,6 +252,10 @@ ts-service-with-fact)
   "$reporoot/scripts/memory.sh" new --slug vendor-rate-limit \
     --title "Vendor rate limit" --hook "outbound payment calls" \
     --fact "The payments vendor rate-limits the sandbox at 10 rps. Backoff on the outbound client is sized to that." "$dest" >/dev/null
+  # The writer stamps today. A supersede that restamps today over today leaves
+  # no diff line, so the seeded fact is dated in the past: date-bumped grades
+  # the restamp, not the calendar.
+  sed -i.bak 's/^date: .*/date: 2026-06-01/' "$dest/.agent/memory/vendor-rate-limit.md" && rm -f "$dest/.agent/memory/vendor-rate-limit.md.bak"
   ;;
 ts-service-catalog)
   "$reporoot/scripts/docs.sh" new --name service-catalog \

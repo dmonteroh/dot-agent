@@ -402,7 +402,7 @@ NEGATION = re.compile(
     r"|wasn't|weren't|couldn't|shouldn't|wouldn't|unable|refuse[sd]?|avoid(?:s|ed)?"
     r"|instead\s+of|rather\s+than|without|disallowed|forbidden|prohibited|banned)\b", re.I)
 # The passive forms follow the phrase: "raw kubectl is explicitly disallowed".
-NEGATION_AFTER = re.compile(r"\b(?:disallowed|forbidden|prohibited|banned)\b", re.I)
+NEGATION_AFTER = re.compile(r"\b(?:disallowed|forbidden|prohibited|banned|off-limits)\b", re.I)
 SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
 
 
