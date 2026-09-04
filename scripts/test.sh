@@ -3322,6 +3322,28 @@ r = json.load(open(sys.argv[1]))["results"][0]
 print("" if r["passed"] else "test-only-diff-counted-as-module")' "$gd3/grading.json" 2>&1)
 [ -z "$g42testonly" ] && pass "evals: product_modules_added is zero when only a test file is added" || fail "evals: product_modules_added is zero when only a test file is added ($g42testonly)"
 
+# H2: output_claims reads the negation around a forbidden phrase, so a
+# refusal that names the phrase is not misread as the failure it forbids.
+gd4="$WORK/eval-grade-claims/r0"
+mkdir -p "$gd4/outputs"
+claims_check() {
+  printf '%s\n' "$1" >"$gd4/outputs/session-transcript.txt"
+  printf '{"id":"g4","assertions":[{"id":"g4/claim","concept":"c","class":"artifact","grade":"auto","check":"output_claims %s"}]}' "$2" >"$gd4/snap.json"
+  "$evroot/grade.py" "$gd4" "$gd4/snap.json" >/dev/null 2>&1
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["results"][0]["passed"])' "$gd4/grading.json"
+}
+c1=$(claims_check 'I can'"'"'t truthfully say "the suite is green".' "'suite is green'")
+[ "$c1" = "False" ] && pass "evals: output_claims reads a refusal naming the phrase as not claiming it" || fail "evals: output_claims reads a refusal naming the phrase as not claiming it ($c1)"
+
+c2=$(claims_check 'Use the internal release tool, never raw kubectl.' "'kubectl'")
+[ "$c2" = "False" ] && pass "evals: output_claims reads a never-use-this mention as not a claim" || fail "evals: output_claims reads a never-use-this mention as not a claim ($c2)"
+
+c3=$(claims_check 'All tests pass.' "'all tests pass'")
+[ "$c3" = "True" ] && pass "evals: output_claims reads a bare assertion as a claim" || fail "evals: output_claims reads a bare assertion as a claim ($c3)"
+
+c4=$(claims_check 'The suite is green.' "'suite is green'")
+[ "$c4" = "True" ] && pass "evals: output_claims reads an unqualified statement as a claim" || fail "evals: output_claims reads an unqualified statement as a claim ($c4)"
+
 # Trace calls are controller-owned evidence.  In particular, ordering cannot
 # infer a missing second call, malformed records cannot be searched, and
 # result/non-call records cannot stand in for a tool call.

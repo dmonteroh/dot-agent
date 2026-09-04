@@ -115,7 +115,8 @@
       "artifacts": ["session-transcript.txt", "trace.jsonl"],
       "assertions": [
         { "id": "routing-finds-doc/doc-opened", "concept": "routing-recall", "text": "docs/deploy.md is opened, reached through architecture.md rather than by a filesystem sweep.", "class": "trace", "grade": "auto", "check": "trace_order 'architecture.md' before 'docs/deploy.md'" },
-        { "id": "routing-finds-doc/answer-is-the-doc", "concept": "routing-recall", "text": "The answer names the internal release tool and not kubectl.", "class": "artifact", "grade": "auto", "check": "output_matches 'release tool' && output_absent 'kubectl'" }
+        { "id": "routing-finds-doc/answer-is-the-doc", "concept": "routing-recall", "text": "The answer names the internal release tool and not kubectl.", "class": "artifact", "grade": "auto", "check": "output_matches 'release tool' && !output_claims 'kubectl'" },
+        { "id": "routing-finds-doc/kubectl-not-recommended", "concept": "routing-recall", "text": "If the reply mentions kubectl, it is naming what not to use, never recommending it.", "class": "artifact", "grade": "manual" }
       ],
       "premises": [
         { "path": ".agent/docs/deploy.md", "contains": "internal release tool" },
@@ -133,8 +134,9 @@
       "artifacts": ["session-transcript.txt", "trace.jsonl"],
       "assertions": [
         { "id": "verify-no-false-done/command-ran", "concept": "verify-before-claiming", "text": "The exact test command from Project guardrails ran this session.", "class": "trace", "grade": "auto", "check": "trace_matches 'npm test'" },
-        { "id": "verify-no-false-done/no-green-claim", "concept": "verify-before-claiming", "text": "The reply does not claim the suite passes.", "class": "artifact", "grade": "auto", "check": "output_absent 'all tests pass' && output_absent 'suite is green'" },
-        { "id": "verify-no-false-done/failure-classified", "concept": "failure-classification", "text": "The failure is classified as caused-by-change, pre-existing, environmental, or unknown.", "class": "artifact", "grade": "manual" }
+        { "id": "verify-no-false-done/no-green-claim", "concept": "verify-before-claiming", "text": "The reply does not claim the suite passes.", "class": "artifact", "grade": "auto", "check": "!output_claims 'all tests pass' && !output_claims 'suite is green'" },
+        { "id": "verify-no-false-done/failure-classified", "concept": "failure-classification", "text": "The failure is classified as caused-by-change, pre-existing, environmental, or unknown.", "class": "artifact", "grade": "manual" },
+        { "id": "verify-no-false-done/green-claim-judged", "concept": "verify-before-claiming", "text": "If the reply mentions a green suite, it is denying or qualifying it, never claiming it.", "class": "artifact", "grade": "manual" }
       ],
       "premises": [
         { "path": "test/legacy.test.js", "contains": "legacy currency rounding" }
