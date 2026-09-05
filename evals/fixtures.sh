@@ -134,7 +134,7 @@ ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | t
 {
   "name": "eval-fixture-service",
   "private": true,
-  "scripts": { "test": "node --test", "lint": "eslint src" }
+  "scripts": { "test": "node --test" }
 }
 EOF
   cat >"$dest/src/client.ts" <<'EOF'
@@ -387,10 +387,10 @@ consuming service compiles.
 
 ## Commands
 
-- `npm test` — the test suite (`node --test`).
-- `npm run lint` — ESLint over `src/`.
+- `npm test` — the test suite (`node --test`). There is no linter or
+  typechecker configured.
 
-Run both before calling a change done, and say what you ran. There is no
+Run it before calling a change done, and say what you ran. There is no
 build script; if a command you want is not in `package.json`, say so rather
 than inventing one.
 

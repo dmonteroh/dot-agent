@@ -319,7 +319,7 @@
       "assertions": [
         { "id": "comments-feature/gate-clean", "concept": "comment-gate-clean", "text": "Running comments.sh over the produced diff against the fixture base yields zero BLOCK findings.", "class": "artifact", "grade": "auto", "check": "gate_block_count == 0" },
         { "id": "comments-feature/no-structure-narration", "concept": "no-structure-narration", "text": "No added comment narrates the structure of the code under it.", "class": "artifact", "grade": "auto", "check": "gate_class_count 'routine narration' == 0" },
-        { "id": "comments-feature/vendor-constraint-kept", "concept": "constraint-comment-survives", "text": "The diff carries at least one comment naming the vendor rate limit as the reason for the backoff. The rule cuts valueless comments; it must not cut this one.", "class": "artifact", "grade": "manual" },
+        { "id": "comments-feature/vendor-constraint-kept", "concept": "constraint-comment-survives", "text": "The reason for the backoff, the vendor's 10 rps limit, is visible to a reader of src/client.ts alone: a comment at the backoff naming the rate limit, or a constant whose name carries it (VENDOR_RATE_LIMIT_RPS, not BASE_DELAY_MS). The rule cuts valueless comments and prefers a clear name; it must not lose the constraint.", "class": "artifact", "grade": "manual" },
         { "id": "comments-feature/gate-was-run", "concept": "gate-invoked", "text": "The transcript shows comments.sh invoked against a base ref before the diff was handed back.", "class": "trace", "grade": "auto", "check": "trace_contains 'comments.sh' || trace_contains 'finish.sh'" }
       ]
     },

@@ -68,7 +68,7 @@ CONTRACT_ANSWERS = {
     "Catalogs": "none yet",
     "Build": "none — `package.json` has no build script",
     "Test": "`npm test`",
-    "Lint / typecheck": "`npm run lint`",
+    "Lint / typecheck": "none configured — `package.json` has no lint or typecheck script",
     "Generated files": "none",
     "Doc comments": "no surface requires them; the Comments rule applies with no exemption",
     "Project constraints": "no new runtime dependencies without asking",

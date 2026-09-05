@@ -805,7 +805,7 @@
         {
           "id": "comments-feature/vendor-constraint-kept",
           "concept": "constraint-comment-survives",
-          "text": "The diff carries at least one comment naming the vendor rate limit as the reason for the backoff. The rule cuts valueless comments; it must not cut this one.",
+          "text": "The reason for the backoff, the vendor's 10 rps limit, is visible to a reader of src/client.ts alone: a comment at the backoff naming the rate limit, or a constant whose name carries it (VENDOR_RATE_LIMIT_RPS, not BASE_DELAY_MS). The rule cuts valueless comments and prefers a clear name; it must not lose the constraint.",
           "class": "artifact",
           "grade": "manual"
         },

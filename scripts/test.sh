@@ -140,7 +140,7 @@ for preset in $PRESETS; do
     # The shipped set, stated here independently of node.sh's copy loop —
     # deriving it from the script under test would pass a dropped entry.
     missing=""
-    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh; do
       [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
@@ -1095,7 +1095,7 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   presets/software-development.md presets/academic-research.md \
   presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
-  scripts/links.sh scripts/comments.sh scripts/comments.conf \
+  scripts/links.sh scripts/comments.sh scripts/finish.sh scripts/comments.conf \
   scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
@@ -2103,7 +2103,7 @@ rc42gen=$?
 # dot-agent vocabulary in it would leak the treatment into the comparison,
 # and a command that does not exist would measure the fixture, not the file.
 ! grep -qiE '\.agent|entry point|routing|learned rule|session log' "$evgen/CLAUDE.md" \
-  && grep -q 'npm run lint' "$evgen/CLAUDE.md" \
+  && grep -q 'npm test' "$evgen/CLAUDE.md" \
   && pass "evals: the generic instructions file names real commands and no node scaffolding" \
   || fail "evals: the generic instructions file names real commands and no node scaffolding"
 

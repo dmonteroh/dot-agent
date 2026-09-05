@@ -160,8 +160,14 @@ def propose(aid, o):
         cl = added_comment_lines(d)
         hit = [c for c in cl if re.search(r"rate.?limit|10 ?rps|10 requests|throttl|per second", c, re.I)]
         if hit:
-            return "PASS", " | ".join(hit)[:260]
-        return "FAIL", "added comments: %s" % (" | ".join(cl)[:260] if cl else "none")
+            return "PASS", "comment: " + " | ".join(hit)[:240]
+        # A constant whose name carries the constraint satisfies the rule's
+        # own preference for a clear name over a comment.
+        src = "\n".join(l for l in d.splitlines() if l.startswith("+") and not l.startswith("+++"))
+        m = re.search(r"^\+.*\b([A-Za-z_]*(?:RATE_LIMIT|_RPS\b|RPS_|PER_SECOND|RateLimit|Rps\b)[A-Za-z_]*)\s*=", src, re.M)
+        if m:
+            return "PASS", "named constant: " + m.group(0).strip()[:200]
+        return "FAIL", "no rate-limit comment or named constant; added comments: %s" % (" | ".join(cl)[:220] if cl else "none")
 
     if suffix == "landed-in-node":
         contract = ""
