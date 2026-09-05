@@ -1958,7 +1958,7 @@ status_flags "$ew" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-sized entr
 
 printf '\n%s\n' "$(words_n 900)" >>"$ew/CLAUDE.md"
 f41=$(status_flags "$ew")
-printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 800 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
+printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 500 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
 
 printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agent/scripts/status.conf"
 status_flags "$ew" | grep -q 'CLAUDE.md > ' && fail "status.conf: the entry-point threshold tunes per node" || pass "status.conf: the entry-point threshold tunes per node"
@@ -1982,16 +1982,16 @@ grep -qF "A new user message does not start a new session." "$tpl41f" || missing
 grep -qF "Do not open this file with a tool when its content is already present in your context." "$tpl41f" || missing41="$missing41 no-reopen-from-disk"
 grep -qF "compaction" "$tpl41f" || missing41="$missing41 compaction-rerun"
 grep -qF "Never restate it here" "$tpl41f" || missing41="$missing41 wiring-only"
-grep -qF "never \`HEAD\`" "$tpl41f" || missing41="$missing41 comment-gate-base"
+grep -qF "finish.sh" "$tpl41f" || missing41="$missing41 finish-call"
 [ -z "$missing41" ] && pass "template: the entry point carries its timing and boundary rules" || fail "template: the entry point carries its timing and boundary rules (missing:$missing41)"
 
 # A user turn is not a session boundary, and the gate saying so must precede
-# the numbered imperative: a literal reader that meets "Execute with tools, in
-# order:" first starts the list and never reaches its exception. This is
+# the numbered imperative: a literal reader that meets the first numbered step
+# before the gate starts the list and never reaches its exception. This is
 # structural prompt coverage. Whether a given model honors it is behavior, and
 # behavior is measured by the evals under evals/, not asserted here.
 gate41=$(grep -nF 'A new user message does not start a new session.' "$tpl41f" | cut -d: -f1)
-steps41=$(grep -nF 'Execute with tools, in order:' "$tpl41f" | cut -d: -f1)
+steps41=$(grep -nE '^1\. ' "$tpl41f" | head -n 1 | cut -d: -f1)
 [ -n "$gate41" ] && [ -n "$steps41" ] && [ "$gate41" -lt "$steps41" ] && pass "template: the per-conversation gate precedes the numbered steps" || fail "template: the per-conversation gate precedes the numbered steps (gate=$gate41 steps=$steps41)"
 
 # ---- 43. evals/ is the repo's, never a node's ----
@@ -2326,7 +2326,7 @@ for line in sys.stdin:
         open(".agent/scripts/status.sh", "w").write(payload)
         open(".agent/scripts/comments.sh", "w").write(payload)
         # ENTRYPOINT_MAX_WORDS=1 would spuriously flag CLAUDE.md under the
-        # tampered value (the trusted default, 800, does not); EXCLUDE_RE_EXTRA
+        # tampered value (the trusted default, 500, does not); EXCLUDE_RE_EXTRA
         # would hide the file above from comments.sh entirely if honored.
         open(".agent/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
         open(".agent/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")

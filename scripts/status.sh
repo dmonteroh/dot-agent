@@ -35,7 +35,7 @@ MEMORY_MAX_ENTRIES=100
 LEARNED_MAX_RULES=60
 LEARNED_MAX_WORDS=2400
 DOCS_MAX_WORDS=2000
-ENTRYPOINT_MAX_WORDS=800
+ENTRYPOINT_MAX_WORDS=500
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
@@ -198,13 +198,13 @@ if [[ "${#entrypoints[@]}" -gt 1 ]]; then
   done
 fi
 
-# GROOM: an entry point that grew past wiring. The template's body is ~350
-# words and a filled copy lands near 400, so the threshold is that with 2×
+# GROOM: an entry point that grew past wiring. The template's body is ~215
+# words and a filled copy lands near 250, so the threshold is that with 2×
 # grace — the same grace the log entry format gets. What crosses it is never
-# more load path: it is project
-# scope, constraints, or architecture restated from purpose.md and docs/,
-# where it is loaded two steps later anyway. Paid on every message by every
-# tool that keeps this file resident, and stale in one of the two copies.
+# more load path: it is project scope, constraints, or architecture restated
+# from purpose.md and docs/, which step 1 prints anyway. Paid on every
+# message by every tool that keeps this file resident, and stale in one of
+# the two copies.
 for ep in "${entrypoints[@]-}"; do
   [[ -n "$ep" ]] || continue
   if [[ "$(body_words "$ep")" -gt "$ENTRYPOINT_MAX_WORDS" ]]; then
