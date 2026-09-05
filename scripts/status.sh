@@ -14,7 +14,12 @@
 # Tunables: status.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/status.md in the dot-agent repo.
 #
-# Usage: status.sh [root]    # root defaults to . — checks <root>/.agent/
+# Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agent/
+#
+# --load appends the always-loaded set after the findings — learned rules,
+# contract, purpose, memory index, each under a marker naming its path — so
+# the entry point's bootstrap is one call instead of five. Every call costs
+# a re-read of the whole context; the text is the same either way.
 
 set -u
 
@@ -34,22 +39,31 @@ ENTRYPOINT_MAX_WORDS=800
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
-root="${1:-.}"
-case "$root" in
--h | --help)
-  cat <<'EOF'
-Usage: status.sh [root]
+root="."
+load=0
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help)
+    cat <<'EOF'
+Usage: status.sh [--load] [root]
 
 Prints the recent session-log entries, then one line per finding: GROOM: (a
 file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
 step is missing), INDEX: (a docs/ file and the routing table disagree), plus
 advisory TOOLS: and LOAD: lines. No finding prints on pass.
 
+--load then prints the always-loaded set — rules/learned.md, rules/contract.md,
+purpose.md, memory.md — each under a "==== <path> ====" marker, so the
+bootstrap is one call.
+
 root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
 root holding no .agent/ is a usage error and exits 1.
 EOF
-  exit 0 ;;
-esac
+    exit 0 ;;
+  --load) load=1 ;;
+  *) root="$arg" ;;
+  esac
+done
 
 agent="$root/.agent"
 # A root with no .agent/ is a usage error, not a node with three missing
@@ -415,6 +429,17 @@ if [[ "$load_total" -gt 0 ]]; then
   tailwords=0
   [[ -n "${recent:-}" ]] && tailwords=$(printf '%s' "$recent" | wc -w | tr -d '[:space:]')
   echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
+fi
+
+# --load: the always-loaded set, in the entry point's order, after the
+# findings. The marker names the path so nothing has to be re-opened to know
+# where a sentence came from.
+if [[ "$load" -eq 1 ]]; then
+  for f in "$learned" "$contract" "$purpose" "$memory"; do
+    [[ -s "$f" ]] || continue
+    printf '\n==== %s ====\n' "${f#"$root"/}"
+    cat "$f"
+  done
 fi
 
 exit 0

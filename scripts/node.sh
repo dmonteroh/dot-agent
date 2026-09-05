@@ -241,7 +241,7 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
       || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
@@ -418,7 +418,7 @@ EOF
   # overwritten. A missing starter conf is seeded, the one write that
   # cannot clobber node content.
   mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script"
     chmod +x "$agent/scripts/$script"
   done
