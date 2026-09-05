@@ -5,6 +5,13 @@
 # Full documentation: scripts/docs/docs.md in the dot-agent repo.
 #
 # Usage: docs.sh new --name <file> --read-when "…" [root]
+#        docs.sh rehook --name <file> --read-when "…" [root]
+#
+# rehook replaces an existing doc's "Read when:" hook in both places at
+# once — the doc's own header line and its architecture.md routing row —
+# which is the fix for a routed doc a session failed to reach: the hook
+# did not name the word the task used. Two hand edits drift; one command
+# does not.
 #
 # root defaults to . — ".md" is appended to <file> if missing. Writes
 # <root>/.agent/docs/<file> and appends a row to
@@ -16,9 +23,11 @@ set -u
 usage() {
   cat <<'EOF'
 Usage: docs.sh new --name <file> --read-when "…" [root]
+       docs.sh rehook --name <file> --read-when "…" [root]
 
-root defaults to . — writes <root>/.agent/docs/<file> and a routing row in
-<root>/.agent/docs/architecture.md.
+root defaults to . — new writes <root>/.agent/docs/<file> and a routing row
+in <root>/.agent/docs/architecture.md; rehook rewrites an existing doc's
+"Read when:" header and its routing row to the new text, both or neither.
 EOF
 }
 
@@ -229,6 +238,95 @@ EOF
   echo "docs.sh: could not append the routing entry to $arch — removed $doc, nothing was written" >&2
   rm -f "$doc"
   exit 1
+  ;;
+
+rehook)
+  name=""
+  readwhen=""
+  root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --name)
+      need_value "$@"
+      name="$2"; shift 2 ;;
+    --read-when)
+      need_value "$@"
+      readwhen="$2"; shift 2 ;;
+    -h | --help)
+      usage; exit 0 ;;
+    --*)
+      echo "docs.sh: unknown flag: $1" >&2; usage >&2; exit 1 ;;
+    *)
+      root="$1"; shift ;;
+    esac
+  done
+  if [ -z "$name" ] || [ -z "$readwhen" ]; then
+    echo "docs.sh: --name and --read-when are both required" >&2
+    usage >&2
+    exit 1
+  fi
+  nl='
+'
+  case "$readwhen" in
+  *"$nl"*)
+    echo "docs.sh: --read-when must be single-line" >&2
+    exit 1 ;;
+  *"|"*)
+    echo "docs.sh: --read-when must not contain | — it becomes a routing-table cell" >&2
+    exit 1 ;;
+  *"-->"*)
+    echo "docs.sh: --read-when must not contain --> — it would close the \"Read when:\" header comment early" >&2
+    exit 1 ;;
+  esac
+  case "$name" in
+  *.md) filename="$name" ;;
+  *) filename="$name.md" ;;
+  esac
+  case "$filename" in
+  /* | ../* | */../* | *"$nl"*)
+    echo "docs.sh: --name must be a path under .agent/docs/ (got '$name')" >&2
+    exit 1 ;;
+  esac
+  docs="$root/.agent/docs"
+  doc="$docs/$filename"
+  arch="$docs/architecture.md"
+  if [ ! -s "$doc" ]; then
+    echo "docs.sh: $doc does not exist — rehook edits an existing doc; use new to create one" >&2
+    exit 1
+  fi
+  if ! head -n 5 "$doc" | grep -qF "Read when:"; then
+    echo "docs.sh: $doc has no \"Read when:\" header in its first five lines — add one by hand, then rehook" >&2
+    exit 1
+  fi
+  if [ ! -s "$arch" ] || ! grep -qF "### \`$filename\`" "$arch"; then
+    echo "docs.sh: $arch has no entry for $filename — add the routing entry first" >&2
+    exit 1
+  fi
+  # Both files are rewritten to temporaries first and swapped in together:
+  # a hook changed in one place and not the other is the drift status.sh
+  # flags as INDEX, and the reason this is one command.
+  HOOK="$readwhen" awk '
+    NR <= 5 && !done && /<!-- Read when: .* -->$/ { print "<!-- Read when: " ENVIRON["HOOK"] " -->"; done = 1; next }
+    { print }
+  ' "$doc" >"$doc.rehook.tmp" || { rm -f "$doc.rehook.tmp"; exit 1; }
+  HOOK="$readwhen" FILE="$filename" awk '
+    $0 == "### `" ENVIRON["FILE"] "`" { inb = 1; print; next }
+    inb && index($0, "### ") == 1 { inb = 0 }
+    inb && /^- \*\*Read when:\*\* / { print "- **Read when:** " ENVIRON["HOOK"]; inb = 0; next }
+    { print }
+  ' "$arch" >"$arch.rehook.tmp" || { rm -f "$doc.rehook.tmp" "$arch.rehook.tmp"; exit 1; }
+  if ! grep -qF -- "- **Read when:** $readwhen" "$arch.rehook.tmp"; then
+    rm -f "$doc.rehook.tmp" "$arch.rehook.tmp"
+    echo "docs.sh: could not find a \"- **Read when:**\" line under the $filename entry in $arch — nothing was changed" >&2
+    exit 1
+  fi
+  mv "$doc.rehook.tmp" "$doc" && mv "$arch.rehook.tmp" "$arch" || {
+    rm -f "$doc.rehook.tmp" "$arch.rehook.tmp"
+    echo "docs.sh: rehook failed mid-swap — check $doc and $arch by hand" >&2
+    exit 1
+  }
+  echo "docs.sh: rehooked docs/$filename — header and routing row now read: $readwhen"
+  exit 0
   ;;
 
 "")
