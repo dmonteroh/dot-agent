@@ -82,7 +82,7 @@ Zero regressions is the bar, not a rising aggregate pass rate. Check `rollup.jso
 
 ## When something fails and the cause isn't obvious
 
-Run `agent-architecture-audit` rather than editing prose by hand. It triages layer by layer — standing instructions, memory admission, routing, tooling, harness — and orders fixes so enforcement moves into code before any prompt is reworded.
+Triage layer by layer rather than editing prose by hand: standing instructions, memory admission, routing, tooling, harness. Order the fixes so enforcement moves into code before any prompt is reworded.
 
 ## What this does not tell you
 

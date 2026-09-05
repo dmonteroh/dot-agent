@@ -29,7 +29,7 @@
     "alternate_variable": {
       "variable": "agent",
       "definition": "Corpus held at the treatment revision; the arms are two agents against the identical task set. Baseline arm named in run-config.json. Required for any eval whose reported failure was agent-specific, where a corpus arm on the agent that never had the failure measures nothing.",
-      "procedure": "cross-vendor-delegation governs the foreign-harness arm: content-not-path handoff, injection-delimited payload, bounded run, fail-closed verdict."
+      "procedure": "The foreign-harness arm: content-not-path handoff, injection-delimited payload, bounded run, fail-closed verdict."
     }
   },
   "weighting": "per-assertion",

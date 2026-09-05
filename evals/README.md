@@ -12,28 +12,52 @@
 
 `scripts/test.sh` checks the corpus as an artifact: the text is present, the scripts behave, the shared blocks match. Every one of those checks passes on a corpus that no agent obeys. This directory covers the other half — whether a session under this corpus behaves differently from a session without it — and it is the only place in the repo where the answer comes from running an agent rather than from reading one.
 
-It is deliberately **not** in CI. `.github/workflows/ci.yml` runs `test.sh` and `shellcheck`, both deterministic and free. An eval run costs model tokens and returns a distribution rather than a bit. It is an operator ceremony, run when the corpus changes in a way that is supposed to change behavior — and the run is worth its cost only when something is genuinely in doubt.
+What the runs so far found is summarised in [v6.2-evals-september-2026.md](v6.2-evals-september-2026.md): what helped, what made things worse, and how each claim was confirmed.
 
-**No provider API, SDK, or API key is used anywhere in this directory.** `run.sh` drives the `claude` and `codex` CLIs directly, through whatever session you already have logged in on this machine. `--list-arms` and `--probe-agent` only ever call those same CLIs — never a provider endpoint.
+## In plain terms
 
-The one part that does ride CI is static: `test.sh` validates `spec.json`'s shape, builds fixtures, drives `grade.py` against hand-written artifacts to pin its check language, and asserts `run.sh` refuses an unconfigured agent. That keeps the eval set and its tooling from rotting between runs without ever invoking a model.
+An eval is a small, realistic situation and a list of things a good session does in it. The bench builds a tiny project with a fresh `.agent/` node inside it, plants one trap (a doc the routing hook does not name, a memory fact due for an update, a file carrying an instruction aimed at the agent, a test that was already red), hands a real agent one prompt in that project, and records everything the session leaves behind: the diff, the `.agent/` diff, the reply, and the sequence of tool calls. Then it grades that record against the list.
+
+The list is the point. Each item is a checkable claim — "one session-log entry was appended", "no memory file was written", "the catalog was read before the first edit", "the reply names the source that already states this" — and most of them are settled by a script, not by a person. The twelve that need judgement are graded from the record by someone who cannot see which corpus produced it.
+
+A single score means nothing on its own, because most of what any session does well it would have done with no corpus at all. So every eval runs at least twice with one thing varied: the corpus revision, or the agent. The result is the difference between the arms, assertion by assertion, and the report says which assertions moved, which regressed, and which stayed the same in both arms. The last bucket is usually the largest, and that is expected.
+
+Two prompt sets exist. `spec.json` is the canonical set: twenty evals, sixty-one assertions, frozen. `heldout.json` is the same twenty situations with every prompt reworded, written after the corpus changes it judges were frozen. A corpus that passes the first and fails the second was tuned to the wording, not to the rule.
+
+## Keeping it honest
+
+Every one of these exists because a run without it produced a wrong conclusion at least once. The report that found each one is in the summary above.
+
+| Bias | What the bench does about it |
+| --- | --- |
+| **The corpus was written from the evals' failing transcripts, so it may have learned the test** | A held-out set with reworded prompts (`heldout.json`, selected with `EVALS_SPEC`). A contamination audit (`contamination.py`) that measures shared phrases and, with `--judge`, asks a model whether any corpus passage describes the same situation as an eval prompt whatever the vocabulary. One variant scored best on the canonical set and turned out to retell 11 of the 19 scenarios as worked examples; it was the only arm to score below the base on held-out. |
+| **A score can lean on rows that only the mechanism can pass** | Every assertion is tagged in `assertion-kinds.json` as *behavior* (an outcome any instruction set could produce), *conformance* (a format, a script, a flag, a load order), or *information* (the answer exists only inside `.agent/`). Reports show all three strata, and a harness-free arm is judged on behavior rows only. |
+| **One run per cell hides the noise** | The same corpus moved by ±2 assertions across four identical runs. Repeats are a recorded budget (`REPEATS` in `agents.conf`), and `pooled.py` judges a candidate against every prior run of the baseline, bucketing each assertion by pass rate rather than by one bit: a "unique failure" needs the candidate at or below half and the baseline at or above three quarters. |
+| **The grader could know the arm** | Run ids are hashes; the arm mapping lives in `arm-map.json`, which no grader opens, and `rollup.py` voids a pass if an arm token reaches any grading record. `triage.py` proposes manual verdicts from the record alone and never reads the mapping. Blindness is nominal for a harness-versus-none comparison — a transcript that runs `status.sh` reveals its arm — and is stated as such. |
+| **Manual grading drifts between runs** | `triage.py` applies one fixed rule per manual assertion and quotes the evidence; it was calibrated against the previous human grades and agreed everywhere except one shape the human had scored both ways. The rule now applied is written down. |
+| **The wrong cost is measured** | Cost was first compared in always-loaded words. USD per tool call turned out to be flat across every corpus size, and calls varied fourfold, so reports carry tool calls, USD, and seconds per eval, and the corpus change that shipped cut calls. |
+| **An assertion measures the prompt, not the rule** | Every arm passed the vendor-comment row on the canonical wording and failed it on the paraphrase. That row was rewritten to accept a named constant, and any row that behaves that way is reported as a wording probe, not a result. |
+| **The fixture measures itself** | A fixture guardrail named a linter the fixture did not have, and every session in every arm spent steps discovering it. Premises a prompt makes about the fixture are checked at build time; the fixture no longer names tools it lacks. |
+| **The result depends on one model** | A cheap cross-model check on a second model (Haiku 4.5, the seven-eval subset) is run before a shape is adopted; direction has to hold. |
+
+What the bench does not do: it does not vary the scenarios (a paraphrase is not a new situation; that needs a new fixture), it does not run on a real repository (the fixture is ten lines of TypeScript), and its manual grades are made by the same lineage that writes the corpus. Those limits are stated in every report.
 
 ## The method
 
-Paired control, from the `skill-benchmark-harness` skill. Each eval prompt runs **twice** under a single arm variable, and the result is the delta between the arms. A treatment-arm pass rate alone is not a result: without the control there is no way to separate what the corpus contributed from what the model was doing anyway.
+Paired control. Each eval prompt runs under a single arm variable, and the result is the delta between the arms. A treatment-arm pass rate alone is not a result: without the control there is no way to separate what the corpus contributed from what the model was doing anyway.
 
 | Arm variable | Treatment | Control | Answers |
 | --- | --- | --- | --- |
-| `corpus` (default) | node bootstrapped from the revision under test | node bootstrapped from `2f779b7`, the V6.2 pre-release run in the field | did this change to the corpus change behavior? |
+| `corpus` (default) | node bootstrapped from the revision under test | node bootstrapped from a pinned baseline revision | did this change to the corpus change behavior? |
 | `agent` | the candidate agent | the baseline agent, named in `run-config.json` | does this corpus work on that harness too? |
 
 Vary one, never both. A delta from two moving variables is attributable to neither.
 
-The `corpus` control is precise on purpose: `2f779b7` is the exact tree the operator was running when they reported the failures these evals encode. A regression against it is a regression against the field report.
+Two shapes of control are in use. `spec.json` names the paired control, `2f779b7`, the tree the operator was running in the field when the failures these evals encode were reported; `run.sh` and `rollup.py` implement that two-arm shape inside one workspace. Once a baseline corpus has run several times, the better control is all of those runs pooled: `pooled.py` takes any number of baseline workspaces and any number of candidate workspaces and joins them on assertion id. Round two ran each candidate in a single-arm workspace against four pooled baseline runs, then reran the adopted corpus at three repeats on both prompt sets so the next round's control is contemporaneous. Those two workspaces (`base3-canon`, `base3-heldout`) are the control to pool against next.
 
 ## The eval set
 
-`spec.json` is frozen data, not prose — hash it before the first run and after the last. Each entry carries an id, the phase whose contract it tests, the verbatim prompt, the fixture it needs, the fixed artifact set both arms must emit, and its assertions.
+`spec.json` is frozen data, not prose — hash it before the first run and after the last. Each entry carries an id, the phase whose contract it tests, the verbatim prompt, the fixture it needs, the fixed artifact set both arms must emit, its premises about the fixture (enforced at build time), and its assertions. `heldout.json` carries the same entries with `prompt` rewritten and the original kept as `prompt_canonical`.
 
 The set is organized by the **trust-contract phase** the operating model already names, not by the bug that prompted each eval. That ordering is deliberate: a set organized by bug report drifts toward whatever failed most recently, and the first version of this file did exactly that — four evals on the comment rule and none at all on write-back, which is the harness's central claim. `test.sh` now asserts every phase in that table carries at least one eval, so the set cannot narrow back silently.
 
@@ -50,34 +74,40 @@ The set is organized by the **trust-contract phase** the operating model already
 
 Two carry a note on why they exist at all. `routing-catalog-first` tests the failure the operating model says "passes tests, passes lint, and survives review, so nothing else in the model catches it" — which makes it the eval with the least redundant coverage anywhere in the set. `security-origin-gate` tests the corpus's only security claim, which is cooperative by design; an untested cooperative control is an assumption wearing a control's clothes.
 
-`bootstrap-once` is the one eval that must run with the **agent** as the variable. Its failure was agent-specific — reported on `gpt-5.6-*`, never observed on Claude Code — so a corpus arm on the agent that never had it measures nothing. Run it against both harnesses with the corpus held at the treatment revision, and use `cross-vendor-delegation` for the foreign arm: content-not-path handoff, an injection-delimited payload, a bounded run, and a fail-closed verdict gate.
+`bootstrap-once` is the one eval that must run with the **agent** as the variable. Its failure was agent-specific — reported on `gpt-5.6-*`, never observed on Claude Code — so a corpus arm on the agent that never had it measures nothing. Run it against both harnesses with the corpus held at the treatment revision. For the foreign arm, hand over content rather than paths, delimit the payload against injection, bound the run, and fail closed when no verdict comes back.
 
 ## Fixtures
 
-Nine, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Eight arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. The ninth, `ts-service-flagged`, exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear.
+Nine, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Eight arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. The ninth, `ts-service-flagged`, exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token.
+
+Two modifier flags build harness-free control arms on the same fixtures: `--no-harness` moves the node aside and ships no entry point; `--generic-claude` replaces it with an ordinary hand-written instructions file. Both are restricted to the evals whose assertions never touch the `.agent/` tree, and two of those seven measure information availability rather than behavior, because their answer only exists inside `.agent/docs/`.
 
 ## Assertions
 
-Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable.
+Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Eleven of the sixty-one are trace assertions.
 
-Each assertion carries a stable `id` (joins the two arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind.
+Each assertion carries a stable `id` (joins the arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind. A third file, `assertion-kinds.json`, tags each id as behavior, conformance, or information; it is kept beside the spec rather than inside it so the frozen spec stays frozen.
 
-The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. `links.sh` settles reachability after a restructure. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once.
+The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once. The grading copies of `status.sh` and `comments.sh` are snapshotted from this repository, never taken from the node under test, so a corpus revision cannot grade itself.
 
-That leaves manual grading for what genuinely needs judgment: whether a constraint comment survived the rule that cuts valueless ones, whether a failure was honestly classified, whether a groom pass changed shape without dropping content. Those are graded blind, and there are few enough of them to grade carefully.
+That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Twelve of the sixty-one are manual.
 
-## What is wired, and what is not
+## What is wired
 
 | Piece | State |
 | --- | --- |
-| `spec.json` — 20 evals, 58 assertions | complete |
-| `fixtures.sh` — 9 fixtures at a pinned corpus revision | complete |
-| `fixture_seed.py` — the contract and routing-table edits a fixture needs after bootstrap | complete |
-| `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades | complete |
+| `spec.json` — 20 evals, 61 assertions; `heldout.json` — the same, reworded | complete |
+| `fixtures.sh` — 9 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
+| `fixture_seed.py` — the contract and routing-table edits a fixture needs, and the premise check | complete |
+| `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades; `EVALS_SPEC` selects the prompt set | complete |
 | `grade.py` — executes the check language, writes evidence per assertion | complete |
-| `rollup.py` — joins arms, buckets, reports the delta | complete |
+| `rollup.py` — joins one workspace's two arms, buckets, reports the delta | complete |
+| `pooled.py` — joins any baseline runs against any candidate runs; pass rates per kind; calls, USD, seconds per eval | complete |
+| `triage.py` — evidence-backed proposals for the manual assertions, never opening the arm map | complete |
+| `contamination.py` — lexical and scenario-shape leakage from the eval set into a corpus revision | complete |
+| `assertion-kinds.json` — behavior / conformance / information per assertion | complete |
 
-Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters drive the operator's own logged-in CLI session, the same one you already use interactively.
+Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters, and the contamination judge, drive the operator's own logged-in CLI session, the same one you already use interactively.
 
 Both adapters require subscription-backed login, never an API key: Claude needs a claude.ai account (`~/.claude/.credentials.json`, or `CLAUDE_CONFIG_DIR` if set, carrying an active `subscriptionType`) and Codex needs a ChatGPT account (`auth_mode` `chatgpt` in `~/.codex/auth.json`, or `CODEX_HOME` if set). A run refuses to start rather than fall back to a provider key, and `run.sh` strips every provider-credential and alternate-provider environment variable from its own process before either adapter's subprocess ever launches.
 
@@ -100,7 +130,7 @@ These ship uncommented with the reference model and effort, because nothing abou
 
 For Codex, the first turn starts with `-C <fixture-root>`, so Codex loads that fixture's `AGENTS.md` as the project instruction source. Later turns use `codex exec resume` on the same thread: they retain both that thread and the project instructions established from the initial `-C` root. The adapter ignores user configuration and gives Codex a fresh, mode-`0700` temporary home containing only the copied login state; that home is outside the retained run directory and is removed after the call or an interrupt.
 
-Trace format is fixed, not configurable: `run.sh` normalizes each adapter's own event shape into the shared trace contract itself, for both `claude` and `codex`. That is what makes **11 of the 58 assertions** — trace assertions — measurable at all: was the catalog read *before* the build, did the bootstrap run once, was the gate invoked against a real base ref.
+Trace format is fixed, not configurable: `run.sh` normalizes each adapter's own event shape into the shared trace contract itself, for both `claude` and `codex`.
 
 ```
 evals/run.sh --list-arms                 # resolved binaries and versions, no model call
@@ -108,53 +138,37 @@ evals/run.sh --probe-agent claude        # one live call: is claude ready and lo
 evals/run.sh --probe-agent codex         # same, for codex
 ```
 
-`--probe-agent` drives the resolved CLI once with a trivial single-turn prompt and reports the binary, its version, and whether the call succeeded — including an authentication failure, surfaced from that same invocation. Like every other call this script makes, it goes through your logged-in CLI session and never touches a provider API directly.
+`--probe-agent` drives the resolved CLI once with a trivial single-turn prompt and reports the binary, its version, and whether the call succeeded — including an authentication failure, surfaced from that same invocation.
 
-## Running one eval, both arms
+## Running a round
 
 ```
-W=~/eval-runs/v6.2
+W=~/eval-runs/round-x
 
 # readiness, once, before spending anything on a real run
 evals/run.sh --list-arms
 evals/run.sh --probe-agent claude
-evals/run.sh --probe-agent codex
 
 # dry run — every turn, the resolved adapter, nothing driven
-evals/run.sh --eval bootstrap-once --arm merged --treatment-arm merged \
-  --agent claude --corpus-ref feature/v6.2 --workspace "$W" --dry-run
+evals/run.sh --eval bootstrap-once --arm cand --treatment-arm cand \
+  --agent claude --corpus-ref <sha> --workspace "$W" --dry-run
 
-# a bounded live smoke run — one iteration, one eval, before committing to REPEATS
-evals/run.sh --eval scope-question-no-edit --arm merged --treatment-arm merged \
-  --agent claude --corpus-ref feature/v6.2 --workspace "$W" --iteration 1
-
-# treatment: the corpus under test. --treatment-arm names it once; every
-# later run against this workspace is checked against what it recorded.
-evals/run.sh --eval routing-catalog-first --arm merged --treatment-arm merged \
-  --agent claude --corpus-ref feature/v6.2 --workspace "$W"
-
-# control: the corpus the field ran
-evals/run.sh --eval routing-catalog-first --arm prerelease \
-  --agent claude --corpus-ref 2f779b7 --workspace "$W"
-
-evals/rollup.py "$W/iteration-1"
+# one eval, one arm, live
+evals/run.sh --eval routing-catalog-first --arm cand --treatment-arm cand \
+  --agent claude --corpus-ref <sha> --workspace "$W"
 ```
 
-Each invocation builds its own fixture from the corpus revision named, drives the agent through every turn of the eval's prompt in one session, captures the artifacts, and grades the auto assertions. `--iteration <n>` selects which single `iteration-<n>` directory this invocation targets (default `1`); it never selects a repeat. Within that one iteration, `run.sh` loops `REPEATS` times itself — each repeat is a cell, with its own fixture and run id, under `iteration-<n>/eval-<id>/`. `--dry-run` does everything except drive the agent, always runs exactly one repeat, and prints every turn verbatim — the way to run an eval by hand in a session you are watching.
+Each invocation builds its own fixture from the corpus revision named, drives the agent through every turn of the eval's prompt in one session, captures the artifacts, and grades the auto assertions. `--iteration <n>` selects which single `iteration-<n>` directory this invocation targets (default `1`); it never selects a repeat. Within that one iteration, `run.sh` loops `REPEATS` times itself — each repeat is a cell, with its own fixture and run id, under `iteration-<n>/eval-<id>/`. `--dry-run` does everything except drive the agent, always runs exactly one repeat, and prints every turn verbatim.
 
-`--treatment-arm` names the treatment arm once per workspace; it is required on the first run into a fresh `iteration-<n>` and recorded in `run-config.json`, never guessed from which arm happened to run first. Every later run into that same iteration is checked against what got recorded — treatment arm, arm variable, repeat budget, each arm's agent and corpus ref, and each participating agent's resolved binary identity, CLI version, model, and effort. Binary identity includes the resolved path, canonical path, and SHA-256 digest; the complete first line of `--version` is retained beside the parsed version. A corpus-variable comparison also holds the agent and model constant; an agent-variable comparison holds the corpus ref constant. `run.sh` refuses a drift before touching a fixture.
+`--treatment-arm` names the treatment arm once per workspace; it is required on the first run into a fresh `iteration-<n>` and recorded in `run-config.json`, never guessed from which arm happened to run first. Every later run into that same iteration is checked against what got recorded — treatment arm, arm variable, repeat budget, each arm's agent and corpus ref, and each participating agent's resolved binary identity, CLI version, model, and effort. `run.sh` refuses a drift before touching a fixture.
 
-Nothing about the arm reaches a path or a grading record. The run id is a hash; the mapping lives in `arm-map.json` and the comparison design in `run-config.json`, neither of which the grader opens, and `rollup.py` greps every record for arm tokens and voids the pass if it finds one.
+Three choices to make before the first live call, each recorded as a chosen budget:
 
-### The next run
+- **Repeats.** `REPEATS` in `agents.conf`; to change it for one round, copy the conf, edit the line, and export `EVALS_AGENTS_CONF` pointing at the copy for every invocation. One repeat cannot show a split; two can show a regression candidate against a pooled control; three is the smallest count that can show a split on its own.
+- **Prompt set.** Default `spec.json`; `EVALS_SPEC=evals/heldout.json` selects the held-out set. Run each set into its own workspace.
+- **Control.** A two-arm workspace (name a control arm and its `--corpus-ref`, then `rollup.py`), or a single-arm workspace judged with `pooled.py` against the pooled baseline. Prefer pooled once the baseline has run more than once; it is cheaper and better powered.
 
-Separate two-arm iterations, one workspace each, never one three-arm iteration — `rollup.py` hard-refuses anything but exactly two arms. The harness-free arms are modifier flags on the existing fixtures (`--no-harness`, `--generic-claude`), not entries in `FIXTURES`.
-
-**Iteration A, first, no code changes:** `main` vs `feature/v6.2` tip, `arm_variable=corpus`. The first invocation into the fresh workspace must *be* the treatment: `--arm v62 --treatment-arm v62 --corpus-ref <v6.2 tip sha>`, then `--arm main --corpus-ref <main's sha at run start>`.
-
-**Iterations B and C, each in its own workspace:** what the always-loaded corpus costs against having nothing at all (B, `--no-harness`) and against an ordinary hand-written `CLAUDE.md` (C, `--generic-claude`). Both pivot on the same arm, `dot-agent-node`, holding the corpus ref equal across both arms so `harness` is the single differing key in `run-config.json`; the pivot is the treatment, and is named `dot-agent-node` rather than `main` because `rollup.py` tests each arm name as a substring of every grading record and "main" hides inside "remains", "domain", "maintain".
-
-Both are restricted to the evals whose assertions never touch `node-diff.patch`, `node-tree.txt`, or `status-after.txt`: `routing-scales`, `routing-finds-doc`, `verify-no-false-done`, `scope-question-no-edit`, `comments-feature`, `comments-docstrings`, `routing-catalog-first`. A node-dependent eval in a harness-free arm measures the node's absence, not behavior, so it stays out of those rollups. Two of the seven, `routing-finds-doc` and `routing-catalog-first`, depend on content that lives inside `.agent/docs/` in the pivot arm; in the harness-free arms that content does not exist at all, so those two measure information availability rather than routing behavior and are reported as their own group.
+Loop every eval id in the spec against the arm; a shell loop of the two `run.sh` calls above is all `run-variant.sh` in a workspace directory ever was. Runs into different workspaces may proceed in parallel; never switch branches in the checkout while a run is active, because `run.sh` reads this directory from the checkout, not from the corpus ref. Before believing any delta, run `evals/contamination.py --judge <ref>` on the candidate revision: one CLI call.
 
 ## What a run leaves behind
 
@@ -170,40 +184,34 @@ Both are restricted to the evals whose assertions never touch `node-diff.patch`,
       fixture/               # the tree the session actually worked in
       run-meta.json          # model, effort, corpus ref, fixture base, resolved
                               # binary path/digest and version output, turn count,
-                              # timings, exit status
+                              # timings, token usage and USD, exit status
       outputs/
         diff.patch           # project tree, fixture base -> end
         node-diff.patch      # .agent/ tree, fixture base -> end
         node-tree.txt        # every .agent/ file with content, for absence checks
-        session-transcript.txt   # `## Turn N` sections containing final text;
-                                 # multiline text is preserved and an empty final
-                                 # response is recorded as [empty final response]
+        session-transcript.txt   # `## Turn N` sections containing final text
         trace.jsonl          # one {"seq","event","tool","action","text"} object per
                               # tool call, action in read|write|execute|search|other
         status-after.txt     # status.sh over the node afterwards
         gate.txt             # comments.sh over the diff
       grading.json           # one record per assertion, with evidence — absent
                               # entirely if the agent process failed or timed out
-  rollup.json                # pass rate, delta, buckets, concentration, and
-                              # per-arm duration stats — recomputed from the
-                              # records above, never transcribed
+  rollup.json                # two-arm rollup, recomputed from the records above
 ```
 
-`rollup.py` cross-validates `run-config.json` against `arm-map.json` before it joins anything: `treatment_arm` must name one of the two arms found there, and `repeats_per_cell` must be a positive integer that every assertion's per-arm repeat count matches exactly. A cell with too few or too many repeats fails the rollup rather than averaging over a shortfall.
+`grade.py` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status; its raw stream is kept for diagnosis and no `grading.json` is retained.
 
-Where a run's `run-meta.json` records a duration (`duration_s`, `duration_seconds`, or `duration` — the first present), `rollup.py` keeps the two arms' timings separate and reports each arm's mean, population standard deviation, and sample size in `rollup.json`'s `duration_s` block and in the printed table. Arms are never pooled: a cost difference that shows up in one arm and not the other is exactly what pooling would hide. Coverage is all-or-nothing: once any run in the iteration records a duration, every run in both arms must, or the rollup fails closed naming the run that is missing it — a mean built from a subset of runs would understate one arm's cost without saying so. `rollup.json` also always carries a `cost` block (`input_tokens`, `output_tokens`, `usd`), each `"unavailable"` today — token and dollar cost are not yet captured per run, and the placeholder says so in the report itself rather than omitting the field silently.
-
-`grade.py` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status, and no `outputs/` capture or `grading.json` is retained for it at all.
+Note one thing the transcript cannot show: only each turn's final text is captured. A session that answers mid-turn and closes with a wrap-up line has answered the user and not the transcript; `triage.py` reads the raw stream for those.
 
 ## Filling in the manual assertions
 
-10 of 58 need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
+Twelve of sixty-one need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
 
-Grade them from `outputs/` without opening `arm-map.json`. Each needs a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. "Assertion not met" is not evidence and cannot be re-derived.
+Run `evals/triage.py <iteration-dir>`: it prints, per ungraded record, a proposed verdict and the quotation that produced it, applying one fixed rule per assertion. Read the quotations. `--apply` writes the PASS and FAIL proposals with their evidence; UNSURE ones, and any proposal you disagree with, are filled by hand with a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. Never open `arm-map.json` while grading.
 
 ## Reading a result
 
-Every assertion lands in exactly one bucket:
+`rollup.py` (two arms, one workspace) lands every assertion in one bucket:
 
 | Bucket | Condition | Action |
 | --- | --- | --- |
@@ -212,33 +220,32 @@ Every assertion lands in exactly one bucket:
 | Regression | control passed, treatment failed | keep, and open a fix |
 | Unstable | repeats disagree within an arm | report the split, no verdict |
 
-Expect a first checklist to lose a large share to non-discriminating. That bucket is measuring base-model competence, not the corpus, and left in place it inflates every later score.
+`pooled.py` (any baseline runs against any candidate runs) buckets by pass rate instead: `unique-fail` (candidate ≤ 0.5, baseline ≥ 0.75), `unique-win` (the reverse), `both-fail`, `noise` (the two differ inside the flake band), `stable-pass`. It reports the overall rate and the behavior, conformance, and information strata, and per eval the mean tool calls (with the baseline's spread), USD, and seconds. Read the strata before the headline: a lift carried by conformance and information rows is adoption of the mechanism, not a change in behavior.
 
-Report the delta's **concentration** — the share carried by the largest single assertion, and by the top two. A delta that is one assertion in disguise is a different finding from a broad lift, and the aggregate hides which.
-
-Every regression gets its own named section with both arms' evidence quoted and a proposed next action. A regression named only inside a count is not reported.
+Expect a first checklist to lose a large share to non-discriminating. That bucket is measuring base-model competence, not the corpus, and left in place it inflates every later score. Report the delta's **concentration** — the share carried by the largest single assertion — and give every regression its own named section with both arms' evidence quoted. A regression named only inside a count is not reported.
 
 ## When an eval fails and the cause is unclear
 
-Run `agent-architecture-audit` rather than editing prose. It triages layer by layer — standing instructions, memory admission, routing, tooling, harness — records each finding against exactly one layer with a resolvable evidence reference, and orders the fixes so enforcement moves into code before any prompt is rewritten. That ordering is the house rule anyway: the corpus's own Self-learning gate says fix the source, and a script that catches a shape beats a sentence asking an agent to avoid it.
+Triage layer by layer rather than editing prose: standing instructions, memory admission, routing, tooling, harness. Record each finding against exactly one layer with a resolvable evidence reference, and order the fixes so enforcement moves into code before any prompt is rewritten. That ordering is the house rule, and the September runs bear it out: every fix that held was a script refusing a shape, and every fix that did not was a sentence.
 
 ## The other standing measurements
 
 Not paired evals — recurring passes with their own procedures.
 
-| Pass | Skill | Cadence | What it produces |
-| --- | --- | --- | --- |
-| Always-loaded cost | `context-budget` | after any change to the always-loaded set | per-component token prices, and removals ranked by tokens reclaimed. The `LOAD:` line is the in-node sample; this is the audit behind it |
-| Per-harness disposition | `agent-harness-portability` | when a tool is added to the wiring matrix, or a cell's date goes stale | a disposition per axis per target, source-token leakage findings, and a defined repair for each failure. The matrix's `verified`/`reported`/`unknown` cells are its output |
-| Corpus grooming | `skill-corpus-maintenance` | periodic, not per-change | keep/revise/retire per item, with evidence-bearing reasons and a dated record so the next run re-evaluates only what changed |
-| Foreign-harness arm | `cross-vendor-delegation` | whenever a non-Claude arm runs | the handoff payload and the adjudication gate for what comes back |
-
-Two skills on the operator's list have no job here, and saying so is cheaper than inventing one. `finetuning-method-selection` routes a training effort by the data shape in hand; nothing in this repo is trained. `tool-output-middleware` governs a layer that rewrites tool output before an agent sees it; this harness has no such layer — `status.sh` and `comments.sh` write to a session's context directly, and their output is the product.
+| Pass | Cadence | What it produces |
+| --- | --- | --- |
+| Always-loaded cost | after any change to the always-loaded set | per-component token prices, and removals ranked by tokens reclaimed. The `LOAD:` line is the in-node sample; this is the audit behind it. Read it with `pooled.py`'s call counts: calls, not words, moved cost in every run so far |
+| Per-harness disposition | when a tool is added to the wiring matrix, or a cell's date goes stale | a disposition per axis per target, source-token leakage findings, and a defined repair for each failure |
+| Corpus grooming | periodic, not per-change | keep/revise/retire per item, with evidence-bearing reasons and a dated record |
+| Foreign-harness arm | whenever a non-Claude arm runs | the handoff payload and the adjudication gate for what comes back |
+| Contamination audit (`contamination.py --judge`) | before any variant's delta is believed | shared phrases, and passages that describe an eval's situation in any vocabulary |
 
 ## Constraints on what a run may claim
 
-- **Sample size.** One run per cell yields no variance estimate. Record the repeat count and label it a chosen budget.
-- **Plans are not behavior.** Name the tier graded. An eval whose artifact is a proposal measures planning; only an executed diff measures behavior. Four of the six here grade executed work.
+- **Sample size.** One run per cell yields no variance estimate; four identical runs of one corpus moved by ±2 assertions. Record the repeat count and label it a chosen budget.
+- **Plans are not behavior.** Name the tier graded. An eval whose artifact is a proposal measures planning; only an executed diff measures behavior.
 - **Review surface.** Publish both arms' per-assertion evidence side by side, or the control and every rollup error stay hidden.
-- **Held-back prompts.** Iterating against a fixed eval set tunes the corpus to that set. Keep prompts no iteration has seen and run them before declaring an improvement.
+- **Held-out prompts.** Iterating against a fixed eval set tunes the corpus to that set. `heldout.json` is the held-out set; a paraphrase is still not a new scenario, and a new scenario needs a new fixture.
+- **Contamination.** A corpus revision that retells an eval's situation is graded on the held-out set only, and the judge's finding is reported with the delta.
+- **Wording-sensitive rows.** An assertion that passes in every arm on one wording and fails in every arm on another measures the prompt; report it as such and rewrite it.
 - **Stopping rule.** Fix it before the first run — a target, an iteration cap, or a cost ceiling — and label it a chosen budget.
