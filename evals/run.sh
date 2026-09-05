@@ -59,7 +59,11 @@ unset _provider_var
 
 selfdir=$(cd "$(dirname "$0")" && pwd)
 conf="${EVALS_AGENTS_CONF:-$selfdir/agents.conf}"
-spec="$selfdir/spec.json"
+# EVALS_SPEC names an alternate eval set — the held-out prompts in
+# heldout.json — carrying the same fixtures and assertion ids as spec.json.
+# The default stays spec.json; a held-out run is opt-in and recorded per run.
+spec="${EVALS_SPEC:-$selfdir/spec.json}"
+[ -f "$spec" ] || { echo "run.sh: EVALS_SPEC names no file: $spec" >&2; exit 2; }
 
 # Declared before --list-arms/--probe-agent can run, not just before the main
 # argument parser: agent_identity_check reads these globals from inside

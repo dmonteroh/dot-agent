@@ -355,7 +355,7 @@ esac
 # A premise a prompt asserts about the built tree ("the doc says X", "the
 # field is misspelled Y") is enforced here, at build time. A drifted premise
 # voids the run instead of quietly grading a fiction.
-"$selfdir/fixture_seed.py" check-premises "$selfdir/spec.json" "$fixture" "$dest" || exit 1
+"$selfdir/fixture_seed.py" check-premises "${EVALS_SPEC:-$selfdir/spec.json}" "$fixture" "$dest" || exit 1
 
 # The harness-cost arms. The node is moved to a sibling of the fixture rather
 # than deleted: the built arm stays inspectable, and a node the agent can
