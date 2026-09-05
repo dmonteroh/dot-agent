@@ -3,7 +3,7 @@
 Runs as the entry point's first step, on the load path rather than at the end of a session. It prints the recent session-log entries, then one line per finding. Grooming rides the load path because routine end-of-task checks breed fatigue and agent-claimed compliance can be phantom. This checks artifacts, not claims.
 
 ```
-Usage: status.sh [root]    # root defaults to . — checks <root>/.agent/
+Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agent/
 ```
 
 ## What it reports
@@ -37,6 +37,12 @@ Review triggers, not caps: nothing refuses a write for size. Every number is eit
 | `PROBE_TOOLS` | `rg fd jq gh python3 curl tree` | the tools a session is expected to have |
 
 `learned.md` is always-loaded and has no disclosure tier, so every word of it is paid on every session — which is why it carries both a rule count and a word trigger.
+
+## `--load`
+
+`status.sh --load` prints the always-loaded set after the findings, in the entry point's order — `rules/learned.md`, `rules/contract.md`, `purpose.md`, `memory.md` — each under a `==== <path> ====` marker naming it. The entry point's bootstrap is then one tool call instead of five, and the session reads the four files from that output rather than opening them again. The text is the same either way; only the call count changes, and a session's cost scales with its calls. The printed set must fit the harness's tool-result cap (about 30 KB on Claude Code, measured); a filled contract plus the three small files is under 20 KB, and the `LOAD:` line is the number to watch as a node grows.
+
+The memory `GROOM:` line names what a groom must carry over: every ticket id, constant, path, host, command, date, number with a unit, and backticked span the flagged fact holds, extracted by word shape. An undercount leaves a fact unlisted and an overcount lists a plain word; neither is a judgement about meaning. It turns "shape, never content" into a checklist the session can tick.
 
 The entry-shape check reads an entry as everything from its `- [` marker to the next one, so a hand-wrapped narrative counts whole. It exists because the format otherwise lives only in prose and in a writer any hand edit bypasses, and every oversized entry rides the printed tail into every session's context.
 

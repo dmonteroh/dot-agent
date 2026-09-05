@@ -332,6 +332,86 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "log.sh: missing session-log.md rejected" || fail "log.sh: missing session-log.md rejected"
 [ ! -e "$nolog/.agent/session-log.md" ] && pass "log.sh: missing session-log.md creates nothing" || fail "log.sh: missing session-log.md creates nothing"
 
+# ---- 8b. log.sh: file names and SHAs are refused, with the token named ----
+before8c=$(cat "$sessionlog")
+out8c=$("$logcopy" --tool claude --area testing --verify pass --summary "Added backoff to submitPayment in src/client.ts" "$logroot" 2>&1)
+rc=$?
+after8c=$(cat "$sessionlog")
+[ "$rc" -ne 0 ] && printf '%s' "$out8c" | grep -qF 'src/client.ts' && pass "log.sh: a summary naming a file is rejected and the token named" || fail "log.sh: a summary naming a file is rejected and the token named"
+[ "$before8c" = "$after8c" ] && pass "log.sh: a file-naming summary writes nothing" || fail "log.sh: a file-naming summary writes nothing"
+out8d=$("$logcopy" --tool claude --area testing --verify pass --summary "Backoff landed in commit 47feccc" "$logroot" 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] && printf '%s' "$out8d" | grep -qF '47feccc' && pass "log.sh: a summary naming a SHA is rejected and the token named" || fail "log.sh: a summary naming a SHA is rejected and the token named"
+"$logcopy" --tool claude --area testing --verify pass --summary "Added exponential backoff, three attempts, ticket PAY-318, version 6.2" "$logroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "log.sh: a ticket id and a version number are not read as a file or a SHA" || fail "log.sh: a ticket id and a version number are not read as a file or a SHA"
+
+# ---- 8c. status.sh --load prints the always-loaded set, in the entry point's order ----
+load8=$("$logroot/.agent/scripts/status.sh" --load "$logroot" 2>&1)
+order8=$(printf '%s\n' "$load8" | grep -n '^==== ' | cut -d: -f2 | tr '\n' ' ')
+[ "$order8" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
+  && pass "status.sh --load: the four files print under markers, learned, contract, purpose, memory" \
+  || fail "status.sh --load: the four files print under markers, learned, contract, purpose, memory ($order8)"
+printf '%s\n' "$load8" | grep -q '^## Kernel' && pass "status.sh --load: the contract body is in the output" || fail "status.sh --load: the contract body is in the output"
+plain8=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
+! printf '%s\n' "$plain8" | grep -q '^==== ' && pass "status.sh: without --load no file is printed" || fail "status.sh: without --load no file is printed"
+
+# ---- 8d. the memory GROOM: line names the tokens a groom must keep ----
+groomroot="$WORK/groom-tokens"
+mkdir -p "$groomroot"
+"$NODE" init --preset software-development --mode track-all "$groomroot" >/dev/null 2>&1
+finish_bootstrap "$groomroot"
+"$groomroot/.agent/scripts/memory.sh" new --slug vendor --title Vendor --hook "vendor calls" --fact "Vendor limit measured on 2026-07-02 for PAY-318 against sandbox.vendor.example:8443; repro with npm run test:integration -- --grep vendor and VENDOR_SANDBOX_KEY set." "$groomroot" >/dev/null 2>&1
+printf '\n%s\n' "$(words_n 320)" >>"$groomroot/.agent/memory/vendor.md"
+groom8=$("$groomroot/.agent/scripts/status.sh" "$groomroot" 2>&1 | grep '^GROOM: memory/vendor.md')
+for tok in PAY-318 sandbox.vendor.example:8443 "npm run test:integration -- --grep vendor" VENDOR_SANDBOX_KEY 2026-07-02; do
+  printf '%s' "$groom8" | grep -qF -- "$tok" || groom8_missing="$groom8_missing $tok"
+done
+[ -n "$groom8" ] && [ -z "${groom8_missing:-}" ] && pass "status.sh: the memory GROOM: line lists ticket, host, command, env var, and date" || fail "status.sh: the memory GROOM: line lists ticket, host, command, env var, and date (missing:${groom8_missing:-} line:${groom8:-none})"
+
+# ---- 8e. docs.sh rehook rewrites the hook in both places, or neither ----
+rehookroot="$WORK/rehook"
+mkdir -p "$rehookroot"
+"$NODE" init --preset software-development --mode track-all "$rehookroot" >/dev/null 2>&1
+finish_bootstrap "$rehookroot"
+"$rehookroot/.agent/scripts/docs.sh" new --name deploy --read-when "shipping a release" "$rehookroot" >/dev/null 2>&1
+"$rehookroot/.agent/scripts/docs.sh" rehook --name deploy --read-when "shipping a release, deploying to production" "$rehookroot" >/dev/null 2>&1
+rc=$?
+head -n 1 "$rehookroot/.agent/docs/deploy.md" | grep -qF -- '<!-- Read when: shipping a release, deploying to production -->' \
+  && grep -qF -- '- **Read when:** shipping a release, deploying to production' "$rehookroot/.agent/docs/architecture.md" \
+  && [ "$rc" -eq 0 ] && pass "docs.sh rehook: the doc header and the routing row carry the new hook" || fail "docs.sh rehook: the doc header and the routing row carry the new hook (rc=$rc)"
+! "$rehookroot/.agent/scripts/status.sh" "$rehookroot" 2>&1 | grep -q '^INDEX:' && pass "docs.sh rehook: status.sh sees no INDEX: drift afterwards" || fail "docs.sh rehook: status.sh sees no INDEX: drift afterwards"
+"$rehookroot/.agent/scripts/docs.sh" rehook --name missing --read-when "anything" "$rehookroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -ne 0 ] && pass "docs.sh rehook: a doc that does not exist is refused" || fail "docs.sh rehook: a doc that does not exist is refused"
+
+# ---- 8f. finish.sh: gate, status check, then the entry, written once on the clean run ----
+finroot="$WORK/finish"
+mkdir -p "$finroot/src"
+"$NODE" init --preset software-development --mode track-all "$finroot" >/dev/null 2>&1
+finish_bootstrap "$finroot"
+printf 'export const a = 1\n' >"$finroot/src/a.ts"
+git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+"$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" >/dev/null 2>&1
+rc=$?
+n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+[ "$rc" -eq 0 ] && [ "$n8f" -eq 1 ] && pass "finish.sh: on a clean tree the gate is skipped and the entry is written" || fail "finish.sh: on a clean tree the gate is skipped and the entry is written (rc=$rc entries=$n8f)"
+printf '// const old = fetch(url)\nexport const b = 2\n' >>"$finroot/src/a.ts"
+out8f=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" 2>&1)
+rc=$?
+n8f2=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+[ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 1 ] && pass "finish.sh: a BLOCK finding stops it before the log entry" || fail "finish.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
+printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$finroot/src/a.ts"
+"$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" >/dev/null 2>&1
+rc=$?
+n8f3=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+[ "$rc" -eq 0 ] && [ "$n8f3" -eq 2 ] && pass "finish.sh: on the clean run the entry is written once" || fail "finish.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
+i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agent/session-log.md"; i8f=$((i8f + 1)); done
+out8g=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added c" "$finroot" 2>&1)
+rc=$?
+n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+[ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q '^GROOM:' && [ "$n8f4" -eq 5 ] && pass "finish.sh: a standing flag stops it before the log entry" || fail "finish.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
+
 # ---- 9. memory.sh new ----
 memroot="$WORK/memory-tests"
 mkdir -p "$memroot"
@@ -1943,7 +2023,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | status.conf | log.conf | comments.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | finish.sh | status.conf | log.conf | comments.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
@@ -4238,7 +4318,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=553
+EXPECTED_CHECKS=568
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
