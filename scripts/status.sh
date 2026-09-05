@@ -35,7 +35,7 @@ MEMORY_MAX_ENTRIES=100
 LEARNED_MAX_RULES=60
 LEARNED_MAX_WORDS=2400
 DOCS_MAX_WORDS=2000
-ENTRYPOINT_MAX_WORDS=500
+ENTRYPOINT_MAX_WORDS=550
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
@@ -198,8 +198,8 @@ if [[ "${#entrypoints[@]}" -gt 1 ]]; then
   done
 fi
 
-# GROOM: an entry point that grew past wiring. The template's body is ~215
-# words and a filled copy lands near 250, so the threshold is that with 2×
+# GROOM: an entry point that grew past wiring. The template's body is ~265
+# words and a filled copy lands near 275, so the threshold is that with 2×
 # grace — the same grace the log entry format gets. What crosses it is never
 # more load path: it is project scope, constraints, or architecture restated
 # from purpose.md and docs/, which step 1 prints anyway. Paid on every

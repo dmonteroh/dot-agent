@@ -32,7 +32,7 @@ Review triggers, not caps: nothing refuses a write for size. Every number is eit
 | `LEARNED_MAX_RULES` | 60 | chosen default |
 | `LEARNED_MAX_WORDS` | 2400 | the 60-rule ceiling × the file's own ~40-word entry target, so it fires first when entries bloat past that target |
 | `DOCS_MAX_WORDS` | 2000 | chosen default |
-| `ENTRYPOINT_MAX_WORDS` | 500 | the canonical template's ~215-word body, ~250 once filled, with 2× grace |
+| `ENTRYPOINT_MAX_WORDS` | 550 | the canonical template's ~265-word body, ~275 once filled, with 2× grace |
 | `TAIL_LINES` | 25 | chosen default |
 | `PROBE_TOOLS` | `rg fd jq gh python3 curl tree` | the tools a session is expected to have |
 

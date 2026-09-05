@@ -3,7 +3,7 @@
 
 <One line: stack, key dirs, package managers.> Everything else lives in `.agent/` and loads below. Never restate it here.
 
-**One conversation is one session: the steps below run once in it**, with tools, before any reply — a one-line request included. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context.
+**One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Do not answer, plan, or edit before the steps have run; a one-line request — remember this, summarise that, handle that — is a task like any other.
 
 1. Run `bash .agent/scripts/status.sh --load` — recent log entries, GROOM:/REPAIR:/INDEX: flags (handle them this session; GROOM: may go to one subagent writing only the flagged files — wait, then re-run), TOOLS: notes (advisory), then `rules/learned.md` and `rules/contract.md` (binding), `purpose.md`, `memory.md`. Read them from that output; never open them again.
 2. Open the `memory/` fact files whose hooks match the task.

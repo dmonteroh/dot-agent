@@ -551,7 +551,7 @@ Thresholds are defaults at the top of the script:
 - memory index ~100 entries → review for stale lines
 - learned ~60 rules, or ~2,400 words under that count → merge or compress
 - an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel
-- an entry point over ~500 body words (a filled template runs near 250, with 2× grace) → project content has grown into the wiring: move it to `purpose.md` or `docs/`
+- an entry point over ~550 body words (a filled template runs near 275, with 2× grace) → project content has grown into the wiring: move it to `purpose.md` or `docs/`
 
 Projects tune them — and the probed-tools list — per node in `.agent/scripts/status.conf`, because an edit to the script itself is discarded by the next `node.sh update` while the conf survives it. The conf is plain `KEY=value`, parsed and never executed. A starter `status.conf` ships at init listing every key: the probed-tools line live, the thresholds commented at their shipped defaults. It ships because the scripts are executed rather than read, so a knob without its file on disk is a knob no one finds. `test.sh` pins the shown defaults to the script's own. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is set so a healthy node rarely sees a flag. The entry-shape trigger exists because entries hand-appended past `log.sh` escaped every check until V6.2, and every oversized one rides the printed tail into every session's context.
 
