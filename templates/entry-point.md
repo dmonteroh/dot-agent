@@ -13,7 +13,7 @@ Execute with tools, in order:
 
 The one re-run: after a context compaction or handoff, run step 1 again. A summary is lossy by construction, so a compacted session is a session operating without it, and it is not in a position to judge what it kept. Re-route step 3 only if the work moved.
 
-Before handing back, run `bash .agent/scripts/finish.sh --tool <tool> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"` — one call: the comment gate against the change's true parent (uncommitted work gates against `HEAD`; a committed branch needs `--base <branch base>`), the status check, then the session-log entry. Delete what the gate blocks, justify or delete what it lists, handle any flag it prints, and run it again; the entry is written once, on the clean run (Verification contract).
+Before handing back, run `bash .agent/scripts/finish.sh --tool <tool> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"` — one call: the comment gate against the change's true parent (uncommitted work gates against `HEAD`; a committed branch needs `--base <branch base>`), the status check, then the session-log entry. Delete what the gate blocks, justify or delete what it lists, handle any flag it prints, and run it again; the entry is written once, on the clean run (Verification contract). Your final message is the answer or the report itself, complete on its own — never a one-line wrap-up that points back at an earlier message.
 
 Exception — subagents: flags are the orchestrator's to handle, and so is `finish.sh`. Read everything else. Never edit `.agent/` unless explicitly assigned — the orchestrator is the single session-log writer.
 
