@@ -109,7 +109,7 @@ The origin gate's full rule — the write is where the injection chain cuts, bec
 ```
 
 ```
-- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files. Wait for that worker to finish before handing back, then re-run status.sh to confirm it cleared. Grooming changes shape, never content: when a fact contradicts the code, correct the false value, keep every other name, value, command, and path, and name in the reply what was dropped as false. A value this session just added is code, not a fact. REPAIR: stays in the main session.
+- Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files. Wait for that worker to finish before handing back, then re-run status.sh to confirm it cleared. Grooming changes shape, never content: when a fact contradicts the code, correct the false value, keep every other name, value, command, and path (the GROOM: line lists the ones it found), and name in the reply what was dropped as false. A value this session just added is code, not a fact. REPAIR: stays in the main session.
 ```
 
 ## Self-learning
@@ -127,7 +127,7 @@ The retro trigger and the entry format. What each preset routes *to* differs (ar
 The source gate and the two curation rules. `learned.md` is always-loaded with no disclosure tier, so what gets written and how tightly is the whole cost control — and the cheapest rule is the one never written, because the source that failed got fixed instead:
 
 ```
-- Identify the failing source first. If the contract, docs, a doc's `Read when:` hook or routing row, code, or tooling owns the behavior, fix it there and write no compensating rule. A routed doc that was not reached is a routing defect: fix the hook or the row, and write no rule to search harder. Remove an existing rule when that source becomes enforceable.
+- Identify the failing source first. If the contract, docs, a doc's `Read when:` hook or routing row, code, or tooling owns the behavior, fix it there and write no compensating rule. A routed doc that was not reached is a routing defect: fix the hook or the row (`.agent/scripts/docs.sh rehook --name <doc> --read-when "…"` rewrites both together), and write no rule to search harder. Remove an existing rule when that source becomes enforceable.
 ```
 
 ```

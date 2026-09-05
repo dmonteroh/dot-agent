@@ -14,7 +14,12 @@
 # Tunables: status.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/status.md in the dot-agent repo.
 #
-# Usage: status.sh [root]    # root defaults to . — checks <root>/.agent/
+# Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agent/
+#
+# --load appends the always-loaded set after the findings — learned rules,
+# contract, purpose, memory index, each under a marker naming its path — so
+# the entry point's bootstrap is one call instead of five. Every call costs
+# a re-read of the whole context; the text is the same either way.
 
 set -u
 
@@ -34,22 +39,31 @@ ENTRYPOINT_MAX_WORDS=800
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
-root="${1:-.}"
-case "$root" in
--h | --help)
-  cat <<'EOF'
-Usage: status.sh [root]
+root="."
+load=0
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help)
+    cat <<'EOF'
+Usage: status.sh [--load] [root]
 
 Prints the recent session-log entries, then one line per finding: GROOM: (a
 file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
 step is missing), INDEX: (a docs/ file and the routing table disagree), plus
 advisory TOOLS: and LOAD: lines. No finding prints on pass.
 
+--load then prints the always-loaded set — rules/learned.md, rules/contract.md,
+purpose.md, memory.md — each under a "==== <path> ====" marker, so the
+bootstrap is one call.
+
 root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
 root holding no .agent/ is a usage error and exits 1.
 EOF
-  exit 0 ;;
-esac
+    exit 0 ;;
+  --load) load=1 ;;
+  *) root="$arg" ;;
+  esac
+done
 
 agent="$root/.agent"
 # A root with no .agent/ is a usage error, not a node with three missing
@@ -218,11 +232,36 @@ if [[ -s "$log" ]]; then
     echo "GROOM: session-log.md entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh"
   fi
 fi
+# The tokens a restructuring pass must carry over: ticket ids, constants,
+# paths, hosts, commands, dates, numbers with units, and anything in
+# backticks. Listed on the GROOM: line so "shape, never content" is a
+# checklist the session can tick rather than a rule it has to remember.
+# Extraction is a word-shape heuristic, never a judgement about meaning:
+# an undercount leaves a fact unlisted, an overcount lists a plain word.
+keep_tokens() {
+  {
+    grep -oE '`[^`]+`' "$1" 2>/dev/null
+    grep -oE 'npm (run )?[a-z:-]+( -- (--?[a-z-]+( [a-z0-9_.:\/-]+)?)*)?' "$1" 2>/dev/null
+    awk '
+      NR == 1 && $0 == "---" { infm = 1; next }
+      infm { if ($0 == "---") infm = 0; next }
+      {
+      for (i = 1; i <= NF; i++) {
+        t = $i
+        gsub(/^[("\x27\[]+|(\x27s)?[)"\x27\],.;:!?]*$/, "", t)
+        if (t == "") continue
+        if (t ~ /^[A-Z][A-Z0-9]+-[0-9]+$/ || t ~ /^[A-Z][A-Z0-9_]{3,}$/ || t ~ /^[A-Z][a-z]+-[A-Z][a-z]+$/ || t ~ /^[a-z]+:\/\// || t ~ /^[A-Za-z0-9_.-]*\/[A-Za-z0-9_.\/-]+$/ || t ~ /^[a-z0-9.-]+\.[a-z]{2,}(:[0-9]+)?$/ || t ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/ || t ~ /^[0-9]+(ms|s|rps|%)$/) print t
+        if (t ~ /^[0-9]+$/ && i < NF && $(i+1) ~ /^(ms|rps|s|seconds|requests|attempts)[,.;:]?$/) print t " " $(i+1)
+      }
+    }' "$1"
+  } | awk 'NF && !seen[$0]++' | head -n 15 | paste -sd '|' - | sed 's/|/, /g'
+}
 if [[ -d "$memdir" ]]; then
   for f in "$memdir"/*.md; do
     [[ -e "$f" ]] || continue
     if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
-      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact"
+      keep=$(keep_tokens "$f")
+      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}"
     fi
   done
 fi
@@ -390,6 +429,17 @@ if [[ "$load_total" -gt 0 ]]; then
   tailwords=0
   [[ -n "${recent:-}" ]] && tailwords=$(printf '%s' "$recent" | wc -w | tr -d '[:space:]')
   echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
+fi
+
+# --load: the always-loaded set, in the entry point's order, after the
+# findings. The marker names the path so nothing has to be re-opened to know
+# where a sentence came from.
+if [[ "$load" -eq 1 ]]; then
+  for f in "$learned" "$contract" "$purpose" "$memory"; do
+    [[ -s "$f" ]] || continue
+    printf '\n==== %s ====\n' "${f#"$root"/}"
+    cat "$f"
+  done
 fi
 
 exit 0

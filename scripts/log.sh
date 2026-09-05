@@ -109,6 +109,28 @@ case "$summary_lc" in
   exit 1 ;;
 esac
 
+# The header contract's "no file lists, SHAs" is enforced here, not asked
+# for: a summary token that ends in a source extension, carries a slash and
+# an extension, or is a 7–40 character hex run with both letters and digits
+# is refused with the token named. The entry records task, area, and
+# outcome; a path or a SHA in it is narrative that git already holds, and a
+# session reading the log later cannot open either from the line.
+bad_token=$(printf '%s' "$summary" | awk '
+  {
+    for (i = 1; i <= NF; i++) {
+      t = $i
+      gsub(/^[`"'"'"'(\[]+|[`"'"'"')\],.;:!?]+$/, "", t)
+      if (t == "") continue
+      if (t ~ /\.(ts|tsx|js|jsx|mjs|cjs|cs|java|kt|go|rs|rb|py|sh|bash|css|scss|less|html|vue|svelte|json|yaml|yml|toml|md|sql|c|h|cc|cpp|hpp|swift|php|lock)$/) { print t; exit }
+      if (t ~ /\// && t ~ /\.[A-Za-z0-9]+$/) { print t; exit }
+      if (length(t) >= 7 && length(t) <= 40 && t ~ /^[0-9a-f]+$/ && t ~ /[a-f]/ && t ~ /[0-9]/) { print t; exit }
+    }
+  }')
+if [ -n "$bad_token" ]; then
+  echo "log.sh: --summary names a file or a SHA ($bad_token) — the entry records task, area, and outcome; files and SHAs live in git. Reword without it" >&2
+  exit 1
+fi
+
 # Per-node overrides: <root>/.agent/scripts/log.conf, plain KEY=value,
 # parsed and never executed. Each value is checked before it is used:
 # `SUMMARY_MAX_WORDS=25 words` reaching the `-gt` below stops the ceiling
