@@ -53,7 +53,7 @@ Paired control. Each eval prompt runs under a single arm variable, and the resul
 
 Vary one, never both. A delta from two moving variables is attributable to neither.
 
-Two shapes of control are in use. `spec.json` names the paired control, `2f779b7`, the tree the operator was running in the field when the failures these evals encode were reported; `run.sh` and `rollup.py` implement that two-arm shape inside one workspace. Once a baseline corpus has run several times, the better control is all of those runs pooled: `pooled.py` takes any number of baseline workspaces and any number of candidate workspaces and joins them on assertion id. Round two ran each candidate in a single-arm workspace against four pooled baseline runs, then reran the adopted corpus at three repeats on both prompt sets so the next round's control is contemporaneous. Those two workspaces (`base3-canon`, `base3-heldout`) are the control to pool against next.
+Two shapes of control are in use. `spec.json` names the paired control, `2f779b7`, the tree the operator was running in the field when the failures these evals encode were reported; `run.sh` and `rollup.py` implement that two-arm shape inside one workspace. Once a baseline corpus has run several times, the better control is all of those runs pooled: `pooled.py` takes any number of baseline workspaces and any number of candidate workspaces and joins them on assertion id. Round two ran each candidate in a single-arm workspace against four pooled baseline runs, then reran the adopted corpus (commit `5001189`) at three repeats on both prompt sets so the next round's control is contemporaneous. A control is reproduced, not shared: `run-arm.sh --jobs 6 <workspace> base 5001189`, once per prompt set, and `pooled.py --baseline <workspace>` from there.
 
 ## The eval set
 
@@ -106,6 +106,7 @@ That leaves manual grading for what genuinely needs judgement: whether a constra
 | `triage.py` — evidence-backed proposals for the manual assertions, never opening the arm map | complete |
 | `contamination.py` — lexical and scenario-shape leakage from the eval set into a corpus revision | complete |
 | `assertion-kinds.json` — behavior / conformance / information per assertion | complete |
+| `run-arm.sh` — every eval of one arm into one workspace, `--jobs N` at a time | complete |
 
 Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters, and the contamination judge, drive the operator's own logged-in CLI session, the same one you already use interactively.
 
@@ -143,7 +144,7 @@ evals/run.sh --probe-agent codex         # same, for codex
 ## Running a round
 
 ```
-W=~/eval-runs/round-x
+W=/a/directory/outside/the/repository/round-x
 
 # readiness, once, before spending anything on a real run
 evals/run.sh --list-arms
@@ -168,7 +169,7 @@ Three choices to make before the first live call, each recorded as a chosen budg
 - **Prompt set.** Default `spec.json`; `EVALS_SPEC=evals/heldout.json` selects the held-out set. Run each set into its own workspace.
 - **Control.** A two-arm workspace (name a control arm and its `--corpus-ref`, then `rollup.py`), or a single-arm workspace judged with `pooled.py` against the pooled baseline. Prefer pooled once the baseline has run more than once; it is cheaper and better powered.
 
-Loop every eval id in the spec against the arm. Runs may proceed in parallel, into different workspaces and into the same one: `run.sh` locks only its metadata writes (the arm map and the run config), so several evals of one arm can run at once, each invocation passing the same `--treatment-arm` (only a mismatch is refused). A batch's wall time then tracks its slowest eval rather than the sum, so start the long ones first. Sessions running together contend for the machine and the account, which inflates seconds and touches neither tool calls nor USD; read those two under concurrency. A cell voided under load is usually the provider failing mid-response — `run-meta.json` says `void`, the retained stream's `terminal_reason` says `api_error`, no grade is written — and the eval then carries one repeat fewer; re-run that eval into the same workspace when a full cell count matters. Never switch branches in the checkout while a run is active, because `run.sh` reads this directory from the checkout, not from the corpus ref. Before believing any delta, run `evals/contamination.py --judge <ref>` on the candidate revision: one CLI call.
+`run-arm.sh [--jobs N] [--spec <spec>] [--evals <ids>] <workspace> <arm> <corpus-ref>` loops every eval id in the spec against one arm, N at a time, slowest first, with per-eval logs under `<workspace>/logs/`. Runs may proceed in parallel, into different workspaces and into the same one: `run.sh` locks only its metadata writes (the arm map and the run config), so several evals of one arm can run at once, each invocation passing the same `--treatment-arm` (only a mismatch is refused). A batch's wall time then tracks its slowest eval rather than the sum, so start the long ones first. Sessions running together contend for the machine and the account, which inflates seconds and touches neither tool calls nor USD; read those two under concurrency. A cell voided under load is usually the provider failing mid-response — `run-meta.json` says `void`, the retained stream's `terminal_reason` says `api_error`, no grade is written — and the eval then carries one repeat fewer; re-run that eval into the same workspace when a full cell count matters. Never switch branches in the checkout while a run is active, because `run.sh` reads this directory from the checkout, not from the corpus ref. Before believing any delta, run `evals/contamination.py --judge <ref>` on the candidate revision: one CLI call.
 
 ## What a run leaves behind
 

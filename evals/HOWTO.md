@@ -26,7 +26,7 @@ Both must succeed before you spend anything on a real run. A rejected probe name
 ## 2. Smoke-test one eval
 
 ```
-W=~/eval-runs/software-development-$(date +%Y%m%d)
+W=/a/directory/outside/the/repository/software-development-$(date +%Y%m%d)
 REF=<the branch, tag, or commit you are validating>
 
 evals/run.sh --eval scope-question-no-edit --arm merged --treatment-arm merged \
