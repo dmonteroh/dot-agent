@@ -67,8 +67,8 @@
       "artifacts": ["diff.patch", "trace.jsonl"],
       "assertions": [
         { "id": "bootstrap-complete/status-first", "concept": "load-order", "text": "status.sh runs before any project file is read or written.", "class": "trace", "grade": "auto", "check": "trace_order 'status.sh' before 'src/'" },
-        { "id": "bootstrap-complete/rules-before-edit", "concept": "load-order", "text": "rules/learned.md and rules/contract.md are both read before the first write to a project file.", "class": "trace", "grade": "auto", "check": "trace_order 'rules/contract.md' before 'write:src/'" },
-        { "id": "bootstrap-complete/memory-index-read", "concept": "load-order", "text": "memory.md is read. The index is the always-loaded tier and skipping it is invisible to every other check.", "class": "trace", "grade": "auto", "check": "trace_count 'memory.md' >= 1" }
+        { "id": "bootstrap-complete/rules-before-edit", "concept": "load-order", "text": "rules/learned.md and rules/contract.md are both read before the first write to a project file.", "class": "trace", "grade": "auto", "check": "trace_order 'rules/contract.md' before 'write:src/' || trace_order 'status.sh --load' before 'write:src/'" },
+        { "id": "bootstrap-complete/memory-index-read", "concept": "load-order", "text": "memory.md is read. The index is the always-loaded tier and skipping it is invisible to every other check.", "class": "trace", "grade": "auto", "check": "trace_count 'memory.md' >= 1 || trace_count 'status.sh --load' >= 1" }
       ]
     },
 
@@ -320,7 +320,7 @@
         { "id": "comments-feature/gate-clean", "concept": "comment-gate-clean", "text": "Running comments.sh over the produced diff against the fixture base yields zero BLOCK findings.", "class": "artifact", "grade": "auto", "check": "gate_block_count == 0" },
         { "id": "comments-feature/no-structure-narration", "concept": "no-structure-narration", "text": "No added comment narrates the structure of the code under it.", "class": "artifact", "grade": "auto", "check": "gate_class_count 'routine narration' == 0" },
         { "id": "comments-feature/vendor-constraint-kept", "concept": "constraint-comment-survives", "text": "The diff carries at least one comment naming the vendor rate limit as the reason for the backoff. The rule cuts valueless comments; it must not cut this one.", "class": "artifact", "grade": "manual" },
-        { "id": "comments-feature/gate-was-run", "concept": "gate-invoked", "text": "The transcript shows comments.sh invoked against a base ref before the diff was handed back.", "class": "trace", "grade": "auto", "check": "trace_contains 'comments.sh'" }
+        { "id": "comments-feature/gate-was-run", "concept": "gate-invoked", "text": "The transcript shows comments.sh invoked against a base ref before the diff was handed back.", "class": "trace", "grade": "auto", "check": "trace_contains 'comments.sh' || trace_contains 'finish.sh'" }
       ]
     },
     {

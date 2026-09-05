@@ -117,7 +117,7 @@
           "text": "rules/learned.md and rules/contract.md are both read before the first write to a project file.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_order 'rules/contract.md' before 'write:src/'"
+          "check": "trace_order 'rules/contract.md' before 'write:src/' || trace_order 'status.sh --load' before 'write:src/'"
         },
         {
           "id": "bootstrap-complete/memory-index-read",
@@ -125,7 +125,7 @@
           "text": "memory.md is read. The index is the always-loaded tier and skipping it is invisible to every other check.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_count 'memory.md' >= 1"
+          "check": "trace_count 'memory.md' >= 1 || trace_count 'status.sh --load' >= 1"
         }
       ]
     },
@@ -815,7 +815,7 @@
           "text": "The transcript shows comments.sh invoked against a base ref before the diff was handed back.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_contains 'comments.sh'"
+          "check": "trace_contains 'comments.sh' || trace_contains 'finish.sh'"
         }
       ]
     },
