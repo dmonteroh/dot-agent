@@ -2433,9 +2433,9 @@ incompatible_bin = os.environ.get("FAKE_CODEX_INCOMPATIBLE_BIN", "")
 if incompatible_bin and os.path.realpath(sys.argv[0]) == os.path.realpath(incompatible_bin):
     missing_feature = "--ignore-user-config"
 help_surfaces = {
-    ("--help",): ["--ask-for-approval", "-c"],
+    ("--help",): ["--ask-for-approval", "-c", "-C", "--sandbox"],
     ("exec", "--help"): ["--json", "--ignore-user-config", "--sandbox", "-C", "--model"],
-    ("exec", "resume", "--help"): ["--json", "--model"],
+    ("exec", "resume", "--help"): ["--json", "--model", "--ignore-user-config"],
 }
 if tuple(argv) in help_surfaces:
     print(" ".join(flag for flag in help_surfaces[tuple(argv)] if flag != missing_feature))
@@ -2464,34 +2464,37 @@ def require_pair(flag, value):
 if argv[-1:] != ["-"]:
     reject("stdin prompt marker must be the final argument")
 
-is_resume = len(argv) > 1 and argv[0:2] == ["exec", "resume"]
-if is_resume:
-    forbidden = {"-C", "--sandbox", "--ask-for-approval", "--ignore-user-config", "-c"}
-    if any(arg in forbidden for arg in argv):
-        sys.stderr.write("unsupported resume flag\n")
-        sys.exit(64)
-    require_flag("--json")
-    require_pair("--model", "fake-codex-model")
-    if "thread-fixed-fake" not in argv[2:-1]:
-        reject("resume is missing the captured thread id")
-else:
-    require_flag("exec")
-    exec_index = argv.index("exec")
-    approval_index = require_pair("--ask-for-approval", "never")
-    effort_index = require_pair("-c", 'model_reasoning_effort="medium"')
-    if approval_index > exec_index or effort_index > exec_index:
-        reject("global flags must precede exec")
-    require_flag("--json")
-    require_flag("--ignore-user-config")
-    require_pair("--sandbox", "workspace-write")
-    require_flag("-C")
-    cwd_index = argv.index("-C")
-    if cwd_index + 1 >= len(argv) or not os.path.isdir(argv[cwd_index + 1]):
-        reject("-C must name the fixture directory")
-    require_pair("--model", "fake-codex-model")
-    for required in ("--json", "--ignore-user-config", "--sandbox", "-C", "--model"):
-        if argv.index(required) < exec_index:
-            reject("exec flag %s must follow exec" % required)
+# `codex exec resume` accepts neither -C nor --sandbox, so a resumed turn
+# can only be aimed by the root command's copies of them. Every turn is
+# therefore aimed the same way: working root, sandbox, approval policy and
+# effort ahead of exec, and the stream and identity flags after it. A
+# resumed turn that arrives without a working root would run wherever the
+# runner happens to be, so its absence is rejected here rather than
+# silently read as "the fixture".
+require_flag("exec")
+exec_index = argv.index("exec")
+is_resume = len(argv) > exec_index + 1 and argv[exec_index + 1] == "resume"
+
+approval_index = require_pair("--ask-for-approval", "never")
+effort_index = require_pair("-c", 'model_reasoning_effort="medium"')
+sandbox_index = require_pair("--sandbox", "workspace-write")
+require_flag("-C")
+cwd_index = argv.index("-C")
+if cwd_index + 1 >= len(argv) or not os.path.isdir(argv[cwd_index + 1]):
+    reject("-C must name the fixture directory")
+for name, flag_index in (("--ask-for-approval", approval_index), ("-c", effort_index),
+                         ("--sandbox", sandbox_index), ("-C", cwd_index)):
+    if flag_index > exec_index:
+        reject("global flag %s must precede exec" % name)
+
+require_flag("--json")
+require_flag("--ignore-user-config")
+require_pair("--model", "fake-codex-model")
+for required in ("--json", "--ignore-user-config", "--model"):
+    if argv.index(required) < exec_index:
+        reject("exec flag %s must follow exec" % required)
+if is_resume and "thread-fixed-fake" not in argv[exec_index + 2:-1]:
+    reject("resume is missing the captured thread id")
 
 mode = os.environ.get("FAKE_CODEX_MODE", "ok")
 if mode == "timeout":

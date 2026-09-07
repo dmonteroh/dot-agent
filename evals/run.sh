@@ -159,9 +159,9 @@ codex_feature_probe() {
   missing=""
   for surface in root exec resume; do
     case "$surface" in
-    root) help_text="$root_help"; flags="--ask-for-approval -c" ;;
-    exec) help_text="$exec_help"; flags="--json --ignore-user-config --sandbox -C --model" ;;
-    resume) help_text="$resume_help"; flags="--json --model" ;;
+    root) help_text="$root_help"; flags="--ask-for-approval -c -C --sandbox" ;;
+    exec) help_text="$exec_help"; flags="--json --ignore-user-config --model" ;;
+    resume) help_text="$resume_help"; flags="--json --model --ignore-user-config" ;;
     esac
     for flag in $flags; do
       HELP_TEXT="$help_text" FLAG="$flag" "$selfdir/run_lib.py" codex-flag-check \
@@ -772,15 +772,23 @@ codex_run() {
     fi
 
     if [ "$turnindex" -eq 1 ]; then
-      args=(--ask-for-approval never)
+      args=(--ask-for-approval never -C "$fixdir" --sandbox workspace-write)
       [ -n "$effort" ] && args+=(-c "model_reasoning_effort=\"$effort\"")
-      args+=(exec --json --ignore-user-config --sandbox workspace-write -C "$fixdir" --model "$model")
+      args+=(exec --json --ignore-user-config --model "$model")
     else
       if [ -z "$thread_id" ]; then
         echo "run.sh: no codex thread id captured after turn 1 — cannot continue the session" >&2
         overall_rc=1; break
       fi
-      args=(exec resume --json --model "$model" "$thread_id")
+      # `codex exec resume` accepts neither -C nor --sandbox; the root command
+      # accepts both. A resumed turn given neither runs in run.sh's own
+      # working directory — the runner's checkout, not the fixture — under a
+      # read-only sandbox, so every turn after the first read the wrong tree
+      # and could not write to it. Aim each resumed turn exactly as turn one
+      # is aimed.
+      args=(--ask-for-approval never -C "$fixdir" --sandbox workspace-write)
+      [ -n "$effort" ] && args+=(-c "model_reasoning_effort=\"$effort\"")
+      args+=(exec resume --json --ignore-user-config --model "$model" "$thread_id")
     fi
     args+=(-)
 
