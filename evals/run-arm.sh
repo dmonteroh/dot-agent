@@ -4,7 +4,7 @@
 #
 # Usage: run-arm.sh [--jobs N] [--agent claude|codex] [--spec <spec.json>]
 #                   [--evals <id,id,...>] [--harness node|generic|none]
-#                   <workspace> <arm> <corpus-ref>
+#                   [--treatment-arm <name>] <workspace> <arm> <corpus-ref>
 #
 # run.sh locks only its metadata writes (arm-map.json, run-config.json), so
 # concurrent invocations into one workspace are safe, and --treatment-arm may
@@ -17,7 +17,9 @@
 # (heldout.json) through EVALS_SPEC. --harness builds the arm's fixtures with
 # the node replaced by a plain instructions file (generic) or by nothing at
 # all (none), which is how a whole arm asks what the node itself is worth
-# rather than what one revision of it changed.
+# rather than what one revision of it changed. A workspace records one
+# treatment arm and refuses any run that disagrees, so the second arm into a
+# workspace — the control — needs --treatment-arm naming the first.
 
 set -u
 
@@ -28,13 +30,15 @@ usage() {
   cat <<'USAGE'
 Usage: run-arm.sh [--jobs N] [--agent claude|codex] [--spec <spec.json>]
                   [--evals <id,id,...>] [--harness node|generic|none]
-                  <workspace> <arm> <corpus-ref>
+                  [--treatment-arm <name>] <workspace> <arm> <corpus-ref>
 
 Runs every eval in the spec (default: spec.json; --evals narrows it) for one
 arm into one workspace, N at a time (default 1). Per-eval output lands in
 <workspace>/logs/<id>.log; <workspace>/run.log summarises. --harness builds
 the arm without the node: 'generic' leaves a plain instructions file, 'none'
-leaves neither.
+leaves neither. --treatment-arm defaults to <arm>, which is right for the
+first arm into a workspace and wrong for every later one: name the treatment
+arm there, or the workspace refuses the run.
 USAGE
 }
 
@@ -43,6 +47,7 @@ agent=claude
 spec=""
 only=""
 harness=node
+treatment=""
 while [ $# -gt 0 ]; do
   case "$1" in
   --jobs) jobs="${2:-}"; shift 2 ;;
@@ -50,6 +55,7 @@ while [ $# -gt 0 ]; do
   --spec) spec="${2:-}"; shift 2 ;;
   --evals) only="${2:-}"; shift 2 ;;
   --harness) harness="${2:-}"; shift 2 ;;
+  --treatment-arm) treatment="${2:-}"; shift 2 ;;
   -h | --help) usage; exit 0 ;;
   --*) echo "run-arm.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
   *) break ;;
@@ -57,6 +63,7 @@ while [ $# -gt 0 ]; do
 done
 [ $# -eq 3 ] || { usage >&2; exit 2; }
 workspace="$1"; arm="$2"; ref="$3"
+treatment="${treatment:-$arm}"
 case "$jobs" in "" | *[!0-9]*) echo "run-arm.sh: --jobs must be a whole number (got '$jobs')" >&2; exit 2 ;; esac
 case "$harness" in
 node) harness_flag="" ;;
@@ -91,13 +98,13 @@ slow = ["groom-acts-on-flags", "routing-catalog-first", "continuity-writes-back"
 print("\n".join([i for i in slow if i in ids] + [i for i in ids if i not in slow]))
 ' "$specfile" "$only") || exit 2
 
-export RUN_ARM_WORKSPACE="$workspace" RUN_ARM_ARM="$arm" RUN_ARM_REF="$ref" RUN_ARM_AGENT="$agent" RUN_ARM_LOG="$log" RUN_ARM_ROOT="$reporoot" RUN_ARM_HARNESS_FLAG="$harness_flag"
+export RUN_ARM_WORKSPACE="$workspace" RUN_ARM_ARM="$arm" RUN_ARM_REF="$ref" RUN_ARM_AGENT="$agent" RUN_ARM_LOG="$log" RUN_ARM_ROOT="$reporoot" RUN_ARM_HARNESS_FLAG="$harness_flag" RUN_ARM_TREATMENT="$treatment"
 run_one() {
   local id="$1" rc
   # Unquoted on purpose: empty means the default node fixture, and an empty
   # quoted word would reach run.sh as an argument it rejects.
   # shellcheck disable=SC2086
-  (cd "$RUN_ARM_ROOT" && evals/run.sh --eval "$id" --arm "$RUN_ARM_ARM" --treatment-arm "$RUN_ARM_ARM" \
+  (cd "$RUN_ARM_ROOT" && evals/run.sh --eval "$id" --arm "$RUN_ARM_ARM" --treatment-arm "$RUN_ARM_TREATMENT" \
     --agent "$RUN_ARM_AGENT" --corpus-ref "$RUN_ARM_REF" --workspace "$RUN_ARM_WORKSPACE" \
     $RUN_ARM_HARNESS_FLAG) \
     >"$RUN_ARM_WORKSPACE/logs/$id.log" 2>&1
@@ -106,6 +113,6 @@ run_one() {
 }
 export -f run_one
 
-echo "START $arm ref=$ref agent=$agent harness=$harness jobs=$jobs spec=$(basename "$specfile") $(date +%H:%M:%S)" >>"$log"
+echo "START $arm ref=$ref agent=$agent harness=$harness treatment=$treatment jobs=$jobs spec=$(basename "$specfile") $(date +%H:%M:%S)" >>"$log"
 printf '%s\n' "$ids" | xargs -n 1 -P "$jobs" bash -c 'run_one "$0"'
 echo "ARM DONE $arm $(date +%H:%M:%S)" >>"$log"
