@@ -400,15 +400,18 @@ def cmd_codex_terminal_counts(args):
                 invalid += 1
             else:
                 itype = item.get("type") or item.get("item_type")
+                # Codex reports a tool call through both lifecycle events: the
+                # start carries what was requested, the completion repeats it
+                # with the result. Both are legitimate, so both are accepted
+                # here; what keeps a call from being counted twice is trace
+                # extraction, which takes a command from item.started and a
+                # file change from item.completed and ignores the other. The
+                # shape is still required on the event extraction reads.
                 if itype == "command_execution":
-                    if etype != "item.started":
-                        invalid += 1
-                    elif not isinstance(item.get("command") or item.get("cmd"), str):
+                    if not isinstance(item.get("command") or item.get("cmd"), str):
                         invalid += 1
                 elif itype == "file_change":
-                    if etype != "item.completed":
-                        invalid += 1
-                    else:
+                    if etype == "item.completed":
                         changes = item.get("changes")
                         if not isinstance(changes, list) or any(
                                 not isinstance(change, dict) or not isinstance(change.get("path"), str)
@@ -631,8 +634,11 @@ def cmd_extract_codex_trace(args):
                     last_agent_message = t
                 continue
 
-            # Current Codex emits command execution when it starts and file
-            # changes only when they complete. Normalize each on that lifecycle.
+            # Codex reports both lifecycle events for a call. Counting one
+            # event per call is what keeps a command from appearing twice in
+            # the trace: a command is taken where the command text is final
+            # (its start), a file change where the change list is (its
+            # completion), and the other event for each is ignored.
             if etype == "item.started" and itype == "command_execution":
                 command = normalize_text(item.get("command") or item.get("cmd") or "")
                 rec = {"seq": seq, "event": "call", "tool": "codex.command_execution",

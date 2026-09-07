@@ -822,9 +822,9 @@ codex_run() {
     # there is no later resume attempt to expose it. thread.started is
     # required exactly once on the initial turn; a resume turn may legitimately
     # emit it again, but never more than once and never for a different
-    # thread than the one requested. command_execution is only accepted from
-    # its start lifecycle event and file_change only from its completion
-    # lifecycle event — the shapes trace extraction itself already assumes.
+    # thread than the one requested. A tool call may report both lifecycle
+    # events; the shape is required on the one trace extraction reads —
+    # item.started for a command, item.completed for a file change.
     terminal_counts=$(TURNINDEX="$turnindex" EXPECTED_THREAD="$thread_id" \
       "$selfdir/run_lib.py" codex-terminal-counts "$turnout")
     rm -f "$turnout"
@@ -974,6 +974,18 @@ if [ "${1:-}" = "--probe-agent" ]; then
 
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/dot-agent-eval-probe.XXXXXX") || exit 1
   PROBE_SCRATCH="$scratch"
+  # A probe has to fail for the reason a real run would. Codex refuses a
+  # working directory that is neither a trusted project nor a git repository,
+  # and --ignore-user-config puts the operator's trust list out of reach, so a
+  # bare temporary directory reports a FAIL that says nothing about the login
+  # being probed. Every fixture is a git repository with one commit
+  # (`fixtures.sh`, "git init"); the probe's directory is one too, so what it
+  # exercises is the credential and the flag surface, not the scratch shape.
+  git -C "$scratch" init -q || exit 1
+  : >"$scratch/README"
+  git -C "$scratch" add -A || exit 1
+  git -C "$scratch" -c user.name=eval -c user.email=eval@local \
+    commit -qm "probe fixture" || exit 1
   outdir="$scratch/outputs"
   mkdir -p "$outdir"
   TIMEOUT="$PROBE_TIMEOUT"

@@ -2573,10 +2573,20 @@ if fixture_root:
     command = "cat " + " ".join(trace_paths)
 else:
     command = "echo turn-%d" % n
-command_event_type = "item.completed" if mode == "command-on-completed" else "item.started"
-events.append({"type": command_event_type, "item": {"type": "command_execution", "command": command}})
-filechange_event_type = "item.started" if mode == "file-change-on-started" else "item.completed"
-events.append({"type": filechange_event_type, "item": {"type": "file_change", "changes": [{"path": "notes/codex-turn-%d.md" % n, "kind": "add"}]}})
+# Real Codex announces a command twice — once on starting it, once on
+# finishing it with the output and exit code — so the fake does too, and
+# every codex test here runs against the shape the live CLI emits. One
+# trace record per command is the property that has to hold across both.
+command_item = {"type": "command_execution", "command": command}
+if mode == "command-missing-command":
+    command_item = {"type": "command_execution"}
+events.append({"type": "item.started", "item": command_item})
+events.append({"type": "item.completed",
+               "item": dict(command_item, aggregated_output="out-%d" % n, exit_code=0)})
+file_change_item = {"type": "file_change", "changes": [{"path": "notes/codex-turn-%d.md" % n, "kind": "add"}]}
+if mode == "file-change-on-started":
+    events.append({"type": "item.started", "item": file_change_item})
+events.append({"type": "item.completed", "item": file_change_item})
 text = "echo:" + prompt
 if mode == "transcript-shape" and n == 1:
     text += "\nsecond transcript line"
@@ -3213,6 +3223,20 @@ sys.exit(0 if seen_completed and not seen_started else 1)
 PY
 rc44file_lifecycle=$?
 [ "$rc44file_lifecycle" -eq 0 ] && pass "evals: codex file_change trace fixture uses the real item.completed lifecycle" || fail "evals: codex file_change trace fixture uses the real item.completed lifecycle"
+# The "one per turn" count above only means something while the fixture still
+# announces each command twice, the way the live CLI does.
+python3 - "$rundir_x/outputs/agent-stdout.txt" <<'PY' >/dev/null 2>&1
+import json, sys
+started = completed = 0
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    event = json.loads(line)
+    if (event.get("item") or {}).get("type") == "command_execution":
+        started += event.get("type") == "item.started"
+        completed += event.get("type") == "item.completed"
+sys.exit(0 if started == 3 and completed == 3 else 1)
+PY
+rc44cmd_lifecycle=$?
+[ "$rc44cmd_lifecycle" -eq 0 ] && pass "evals: codex command_execution trace fixture announces each command on both lifecycle events" || fail "evals: codex command_execution trace fixture announces each command on both lifecycle events"
 if trace_roots_absent "$rundir_x/outputs/trace.jsonl" "$rundir_x/fixture" "$reporoot"; then
   pass "evals: codex trace text contains no absolute fixture or runner-worktree path"
 else
@@ -4139,10 +4163,12 @@ else
 fi
 
 # -- Codex thread/item lifecycle: exactly one thread.started per initial
-# turn, at most one (identity-matched) on a resume, command_execution only
-# from its start event, file_change only from its completion event --
+# turn, at most one (identity-matched) on a resume, and a command item that
+# never carries the command it ran. A second lifecycle event for a call is
+# not a violation — the live CLI emits one — so what is rejected here is a
+# shape trace extraction could not read, not a shape it ignores. --
 for lifecycle_mode in duplicate-thread-started resume-thread-mismatch \
-  command-on-completed file-change-on-started; do
+  command-missing-command; do
   wscx_lifecycle="$evfake/codex workspace-$lifecycle_mode"
   conf_codex_lifecycle="$evfake/agents-codex-$lifecycle_mode.conf"
   eval_conf_write "$conf_codex_lifecycle" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -4156,6 +4182,24 @@ for lifecycle_mode in duplicate-thread-started resume-thread-mismatch \
     fail "evals: codex $lifecycle_mode is rejected as a lifecycle violation (rc=$rc_lifecycle)"
   fi
 done
+
+# Corrected against codex 0.153.1, which reports a file change on starting it
+# as well as on finishing it. An extra lifecycle event for one call is not a
+# violation: the run must proceed, and the call must still appear once.
+wscx_fc_started="$evfake/codex workspace-file-change-on-started"
+conf_codex_fc_started="$evfake/agents-codex-fc-started.conf"
+eval_conf_write "$conf_codex_fc_started" "$evfake/no-such-claude" "$fake_codex" 1 60
+EVALS_AGENTS_CONF="$conf_codex_fc_started" FAKE_CODEX_MODE=file-change-on-started \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent codex --corpus-ref "$corpus_ref_test" --workspace "$wscx_fc_started" >/dev/null 2>&1
+rc_fc_started=$?
+rundir_fc=$(find "$wscx_fc_started/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+fc_records=$(grep -c '"tool": "codex.file_change"' "$rundir_fc/outputs/trace.jsonl" 2>/dev/null)
+if [ "$rc_fc_started" -eq 0 ] && [ "$fc_records" = "3" ]; then
+  pass "evals: a file change announced on both lifecycle events is accepted and traced once per turn"
+else
+  fail "evals: a file change announced on both lifecycle events is accepted and traced once per turn (rc=$rc_fc_started records=$fc_records)"
+fi
 
 # Corrected from the prior review round: Codex may legitimately re-announce
 # thread.started on a resumed turn. Singular and identity-matched, it must
@@ -4318,7 +4362,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=568
+EXPECTED_CHECKS=569
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
