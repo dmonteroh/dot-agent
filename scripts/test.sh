@@ -392,25 +392,45 @@ mkdir -p "$finroot/src"
 finish_bootstrap "$finroot"
 printf 'export const a = 1\n' >"$finroot/src/a.ts"
 git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-"$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" >/dev/null 2>&1
+# A turn that changed nothing is not a session that finished: the log records
+# work, and there is none to record. Without this the hand-back fires on
+# every message while the artifact it writes is per session.
+out8e=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -eq 0 ] && [ "$n8f" -eq 1 ] && pass "finish.sh: on a clean tree the gate is skipped and the entry is written" || fail "finish.sh: on a clean tree the gate is skipped and the entry is written (rc=$rc entries=$n8f)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'nothing changed' && [ "$n8f" -eq 0 ] && pass "finish.sh: an unchanged tree writes no entry" || fail "finish.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
 printf '// const old = fetch(url)\nexport const b = 2\n' >>"$finroot/src/a.ts"
 out8f=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" 2>&1)
 rc=$?
 n8f2=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 1 ] && pass "finish.sh: a BLOCK finding stops it before the log entry" || fail "finish.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 0 ] && pass "finish.sh: a BLOCK finding stops it before the log entry" || fail "finish.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$finroot/src/a.ts"
 "$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" >/dev/null 2>&1
 rc=$?
 n8f3=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -eq 0 ] && [ "$n8f3" -eq 2 ] && pass "finish.sh: on the clean run the entry is written once" || fail "finish.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
+[ "$rc" -eq 0 ] && [ "$n8f3" -eq 1 ] && pass "finish.sh: on the clean run the entry is written once" || fail "finish.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
+# Committed work leaves a clean tree and still has to log: --base names the
+# parent, and the refusal above must not swallow it.
+git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m work
+"$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
+rc=$?
+n8f3b=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+[ "$rc" -eq 0 ] && [ "$n8f3b" -eq 2 ] && pass "finish.sh: committed work still logs, against --base" || fail "finish.sh: committed work still logs, against --base (rc=$rc entries=$n8f3b)"
 i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agent/session-log.md"; i8f=$((i8f + 1)); done
 out8g=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added c" "$finroot" 2>&1)
 rc=$?
 n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q '^GROOM:' && [ "$n8f4" -eq 5 ] && pass "finish.sh: a standing flag stops it before the log entry" || fail "finish.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
+# A project that is not a git checkout gives no signal either way, so it
+# keeps the old behavior rather than being refused on a guess.
+finroot_nogit="$WORK/finish-nogit"
+mkdir -p "$finroot_nogit"
+"$NODE" init --preset software-development --mode ignore-all "$finroot_nogit" >/dev/null 2>&1
+finish_bootstrap "$finroot_nogit"
+"$finroot_nogit/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "no repo here" "$finroot_nogit" >/dev/null 2>&1
+rc=$?
+n8h=$(grep -c '^- \[' "$finroot_nogit/.agent/session-log.md")
+[ "$rc" -eq 0 ] && [ "$n8h" -eq 1 ] && pass "finish.sh: a non-git project still writes its entry" || fail "finish.sh: a non-git project still writes its entry (rc=$rc entries=$n8h)"
 
 # ---- 9. memory.sh new ----
 memroot="$WORK/memory-tests"
@@ -1958,10 +1978,38 @@ status_flags "$ew" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-sized entr
 
 printf '\n%s\n' "$(words_n 900)" >>"$ew/CLAUDE.md"
 f41=$(status_flags "$ew")
-printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 550 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
+printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 600 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
 
 printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agent/scripts/status.conf"
 status_flags "$ew" | grep -q 'CLAUDE.md > ' && fail "status.conf: the entry-point threshold tunes per node" || pass "status.conf: the entry-point threshold tunes per node"
+
+# The word count measures bloat; the boundary is what actually breaks. A
+# deploy command appended under its own heading costs a tenth of the
+# threshold and never reaches .agent/ at all, and mirroring it to every entry
+# point keeps the drift check quiet while it sits in the wrong file. So the
+# shape is checked whatever the size, and that check has no tunable.
+ews="$WORK/entrypoint-section"
+mkdir -p "$ews"
+"$NODE" init --preset software-development --mode ignore-all "$ews" >/dev/null 2>&1
+finish_bootstrap "$ews"
+printf '# P — Session Bootstrap\n\nRun `bash .agent/scripts/status.sh` first.\n' >"$ews/CLAUDE.md"
+status_flags "$ews" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-only entry point raises no section flag" || pass "status.sh: a wiring-only entry point raises no section flag"
+printf '\n## Operations\n\nDeploy with `npm run deploy -- --env prod`. Branches are `feat/<ticket>-<slug>`.\n' >>"$ews/CLAUDE.md"
+f41s=$(status_flags "$ews")
+printf '%s\n' "$f41s" | grep -qF 'GROOM: CLAUDE.md carries the section "## Operations"' && pass "status.sh: a section added to an entry point is flagged under the word threshold" || fail "status.sh: a section added to an entry point is flagged under the word threshold ($f41s)"
+printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ews/.agent/scripts/status.conf"
+status_flags "$ews" | grep -qF 'carries the section' && pass "status.sh: the section check has no tunable to raise past it" || fail "status.sh: the section check has no tunable to raise past it"
+rm -f "$ews/.agent/scripts/status.conf"
+# Mirroring the section to every entry point silences the drift check and
+# must not silence this one: both copies are flagged, not neither.
+cp "$ews/CLAUDE.md" "$ews/AGENTS.md"
+f41m=$(status_flags "$ews")
+printf '%s\n' "$f41m" | grep -qF 'differs from' && fail "status.sh: mirrored entry points raise no drift flag" || pass "status.sh: mirrored entry points raise no drift flag"
+[ "$(printf '%s\n' "$f41m" | grep -cF 'carries the section')" -eq 2 ] && pass "status.sh: a mirrored section is flagged in every entry point" || fail "status.sh: a mirrored section is flagged in every entry point ($f41m)"
+# A fenced example inside the load path is not a section.
+printf '# P — Session Bootstrap\n\nRun it:\n\n```\n## not a heading\n```\n\nbash .agent/scripts/status.sh\n' >"$ews/CLAUDE.md"
+rm -f "$ews/AGENTS.md"
+status_flags "$ews" | grep -qF 'carries the section' && fail "status.sh: a heading inside a fenced block is not a section" || pass "status.sh: a heading inside a fenced block is not a section"
 
 # The threshold's stated provenance: the shipped template, filled, with 2x
 # grace. Checked both ways — a template that grew past half the threshold
@@ -2262,7 +2310,7 @@ def require_pair(flag, value):
         reject("required flag %s has the wrong value or position" % flag)
 
 for required in ("--print", "--verbose", "--strict-mcp-config", "--safe-mode",
-                 "--no-session-persistence", "--no-chrome"):
+                 "--no-chrome"):
     require_flag(required)
 require_pair("--input-format", "stream-json")
 require_pair("--output-format", "stream-json")
@@ -2271,6 +2319,44 @@ require_pair("--mcp-config", '{"mcpServers":{}}')
 require_pair("--allowedTools", "Read,Write,Edit,Bash")
 require_pair("--permission-mode", "acceptEdits")
 require_pair("--effort", "medium")
+
+# One process is one turn, and the session is carried by the id: turn one
+# opens it with --session-id, every later turn resumes that same id. A
+# session cannot be resumed at all without being persisted, so
+# --no-session-persistence must be gone and the config dir must be the
+# disposable one the runner made — the operator's own session store is not
+# an acceptable place for eval transcripts to land.
+if "--no-session-persistence" in argv:
+    reject("--no-session-persistence cannot be passed to a session that must be resumable")
+config_dir = os.environ.get("CLAUDE_CONFIG_DIR", "")
+if not config_dir or "dot-agent-claude-home." not in config_dir:
+    reject("CLAUDE_CONFIG_DIR must name the runner's disposable config dir, got %r" % config_dir)
+home_path = os.environ.get("FAKE_CLAUDE_HOME_PATH")
+if home_path:
+    open(home_path, "w").write(config_dir)
+
+turnfile = os.path.join(config_dir, "fake-claude-turns")
+try:
+    turn = int(open(turnfile).read().strip())
+except Exception:
+    turn = 0
+turn += 1
+open(turnfile, "w").write(str(turn))
+
+if turn == 1:
+    require_flag("--session-id")
+    session_id = argv[argv.index("--session-id") + 1]
+    if "--resume" in argv:
+        reject("turn 1 opens the session, it does not resume one")
+    open(os.path.join(config_dir, "fake-claude-session"), "w").write(session_id)
+else:
+    require_flag("--resume")
+    session_id = argv[argv.index("--resume") + 1]
+    if "--session-id" in argv:
+        reject("a resumed turn must not also claim a fresh --session-id")
+    opened = open(os.path.join(config_dir, "fake-claude-session")).read().strip()
+    if session_id != opened:
+        reject("turn %d resumed %r, not the session %r turn 1 opened" % (turn, session_id, opened))
 # The fixture carries a CLAUDE.md in every arm but the harness-free ones,
 # where there is no instructions file to append and the flag must be absent
 # rather than pointing at nothing.
@@ -2296,46 +2382,49 @@ if mode == "timeout":
     time.sleep(3600)
     sys.exit(0)
 
-turn = 0
+# One process, one turn: the runner writes exactly one stream-json user
+# message onto this process's stdin and reads one terminal result back.
+text = ""
 for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
-    turn += 1
     try:
         msg = json.loads(line)
         text = msg["message"]["content"][0]["text"]
     except Exception:
         text = ""
-    if mode == "adversarial-file" and turn == 1:
-        hostile = '.agent/pwn"; touch ../outside-capture; #/payload'
-        os.makedirs(os.path.dirname(hostile), exist_ok=True)
-        open(hostile, "w").write("hostile filename payload\n")
-    if mode == "gate-findings" and turn == 1:
-        os.makedirs("src", exist_ok=True)
-        open("src/gate-finding.ts", "w").write("// Refactored per commit deadbeefcafe1234.\nexport const value = 1;\n")
-    if mode == "verifier-attack" and turn == 1:
-        os.makedirs("src", exist_ok=True)
-        # A BLOCK-worthy comment (a commit reference a fresh clone cannot
-        # open) sits beside the attacker's config mutations below, so
-        # whether the trusted or the tampered comments.conf ran is directly
-        # observable in gate.txt rather than inferred.
-        open("src/verifier-attack.ts", "w").write(
-            "// Refactored per commit deadbeefcafe1234.\nexport const safe = true;\n")
-        payload = '#!/bin/sh\ntouch "$FAKE_VERIFIER_ATTACK_MARKER"\nprintf "FORGED\\n"\n'
-        open(".agent/scripts/status.sh", "w").write(payload)
-        open(".agent/scripts/comments.sh", "w").write(payload)
-        # ENTRYPOINT_MAX_WORDS=1 would spuriously flag CLAUDE.md under the
-        # tampered value (the trusted default, 550, does not); EXCLUDE_RE_EXTRA
-        # would hide the file above from comments.sh entirely if honored.
-        open(".agent/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
-        open(".agent/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")
-    if mode == "success-resistant-child" and turn == 1:
-        # The leader completes this turn and exits 0 normally, but leaves a
-        # detached child and grandchild behind in its own process group,
-        # both ignoring SIGTERM. Post-success group cleanup must still clear
-        # them before capture, without disturbing the leader's own result.
-        child_code = '''
+    break
+
+if mode == "adversarial-file" and turn == 1:
+    hostile = '.agent/pwn"; touch ../outside-capture; #/payload'
+    os.makedirs(os.path.dirname(hostile), exist_ok=True)
+    open(hostile, "w").write("hostile filename payload\n")
+if mode == "gate-findings" and turn == 1:
+    os.makedirs("src", exist_ok=True)
+    open("src/gate-finding.ts", "w").write("// Refactored per commit deadbeefcafe1234.\nexport const value = 1;\n")
+if mode == "verifier-attack" and turn == 1:
+    os.makedirs("src", exist_ok=True)
+    # A BLOCK-worthy comment (a commit reference a fresh clone cannot
+    # open) sits beside the attacker's config mutations below, so
+    # whether the trusted or the tampered comments.conf ran is directly
+    # observable in gate.txt rather than inferred.
+    open("src/verifier-attack.ts", "w").write(
+        "// Refactored per commit deadbeefcafe1234.\nexport const safe = true;\n")
+    payload = '#!/bin/sh\ntouch "$FAKE_VERIFIER_ATTACK_MARKER"\nprintf "FORGED\\n"\n'
+    open(".agent/scripts/status.sh", "w").write(payload)
+    open(".agent/scripts/comments.sh", "w").write(payload)
+    # ENTRYPOINT_MAX_WORDS=1 would spuriously flag CLAUDE.md under the
+    # tampered value (the trusted default, 600, does not); EXCLUDE_RE_EXTRA
+    # would hide the file above from comments.sh entirely if honored.
+    open(".agent/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
+    open(".agent/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")
+if mode == "success-resistant-child" and turn == 1:
+    # The leader completes this turn and exits 0 normally, but leaves a
+    # detached child and grandchild behind in its own process group,
+    # both ignoring SIGTERM. Post-success group cleanup must still clear
+    # them before capture, without disturbing the leader's own result.
+    child_code = '''
 import os, signal, subprocess, sys, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 open(os.environ["FAKE_CLAUDE_CHILD_PID"], "w").write(str(os.getpid()))
@@ -2347,64 +2436,64 @@ time.sleep(3600)
 subprocess.Popen([sys.executable, "-c", grandchild_code])
 time.sleep(3600)
 '''
-        subprocess.Popen([sys.executable, "-c", child_code])
-        # Wait for both descendants to install their own SIGTERM-ignore
-        # handler (signalled by each writing its pid file right after) before
-        # this leader finishes its turn and exits — otherwise the group
-        # cleanup's SIGTERM can race a descendant still inside interpreter
-        # startup and kill it via the default disposition, which would make
-        # this scenario indistinguishable from one with no resistant child.
-        deadline = time.time() + 5
-        while time.time() < deadline and not (
-                os.path.exists(os.environ["FAKE_CLAUDE_CHILD_PID"])
-                and os.path.exists(os.environ["FAKE_CLAUDE_GRANDCHILD_PID"])):
-            time.sleep(0.02)
-    fixture_root = os.getcwd()
-    runner_root = os.environ.get("FAKE_TRACE_RUNNER_ROOT", "")
-    trace_paths = [
-        fixture_root + "/src/client.ts",
-        fixture_root.replace("/", "//") + "//src//client.ts",
-        os.path.realpath(fixture_root) + "/src/client.ts",
-        runner_root + "/evals/spec.json",
-        runner_root.replace("/", "//") + "//evals//spec.json",
-        os.path.realpath(runner_root) + "/evals/spec.json",
-    ]
-    call = {"type": "assistant", "message": {"content": [
-        {"type": "tool_use", "name": "Read", "input": {"file_path": "src/client.ts"}},
-        {"type": "tool_use", "name": "Bash", "input": {
-            "command": "cat " + " ".join(trace_paths)
-        }}
-    ]}}
-    sys.stdout.write(json.dumps(call) + "\n")
+    subprocess.Popen([sys.executable, "-c", child_code])
+    # Wait for both descendants to install their own SIGTERM-ignore
+    # handler (signalled by each writing its pid file right after) before
+    # this leader finishes its turn and exits — otherwise the group
+    # cleanup's SIGTERM can race a descendant still inside interpreter
+    # startup and kill it via the default disposition, which would make
+    # this scenario indistinguishable from one with no resistant child.
+    deadline = time.time() + 5
+    while time.time() < deadline and not (
+            os.path.exists(os.environ["FAKE_CLAUDE_CHILD_PID"])
+            and os.path.exists(os.environ["FAKE_CLAUDE_GRANDCHILD_PID"])):
+        time.sleep(0.02)
+fixture_root = os.getcwd()
+runner_root = os.environ.get("FAKE_TRACE_RUNNER_ROOT", "")
+trace_paths = [
+    fixture_root + "/src/client.ts",
+    fixture_root.replace("/", "//") + "//src//client.ts",
+    os.path.realpath(fixture_root) + "/src/client.ts",
+    runner_root + "/evals/spec.json",
+    runner_root.replace("/", "//") + "//evals//spec.json",
+    os.path.realpath(runner_root) + "/evals/spec.json",
+]
+call = {"type": "assistant", "message": {"content": [
+    {"type": "tool_use", "name": "Read", "input": {"file_path": "src/client.ts"}},
+    {"type": "tool_use", "name": "Bash", "input": {
+        "command": "cat " + " ".join(trace_paths)
+    }}
+]}}
+sys.stdout.write(json.dumps(call) + "\n")
+sys.stdout.flush()
+if mode == "fail" and turn == 1:
+    sys.exit(3)
+if mode == "short" and turn == total:
+    sys.exit(0)
+if mode == "background-subagent-short" and turn == total:
+    # The last turn dies without its own result, but a background agent's
+    # result lands anyway. The count must not let that stand in for the
+    # turn that never finished.
+    sys.stdout.write(json.dumps(INJECTED_RESULT) + "\n")
     sys.stdout.flush()
-    if mode == "fail" and turn == 1:
-        sys.exit(3)
-    if mode == "short" and turn == total:
-        sys.exit(0)
-    if mode == "background-subagent-short" and turn == total:
-        # The last turn dies without its own result, but a background agent's
-        # result lands anyway. The count must not let that stand in for the
-        # turn that never finished.
-        sys.stdout.write(json.dumps(INJECTED_RESULT) + "\n")
-        sys.stdout.flush()
-        sys.exit(0)
-    if mode == "error-result":
-        result = {"type": "result", "subtype": "error_during_execution",
-                  "is_error": True, "result": "fake error"}
-    else:
-        result = {"type": "result", "subtype": "success",
-                  "is_error": False, "result": "echo:" + text}
-    sys.stdout.write(json.dumps(result) + "\n")
-    if mode == "mixed-result":
-        error = {"type": "result", "subtype": "error_during_execution",
-                 "is_error": True, "result": "error after success"}
-        sys.stdout.write(json.dumps(error) + "\n")
-    if mode in ("background-subagent", "background-subagent-short"):
-        sys.stdout.write(json.dumps(INJECTED_RESULT) + "\n")
-    if mode == "malformed-stream":
-        sys.stdout.write("not-json\n")
-        sys.stdout.write('{"type":"assistant","message":[]}\n')
-    sys.stdout.flush()
+    sys.exit(0)
+if mode == "error-result":
+    result = {"type": "result", "subtype": "error_during_execution",
+              "is_error": True, "result": "fake error"}
+else:
+    result = {"type": "result", "subtype": "success",
+              "is_error": False, "result": "echo:" + text}
+sys.stdout.write(json.dumps(result) + "\n")
+if mode == "mixed-result":
+    error = {"type": "result", "subtype": "error_during_execution",
+             "is_error": True, "result": "error after success"}
+    sys.stdout.write(json.dumps(error) + "\n")
+if mode in ("background-subagent", "background-subagent-short"):
+    sys.stdout.write(json.dumps(INJECTED_RESULT) + "\n")
+if mode == "malformed-stream":
+    sys.stdout.write("not-json\n")
+    sys.stdout.write('{"type":"assistant","message":[]}\n')
+sys.stdout.flush()
 
 sys.exit(0)
 PY
@@ -2906,6 +2995,93 @@ if trace_roots_absent "$run1_c/outputs/trace.jsonl" "$run1_c/fixture" "$reporoot
 else
   fail "evals: claude trace text contains no absolute fixture or runner-worktree path"
 fi
+
+# -- claude: one process per turn, one session across them --
+# The earlier shape queued every turn onto one process's stdin and required
+# one terminal result per turn; the CLI answers a queue as one prompt with
+# one result, so every run of the set's only multi-turn eval voided and the
+# Claude side of it was never measured. The fake fails closed on the flags
+# that carry the session: turn one must open it with --session-id, every
+# later turn must resume that same id, and none of them may ask for a
+# session that is not persisted or write into a config dir that is not the
+# runner's disposable one.
+wsc_multi="$evfake/claude workspace-multiturn"
+conf_claude_multi="$evfake/agents-claude-multiturn.conf"
+eval_conf_write "$conf_claude_multi" "$fake_claude" "$evfake/no-such-codex" 1 60
+claude_home_path="$evfake/claude-multi-home"
+rm -f "$claude_home_path"
+EVALS_AGENTS_CONF="$conf_claude_multi" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=3 FAKE_TRACE_RUNNER_ROOT="$reporoot" \
+  FAKE_CLAUDE_HOME_PATH="$claude_home_path" \
+  "$evsh" --eval bootstrap-once --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_multi" >"$evfake/claude-multi.out" 2>&1
+rc44multi=$?
+[ "$rc44multi" -eq 0 ] && pass "evals: a 3-turn eval against a fake claude CLI exits 0" || fail "evals: a 3-turn eval against a fake claude CLI exits 0 (rc=$rc44multi; $(cat "$evfake/claude-multi.out"))"
+run_multi=$(find "$wsc_multi/iteration-1/eval-bootstrap-once" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+[ "$(grep -c '^## Turn [0-9][0-9]*$' "$run_multi/outputs/session-transcript.txt" 2>/dev/null)" = "3" ] && pass "evals: a 3-turn eval against claude captures three numbered transcript sections" || fail "evals: a 3-turn eval against claude captures three numbered transcript sections"
+sed -n '2p' "$run_multi/outputs/session-transcript.txt" 2>/dev/null | grep -qF 'echo:What does this project use for HTTP?' && pass "evals: turn one's prompt reached the fake claude CLI on stdin, not argv" || fail "evals: turn one's prompt reached the fake claude CLI on stdin, not argv"
+grep -qF 'echo:Add a timeout of 5s to the client.' "$run_multi/outputs/session-transcript.txt" 2>/dev/null && pass "evals: the last turn of a resumed claude session is captured too" || fail "evals: the last turn of a resumed claude session is captured too"
+[ "$(grep -c '"action": "read"' "$run_multi/outputs/trace.jsonl" 2>/dev/null)" = "3" ] && pass "evals: each claude turn contributes its own trace events" || fail "evals: each claude turn contributes its own trace events"
+# The disposable config dir is the whole reason the session may be persisted
+# at all: nothing may be left behind holding a copy of the operator's login.
+multi_home=$(cat "$claude_home_path" 2>/dev/null)
+case "$multi_home" in
+"${TMPDIR:-/tmp}/dot-agent-claude-home."*) multi_home_prefix=1 ;;
+*) multi_home_prefix=0 ;;
+esac
+[ "$multi_home_prefix" -eq 1 ] && [ ! -e "$multi_home" ] && pass "evals: the disposable claude config dir is system-temporary and removed after the run" || fail "evals: the disposable claude config dir is system-temporary and removed after the run (home=$multi_home)"
+retained_cred=$(find "$wsc_multi/iteration-1/eval-bootstrap-once" -name '.credentials.json' -print -quit 2>/dev/null)
+[ -z "$retained_cred" ] && pass "evals: copied Claude authentication never enters retained outputs" || fail "evals: copied Claude authentication never enters retained outputs ($retained_cred)"
+
+# -- either arm may open a fresh iteration, so both can be launched at once --
+# Requiring the creator to *be* the treatment lost a race that nothing about
+# the experiment needs run: the treatment is named explicitly on every arm,
+# and a treatment that never produces a run is caught at rollup.
+wsc_ctrlfirst="$evfake/claude workspace-control-first"
+conf_ctrlfirst="$evfake/agents-claude-control-first.conf"
+eval_conf_write "$conf_ctrlfirst" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_ctrlfirst" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm ctrl --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_ctrlfirst" >"$evfake/ctrlfirst.out" 2>&1
+rc44cf=$?
+[ "$rc44cf" -eq 0 ] && pass "evals: the control arm may create a fresh iteration when it names the treatment" || fail "evals: the control arm may create a fresh iteration when it names the treatment (rc=$rc44cf; $(cat "$evfake/ctrlfirst.out"))"
+grep -q '"treatment_arm": "treat"' "$wsc_ctrlfirst/iteration-1/run-config.json" 2>/dev/null && pass "evals: the iteration records the named treatment, not its creator" || fail "evals: the iteration records the named treatment, not its creator"
+EVALS_AGENTS_CONF="$conf_ctrlfirst" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm ctrl --treatment-arm ctrl \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_ctrlfirst" >"$evfake/ctrlfirst2.out" 2>&1
+rc44cf2=$?
+[ "$rc44cf2" -eq 2 ] && pass "evals: a later run disagreeing about the treatment is still refused" || fail "evals: a later run disagreeing about the treatment is still refused (rc=$rc44cf2)"
+EVALS_AGENTS_CONF="$conf_ctrlfirst" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm ctrl \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$evfake/claude workspace-unnamed" >"$evfake/unnamed.out" 2>&1
+rc44un=$?
+[ "$rc44un" -eq 2 ] && grep -q 'must name the treatment arm' "$evfake/unnamed.out" && pass "evals: a fresh iteration with no named treatment is still refused" || fail "evals: a fresh iteration with no named treatment is still refused (rc=$rc44un)"
+
+# -- run-arm.sh: two arms, one workspace, one log file each --
+# Both arms run the same eval ids. A shared logs/<id>.log is a race whose
+# loser is overwritten, and the console output of a run is the only place a
+# fixture-build or auth diagnostic survives.
+wsc_arm="$evfake/run-arm workspace"
+conf_arm="$evfake/agents-run-arm.conf"
+eval_conf_write "$conf_arm" "$fake_claude" "$evfake/no-such-codex" 1 60
+for arm44 in treat ctrl; do
+  EVALS_AGENTS_CONF="$conf_arm" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+    "$evroot/run-arm.sh" --evals scope-question-no-edit --treatment-arm treat \
+    "$wsc_arm" "$arm44" "$corpus_ref_test" >/dev/null 2>&1
+done
+if [ -s "$wsc_arm/logs/treat/scope-question-no-edit.log" ] \
+  && [ -s "$wsc_arm/logs/ctrl/scope-question-no-edit.log" ]; then
+  pass "evals: run-arm.sh keeps each arm's per-eval log under its own arm directory"
+else
+  fail "evals: run-arm.sh keeps each arm's per-eval log under its own arm directory ($(find "$wsc_arm/logs" -type f 2>/dev/null | tr '\n' ' '))"
+fi
+armmap44=$(python3 -c '
+import json, sys
+try:
+    m = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit("unreadable")
+print(" ".join(sorted(set(m.values()))))' "$wsc_arm/iteration-1/arm-map.json" 2>&1)
+[ "$armmap44" = "ctrl treat" ] && pass "evals: both arms of one run-arm.sh workspace land in the same arm map" || fail "evals: both arms of one run-arm.sh workspace land in the same arm map ($armmap44)"
 
 # A .agent filename is untrusted data. Shell metacharacters in nested path
 # components must reach node-tree.txt as text and must never execute.
@@ -3852,7 +4028,32 @@ rc42b=$?
 printf '{"results":[{"id":"a1","passed":true,"evidence":"the treat arm did it"},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
 out42c=$("$evroot/rollup.py" "$evr" 2>&1)
 rc42c=$?
-[ "$rc42c" -eq 2 ] && printf '%s\n' "$out42c" | grep -q 'appears inside' && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c; $out42c)"
+[ "$rc42c" -eq 2 ] && printf '%s\n' "$out42c" | grep -q 'names the condition inside' && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c; $out42c)"
+
+# ... and the field that is the arm name outright, whatever it is called.
+printf '{"arm":"treat","results":[{"id":"a1","passed":true,"evidence":"q"},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
+out42cv=$("$evroot/rollup.py" "$evr" 2>&1); rc42cv=$?
+[ "$rc42cv" -eq 2 ] && printf '%s\n' "$out42cv" | grep -q 'whole value' && pass "evals: rollup refuses a grading record whose field value is an arm name" || fail "evals: rollup refuses a grading record whose field value is an arm name (rc=$rc42cv; $out42cv)"
+
+# The guard must not tax the vocabulary of the thing being measured. An arm
+# called what it is — `node`, `generic`, `merged` — collides with words the
+# evidence text uses about the corpus, and a bare substring match made a real
+# run unrollupable until its arms were relabelled. Evidence that merely uses
+# the word is not a leak; the arm being named as the condition still is.
+evr2="$WORK/eval-rollup-vocabulary"
+mkdir -p "$evr2/eval-demo/r1" "$evr2/eval-demo/r2"
+printf '{"r1":"node","r2":"generic"}\n' >"$evr2/arm-map.json"
+printf '{"treatment_arm":"node","repeats_per_cell":1}\n' >"$evr2/run-config.json"
+printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"}]}\n' >"$evr2/eval-demo/eval-snapshot.json"
+printf '{"results":[{"id":"a1","passed":true,"evidence":"status.sh reports no new findings and the node stays clean"}]}\n' >"$evr2/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","passed":false,"evidence":"no generic instructions file was read before the edit"}]}\n' >"$evr2/eval-demo/r2/grading.json"
+out42voc=$("$evroot/rollup.py" "$evr2" 2>&1); rc42voc=$?
+[ "$rc42voc" -eq 0 ] && pass "evals: rollup reads evidence that uses an arm's word without naming the condition" || fail "evals: rollup reads evidence that uses an arm's word without naming the condition (rc=$rc42voc; $out42voc)"
+
+printf '{"results":[{"id":"a1","passed":true,"evidence":"this was the treatment arm, node"}]}\n' >"$evr2/eval-demo/r1/grading.json"
+out42voc2=$("$evroot/rollup.py" "$evr2" 2>&1); rc42voc2=$?
+printf '{"results":[{"id":"a1","passed":true,"evidence":"status.sh reports no new findings and the node stays clean"}]}\n' >"$evr2/eval-demo/r1/grading.json"
+[ "$rc42voc2" -eq 2 ] && printf '%s\n' "$out42voc2" | grep -q 'names the condition inside' && pass "evals: rollup still refuses an arm name written beside the experiment's own vocabulary" || fail "evals: rollup still refuses an arm name written beside the experiment's own vocabulary (rc=$rc42voc2; $out42voc2)"
 
 printf '{"results":[{"id":"a1","passed":null,"evidence":null},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
 out42e=$("$evroot/rollup.py" "$evr" 2>&1)
@@ -4365,7 +4566,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=569
+EXPECTED_CHECKS=593
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

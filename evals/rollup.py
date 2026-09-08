@@ -17,6 +17,7 @@ import collections
 import json
 import math
 import os
+import re
 import sys
 
 USAGE = """Usage: rollup.py [--exclude-eval <id>]... [--auto-only] <iteration-dir>
@@ -80,6 +81,66 @@ def majority(bits):
     return sum(bits) * 2 > len(bits)
 
 
+# ---- blinding ------------------------------------------------------------
+# An arm name is matched in context, never as a bare substring. Arms are
+# named for what they are — `node`, `generic`, `merged`, `harnessed` — and
+# the first three of those are also ordinary words of the corpus under test.
+# A run whose treatment arm was called `node` hit the word in 49 grading
+# records, every one of them evidence text about the .agent/ node, and the
+# rollup refused to run; the arm had to be relabelled before any number could
+# be read. A guard that forces the operator to rename the thing being
+# measured is not protecting the blind, it is taxing it.
+#
+# So a leak is the arm being *named*, in one of three shapes: an identifier
+# that is the token (a run id or path component, split on separators), a JSON
+# key or whole string value equal to it, or the token as a standalone word
+# within 40 characters of the experiment's own vocabulary. Evidence prose
+# that merely uses the word is not a leak, and a grader who wrote "the
+# treatment arm, node" still is.
+
+_IDENT_SPLIT = re.compile(r"[^a-z0-9]+")
+_CONDITION_WORDS = re.compile(r"\b(arm|arms|treatment|control|condition|variant|baseline)\b")
+
+
+def identifier_names(text, token):
+    """True when a path or id is built out of the arm name as a component."""
+    return token in [p for p in _IDENT_SPLIT.split(text.lower()) if p]
+
+
+def text_names(text, token):
+    """True when the arm name appears as a word beside experiment vocabulary."""
+    low = text.lower()
+    word = re.compile(r"(?<![a-z0-9_-])%s(?![a-z0-9_-])" % re.escape(token))
+    for m in word.finditer(low):
+        if _CONDITION_WORDS.search(low[max(0, m.start() - 40):m.end() + 40]):
+            return True
+    return False
+
+
+def json_names(obj, token):
+    """-> the offending fragment when a key or whole value is the arm name."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if isinstance(key, str) and key.strip().lower() == token:
+                return "the key %r" % key
+            hit = json_names(value, token)
+            if hit:
+                return hit
+        return None
+    if isinstance(obj, list):
+        for item in obj:
+            hit = json_names(item, token)
+            if hit:
+                return hit
+        return None
+    if isinstance(obj, str):
+        if obj.strip().lower() == token:
+            return "a field whose whole value is %r" % obj
+        if text_names(obj, token):
+            return "the text %r" % obj[:120]
+    return None
+
+
 def mean_and_stddev(values):
     m = sum(values) / len(values)
     variance = sum((value - m) ** 2 for value in values) / len(values)
@@ -126,7 +187,8 @@ def rollup(iteration, exclude=None, auto_only=False):
     # Blinding check. The condition must not have reached a grading record, its
     # filename, or its path: a grader that could see the arm is a threat to any
     # delta the run produces, and a leak voids the grading pass rather than
-    # reducing confidence in it.
+    # reducing confidence in it. What counts as the condition reaching one is
+    # decided by identifier_names/json_names above, not by a substring.
     tokens = [a.lower() for a in arms]
 
     # assertion id -> arm -> list of pass bits (one per repeat)
@@ -169,19 +231,25 @@ def rollup(iteration, exclude=None, auto_only=False):
             grading_path = os.path.join(run, "grading.json")
             if not os.path.exists(grading_path):
                 continue
+            # The path is checked only below the iteration directory: what the
+            # grading pass created, not what the operator called their
+            # workspace, which this guard cannot police and must not fail on.
+            local = os.path.relpath(grading_path, iteration)
             for tok in tokens:
-                if tok in run_id.lower() or tok in grading_path.lower():
-                    die("arm token %r appears in %s — grading was not blind, "
-                        "re-run the grading pass" % (tok, grading_path))
+                if identifier_names(run_id, tok) or identifier_names(local, tok):
+                    die("the arm name %r is a component of %s — grading was not "
+                        "blind, re-run the grading pass" % (tok, local))
             raw = read_text(grading_path)
-            for tok in tokens:
-                if tok in raw.lower():
-                    die("arm token %r appears inside %s — grading was not blind, "
-                        "re-run the grading pass" % (tok, grading_path))
             try:
                 grading = json.loads(raw)
             except ValueError as exc:
                 die("cannot read %s: %s" % (grading_path, exc))
+            for tok in tokens:
+                hit = json_names(grading, tok)
+                if hit:
+                    die("the arm name %r names the condition inside %s (%s) — "
+                        "grading was not blind, re-run the grading pass"
+                        % (tok, grading_path, hit))
 
             arm = arm_map.get(run_id)
             if arm is None:

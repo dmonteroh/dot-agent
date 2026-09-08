@@ -20,7 +20,15 @@ A stop leaves no log entry behind. That ordering is the point: a log entry is a 
 
 ## The base ref
 
-`--base <ref>` names the change's true parent for the gate — the branch base when the work is committed. Without it, uncommitted work is gated against `HEAD`, and a clean tree has no diff to gate, so the gate is skipped and says so. That matches `comments.sh`'s own refusal of `HEAD` over a clean tree: a run that reads nothing must not report as a pass.
+`--base <ref>` names the change's true parent for the gate — the branch base when the work is committed. Without it, uncommitted work is gated against `HEAD`. That matches `comments.sh`'s own refusal of `HEAD` over a clean tree: a run that reads nothing must not report as a pass.
+
+## The unchanged tree
+
+A clean tree with no `--base` is a turn that changed nothing, and the script stops there: no gate to run, no verification to record, no entry written.
+
+This is where the trigger and the artifact disagree. The entry point scopes bootstrap to the conversation — one conversation is one session — but a hand-back happens on every message, so an unqualified "before handing back, run `finish.sh`" reads as per-turn while the session log it writes is per-session. Measured: a three-turn session on Codex ran `finish.sh` three times and wrote three entries, two of them a question answered and nothing else. At a hundred messages that is a hundred entries, and every one of them rides the printed tail into every future session.
+
+The agent cannot observe the end of a session. It can observe whether the turn changed anything, which is the same boundary for this purpose, so that is what the script reads. Committed work still logs — `--base <ref>` names its parent. A project that is not a git checkout gives no signal either way, so it keeps the old behavior: the gate is skipped, and the entry is written.
 
 ## Why one call
 
@@ -30,7 +38,7 @@ A session's cost scales with its tool calls, not its words: every call re-reads 
 
 | 0 | 1 |
 |---|---|
-| gate clean or skipped, no flag standing, entry written | the gate blocked or could not run, a flag stands, or `log.sh` refused — read the line above the refusal; nothing was written |
+| gate clean or skipped, no flag standing, entry written | the gate blocked or could not run, a flag stands, `log.sh` refused, or the tree was clean with no `--base` — read the line above the refusal; nothing was written |
 
 ## Subagents
 

@@ -28,6 +28,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 
 USAGE = """Usage: run_lib.py <subcommand> [args...]
 
@@ -43,6 +44,7 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
   claude-auth-check-file                 env: CRED_PATH
   claude-auth-check-stdin                stdin: credential JSON
   codex-auth-check                       env: AUTH_PATH
+  new-session-id                         -> a fresh UUID
   claude-turn-json                       env: TXT
   claude-count-results <stdout-path>     -> "<terminals> <successes> <invalid> <injected>"
   codex-terminal-counts <turnout-path>   env: TURNINDEX, EXPECTED_THREAD
@@ -283,6 +285,17 @@ def cmd_codex_auth_check(args):
 # ---------------------------------------------------------------------------
 # Claude adapter
 # ---------------------------------------------------------------------------
+
+def cmd_new_session_id(args):
+    """A fresh session id for the Claude adapter's --session-id/--resume pair.
+
+    The CLI requires a UUID. Generated here rather than in the shell so the
+    adapter has no dependency on uuidgen, which is not everywhere, and so a
+    malformed id can never reach --session-id.
+    """
+    print(uuid.uuid4())
+    return 0
+
 
 def cmd_claude_turn_json(args):
     print(json.dumps({"type": "user", "message": {"role": "user",
@@ -936,6 +949,7 @@ COMMANDS = {
     "claude-auth-check-file": cmd_claude_auth_check_file,
     "claude-auth-check-stdin": cmd_claude_auth_check_stdin,
     "codex-auth-check": cmd_codex_auth_check,
+    "new-session-id": cmd_new_session_id,
     "claude-turn-json": cmd_claude_turn_json,
     "claude-count-results": cmd_claude_count_results,
     "codex-terminal-counts": cmd_codex_terminal_counts,

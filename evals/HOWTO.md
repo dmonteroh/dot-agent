@@ -57,7 +57,7 @@ for id in $(python3 -c "import json; [print(e['id']) for e in json.load(open('ev
 done
 ```
 
-`--treatment-arm merged` only has to be named once per workspace: the first call records it in `run-config.json`, and every later call is checked against what got recorded. `2f779b7` is the fixed control — the exact tree the operator was running in the field when the failures this eval set encodes were reported. Do not point the control at a different revision: a moving control answers a different question than "did this revision regress the field baseline."
+`--treatment-arm merged` only has to be named once per workspace: the first call records it in `run-config.json`, and every later call is checked against what got recorded. Name it on every call and the arms can start together — whichever run gets to a fresh iteration first records the same design, whether it is the treatment or the control. `2f779b7` is the fixed control — the exact tree the operator was running in the field when the failures this eval set encodes were reported. Do not point the control at a different revision: a moving control answers a different question than "did this revision regress the field baseline."
 
 `bootstrap-once` needs the agent, not the corpus, as its variable — its reported failure was never seen on Claude Code, so a corpus-only comparison on Claude Code measures nothing for it. Run it a second time with `--agent codex` at the same treatment `$REF`. See `README.md`'s "The eval set" for why.
 

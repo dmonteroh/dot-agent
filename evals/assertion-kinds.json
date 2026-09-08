@@ -5,6 +5,8 @@
     "bootstrap-once/contract-once": "conformance",
     "bootstrap-once/entry-point-not-reopened": "conformance",
     "bootstrap-once/answers-are-grounded": "behavior",
+    "bootstrap-once/finish-once": "conformance",
+    "bootstrap-once/one-log-entry": "conformance",
     "bootstrap-complete/status-first": "conformance",
     "bootstrap-complete/rules-before-edit": "conformance",
     "bootstrap-complete/memory-index-read": "conformance",

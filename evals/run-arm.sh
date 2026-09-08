@@ -9,17 +9,21 @@
 # run.sh locks only its metadata writes (arm-map.json, run-config.json), so
 # concurrent invocations into one workspace are safe, and --treatment-arm may
 # be passed on every one of them: only a mismatch is refused. Each eval's own
-# output goes to <workspace>/logs/<id>.log; <workspace>/run.log carries one
-# line per finished eval and an ARM DONE line. Grooming and the multi-file
-# feature evals start first, so the batch's wall time tracks the slowest eval
-# rather than the order of the spec. REPEATS comes from agents.conf, or from
-# the file EVALS_AGENTS_CONF names. --spec selects an alternate prompt set
-# (heldout.json) through EVALS_SPEC. --harness builds the arm's fixtures with
-# the node replaced by a plain instructions file (generic) or by nothing at
-# all (none), which is how a whole arm asks what the node itself is worth
-# rather than what one revision of it changed. A workspace records one
-# treatment arm and refuses any run that disagrees, so the second arm into a
-# workspace — the control — needs --treatment-arm naming the first.
+# output goes to <workspace>/logs/<arm>/<id>.log — per arm, because two arms
+# of one workspace run the same eval ids, and a shared logs/<id>.log is a
+# race whose loser silently overwrites the winner's console output.
+# <workspace>/run.log carries one line per finished eval and an ARM DONE
+# line. Grooming and the multi-file feature evals start first, so the batch's
+# wall time tracks the slowest eval rather than the order of the spec.
+# REPEATS comes from agents.conf, or from the file EVALS_AGENTS_CONF names.
+# --spec selects an alternate prompt set (heldout.json) through EVALS_SPEC.
+# --harness builds the arm's fixtures with the node replaced by a plain
+# instructions file (generic) or by nothing at all (none), which is how a
+# whole arm asks what the node itself is worth rather than what one revision
+# of it changed. A workspace records one treatment arm and refuses any run
+# that disagrees, so every arm but the treatment needs --treatment-arm
+# naming it. Passing it on both arms lets them start together: whichever run
+# reaches the fresh iteration first records the same design.
 
 set -u
 
@@ -34,11 +38,11 @@ Usage: run-arm.sh [--jobs N] [--agent claude|codex] [--spec <spec.json>]
 
 Runs every eval in the spec (default: spec.json; --evals narrows it) for one
 arm into one workspace, N at a time (default 1). Per-eval output lands in
-<workspace>/logs/<id>.log; <workspace>/run.log summarises. --harness builds
-the arm without the node: 'generic' leaves a plain instructions file, 'none'
-leaves neither. --treatment-arm defaults to <arm>, which is right for the
-first arm into a workspace and wrong for every later one: name the treatment
-arm there, or the workspace refuses the run.
+<workspace>/logs/<arm>/<id>.log; <workspace>/run.log summarises. --harness
+builds the arm without the node: 'generic' leaves a plain instructions file,
+'none' leaves neither. --treatment-arm defaults to <arm>; pass it on every
+arm of a workspace so both arms agree on which one is the treatment, and
+either may create the workspace.
 USAGE
 }
 
@@ -79,7 +83,7 @@ if [ -n "$spec" ]; then
 fi
 specfile="${spec:-$selfdir/spec.json}"
 
-mkdir -p "$workspace/logs" || exit 1
+mkdir -p "$workspace/logs/$arm" || exit 1
 workspace=$(cd "$workspace" && pwd)
 log="$workspace/run.log"
 
@@ -107,7 +111,7 @@ run_one() {
   (cd "$RUN_ARM_ROOT" && evals/run.sh --eval "$id" --arm "$RUN_ARM_ARM" --treatment-arm "$RUN_ARM_TREATMENT" \
     --agent "$RUN_ARM_AGENT" --corpus-ref "$RUN_ARM_REF" --workspace "$RUN_ARM_WORKSPACE" \
     $RUN_ARM_HARNESS_FLAG) \
-    >"$RUN_ARM_WORKSPACE/logs/$id.log" 2>&1
+    >"$RUN_ARM_WORKSPACE/logs/$RUN_ARM_ARM/$id.log" 2>&1
   rc=$?
   echo "== $(date +%H:%M:%S) $RUN_ARM_ARM $id exit=$rc" >>"$RUN_ARM_LOG"
 }

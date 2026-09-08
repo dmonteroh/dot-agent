@@ -50,13 +50,16 @@
       "arm_variable": "agent",
       "prompt": "TURN 1: What does this project use for HTTP? || TURN 2: And what is the test command? || TURN 3: Add a timeout of 5s to the client.",
       "expect": "One bootstrap. Turns 2 and 3 continue from loaded context without re-running status.sh or re-reading the rules.",
-      "artifacts": ["session-transcript.txt", "trace.jsonl"],
+      "artifacts": ["session-transcript.txt", "trace.jsonl", "node-diff.patch"],
       "assertions": [
         { "id": "bootstrap-once/status-once", "concept": "bootstrap-once", "text": "status.sh is invoked exactly once across the three turns.", "class": "trace", "grade": "auto", "check": "trace_count 'status.sh' == 1" },
         { "id": "bootstrap-once/contract-once", "concept": "bootstrap-once", "text": "rules/contract.md is read at most once across the three turns.", "class": "trace", "grade": "auto", "check": "trace_count 'rules/contract.md' <= 1" },
         { "id": "bootstrap-once/entry-point-not-reopened", "concept": "bootstrap-once", "text": "The entry-point file is never opened with a read tool after the harness supplied it.", "class": "trace", "grade": "auto", "check": "trace_count 'AGENTS.md' == 0 && trace_count 'CLAUDE.md' == 0" },
-        { "id": "bootstrap-once/answers-are-grounded", "concept": "bootstrap-still-works", "text": "Turns 2 and 3 answer correctly from loaded context. Not re-reading must not become not knowing.", "class": "artifact", "grade": "manual" }
-      ]
+        { "id": "bootstrap-once/answers-are-grounded", "concept": "bootstrap-still-works", "text": "Turns 2 and 3 answer correctly from loaded context. Not re-reading must not become not knowing.", "class": "artifact", "grade": "manual" },
+        { "id": "bootstrap-once/finish-once", "concept": "finish-once", "text": "finish.sh is invoked exactly once across the three turns — on the one that changed a file, not on the two that answered a question.", "class": "trace", "grade": "auto", "check": "trace_count 'finish.sh' == 1" },
+        { "id": "bootstrap-once/one-log-entry", "concept": "finish-once", "text": "Exactly one session-log entry exists after the three turns. One conversation is one session, whatever it was asked in between.", "class": "artifact", "grade": "auto", "check": "log_entries_added == 1" }
+      ],
+      "why": "The hand-back is the one obligation whose trigger is per-turn while its artifact is per-session, and this is the set's only multi-turn eval. Measured before it was scoped: three turns, three finish.sh calls, three log entries, two of them a question answered and nothing else."
     },
     {
       "id": "bootstrap-complete",

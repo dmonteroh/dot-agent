@@ -55,7 +55,8 @@
       "expect": "One bootstrap. Turns 2 and 3 continue from loaded context without re-running status.sh or re-reading the rules.",
       "artifacts": [
         "session-transcript.txt",
-        "trace.jsonl"
+        "trace.jsonl",
+        "node-diff.patch"
       ],
       "assertions": [
         {
@@ -88,6 +89,22 @@
           "text": "Turns 2 and 3 answer correctly from loaded context. Not re-reading must not become not knowing.",
           "class": "artifact",
           "grade": "manual"
+        },
+        {
+          "id": "bootstrap-once/finish-once",
+          "concept": "finish-once",
+          "text": "finish.sh is invoked exactly once across the three turns — on the one that changed a file, not on the two that answered a question.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_count 'finish.sh' == 1"
+        },
+        {
+          "id": "bootstrap-once/one-log-entry",
+          "concept": "finish-once",
+          "text": "Exactly one session-log entry exists after the three turns. One conversation is one session, whatever it was asked in between.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entries_added == 1"
         }
       ]
     },

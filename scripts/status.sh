@@ -35,7 +35,7 @@ MEMORY_MAX_ENTRIES=100
 LEARNED_MAX_RULES=60
 LEARNED_MAX_WORDS=2400
 DOCS_MAX_WORDS=2000
-ENTRYPOINT_MAX_WORDS=550
+ENTRYPOINT_MAX_WORDS=600
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 
@@ -205,8 +205,30 @@ fi
 # from purpose.md and docs/, which step 1 prints anyway. Paid on every
 # message by every tool that keeps this file resident, and stale in one of
 # the two copies.
+#
+# The word count measures bloat, not the boundary. A 32-word deploy command
+# appended under a new `## Operations` heading is a whole convention that
+# never reached the node, and it costs a tenth of the threshold. Measured:
+# one tool wrote that section in 3 runs of 3, directly below the line saying
+# everything else lives in .agent/, and mirrored it, so the drift check
+# stayed quiet. So the shape is checked too. The template is one title and a
+# load path — no second heading anywhere — and a heading is what a session
+# writes when it is adding a section rather than wiring, so the first one
+# found is named and the file's own count still prints if it also grew.
+first_extra_heading() {
+  awk '
+    /^```/ { fence = 1 - fence; next }
+    fence { next }
+    /^#{2,6}[ \t]/ { print; exit }
+    /^#[ \t]/ { if (seen_title++) { print; exit } }
+  ' "$1"
+}
 for ep in "${entrypoints[@]-}"; do
   [[ -n "$ep" ]] || continue
+  extra=$(first_extra_heading "$ep")
+  if [[ -n "$extra" ]]; then
+    echo "GROOM: ${ep#"$root"/} carries the section \"$extra\" — an entry point is its title and the load path, nothing else: move that content to rules/contract.md's Project guardrails, purpose.md, or a routed doc, and mirror the removal to every other entry point"
+  fi
   if [[ "$(body_words "$ep")" -gt "$ENTRYPOINT_MAX_WORDS" ]]; then
     echo "GROOM: ${ep#"$root"/} > $ENTRYPOINT_MAX_WORDS words — an entry point is wiring only: move project scope, constraints, and architecture into purpose.md or docs/, keep the load path, and mirror the trim to every other entry point"
   fi

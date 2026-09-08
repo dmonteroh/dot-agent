@@ -290,8 +290,10 @@ run_with_timeout() {
 # temporary storage, never in a retained run directory.  Keep the active path
 # in one variable so normal returns and shell signals use the same cleanup.
 CODEX_TEMP_PREFIX="${TMPDIR:-/tmp}/dot-agent-codex-home."
+CLAUDE_TEMP_PREFIX="${TMPDIR:-/tmp}/dot-agent-claude-home."
 VERIFIER_TEMP_PREFIX="${TMPDIR:-/tmp}/dot-agent-eval-verifiers."
 CODEX_ACTIVE_HOME=""
+CLAUDE_ACTIVE_HOME=""
 VERIFIER_ACTIVE_DIR=""
 VERIFIER_STATUS_HASH=""
 VERIFIER_COMMENTS_HASH=""
@@ -319,6 +321,23 @@ codex_home_cleanup() {
   disposable="${CODEX_ACTIVE_HOME:-}"
   CODEX_ACTIVE_HOME=""
   codex_home_remove "$disposable"
+}
+
+claude_home_remove() {
+  local disposable
+  disposable="$1"
+  case "$disposable" in
+    "$CLAUDE_TEMP_PREFIX"*) [ -d "$disposable" ] && rm -rf "$disposable" ;;
+    "") ;;
+    *) echo "run.sh: refusing to remove unexpected Claude temporary config dir: $disposable" >&2 ;;
+  esac
+}
+
+claude_home_cleanup() {
+  local disposable
+  disposable="${CLAUDE_ACTIVE_HOME:-}"
+  CLAUDE_ACTIVE_HOME=""
+  claude_home_remove "$disposable"
 }
 
 verifier_cleanup() {
@@ -459,6 +478,7 @@ active_process_cleanup() {
 runner_cleanup() {
   active_process_cleanup
   codex_home_cleanup
+  claude_home_cleanup
   verifier_cleanup
   release_iter_lock
   [ -n "${TURNSTMP:-}" ] && rm -f "$TURNSTMP"
@@ -567,6 +587,51 @@ claude_auth_check() {
   return 1
 }
 
+# -> a disposable CLAUDE_CONFIG_DIR in system temporary storage, seeded with
+# a copy of the operator's authentication state and nothing else. The
+# adapter drives one process per turn and resumes the session between them,
+# which means the CLI must persist that session somewhere; without this it
+# would persist into the operator's own ~/.claude, mixing eval transcripts
+# into their session picker and their project history. CLAUDE_CONFIG_DIR
+# namespaces .claude.json, projects/ and sessions/ together, so the whole
+# session store lands here and is removed on every normal or signalled exit.
+#
+# The credential has to be copied because that namespacing is total: a CLI
+# pointed at a fresh config dir does not fall back to the machine Keychain,
+# it reports "Not logged in". claude_auth_check has already accepted the
+# real login by the time this runs — Keychain or file — so what is copied is
+# a login this runner just validated, never a search for one.
+#
+# Ownership is registered in CLAUDE_ACTIVE_HOME immediately after mktemp
+# succeeds, before chmod or the copy, for the same reason codex_home_setup
+# does it: a cancellation between here and the copy still leaves the
+# directory owned and reachable by claude_home_cleanup.
+claude_home_setup() {
+  local real disposable cred
+  if ! claude_auth_check; then
+    return 1
+  fi
+  real="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  disposable=$(mktemp -d "${CLAUDE_TEMP_PREFIX}XXXXXX") || return 1
+  CLAUDE_ACTIVE_HOME="$disposable"
+  chmod 700 "$disposable" || return 1
+  cred="$real/.credentials.json"
+  if [ -f "$cred" ]; then
+    cp -p "$cred" "$disposable/.credentials.json" || return 1
+    return 0
+  fi
+  if [ -z "${CLAUDE_CONFIG_DIR+set}" ] && [ "$(uname -s)" = "Darwin" ] \
+    && command -v security >/dev/null 2>&1; then
+    if security find-generic-password -s "Claude Code-credentials" -w \
+      >"$disposable/.credentials.json" 2>/dev/null; then
+      chmod 600 "$disposable/.credentials.json" || return 1
+      return 0
+    fi
+  fi
+  AUTH_ERR="the Claude login accepted at $real could not be copied into a disposable config dir — the credential is neither a file there nor readable from the macOS Keychain"
+  return 1
+}
+
 # Requires Codex's own auth.json to record auth_mode "chatgpt": a ChatGPT
 # account login, not an API key. Checked before codex_home_setup copies a
 # single byte of that file into the disposable home, so a key-mode auth.json
@@ -655,78 +720,132 @@ release_iter_lock() {
 }
 
 # ---------------------------------------------------------------------------
-# Claude adapter — one streamed `--input-format stream-json` process for the
-# whole session. Every turn's stream-json user message is precomputed before
-# the process starts; nothing is generated mid-session and nothing is
-# interpolated into a shell command line. --safe-mode keeps Claude's own
-# customizations (CLAUDE.md auto-load, skills, plugins) off, so the
-# fixture's CLAUDE.md is delivered as a system prompt via
+# Claude adapter — turn one starts a session under a --session-id this runner
+# generates; every later turn resumes that same id, so the whole eval is one
+# session and each process closes exactly the turn it was given. The earlier
+# shape — every turn written onto one process's stdin as stream-json and one
+# terminal result required per turn — did not survive contact with a
+# multi-turn eval: CLI 2.1.245 reads the queued turns as one prompt, answers
+# them in a single reply, and returns one result, so every run of the set's
+# only multi-turn eval voided and the Claude side of it had never been
+# measured at all.
+#
+# Resuming needs the session persisted, so --no-session-persistence is gone
+# and a disposable CLAUDE_CONFIG_DIR (copied login state only) takes its
+# place: the eval's transcripts land in temporary storage and are removed on
+# exit rather than into the operator's own session store. --safe-mode keeps
+# Claude's own customizations (CLAUDE.md auto-load, skills, plugins) off, so
+# the fixture's CLAUDE.md is delivered as a system prompt via
 # --append-system-prompt-file instead — never as part of a user message,
 # which would otherwise compete with the eval prompt at the same precedence.
 # --allowedTools is a closed set: Agent, Skill, plugin, browser and MCP
 # capability are excluded by omission, and --strict-mcp-config with an empty
-# server map keeps MCP off outright.
+# server map keeps MCP off outright. Every turn's prompt is written to a file
+# and delivered on stdin, never as a process argument.
 # ---------------------------------------------------------------------------
 
 claude_run() {
   local fixdir outdir model effort bin stdout stderr claude_args sysfile inputfile
-  local json counts terminals successes invalid injected rc turntext
+  local claude_home session_id start_ts overall_rc turnindex turntext now remaining
+  local turnout rc counts terminals successes invalid injected
   fixdir="$1"; outdir="$2"; model="$3"; effort="$4"; bin="$5"
 
   stdout="$outdir/agent-stdout.txt"; stderr="$outdir/agent-stderr.txt"
   : >"$stdout"; : >"$stderr"
-  inputfile="$outdir/.claude-input.jsonl"
-  : >"$inputfile"
 
-  for turntext in "${turns[@]}"; do
-    json=$(TXT="$turntext" "$selfdir/run_lib.py" claude-turn-json)
-    printf '%s\n' "$json" >>"$inputfile"
-  done
-
-  claude_args=(--print --input-format stream-json --output-format stream-json --verbose
-               --model "$model" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
-               --allowedTools "Read,Write,Edit,Bash" --permission-mode acceptEdits
-               --safe-mode --no-session-persistence --no-chrome)
-  [ -n "$effort" ] && claude_args+=(--effort "$effort")
-  sysfile="$fixdir/CLAUDE.md"
-  [ -f "$sysfile" ] && claude_args+=(--append-system-prompt-file "$sysfile")
-
-  if ! claude_auth_check; then
-    echo "run.sh: $AUTH_ERR" >&2
-    AGENT_FAILURE_STATUS="agent_auth_rejected"
-    AGENT_FAILURE_REASON="$AUTH_ERR"
-    rm -f "$inputfile"
+  if ! claude_home_setup; then
+    if [ -n "${AUTH_ERR:-}" ]; then
+      echo "run.sh: $AUTH_ERR" >&2
+      AGENT_FAILURE_STATUS="agent_auth_rejected"
+      AGENT_FAILURE_REASON="$AUTH_ERR"
+    fi
+    claude_home_cleanup
     return 88
   fi
-  if ! agent_identity_check claude before; then
-    rm -f "$inputfile"
-    return 86
-  fi
-  run_with_timeout "$TIMEOUT" "$inputfile" "$fixdir" "$outdir/.active-process.pid" \
-    "$bin" "${claude_args[@]}" >"$stdout" 2>"$stderr"
-  rc=$?
-  agent_identity_check claude after || rc=86
-  rm -f "$inputfile"
+  claude_home="$CLAUDE_ACTIVE_HOME"
 
-  # A session that ended with fewer results than turns sent — a crash, a
-  # dropped continuation — must not report success just because the process
-  # itself happened to exit 0. Only the results that closed a turn *we* sent
-  # count: the CLI also runs turns of its own, one per background subagent
-  # completion, each with its own terminal result (see
-  # _claude_result_is_injected in run_lib.py). Counting those voided a
-  # grooming run that had done everything right. The counts below are already
-  # net of them, so the rule itself is unchanged: one successful terminal per
-  # turn we sent, no malformed records.
-  counts=$("$selfdir/run_lib.py" claude-count-results "$stdout")
-  read -r terminals successes invalid injected <<EOF
+  session_id=$("$selfdir/run_lib.py" new-session-id) || {
+    claude_home_cleanup; return 1; }
+  sysfile="$fixdir/CLAUDE.md"
+  start_ts=$(date +%s)
+  overall_rc=0
+  turnindex=0
+
+  for turntext in "${turns[@]}"; do
+    turnindex=$((turnindex + 1))
+    now=$(date +%s)
+    remaining=$((TIMEOUT - (now - start_ts)))
+    if [ "$remaining" -le 0 ]; then
+      echo "run.sh: claude session exceeded ${TIMEOUT}s before turn $turnindex" >&2
+      overall_rc=124; break
+    fi
+
+    claude_args=(--print --input-format stream-json --output-format stream-json --verbose
+                 --model "$model" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+                 --allowedTools "Read,Write,Edit,Bash" --permission-mode acceptEdits
+                 --safe-mode --no-chrome)
+    [ -n "$effort" ] && claude_args+=(--effort "$effort")
+    if [ "$turnindex" -eq 1 ]; then
+      claude_args+=(--session-id "$session_id")
+    else
+      claude_args+=(--resume "$session_id")
+    fi
+    [ -f "$sysfile" ] && claude_args+=(--append-system-prompt-file "$sysfile")
+
+    inputfile="$outdir/.claude-turn-$turnindex.jsonl"
+    TXT="$turntext" "$selfdir/run_lib.py" claude-turn-json >"$inputfile" || {
+      overall_rc=1; rm -f "$inputfile"; break; }
+
+    turnout="$outdir/.claude-turn-$turnindex.json"
+    if ! agent_identity_check claude before; then
+      rm -f "$inputfile"
+      overall_rc=86
+      break
+    fi
+    CLAUDE_CONFIG_DIR="$claude_home" run_with_timeout "$remaining" "$inputfile" "$fixdir" \
+      "$outdir/.active-process.pid" "$bin" "${claude_args[@]}" >"$turnout" 2>>"$stderr"
+    rc=$?
+    agent_identity_check claude after || rc=86
+    rm -f "$inputfile"
+    overall_rc=$rc
+    if [ "$rc" -ne 0 ]; then
+      cat "$turnout" >>"$stdout" 2>/dev/null
+      rm -f "$turnout"
+      break
+    fi
+
+    # The turn file is preserved until this append succeeds. Canonical stdout
+    # is what trace extraction and the usage reader read next, so a silently
+    # dropped append would make either fail invisibly instead of voiding the
+    # run with a status that names what actually happened.
+    if ! cat "$turnout" >>"$stdout" 2>>"$stderr"; then
+      echo "run.sh: failed to append claude turn $turnindex output to canonical stdout" >&2
+      AGENT_FAILURE_STATUS="claude_stream_append_failed"
+      AGENT_FAILURE_REASON="failed to append claude turn $turnindex output to canonical stdout"
+      overall_rc=1
+      break
+    fi
+
+    # One process is one requested turn, so the rule is per turn now rather
+    # than per session: exactly one successful terminal result, no malformed
+    # records. Only results that closed the turn *we* sent count — the CLI
+    # also runs turns of its own, one per background subagent completion,
+    # each with its own terminal result (see _claude_result_is_injected in
+    # run_lib.py). Counting those voided a grooming run that had done
+    # everything right, so the counts below are already net of them.
+    counts=$("$selfdir/run_lib.py" claude-count-results "$turnout")
+    rm -f "$turnout"
+    read -r terminals successes invalid injected <<EOF
 $counts
 EOF
-  if [ "$rc" -eq 0 ] \
-    && { [ "$terminals" -ne "${#turns[@]}" ] || [ "$successes" -ne "${#turns[@]}" ] || [ "$invalid" -ne 0 ]; }; then
-    echo "run.sh: claude stream had $terminals terminal result(s), $successes successful, $invalid malformed record(s) and $injected injected turn(s) for ${#turns[@]} turn(s) sent" >&2
-    return 1
-  fi
-  return "$rc"
+    if [ "$terminals" -ne 1 ] || [ "$successes" -ne 1 ] || [ "$invalid" -ne 0 ]; then
+      echo "run.sh: claude turn $turnindex had $terminals terminal result(s), $successes successful, $invalid malformed record(s) and $injected injected turn(s); expected exactly 1 successful terminal and no malformed record" >&2
+      overall_rc=1
+      break
+    fi
+  done
+  claude_home_cleanup
+  return "$overall_rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -899,10 +1018,13 @@ lock_run_config() {
       echo "run.sh: no run-config.json yet under $iterdir — the first run must name the treatment arm with --treatment-arm <name>. Nothing is guessed from lexical order." >&2
       return 2
     fi
-    if [ "$treatment" != "$arm" ]; then
-      echo "run.sh: --treatment-arm '$treatment' must equal this run's own --arm '$arm' — the first run into a fresh iteration establishes the treatment by being it, not by naming a different arm." >&2
-      return 2
-    fi
+    # Whichever arm gets here first records the design, treatment or control.
+    # Requiring the creator to *be* the treatment made a fresh iteration
+    # unopenable by the control, so two arms launched together lost a race
+    # that nothing about the experiment needs them to run: the treatment is
+    # named explicitly on both, and a --treatment-arm that never produces a
+    # run is caught at rollup, where it is a missing arm rather than a
+    # guessed one.
     IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
       CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
       AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" \
