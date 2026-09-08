@@ -12,7 +12,7 @@
 
 `scripts/test.sh` checks the corpus as an artifact: the text is present, the scripts behave, the shared blocks match. Every one of those checks passes on a corpus that no agent obeys. This directory covers the other half — whether a session under this corpus behaves differently from a session without it — and it is the only place in the repo where the answer comes from running an agent rather than from reading one.
 
-What the runs so far found is summarised in [v6.2-evals-september-2026.md](v6.2-evals-september-2026.md): the score tables, what moved them, what did not work, and how much of it to believe.
+What the runs so far found is written up in [What the September 2026 evaluations found](v6.2-evals-september-2026.md), which stands on its own: what the tests do, the scores, what moved them, what did not work, and how much of it to believe.
 
 ## In plain terms
 
