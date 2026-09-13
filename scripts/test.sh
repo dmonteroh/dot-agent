@@ -1073,6 +1073,78 @@ printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with it
 subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: refreshing both sides clears the hook flag" || fail "routing: refreshing both sides clears the hook flag ($(status_flags "$rt"))"
 
+# ---- 21b. status.sh: architecture.md missing while docs/ holds routed docs
+# The three INDEX: routing checks above are all guarded on `[[ -s "$arch" ]]`
+# — correctly, since each compares a doc against its entry in a table that
+# must exist first — which leaves a node with routed docs and no table at
+# all silent. docs.sh creates architecture.md automatically the first time a
+# doc is scaffolded, so this state only reaches a hand-edited or partially
+# copied node: exactly what this REPAIR: check exists to catch.
+missrepair='REPAIR: docs/architecture.md missing/empty'
+
+# (c) an empty docs/ draws no finding.
+rtm1="$WORK/routing-table-missing-empty"
+mkdir -p "$rtm1"
+"$NODE" init --preset software-development --mode track-all "$rtm1" >/dev/null 2>&1
+finish_bootstrap "$rtm1"
+f21c=$(status_flags "$rtm1" | grep -F "$missrepair")
+[ -z "$f21c" ] && pass "routing table: empty docs/ draws no missing-table REPAIR" || fail "routing table: empty docs/ draws no missing-table REPAIR ($f21c)"
+
+# (d) docs/ holding only references/ content draws no finding either — that
+# tier has nothing to route.
+rtm2="$WORK/routing-table-missing-references-only"
+mkdir -p "$rtm2"
+"$NODE" init --preset software-development --mode track-all "$rtm2" >/dev/null 2>&1
+finish_bootstrap "$rtm2"
+mkdir -p "$rtm2/.agent/docs/references"
+printf '# Vendor spec dump\n\nsome content\n' >"$rtm2/.agent/docs/references/vendor.md"
+f21d=$(status_flags "$rtm2" | grep -F "$missrepair")
+[ -z "$f21d" ] && pass "routing table: references/-only docs/ draws no missing-table REPAIR" || fail "routing table: references/-only docs/ draws no missing-table REPAIR ($f21d)"
+
+# (a) a routed doc with no table at all fires exactly once, naming the table.
+rtm3="$WORK/routing-table-missing-one-doc"
+mkdir -p "$rtm3"
+"$NODE" init --preset software-development --mode track-all "$rtm3" >/dev/null 2>&1
+finish_bootstrap "$rtm3"
+rtm3docs="$rtm3/.agent/scripts/docs.sh"
+"$rtm3docs" new --name payments --read-when "payment flows and webhooks" "$rtm3" >/dev/null 2>&1
+rm -f "$rtm3/.agent/docs/architecture.md"
+f21e=$(status_flags "$rtm3")
+[ "$(printf '%s\n' "$f21e" | grep -cF "$missrepair")" = "1" ] && pass "routing table: routed doc with no table draws exactly one REPAIR" || fail "routing table: routed doc with no table draws exactly one REPAIR ($f21e)"
+printf '%s\n' "$f21e" | grep -qF 'docs/architecture.md' && pass "routing table: the REPAIR line names the missing table" || fail "routing table: the REPAIR line names the missing table ($f21e)"
+
+# (e) several routed docs, including a sub-doc under docs/<area>/, still
+# draw exactly one line — the finding is about the node, not any one doc.
+rtm4="$WORK/routing-table-missing-several-docs"
+mkdir -p "$rtm4"
+"$NODE" init --preset software-development --mode track-all "$rtm4" >/dev/null 2>&1
+finish_bootstrap "$rtm4"
+rtm4docs="$rtm4/.agent/scripts/docs.sh"
+"$rtm4docs" new --name payments --read-when "payment flows and webhooks" "$rtm4" >/dev/null 2>&1
+"$rtm4docs" new --name refunds --read-when "refund flows" "$rtm4" >/dev/null 2>&1
+"$rtm4docs" new --name frontend/grids --read-when "grid layouts" "$rtm4" >/dev/null 2>&1
+rm -f "$rtm4/.agent/docs/architecture.md"
+f21f=$(status_flags "$rtm4")
+[ "$(printf '%s\n' "$f21f" | grep -cF "$missrepair")" = "1" ] && pass "routing table: several routed docs (incl. a sub-doc) still draw exactly one REPAIR" || fail "routing table: several routed docs (incl. a sub-doc) still draw exactly one REPAIR ($f21f)"
+
+# (f) an empty-but-present architecture.md also fires, matching the -s test
+# the existing routing checks use.
+: >"$rtm4/.agent/docs/architecture.md"
+f21g=$(status_flags "$rtm4")
+[ "$(printf '%s\n' "$f21g" | grep -cF "$missrepair")" = "1" ] && pass "routing table: an empty-but-present architecture.md still draws exactly one REPAIR" || fail "routing table: an empty-but-present architecture.md still draws exactly one REPAIR ($f21g)"
+
+# (b) a routed doc WITH a present table draws no new finding, and the
+# existing INDEX: findings are unaffected.
+rtm5="$WORK/routing-table-present"
+mkdir -p "$rtm5"
+"$NODE" init --preset software-development --mode track-all "$rtm5" >/dev/null 2>&1
+finish_bootstrap "$rtm5"
+rtm5docs="$rtm5/.agent/scripts/docs.sh"
+"$rtm5docs" new --name payments --read-when "payment flows and webhooks" "$rtm5" >/dev/null 2>&1
+f21h=$(status_flags "$rtm5")
+[ -z "$(printf '%s\n' "$f21h" | grep -F "$missrepair")" ] && pass "routing table: a present architecture.md draws no missing-table REPAIR" || fail "routing table: a present architecture.md draws no missing-table REPAIR ($f21h)"
+[ -z "$f21h" ] && pass "routing table: a routed doc with its table stays otherwise INDEX-clean" || fail "routing table: a routed doc with its table stays otherwise INDEX-clean ($f21h)"
+
 # ---- 20. status.sh on a bootstrapped node: no findings, one LOAD line ----
 fresh19="$WORK/init-academic-research-track-all"
 out19all=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
@@ -5155,7 +5227,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=704
+EXPECTED_CHECKS=712
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

@@ -380,6 +380,33 @@ if [[ -d "$docs" ]]; then
   done
 fi
 
+# REPAIR: docs/ holds a routed document but architecture.md itself is
+# missing or empty. The three INDEX: checks above are all guarded on
+# `[[ -s "$arch" ]]` — correctly, since each compares a doc against its
+# entry in a table that has to exist first — but that guard also means a
+# node with routed docs and no table draws no finding at all from them.
+# docs.sh creates architecture.md automatically the first time a doc is
+# scaffolded, so this state only reaches a hand-edited or partially copied
+# node, which is exactly what this check exists to catch. This is REPAIR:,
+# not INDEX:, because a missing table is an absent canonical file, not a
+# disagreement between a doc and a table that exists.
+#
+# Own walk, independent of the loop above (own variable names, no shared
+# state), so the two blocks can be edited separately later. One line for
+# the whole node, never one per doc: stop at the first routed document.
+if [[ -d "$docs" && ! -s "$arch" ]]; then
+  for routing_candidate in "$docs"/*.md "$docs"/*/*.md; do
+    [[ -e "$routing_candidate" ]] || continue
+    routing_candidate_rel=${routing_candidate#"$docs"/}
+    [[ "$routing_candidate_rel" == "architecture.md" ]] && continue
+    # references/ is the never-auto-loaded depth tier: opened only by
+    # explicit path, so it has nothing to route and stays quiet.
+    [[ "$routing_candidate_rel" == references/* || "$routing_candidate_rel" == */references/* ]] && continue
+    echo "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents — recreate the table with scripts/docs.sh new --name <file> --read-when \"…\" (it writes the table header if none exists), then add or restore the entry for each existing routed doc"
+    break
+  done
+fi
+
 # REPAIR: memory.md index and memory/ fact files agree. Both directions
 # parse only the index line's own link — the first `[title](memory/…)` —
 # so a hook mentioning another memory path is never counted.
