@@ -47,6 +47,27 @@ memory_index_header_stale() {
   return 1
 }
 
+# Writes migration_target into the manifest frontmatter, using the same
+# read/write mechanism as version: rewrite the existing line in place, or
+# insert one right after `version:` if none exists yet. Idempotent —
+# writing the value it already holds is a no-op edit — so callers never
+# need to special-case a resumed update.
+write_migration_target() {
+  wmt_purpose="$1"
+  wmt_value="$2"
+  wmt_new="$(dirname "$wmt_purpose")/.purpose.md.new"
+  if grep -q '^  migration_target:' "$wmt_purpose"; then
+    wmt_line=$(grep -n -m1 '^  migration_target:' "$wmt_purpose" | cut -d: -f1)
+    sed -E "${wmt_line}s/^(  migration_target:).*/\1 \"$wmt_value\"/" "$wmt_purpose" >"$wmt_new"
+  else
+    wmt_line=$(grep -n -m1 '^  version:' "$wmt_purpose" | cut -d: -f1)
+    awk -v n="$wmt_line" -v val="$wmt_value" \
+      'NR==n { print; print "  migration_target: \"" val "\""; next } { print }' \
+      "$wmt_purpose" >"$wmt_new"
+  fi
+  mv "$wmt_new" "$wmt_purpose"
+}
+
 memory_headers_stale() {
   mh_agent="$1"
   memory_index_header_stale "$mh_agent/memory.md" && return 0
@@ -224,7 +245,7 @@ EOF
 
   cat >"$agent/purpose.md" <<EOF
 ---
-# Do not remove or rewrite this block; update passes may change only \`version\`.
+# Do not remove or rewrite this block; update passes may set \`migration_target\` — version changes only at finalize.
 dot-agent:
   source: $SOURCE_URL
   version: "$TARGET_VERSION"
@@ -315,6 +336,8 @@ EOF
   oldversion=$(printf '%s\n' "$version_line" | sed -E 's/^[[:space:]]*version:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
   mode_line=$(grep -m1 '^  mode:' "$purpose")
   mode=$(printf '%s\n' "$mode_line" | sed -E 's/^[[:space:]]*mode:[[:space:]]*([A-Za-z-]+).*/\1/')
+  migration_target_line=$(grep -m1 '^  migration_target:' "$purpose")
+  migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
 
   if [ -z "$oldversion" ]; then
     echo "node.sh: could not read a version from $purpose — not touching the node" >&2
@@ -364,17 +387,34 @@ EOF
 
   # memory.md and memory/ are untracked in every mode except track-all, so
   # git holds no copy of what the migration below rewrites: back up first,
-  # and never proceed on a failed backup.
+  # and never proceed on a failed backup. A collision is normally an
+  # unexplained file and aborts — except when migration_target already
+  # names this run's TARGET_VERSION, which means an earlier update reached
+  # this exact backup and was interrupted before finishing: that backup
+  # still holds the pre-migration node, so the retry reuses it rather than
+  # re-copying over it (which would replace the pre-migration snapshot with
+  # a half-migrated one).
   if [ "$mode" != "track-all" ]; then
     backup="$root/.agent.backup-v$oldversion"
     if [ -e "$backup" ]; then
-      echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
-      exit 1
+      if [ "$migration_target" = "$TARGET_VERSION" ]; then
+        echo "node.sh: $backup already holds the pre-migration node — resuming the interrupted update"
+      else
+        echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
+        exit 1
+      fi
+    else
+      cp -R "$agent" "$backup" \
+        || { echo "node.sh: backup to $backup failed — aborting before touching the node" >&2; exit 1; }
+      echo "node.sh: backed up node to $backup"
     fi
-    cp -R "$agent" "$backup" \
-      || { echo "node.sh: backup to $backup failed — aborting before touching the node" >&2; exit 1; }
-    echo "node.sh: backed up node to $backup"
   fi
+
+  # Record the pending migration before any node content is mutated, so an
+  # interruption anywhere below is detectable from the manifest alone.
+  # version itself is untouched here — it stays at $oldversion until
+  # finalize stamps it.
+  write_migration_target "$purpose" "$TARGET_VERSION"
 
   # Memory split baseline (guarded by memory/ absence — safe to re-run).
   memdir="$agent/memory"
@@ -429,19 +469,14 @@ EOF
     fi
   done
 
-  # Bump version — nothing else in the frontmatter changes. Rewrite exactly
-  # the line the version was read from, so the read and the write can never
-  # disagree about where the version lives.
-  vline=$(grep -n -m1 '^  version:' "$purpose" | cut -d: -f1)
-  purpose_new="$agent/.purpose.md.new"
-  sed -E "${vline}s/^(  version:).*/\1 \"$TARGET_VERSION\"/" "$purpose" >"$purpose_new"
-  mv "$purpose_new" "$purpose"
-
-  echo "node.sh: updated $agent from version $oldversion to $TARGET_VERSION"
+  # No version write here — version stays at $oldversion until finalize
+  # stamps it. migration_target (set above, before any mutation) is what
+  # records that this migration ran.
+  echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
   echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, and finish.sh refreshed from source repo"
-  echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model"
+  echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
   exit 0
   ;;
 

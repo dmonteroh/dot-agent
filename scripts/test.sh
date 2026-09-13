@@ -81,7 +81,7 @@ make_v6_fixture() {
   mkdir -p "$fx/.agent/rules" "$fx/.agent/docs"
   cat >"$fx/.agent/purpose.md" <<'EOF'
 ---
-# Do not remove or rewrite this block; update passes may change only `version`.
+# Do not remove or rewrite this block; update passes may set `migration_target` — version changes only at finalize.
 dot-agent:
   source: https://github.com/dmonteroh/dot-agent
   version: 6
@@ -232,22 +232,67 @@ legacy="$v6root/.agent/memory/legacy.md"
 
 grep -qF "[Legacy memory](memory/legacy.md)" "$v6root/.agent/memory.md" 2>/dev/null && pass "update: memory.md is the new index with the legacy line" || fail "update: memory.md is the new index with the legacy line"
 
-grep -v '^  version:' "$WORK/purpose-before.md" >"$WORK/pb-noversion"
-grep -v '^  version:' "$v6root/.agent/purpose.md" >"$WORK/pa-noversion"
-diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version line" || fail "update: manifest diff touches only the version line"
-grep -q '^  version: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version is now \"6.2\"" || fail "update: version is now \"6.2\""
+grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:' >"$WORK/pb-noversion"
+grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' >"$WORK/pa-noversion"
+diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version and migration_target lines" || fail "update: manifest diff touches only the version and migration_target lines"
+grep -q '^  version: 6$' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version stays at 6 (unbumped) — finalize's job" || fail "update: version stays at 6 (unbumped) — finalize's job"
+grep -q '^  migration_target: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.2\"" || fail "update: migration_target is now \"6.2\""
+[ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.2"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
+grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names the pending finalize step" || fail "update: closing message names the pending finalize step"
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
 printf '%s\n' "$flags4" | grep -q '^REPAIR:' && fail "update: status.sh shows no REPAIR" || pass "update: status.sh shows no REPAIR"
 
-# ---- 5. update idempotency (second run on the now-6.1 v6root) ----
+# ---- 5. update idempotency (second run on v6root, migration_target still pending) ----
+# version was never bumped in step 4 — the node still reads oldversion=6
+# with migration_target="6.2" pending, so this run must resume, not report
+# "current", and must reuse (not re-copy) the existing backup.
 cp -R "$v6root/.agent" "$WORK/v6root-agent-snapshot"
 "$NODE" update "$v6root" >"$WORK/update2.out" 2>&1
 rc=$?
-[ "$rc" -eq 0 ] && pass "update re-run exits 0" || fail "update re-run exits 0 (rc=$rc)"
-grep -q "current" "$WORK/update2.out" && pass "update re-run prints 'current'" || fail "update re-run prints 'current'"
-diff -r "$WORK/v6root-agent-snapshot" "$v6root/.agent" >/dev/null 2>&1 && pass "update re-run is a no-op (diff -r clean)" || fail "update re-run is a no-op (diff -r clean)"
+[ "$rc" -eq 0 ] && pass "update re-run (pending migration_target) exits 0" || fail "update re-run (pending migration_target) exits 0 (rc=$rc)"
+grep -qF "node is current" "$WORK/update2.out" && fail "update re-run with a pending migration_target does not report the node current" || pass "update re-run with a pending migration_target does not report the node current"
+grep -qF "resuming" "$WORK/update2.out" && pass "update re-run reports resuming the interrupted update" || fail "update re-run reports resuming the interrupted update"
+diff -r "$WORK/v6root-agent-snapshot" "$v6root/.agent" >/dev/null 2>&1 && pass "update re-run with a pending migration_target is a content no-op (diff -r clean)" || fail "update re-run with a pending migration_target is a content no-op (diff -r clean)"
+
+# ---- 5b. update interrupted after the backup, before content mutation: retry resumes ----
+# Model the exact interruption point: the backup was made from the
+# pre-migration node, migration_target was then written to the live
+# manifest, and the process died before any content mutation ran.
+interrupt="$WORK/update-interrupted"
+mkdir -p "$interrupt"
+make_v6_fixture "$interrupt"
+cp -R "$interrupt/.agent" "$interrupt/.agent.backup-v6"
+printf 'pre-existing backup marker\n' >"$interrupt/.agent.backup-v6/.marker"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$interrupt/.agent/purpose.md" >"$interrupt/.agent/purpose.md.tmp"
+mv "$interrupt/.agent/purpose.md.tmp" "$interrupt/.agent/purpose.md"
+"$NODE" update "$interrupt" >"$WORK/update-interrupt.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "update: retry of an interrupted update exits 0" || fail "update: retry of an interrupted update exits 0 (rc=$rc)"
+grep -qF "backup path already exists" "$WORK/update-interrupt.out" && fail "update: retry of an interrupted update does not abort on its own backup" || pass "update: retry of an interrupted update does not abort on its own backup"
+[ -f "$interrupt/.agent.backup-v6/.marker" ] && pass "update: retry does not re-copy over the existing backup" || fail "update: retry does not re-copy over the existing backup"
+grep -q "custom auth flow" "$interrupt/.agent.backup-v6/memory.md" 2>/dev/null && pass "update: retry's backup still holds the pre-migration memory.md" || fail "update: retry's backup still holds the pre-migration memory.md"
+grep -q '^  migration_target:' "$interrupt/.agent.backup-v6/purpose.md" && fail "update: retry's backup predates migration_target, as the pre-migration node did" || pass "update: retry's backup predates migration_target, as the pre-migration node did"
+[ -f "$interrupt/.agent/memory/legacy.md" ] && pass "update: retry completes the interrupted content mutation" || fail "update: retry completes the interrupted content mutation"
+legacy_count=$(grep -cF "[Legacy memory](memory/legacy.md)" "$interrupt/.agent/memory.md")
+[ "$legacy_count" -eq 1 ] && pass "update: retry does not duplicate the legacy memory index line" || fail "update: retry does not duplicate the legacy memory index line (count=$legacy_count)"
+grep -q '^  version: 6$' "$interrupt/.agent/purpose.md" 2>/dev/null && pass "update: retry still leaves version unbumped" || fail "update: retry still leaves version unbumped"
+
+# ---- 5c. a backup collision WITHOUT a matching migration_target still aborts ----
+unexplained="$WORK/update-unexplained-backup"
+mkdir -p "$unexplained"
+make_v6_fixture "$unexplained"
+mkdir -p "$unexplained/.agent.backup-v6"
+printf 'unrelated pre-existing directory\n' >"$unexplained/.agent.backup-v6/marker"
+cp -R "$unexplained/.agent" "$WORK/unexplained-snapshot"
+"$NODE" update "$unexplained" >"$WORK/update-unexplained.out" 2>"$WORK/update-unexplained.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "update: an unexplained backup collision (no matching migration_target) aborts" || fail "update: an unexplained backup collision (no matching migration_target) aborts"
+grep -qF "backup path already exists" "$WORK/update-unexplained.err" && pass "update: unexplained backup collision prints the existing refusal message" || fail "update: unexplained backup collision prints the existing refusal message"
+diff -r "$WORK/unexplained-snapshot" "$unexplained/.agent" >/dev/null 2>&1 && pass "update: unexplained backup collision leaves the node untouched" || fail "update: unexplained backup collision leaves the node untouched"
+[ -f "$unexplained/.agent.backup-v6/marker" ] && pass "update: unexplained backup collision leaves the pre-existing backup untouched" || fail "update: unexplained backup collision leaves the pre-existing backup untouched"
 
 # ---- 6. update on a node with no manifest ----
 nomanifest="$WORK/update-no-manifest"
@@ -4973,7 +5018,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=662
+EXPECTED_CHECKS=678
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
