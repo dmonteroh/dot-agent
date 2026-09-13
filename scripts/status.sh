@@ -402,7 +402,7 @@ if [[ -d "$docs" && ! -s "$arch" ]]; then
     # references/ is the never-auto-loaded depth tier: opened only by
     # explicit path, so it has nothing to route and stays quiet.
     [[ "$routing_candidate_rel" == references/* || "$routing_candidate_rel" == */references/* ]] && continue
-    echo "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents — recreate the table with scripts/docs.sh new --name <file> --read-when \"…\" (it writes the table header if none exists), then add or restore the entry for each existing routed doc"
+    echo "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents - recreate the table with scripts/docs.sh new --name <placeholder> --read-when \"...\" using a name NOT already used in docs/ (it refuses to overwrite an existing doc; delete the placeholder's doc file and its table entry afterward), then add an entry for each existing routed doc"
     break
   done
 fi
