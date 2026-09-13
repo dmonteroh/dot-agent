@@ -68,7 +68,7 @@ Each preset is self-contained — bootstrap copies exactly one into `rules/contr
 
 ## Get started
 
-Two prompts, one per node type. Either works standalone: a project node is self-contained. Add the root when you want memory that follows you across projects.
+Two prompts, one per node type. Either works standalone: a project node is self-contained. Add the root when you want memory that follows you across projects. Running either prompt means trusting the checked-out revision of this repo, whose scripts every later session runs — see [the trust contract](operating-model.md#the-trust-contract) in the operating model.
 
 ### Your root node: `~/.agent/` documents you
 
