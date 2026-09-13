@@ -16,6 +16,15 @@
 set -uo pipefail
 unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
 
+# The one temporary file this script writes: the raw diff, captured so its
+# exit status can be checked before awk reads a byte of it (below). Declared
+# and trapped here, ahead of every exit this run can take, so an early
+# exit 2 — before the file exists — still runs a safe no-op removal rather
+# than skip cleanup because the trap was installed too late.
+tmpfile=""
+cleanup() { [ -n "$tmpfile" ] && rm -f "$tmpfile"; }
+trap cleanup EXIT
+
 selfdir=$(cd "$(dirname "$0")" && pwd)
 
 BASE_REF="origin/main"
@@ -107,9 +116,35 @@ mb=$(git merge-base "$base" HEAD) || {
 # checked nothing", which in a transcript is indistinguishable from a pass
 # meaning "the comments are clean". It is the shape a session lands in by
 # committing first and then reaching for `comments.sh HEAD`.
-if [ "$mb" = "$(git rev-parse HEAD)" ] \
-  && git diff --quiet HEAD 2>/dev/null \
-  && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+#
+# Each call below is checked on its own exit status rather than folded
+# straight into the condition: an error from any of them is not the same as
+# either outcome the condition tests for, and reading it as one would either
+# skip a real check or misreport an empty diff that was never read.
+head_sha=$(git rev-parse HEAD 2>/dev/null)
+head_rc=$?
+if [ "$head_rc" -ne 0 ]; then
+  echo "comments.sh: git rev-parse HEAD failed (exit $head_rc)" >&2
+  exit 2
+fi
+
+git diff --quiet HEAD 2>/dev/null
+diffq_rc=$?
+# 0 = no differences, 1 = differences — both are meaningful results. 2 or
+# above is git itself failing to answer.
+if [ "$diffq_rc" -ge 2 ]; then
+  echo "comments.sh: git diff --quiet HEAD failed (exit $diffq_rc)" >&2
+  exit 2
+fi
+
+others=$(git ls-files --others --exclude-standard 2>/dev/null)
+others_rc=$?
+if [ "$others_rc" -ne 0 ]; then
+  echo "comments.sh: git ls-files --others --exclude-standard failed (exit $others_rc)" >&2
+  exit 2
+fi
+
+if [ "$mb" = "$head_sha" ] && [ "$diffq_rc" -eq 0 ] && [ -z "$others" ]; then
   echo "comments.sh: '$base' resolves to HEAD and the tree is clean, so the diff is empty and this run checks nothing. Pass the change's true parent — the branch base, or the commit before the change." >&2
   exit 2
 fi
@@ -120,8 +155,24 @@ fi
 # looks for, and a path holding a non-ASCII byte arrives quoted. Either one
 # leaves the filename unset, and every added line is then judged with no
 # extension and no path to match the exclusions against.
-added=$(git -c core.quotepath=false diff --src-prefix=a/ --dst-prefix=b/ "$mb" -- "$@" \
-  | awk '
+#
+# The diff is captured to a file first, and git's own exit status is
+# checked before awk reads a byte of it. A command substitution's failure
+# is otherwise invisible once it feeds a pipe: GIT_EXTERNAL_DIFF pointed at
+# a broken program is the reproducer — git diff then exits 128, and
+# unchecked, awk is handed an empty stream that reads as a clean diff this
+# run never took.
+tmpfile=$(mktemp "${TMPDIR:-/tmp}/comments-diff.XXXXXX") || {
+  echo "comments.sh: could not create a temporary file for the diff" >&2
+  exit 2
+}
+git -c core.quotepath=false diff --src-prefix=a/ --dst-prefix=b/ "$mb" -- "$@" >"$tmpfile"
+diff_rc=$?
+if [ "$diff_rc" -ne 0 ]; then
+  echo "comments.sh: git diff against '$mb' failed (exit $diff_rc)" >&2
+  exit 2
+fi
+added=$(awk '
       /^\+\+\+ / {
         p = substr($0, 5)
         # git appends a tab to this header when the path holds a space.
@@ -135,18 +186,30 @@ added=$(git -c core.quotepath=false diff --src-prefix=a/ --dst-prefix=b/ "$mb" -
       /^\+/ && !/^\+\+\+/ {
         line = substr($0, 2)
         print file "\t" line
-      }')
+      }' "$tmpfile")
+rm -f "$tmpfile"
+tmpfile=""
 
 # The diff never shows untracked files, so a brand-new unadded source file
 # is scanned whole: every comment line in it is a line this diff adds.
 # -z, because a name git would quote is not a path any longer, and the
 # file would be skipped whole. ENVIRON for the same reason -v is avoided
 # below: -v collapses the backslash escapes in a name.
+#
+# `pipefail` (set at the top of this script) carries a failure in the git
+# call through the while loop that consumes it, so the status read right
+# after the assignment below is the pipeline's, not just the loop's — a
+# discovery failure does not read as "no untracked files".
 untracked=$(git ls-files --others --exclude-standard -z -- "$@" \
   | while IFS= read -r -d '' uf; do
       [ -f "$uf" ] || continue
       UF="$uf" awk 'BEGIN { f = ENVIRON["UF"] } { print f "\t" $0 }' "$uf"
     done)
+untracked_rc=$?
+if [ "$untracked_rc" -ne 0 ]; then
+  echo "comments.sh: git ls-files --others --exclude-standard -z failed (exit $untracked_rc)" >&2
+  exit 2
+fi
 if [ -n "$untracked" ]; then
   added=$(printf '%s\n%s' "$added" "$untracked")
 fi
@@ -367,8 +430,16 @@ findings=$(printf '%s\n' "$added" \
                               { reason = "restates the code below" }
       printf "%s\t%s\t%s\t%s\n", class, reason, F[i], L[i]
     }
-  }' \
-  || true)
+  }')
+findings_rc=$?
+# This awk program has no explicit exit and takes no conf value it did not
+# already validate above, so a clean run always exits 0 — the "no findings"
+# and "nothing to report" outcomes are both a 0 with empty output. A
+# nonzero status here is the engine itself failing, not a shape it read.
+if [ "$findings_rc" -ne 0 ]; then
+  echo "comments.sh: the comment classifier failed (exit $findings_rc)" >&2
+  exit 2
+fi
 
 [ -z "$findings" ] && exit 0
 

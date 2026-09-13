@@ -1556,6 +1556,143 @@ for f in comments.conf status.conf log.conf; do
 done
 [ -z "$missing_u" ] && pass "update: every shipped script and starter conf reaches an existing node" || fail "update: every shipped script and starter conf reaches an existing node (missing:$missing_u)"
 
+# F2: the gate fails closed when it cannot read what it is meant to read,
+# rather than reporting a pass it never earned. GIT_EXTERNAL_DIFF pointed
+# at a program that fails is the audit's own reproducer: git diff then
+# exits 128, and unless that status is checked, the parser downstream is
+# handed an empty stream that reads as a clean diff never taken.
+out34diffx=$(cd "$cg" && GIT_EXTERNAL_DIFF=false .agent/scripts/comments.sh base 2>&1)
+rc34diffx=$?
+[ "$rc34diffx" -eq 2 ] && pass "comments.sh: GIT_EXTERNAL_DIFF pointed at a broken program fails the diff capture closed" || fail "comments.sh: GIT_EXTERNAL_DIFF pointed at a broken program fails the diff capture closed (rc=$rc34diffx; $out34diffx)"
+
+# The rest of the fault injection goes through a PATH-prepended stub that
+# fails only the exact call under test and execs the real tool otherwise,
+# so every other git or awk call in the run is untouched. The real
+# interpreter is resolved once, before PATH is ever touched, and baked
+# into each stub's own text rather than re-resolved at the stub's run
+# time — a stub that called `command -v` itself would find itself first.
+stub34="$WORK/cg-stub"
+mkdir -p "$stub34"
+real_git34=$(command -v git)
+real_awk34=$(command -v awk)
+
+# The diff-capture call is the only one carrying --src-prefix=a/.
+cat >"$stub34/git" <<STUBEOF
+#!/bin/sh
+for a in "\$@"; do
+  if [ "\$a" = "--src-prefix=a/" ]; then
+    exit 1
+  fi
+done
+exec "$real_git34" "\$@"
+STUBEOF
+chmod +x "$stub34/git"
+out34diffy=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+rc34diffy=$?
+[ "$rc34diffy" -eq 2 ] && pass "comments.sh: a stubbed git failing the diff capture exits 2" || fail "comments.sh: a stubbed git failing the diff capture exits 2 (rc=$rc34diffy; $out34diffy)"
+rm -f "$stub34/git"
+
+# Untracked-file discovery carries the only ls-files call with -z, which
+# separates it from the identical-looking call in the emptiness guard.
+cat >"$stub34/git" <<STUBEOF
+#!/bin/sh
+for a in "\$@"; do
+  if [ "\$a" = "-z" ]; then
+    exit 1
+  fi
+done
+exec "$real_git34" "\$@"
+STUBEOF
+chmod +x "$stub34/git"
+out34untrx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+rc34untrx=$?
+[ "$rc34untrx" -eq 2 ] && pass "comments.sh: a stubbed git failing untracked-file discovery exits 2" || fail "comments.sh: a stubbed git failing untracked-file discovery exits 2 (rc=$rc34untrx; $out34untrx)"
+rm -f "$stub34/git"
+
+# The classifier is the only awk invocation that exports BLOCK_RE — a
+# blanket awk stub would trip the earlier regex-validation awk calls first
+# and pass the assertion below for the wrong reason.
+cat >"$stub34/awk" <<STUBEOF
+#!/bin/sh
+if [ -n "\${BLOCK_RE+x}" ]; then
+  exit 1
+fi
+exec "$real_awk34" "\$@"
+STUBEOF
+chmod +x "$stub34/awk"
+out34clsx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+rc34clsx=$?
+[ "$rc34clsx" -eq 2 ] && pass "comments.sh: a stubbed awk failing the classifier exits 2" || fail "comments.sh: a stubbed awk failing the classifier exits 2 (rc=$rc34clsx; $out34clsx)"
+rm -f "$stub34/awk"
+
+# The emptiness guard's three git calls each fail closed on an error
+# status, distinct from the 0/1 outcomes the guard actually reads.
+cat >"$stub34/git" <<STUBEOF
+#!/bin/sh
+if [ "\$1" = "rev-parse" ] && [ "\$2" = "HEAD" ] && [ \$# -eq 2 ]; then
+  exit 1
+fi
+exec "$real_git34" "\$@"
+STUBEOF
+chmod +x "$stub34/git"
+out34headx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+rc34headx=$?
+[ "$rc34headx" -eq 2 ] && pass "comments.sh: a stubbed 'git rev-parse HEAD' failure exits 2" || fail "comments.sh: a stubbed 'git rev-parse HEAD' failure exits 2 (rc=$rc34headx; $out34headx)"
+rm -f "$stub34/git"
+
+cat >"$stub34/git" <<STUBEOF
+#!/bin/sh
+if [ "\$1" = "diff" ] && [ "\$2" = "--quiet" ] && [ "\$3" = "HEAD" ]; then
+  exit 128
+fi
+exec "$real_git34" "\$@"
+STUBEOF
+chmod +x "$stub34/git"
+out34quietx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+rc34quietx=$?
+[ "$rc34quietx" -eq 2 ] && pass "comments.sh: a 'git diff --quiet HEAD' error status exits 2" || fail "comments.sh: a 'git diff --quiet HEAD' error status exits 2 (rc=$rc34quietx; $out34quietx)"
+rm -f "$stub34/git"
+
+cat >"$stub34/git" <<STUBEOF
+#!/bin/sh
+if [ "\$1" = "ls-files" ] && [ "\$2" = "--others" ] && [ "\$3" = "--exclude-standard" ] && [ \$# -eq 3 ]; then
+  exit 1
+fi
+exec "$real_git34" "\$@"
+STUBEOF
+chmod +x "$stub34/git"
+out34othersx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+rc34othersx=$?
+[ "$rc34othersx" -eq 2 ] && pass "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2" || fail "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2 (rc=$rc34othersx; $out34othersx)"
+rm -f "$stub34/git"
+
+# finish.sh already maps any non-zero comments.sh exit to a hard stop with
+# no log entry (scripts/finish.sh, unchanged here) — a gate that now fails
+# closed on a broken diff read has to reach that same stop, not a silent
+# pass through it.
+cgf34="$WORK/comment-gate-failclosed"
+mkdir -p "$cgf34/src"
+"$NODE" init --preset software-development --mode track-all "$cgf34" >/dev/null 2>&1
+finish_bootstrap "$cgf34"
+printf 'export const a = 1\n' >"$cgf34/src/a.ts"
+git -C "$cgf34" init -q && git -C "$cgf34" add -A && git -C "$cgf34" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+printf 'export const b = 2\n' >>"$cgf34/src/a.ts"
+n34before=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
+out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "should not log" "$cgf34" 2>&1)
+rc34fc=$?
+n34after=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
+[ "$rc34fc" -ne 0 ] && [ "$n34before" -eq "$n34after" ] && pass "finish.sh: a failed-closed comment gate appends no log entry" || fail "finish.sh: a failed-closed comment gate appends no log entry (rc=$rc34fc before=$n34before after=$n34after; $out34fc)"
+
+# The one temporary file comments.sh writes — the captured diff — survives
+# no run, clean or failed: a single trap removes it on every exit path.
+tmpdir34="$WORK/cg-tmpdir"
+mkdir -p "$tmpdir34"
+(cd "$cg" && TMPDIR="$tmpdir34" .agent/scripts/comments.sh base >/dev/null 2>&1)
+(cd "$cg" && TMPDIR="$tmpdir34" GIT_EXTERNAL_DIFF=false .agent/scripts/comments.sh base >/dev/null 2>&1)
+(cd "$cg" && TMPDIR="$tmpdir34" .agent/scripts/comments.sh nosuchref >/dev/null 2>&1)
+leftover34=$(find "$tmpdir34" -type f)
+[ -z "$leftover34" ] && pass "comments.sh: no temporary file survives success or failure" || fail "comments.sh: no temporary file survives success or failure ($leftover34)"
+
 # ---- 35. status.sh: per-node overrides in status.conf ----
 # The thresholds and the probed-tools list are per-project tunables, but
 # an edit to status.sh itself is discarded by node.sh update. The conf
@@ -4798,7 +4935,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=649
+EXPECTED_CHECKS=658
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
