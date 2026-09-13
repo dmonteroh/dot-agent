@@ -21,8 +21,6 @@
 
 set -u
 
-selfdir=$(cd "$(dirname "$0")" && pwd)
-
 usage() {
   cat <<'EOF'
 Usage: finish.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]

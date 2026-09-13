@@ -4231,6 +4231,238 @@ printf '["not","an","object"]\n' >"$rlshapemeta/eval-demo/r1/run-meta.json"
 outrlshapemeta=$("$evroot/rollup.py" "$rlshapemeta" 2>&1); rcrlshapemeta=$?
 [ "$rcrlshapemeta" -eq 2 ] && printf '%s\n' "$outrlshapemeta" | grep -qF 'run-meta.json must be an object' && pass "evals: rollup refuses a non-object run-meta.json" || fail "evals: rollup refuses a non-object run-meta.json (rc=$rcrlshapemeta; $outrlshapemeta)"
 
+# ---- 44c. evals/*.py: stdout/stderr survive single-byte locales ----
+# Every evals/*.py entry point now reconfigures stdout/stderr to UTF-8 with
+# errors="backslashreplace" before printing anything. Before that fix,
+# --help raised UnicodeEncodeError under LC_ALL=en_US.ISO8859-1 in
+# contamination.py, fixture_seed.py, pooled.py and triage.py (their
+# docstrings carry an em dash), and rollup.py crashed the same way printing
+# its regression bucket and its --auto-only preview. Covered here for all
+# seven files: --help, a success path, an empty-input path, and an error
+# path, under LC_ALL=C (every runner has it) and under en_US.ISO8859-1,
+# guarded per the locale check at scripts/test.sh:1894 because the Ubuntu CI
+# image does not carry it and the macOS image does.
+el="$WORK/eval-locale"
+mkdir -p "$el"
+
+mkdir -p "$el/rollup-reg/eval-demo/r1" "$el/rollup-reg/eval-demo/r2"
+printf '{"r1":"treat","r2":"ctrl"}\n' >"$el/rollup-reg/arm-map.json"
+printf '{"treatment_arm":"treat","repeats_per_cell":1}\n' >"$el/rollup-reg/run-config.json"
+printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"}]}\n' >"$el/rollup-reg/eval-demo/eval-snapshot.json"
+printf '{"results":[{"id":"a1","passed":false,"evidence":"q"}]}\n' >"$el/rollup-reg/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","passed":true,"evidence":"r"}]}\n' >"$el/rollup-reg/eval-demo/r2/grading.json"
+mkdir -p "$el/rollup-empty"
+printf '{}\n' >"$el/rollup-empty/arm-map.json"
+
+printf '{"evals":[]}\n' >"$el/spec-empty.json"
+
+mkdir -p "$el/wsp/iteration-1/eval-demo/r1" "$el/wsp/iteration-1/eval-demo/r2"
+printf '{"r1":"treat","r2":"ctrl"}\n' >"$el/wsp/iteration-1/arm-map.json"
+printf '{"results":[{"id":"a1","passed":true,"evidence":"q"}]}\n' >"$el/wsp/iteration-1/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","passed":false,"evidence":"r"}]}\n' >"$el/wsp/iteration-1/eval-demo/r2/grading.json"
+printf '{"kinds":{}}\n' >"$el/kinds-empty.json"
+
+mkdir -p "$el/trg/eval-demo/r1/outputs" "$el/trg-empty"
+printf '{"results":[{"id":"a1","passed":null,"evidence":null}]}\n' >"$el/trg/eval-demo/r1/grading.json"
+printf 'the change reads catalog.ts and writes new.ts\n' >"$el/trg/eval-demo/r1/outputs/session-transcript.txt"
+printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a=1\n' >"$el/trg/eval-demo/r1/outputs/diff.patch"
+
+mkdir -p "$el/grade/r0/outputs" "$el/grade-empty/r0/outputs"
+printf '{"id":"g","assertions":[{"id":"g/new","concept":"c","class":"artifact","grade":"auto","check":"product_files_added == 1"}]}' >"$el/grade/r0/snap.json"
+printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$el/grade/r0/outputs/diff.patch"
+printf '{"id":"g","assertions":[]}' >"$el/grade-empty/r0/snap.json"
+
+printf '{"type":"result","result":"ok"}\n' >"$el/usage-empty.txt"
+
+# fixture_seed.py's fill-contract rewrites in place, so its input is
+# (re)written fresh inside evloc_checks below rather than once here.
+
+evloc_checks() {
+  local evlc="$1" evlabel="$2" out rc
+
+  out=$(LC_ALL="$evlc" "$evroot/rollup.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -qi 'traceback\|unicodeencodeerror' \
+    && pass "evals: rollup.py --help completes under $evlabel" \
+    || fail "evals: rollup.py --help completes under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/rollup.py" "$el/rollup-reg" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'REGRESSIONS' \
+    && pass "evals: rollup.py prints its regression bucket under $evlabel" \
+    || fail "evals: rollup.py prints its regression bucket under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/rollup.py" "$el/rollup-empty" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -qF 'arm-map.json is empty' \
+    && pass "evals: rollup.py refuses an empty arm-map.json under $evlabel" \
+    || fail "evals: rollup.py refuses an empty arm-map.json under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/rollup.py" --exclude-eval 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -qF -- '--exclude-eval requires an eval id' \
+    && pass "evals: rollup.py refuses --exclude-eval with no value under $evlabel" \
+    || fail "evals: rollup.py refuses --exclude-eval with no value under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/contamination.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -qi 'traceback\|unicodeencodeerror' \
+    && pass "evals: contamination.py --help completes under $evlabel" \
+    || fail "evals: contamination.py --help completes under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/contamination.py" "dir:$reporoot" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'scenario overlap' \
+    && pass "evals: contamination.py reports scenario overlap on the real corpus under $evlabel" \
+    || fail "evals: contamination.py reports scenario overlap on the real corpus under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/contamination.py" --spec "$el/spec-empty.json" "dir:$reporoot" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: contamination.py runs against an empty eval spec under $evlabel" \
+    || fail "evals: contamination.py runs against an empty eval spec under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/contamination.py" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] \
+    && pass "evals: contamination.py refuses no refs under $evlabel" \
+    || fail "evals: contamination.py refuses no refs under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/fixture_seed.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: fixture_seed.py --help completes under $evlabel" \
+    || fail "evals: fixture_seed.py --help completes under $evlabel (rc=$rc; $out)"
+
+  printf -- '- Areas and package managers: <placeholder>\n' >"$el/contract.md"
+  out=$(LC_ALL="$evlc" "$evroot/fixture_seed.py" fill-contract "$el/contract.md" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && grep -qF 'npm only' "$el/contract.md" \
+    && pass "evals: fixture_seed.py fill-contract answers a placeholder under $evlabel" \
+    || fail "evals: fixture_seed.py fill-contract answers a placeholder under $evlabel (rc=$rc; $out)"
+
+  printf '' >"$el/contract-empty.md"
+  out=$(LC_ALL="$evlc" "$evroot/fixture_seed.py" fill-contract "$el/contract-empty.md" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: fixture_seed.py fill-contract completes on an empty file under $evlabel" \
+    || fail "evals: fixture_seed.py fill-contract completes on an empty file under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/fixture_seed.py" fill-contract a b c 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -qF 'takes exactly one path' \
+    && pass "evals: fixture_seed.py fill-contract refuses extra arguments under $evlabel" \
+    || fail "evals: fixture_seed.py fill-contract refuses extra arguments under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/pooled.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: pooled.py --help completes under $evlabel" \
+    || fail "evals: pooled.py --help completes under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/pooled.py" --baseline "$el/wsp:ctrl" --candidate "$el/wsp:treat" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'unique-win' \
+    && pass "evals: pooled.py pools a baseline and a candidate workspace under $evlabel" \
+    || fail "evals: pooled.py pools a baseline and a candidate workspace under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/pooled.py" --baseline "$el/wsp:ctrl" --candidate "$el/wsp:treat" --kinds "$el/kinds-empty.json" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: pooled.py runs against an empty assertion-kinds file under $evlabel" \
+    || fail "evals: pooled.py runs against an empty assertion-kinds file under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/pooled.py" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -qF 'both required' \
+    && pass "evals: pooled.py refuses missing --baseline/--candidate under $evlabel" \
+    || fail "evals: pooled.py refuses missing --baseline/--candidate under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/triage.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: triage.py --help completes under $evlabel" \
+    || fail "evals: triage.py --help completes under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/triage.py" "$el/trg" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'UNSURE' \
+    && pass "evals: triage.py proposes a verdict for a pending assertion under $evlabel" \
+    || fail "evals: triage.py proposes a verdict for a pending assertion under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/triage.py" "$el/trg-empty" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qF 'proposed: 0 PASS, 0 FAIL, 0 UNSURE' \
+    && pass "evals: triage.py completes over a root with no eval directories under $evlabel" \
+    || fail "evals: triage.py completes over a root with no eval directories under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/triage.py" "$el/no-such-root" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && ! printf '%s\n' "$out" | grep -qi 'unicodeencodeerror' \
+    && pass "evals: triage.py fails on a missing root without an encoding error under $evlabel" \
+    || fail "evals: triage.py fails on a missing root without an encoding error under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/grade.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: grade.py --help completes under $evlabel" \
+    || fail "evals: grade.py --help completes under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/grade.py" "$el/grade/r0" "$el/grade/r0/snap.json" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qF 'graded 1 auto' \
+    && pass "evals: grade.py grades one auto assertion under $evlabel" \
+    || fail "evals: grade.py grades one auto assertion under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/grade.py" "$el/grade-empty/r0" "$el/grade-empty/r0/snap.json" 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qF 'graded 0 auto' \
+    && pass "evals: grade.py completes over a snapshot with no assertions under $evlabel" \
+    || fail "evals: grade.py completes over a snapshot with no assertions under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/grade.py" "$el/no-such-run" "$el/no-such-snap" 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -qF 'no such run directory' \
+    && pass "evals: grade.py refuses a missing run directory under $evlabel" \
+    || fail "evals: grade.py refuses a missing run directory under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/run_lib.py" --help 2>&1); rc=$?
+  [ "$rc" -eq 0 ] \
+    && pass "evals: run_lib.py --help completes under $evlabel" \
+    || fail "evals: run_lib.py --help completes under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/run_lib.py" gen-run-id 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^r[0-9a-f]{32}$' \
+    && pass "evals: run_lib.py gen-run-id prints a run id under $evlabel" \
+    || fail "evals: run_lib.py gen-run-id prints a run id under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/run_lib.py" agent-usage "$el/usage-empty.txt" claude-stream-json 2>&1); rc=$?
+  [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qF '"input_tokens": null' \
+    && pass "evals: run_lib.py agent-usage reports null usage on an empty stream under $evlabel" \
+    || fail "evals: run_lib.py agent-usage reports null usage on an empty stream under $evlabel (rc=$rc; $out)"
+
+  out=$(LC_ALL="$evlc" "$evroot/run_lib.py" no-such-command 2>&1); rc=$?
+  [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -qF 'unknown command' \
+    && pass "evals: run_lib.py refuses an unknown command under $evlabel" \
+    || fail "evals: run_lib.py refuses an unknown command under $evlabel (rc=$rc; $out)"
+}
+
+evloc_checks "C" "LC_ALL=C"
+
+eviso=$(locale -a 2>/dev/null | grep -ix -m1 -e 'en_US.ISO8859-1')
+if [ -n "$eviso" ]; then
+  evloc_checks "$eviso" "LC_ALL=en_US.ISO8859-1"
+else
+  for evname in \
+    "rollup.py --help completes" \
+    "rollup.py prints its regression bucket" \
+    "rollup.py refuses an empty arm-map.json" \
+    "rollup.py refuses --exclude-eval with no value" \
+    "contamination.py --help completes" \
+    "contamination.py reports scenario overlap on the real corpus" \
+    "contamination.py runs against an empty eval spec" \
+    "contamination.py refuses no refs" \
+    "fixture_seed.py --help completes" \
+    "fixture_seed.py fill-contract answers a placeholder" \
+    "fixture_seed.py fill-contract completes on an empty file" \
+    "fixture_seed.py fill-contract refuses extra arguments" \
+    "pooled.py --help completes" \
+    "pooled.py pools a baseline and a candidate workspace" \
+    "pooled.py runs against an empty assertion-kinds file" \
+    "pooled.py refuses missing --baseline/--candidate" \
+    "triage.py --help completes" \
+    "triage.py proposes a verdict for a pending assertion" \
+    "triage.py completes over a root with no eval directories" \
+    "triage.py fails on a missing root without an encoding error" \
+    "grade.py --help completes" \
+    "grade.py grades one auto assertion" \
+    "grade.py completes over a snapshot with no assertions" \
+    "grade.py refuses a missing run directory" \
+    "run_lib.py --help completes" \
+    "run_lib.py gen-run-id prints a run id" \
+    "run_lib.py agent-usage reports null usage on an empty stream" \
+    "run_lib.py refuses an unknown command" \
+  ; do
+    pass "evals: $evname not exercised — en_US.ISO8859-1 unavailable on this host"
+  done
+fi
+
 # ---- 45. evals/run.sh: subscription-backed auth, thread lifecycle,
 #          process-group cleanup on success, setup-cancellation ownership,
 #          Codex stream-append checks, and concurrent metadata updates ----
@@ -4566,7 +4798,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=593
+EXPECTED_CHECKS=649
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
