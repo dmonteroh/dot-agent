@@ -156,6 +156,8 @@ fi
 # REPAIR: canonical files present and stamped.
 [[ -s "$memory" ]] || echo "REPAIR: memory.md missing/empty"
 [[ -s "$log" ]] || echo "REPAIR: session-log.md missing/empty"
+[[ -s "$contract" ]] || echo "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session"
+[[ -s "$learned" ]] || echo "REPAIR: rules/learned.md missing/empty — restore it, the entry point loads it every session"
 if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi

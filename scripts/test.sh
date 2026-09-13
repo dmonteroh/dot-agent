@@ -108,6 +108,29 @@ EOF
 
 - [2026-01-01] (claude) fixture bootstrap for smoke tests (testing). verify: pass.
 EOF
+  # rules/contract.md and rules/learned.md are always-loaded canonical
+  # files on a real V6 node — status.sh flags either one missing — so the
+  # fixture ships both, plus rules/quality-bar.md, to stay a realistic
+  # bootstrap-complete node rather than one the bootstrap-completion check
+  # (further down in status.sh, untouched by this task) also flags.
+  cat >"$fx/.agent/rules/contract.md" <<'EOF'
+# Contract
+
+## Project guardrails
+
+- Build: `true`
+EOF
+  cat >"$fx/.agent/rules/quality-bar.md" <<'EOF'
+# Quality bar
+
+Fixture quality-bar body for smoke tests.
+EOF
+  cat >"$fx/.agent/rules/learned.md" <<'EOF'
+# Learned rules
+<!-- Binding rules distilled from operator corrections. -->
+
+- [2026-01-01] Fixture learned-rule body for smoke tests.
+EOF
   if [ "$fxmode" != "ignore-all" ]; then
     sed "s/^  mode: ignore-all/  mode: $fxmode/" "$fx/.agent/purpose.md" >"$fx/.agent/purpose.md.tmp"
     mv "$fx/.agent/purpose.md.tmp" "$fx/.agent/purpose.md"
@@ -1155,6 +1178,43 @@ f26b=$(status_flags "$rf")
 printf 'no routing header\n' >"$rf/.agent/docs/backend/queues.md"
 f26c=$(status_flags "$rf")
 printf '%s\n' "$f26c" | grep -qF 'INDEX: docs/backend/queues.md' && pass "references: a real sub-doc beside references/ is still checked" || fail "references: a real sub-doc beside references/ is still checked ($f26c)"
+
+# ---- 26b. always-loaded canonical files: contract.md and learned.md must
+# exist. Both are read by the entry point's bootstrap step every session;
+# either one missing used to leave status.sh silent. Each fixture removes
+# exactly one file so neither finding depends on the other.
+alcf="$WORK/always-loaded-canonical-files"
+mkdir -p "$alcf"
+"$NODE" init --preset software-development --mode track-all "$alcf" >/dev/null 2>&1
+finish_bootstrap "$alcf"
+[ -z "$(status_flags "$alcf")" ] && pass "always-loaded: a complete node prints no finding" || fail "always-loaded: a complete node prints no finding ($(status_flags "$alcf"))"
+
+rm -f "$alcf/.agent/rules/contract.md"
+f26d=$(status_flags "$alcf")
+[ "$f26d" = "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session" ] && pass "always-loaded: a missing contract.md draws exactly one REPAIR finding" || fail "always-loaded: a missing contract.md draws exactly one REPAIR finding ($f26d)"
+"$alcf/.agent/scripts/status.sh" "$alcf" >/dev/null 2>&1
+[ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with contract.md missing" || fail "always-loaded: status.sh still exits 0 with contract.md missing"
+
+alcf2="$WORK/always-loaded-canonical-files-learned"
+mkdir -p "$alcf2"
+"$NODE" init --preset software-development --mode track-all "$alcf2" >/dev/null 2>&1
+finish_bootstrap "$alcf2"
+rm -f "$alcf2/.agent/rules/learned.md"
+f26e=$(status_flags "$alcf2")
+[ "$f26e" = "REPAIR: rules/learned.md missing/empty — restore it, the entry point loads it every session" ] && pass "always-loaded: a missing learned.md draws exactly one REPAIR finding" || fail "always-loaded: a missing learned.md draws exactly one REPAIR finding ($f26e)"
+"$alcf2/.agent/scripts/status.sh" "$alcf2" >/dev/null 2>&1
+[ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md missing" || fail "always-loaded: status.sh still exits 0 with learned.md missing"
+
+# An empty-but-present file draws the same finding as a missing one.
+alcf3="$WORK/always-loaded-canonical-files-empty"
+mkdir -p "$alcf3"
+"$NODE" init --preset software-development --mode track-all "$alcf3" >/dev/null 2>&1
+finish_bootstrap "$alcf3"
+: >"$alcf3/.agent/rules/learned.md"
+f26f=$(status_flags "$alcf3")
+[ "$f26f" = "REPAIR: rules/learned.md missing/empty — restore it, the entry point loads it every session" ] && pass "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one" || fail "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one ($f26f)"
+"$alcf3/.agent/scripts/status.sh" "$alcf3" >/dev/null 2>&1
+[ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md empty" || fail "always-loaded: status.sh still exits 0 with learned.md empty"
 
 # ---- 27. memory.sh --type ----
 mt="$WORK/memory-type"
@@ -5095,7 +5155,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=697
+EXPECTED_CHECKS=704
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
