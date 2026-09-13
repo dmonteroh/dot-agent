@@ -5470,6 +5470,50 @@ else
   fail "evals: the iteration metadata lock is released after concurrent dry runs finish"
 fi
 
+# ---- 46. the completion-time gate is described accurately, not denied ----
+# F10b: README.md used to end its load-path paragraph with "There is no
+# completion-time gate," which was false — finish.sh withholds the
+# session-log entry on a standing flag or a status check that failed to run
+# cleanly. These checks pin the mechanism facts and the retired phrase, not
+# a sentence: any honest rewording keeps naming finish.sh, status.sh, and a
+# flag prefix together, so only reintroducing the stale claim or dropping
+# the mechanism from the docs or the script can trip them.
+
+# -- the retired claim does not return anywhere it was cut from --
+stale_hits=$(grep -rIn -- "no completion-time gate" \
+  "$reporoot/README.md" "$reporoot/operating-model.md" \
+  "$reporoot/presets" "$reporoot/templates" "$reporoot/tools" 2>/dev/null)
+if [ -z "$stale_hits" ]; then
+  pass "docs: 'no completion-time gate' does not appear in README.md, operating-model.md, presets/, templates/, or tools/"
+else
+  fail "docs: 'no completion-time gate' does not appear in README.md, operating-model.md, presets/, templates/, or tools/ (found: $(printf '%s' "$stale_hits" | head -n1))"
+fi
+
+# -- the README's finish.sh lines still name the status check and a flag prefix --
+finishsh_lines=$(grep -F "finish.sh" "$reporoot/README.md")
+finishsh_anchor_ok=0
+if printf '%s\n' "$finishsh_lines" | grep -qF "status.sh" \
+  && printf '%s\n' "$finishsh_lines" | grep -qE 'REPAIR:|GROOM:|INDEX:'; then
+  finishsh_anchor_ok=1
+fi
+if [ "$finishsh_anchor_ok" -eq 1 ]; then
+  pass "README.md: a finish.sh line also names status.sh and a GROOM:/REPAIR:/INDEX: flag"
+else
+  fail "README.md: a finish.sh line also names status.sh and a GROOM:/REPAIR:/INDEX: flag"
+fi
+
+# -- finish.sh still implements both fail-closed branches --
+no_entry_count=$(grep -cF "No log entry written." "$reporoot/scripts/finish.sh")
+statusrc_line_ok=0
+if grep -F "No log entry written." "$reporoot/scripts/finish.sh" | grep -qF "status.sh rc="; then
+  statusrc_line_ok=1
+fi
+if [ "$no_entry_count" -ge 2 ] && [ "$statusrc_line_ok" -eq 1 ]; then
+  pass "scripts/finish.sh: both fail-closed branches ('No log entry written.', one with 'status.sh rc=') are present"
+else
+  fail "scripts/finish.sh: both fail-closed branches ('No log entry written.', one with 'status.sh rc=') are present (count=$no_entry_count statusrc_ok=$statusrc_line_ok)"
+fi
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -5477,7 +5521,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=745
+EXPECTED_CHECKS=748
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
