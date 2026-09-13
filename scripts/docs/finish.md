@@ -13,7 +13,7 @@ Usage: finish.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary 
 | Step | Runs | Stops when |
 |---|---|---|
 | 1 | `comments.sh <base>` from the project root | exit 1 (a `BLOCK:` finding) or exit 2 (could not run) |
-| 2 | `status.sh`, printing only its `GROOM:` / `REPAIR:` / `INDEX:` lines | any flag line stands |
+| 2 | `status.sh`, printing only its `GROOM:` / `REPAIR:` / `INDEX:` lines | any flag line stands, or the check could not be run cleanly |
 | 3 | `log.sh --tool … --area … --verify … --summary …` | `log.sh` refuses the entry |
 
 A stop leaves no log entry behind. That ordering is the point: a log entry is a claim that the session finished, and it is not written over a diff the gate refused or a node still flagged. The session fixes what was named and runs the command again; the entry is appended once, on the clean run, so a second run never duplicates the first.
@@ -38,7 +38,9 @@ A session's cost scales with its tool calls, not its words: every call re-reads 
 
 | 0 | 1 |
 |---|---|
-| gate clean or skipped, no flag standing, entry written | the gate blocked or could not run, a flag stands, `log.sh` refused, or the tree was clean with no `--base` — read the line above the refusal; nothing was written |
+| gate clean or skipped, no flag standing, entry written | the gate blocked or could not run, a flag stands, the status check itself failed to run cleanly (nonzero exit or unexpected stderr from `status.sh`), `log.sh` refused, or the tree was clean with no `--base` — read the line above the refusal; nothing was written |
+
+An inspection that did not run is not a clean node: the log entry is a claim that the node's state was actually read, and a `status.sh` that crashed, exited nonzero, or wrote to stderr never made that claim true.
 
 ## Subagents
 

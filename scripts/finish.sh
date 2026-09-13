@@ -21,6 +21,18 @@
 
 set -u
 
+# The status check's stdout and stderr are both captured to files (step 2)
+# so a status.sh that dies mid-run cannot be mistaken for a clean one; the
+# files are removed on every exit path, not just the ones this script
+# anticipates.
+finish_status_stderr=""
+finish_status_stdout=""
+cleanup() {
+  [ -n "$finish_status_stderr" ] && rm -f "$finish_status_stderr"
+  [ -n "$finish_status_stdout" ] && rm -f "$finish_status_stdout"
+}
+trap cleanup EXIT
+
 usage() {
   cat <<'EOF'
 Usage: finish.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
@@ -119,9 +131,29 @@ fi
 #    standing — one this session inherited and did not handle, or one its
 #    own edit introduced (a doc without its routing row) — is this session's
 #    to fix, and the log entry is written once, after the node is clean, so
-#    a second finish.sh run never appends a duplicate.
+#    a second finish.sh run never appends a duplicate. status.sh's exit
+#    code and stderr are both captured rather than piped straight through
+#    grep: a `2>/dev/null | grep ... || true` pipeline hides a status.sh
+#    crash (nonzero exit, a syntax error's parse message) behind grep's own
+#    exit 1 and reports a node clean when its state was never read. An
+#    inspection that did not run is not a clean node, so it fails the same
+#    way a standing flag does.
 echo "== status check"
-flags=$(bash "$scripts/status.sh" "$root" 2>/dev/null | grep -E '^(GROOM|REPAIR|INDEX):' || true)
+finish_status_stderr=$(mktemp "${TMPDIR:-/tmp}/finish-status-err.XXXXXX")
+finish_status_stdout=$(mktemp "${TMPDIR:-/tmp}/finish-status-out.XXXXXX")
+# PIPESTATUS must be read from the same shell that ran the pipe: wrapping
+# this in `flags=$(... | ...)` would run the pipe inside the command
+# substitution's own subshell and lose the exit code here, so the pipe runs
+# directly and its matched lines are read back from a file instead.
+bash "$scripts/status.sh" "$root" 2>"$finish_status_stderr" | grep -E '^(GROOM|REPAIR|INDEX):' >"$finish_status_stdout"
+status_rc=${PIPESTATUS[0]}
+flags=$(cat "$finish_status_stdout")
+if [ "$status_rc" -ne 0 ] || [ -s "$finish_status_stderr" ]; then
+  stderr_line=$(tr '\n' ' ' <"$finish_status_stderr" | cut -c1-120)
+  [ -n "$stderr_line" ] || stderr_line="none"
+  echo "finish.sh: status check failed to run cleanly (status.sh rc=$status_rc, stderr: $stderr_line). No log entry written." >&2
+  exit 1
+fi
 if [ -n "$flags" ]; then
   printf '%s\n' "$flags"
   echo "finish.sh: the flags above are this session's to handle — fix them, then run finish.sh again. No log entry written." >&2

@@ -432,6 +432,44 @@ rc=$?
 n8h=$(grep -c '^- \[' "$finroot_nogit/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8h" -eq 1 ] && pass "finish.sh: a non-git project still writes its entry" || fail "finish.sh: a non-git project still writes its entry (rc=$rc entries=$n8h)"
 
+# ---- 8i. finish.sh: a status check that did not run cleanly blocks completion ----
+# finroot above ends this section with a standing GROOM: flag (line 423), so
+# it cannot be reused here — case (c)'s re-verification needs a fixture that
+# is genuinely clean once status.sh is restored. A fresh root, same pattern.
+fsroot="$WORK/finish-statuscheck"
+mkdir -p "$fsroot/src"
+"$NODE" init --preset software-development --mode track-all "$fsroot" >/dev/null 2>&1
+finish_bootstrap "$fsroot"
+printf 'export const a = 1\n' >"$fsroot/src/a.ts"
+git -C "$fsroot" init -q && git -C "$fsroot" add -A && git -C "$fsroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$fsroot/src/a.ts"
+cp "$fsroot/.agent/scripts/status.sh" "$WORK/fs-status-clean.sh"
+n8i0=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+
+printf '#!/usr/bin/env bash\nif [ 1 -eq 1 ]\n  echo "missing then"\n' >"$fsroot/.agent/scripts/status.sh"
+out8i=$("$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "syntax break" "$fsroot" 2>&1)
+rc=$?
+n8i=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+[ "$rc" -ne 0 ] && [ "$n8i" -eq "$n8i0" ] && printf '%s' "$out8i" | grep -q 'finish.sh: status check failed to run cleanly' && pass "finish.sh: invalid status.sh syntax blocks completion" || fail "finish.sh: invalid status.sh syntax blocks completion (rc=$rc entries=$n8i)"
+
+printf '#!/usr/bin/env bash\nexit 3\n' >"$fsroot/.agent/scripts/status.sh"
+out8j=$("$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "quiet exit 3" "$fsroot" 2>&1)
+rc=$?
+n8j=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+[ "$rc" -ne 0 ] && [ "$n8j" -eq "$n8i0" ] && printf '%s' "$out8j" | grep -q 'finish.sh: status check failed to run cleanly' && pass "finish.sh: a status.sh that quietly exits nonzero blocks completion" || fail "finish.sh: a status.sh that quietly exits nonzero blocks completion (rc=$rc entries=$n8j)"
+
+printf '#!/usr/bin/env bash\necho "unexpected noise" >&2\nexit 0\n' >"$fsroot/.agent/scripts/status.sh"
+out8k=$("$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "unexpected stderr" "$fsroot" 2>&1)
+rc=$?
+n8k=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+[ "$rc" -ne 0 ] && [ "$n8k" -eq "$n8i0" ] && printf '%s' "$out8k" | grep -q 'finish.sh: status check failed to run cleanly' && pass "finish.sh: unexpected status.sh stderr blocks completion" || fail "finish.sh: unexpected status.sh stderr blocks completion (rc=$rc entries=$n8k)"
+
+cp "$WORK/fs-status-clean.sh" "$fsroot/.agent/scripts/status.sh"
+"$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
+rc=$?
+n8l=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+[ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "finish.sh: a clean status check still allows completion" || fail "finish.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
+
 # ---- 9. memory.sh new ----
 memroot="$WORK/memory-tests"
 mkdir -p "$memroot"
@@ -4935,7 +4973,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=658
+EXPECTED_CHECKS=662
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
