@@ -242,7 +242,13 @@ grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names th
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
-printf '%s\n' "$flags4" | grep -q '^REPAIR:' && fail "update: status.sh shows no REPAIR" || pass "update: status.sh shows no REPAIR"
+# migration_target is now pending (version stays unbumped until finalize),
+# so status.sh's own pending-migration REPAIR is expected here — that is
+# the only REPAIR a freshly-updated node should carry.
+flags4_repairs=$(printf '%s\n' "$flags4" | grep '^REPAIR:')
+[ "$flags4_repairs" = 'REPAIR: purpose.md has migration_target "6.2" pending — run node.sh finalize to stamp version 6.2 and clear migration_target' ] \
+  && pass "update: status.sh shows only the pending-migration REPAIR" \
+  || fail "update: status.sh shows only the pending-migration REPAIR ($flags4_repairs)"
 
 # ---- 5. update idempotency (second run on v6root, migration_target still pending) ----
 # version was never bumped in step 4 — the node still reads oldversion=6
@@ -334,6 +340,77 @@ if [ -f "$stale62/.agent.backup-v6.2/marker" ] \
 else
   fail "update: same-version shape backup does not collide with an earlier backup"
 fi
+
+# ---- 7b. finalize ----
+finroot="$WORK/finalize-node"
+mkdir -p "$finroot"
+make_v6_fixture "$finroot"
+"$NODE" update "$finroot" >/dev/null 2>&1
+cp "$finroot/.agent/purpose.md" "$WORK/fin-purpose-pending.md"
+
+# status.sh: the pending migration_target itself draws a REPAIR finding,
+# naming the target and finalize, before anything else is touched.
+flags_pending=$(status_flags "$finroot")
+printf '%s\n' "$flags_pending" | grep -qF 'REPAIR: purpose.md has migration_target "6.2" pending' && pass "status.sh: a pending migration_target draws a REPAIR finding naming the target" || fail "status.sh: a pending migration_target draws a REPAIR finding naming the target ($flags_pending)"
+printf '%s\n' "$flags_pending" | grep -q 'REPAIR: purpose.md has migration_target.*finalize' && pass "status.sh: the pending-migration REPAIR finding names the finalize command" || fail "status.sh: the pending-migration REPAIR finding names the finalize command ($flags_pending)"
+
+# Deliberately break the node with a real defect status.sh already checks
+# for — dropping memory.md's index line for memory/legacy.md while leaving
+# the fact file itself in place. This is not a malformed fixture: it is the
+# exact shape status.sh's own memory-index REPAIR check exists to catch, so
+# a refused finalize below fails for the right reason.
+grep -vF '[Legacy memory](memory/legacy.md)' "$finroot/.agent/memory.md" >"$finroot/.agent/memory.md.tmp"
+mv "$finroot/.agent/memory.md.tmp" "$finroot/.agent/memory.md"
+flags_broken=$(status_flags "$finroot")
+printf '%s\n' "$flags_broken" | grep -qF 'REPAIR: memory/legacy.md has no index line in memory.md' && pass "finalize fixture: the deliberate break draws a real REPAIR finding" || fail "finalize fixture: the deliberate break draws a real REPAIR finding ($flags_broken)"
+
+"$NODE" finalize "$finroot" >"$WORK/finalize1.out" 2>"$WORK/finalize1.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh reports REPAIR findings" || fail "finalize: refuses when status.sh reports REPAIR findings (rc=$rc)"
+grep -qF 'REPAIR: memory/legacy.md has no index line in memory.md' "$WORK/finalize1.err" && pass "finalize: refusal prints the offending REPAIR finding" || fail "finalize: refusal prints the offending REPAIR finding"
+diff -q "$WORK/fin-purpose-pending.md" "$finroot/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a refused finalize leaves version and migration_target unchanged" || fail "finalize: a refused finalize leaves version and migration_target unchanged"
+
+# Reconcile: restore the dropped index line. The only REPAIR finding left
+# is the pending-migration one, which does not count against finalize
+# itself (it is true by definition until finalize runs).
+printf '\n%s\n' '- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag' >>"$finroot/.agent/memory.md"
+flags_reconciled=$(status_flags "$finroot" | grep '^REPAIR:' | grep -v '^REPAIR: purpose\.md has migration_target ')
+[ -z "$flags_reconciled" ] && pass "finalize fixture: reconciling the break clears every REPAIR finding but the pending-migration one" || fail "finalize fixture: reconciling the break clears every REPAIR finding but the pending-migration one ($flags_reconciled)"
+
+"$NODE" finalize "$finroot" >"$WORK/finalize2.out" 2>"$WORK/finalize2.err"
+rc=$?
+[ "$rc" -eq 0 ] && pass "finalize: succeeds once the node is reconciled (zero REPAIR findings)" || fail "finalize: succeeds once the node is reconciled (zero REPAIR findings) (rc=$rc, err=$(cat "$WORK/finalize2.err"))"
+grep -q '^  version: "6.2"$' "$finroot/.agent/purpose.md" && pass "finalize: version is stamped to the pending target" || fail "finalize: version is stamped to the pending target"
+grep -q '^  migration_target:' "$finroot/.agent/purpose.md" && fail "finalize: migration_target is removed" || pass "finalize: migration_target is removed"
+
+"$NODE" finalize "$finroot" >"$WORK/finalize3.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "finalize: a second finalize on an already-finalized node exits 0" || fail "finalize: a second finalize on an already-finalized node exits 0 (rc=$rc)"
+grep -qF "already finalized" "$WORK/finalize3.out" && pass "finalize: a second finalize reports the node already finalized" || fail "finalize: a second finalize reports the node already finalized"
+
+flags_finalized=$(status_flags "$finroot")
+printf '%s\n' "$flags_finalized" | grep -qF 'migration_target' && fail "status.sh: a finalized node emits no pending-migration REPAIR finding" || pass "status.sh: a finalized node emits no pending-migration REPAIR finding"
+
+"$NODE" update "$finroot" >"$WORK/finupdate.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "finalize: update after a successful finalize exits 0" || fail "finalize: update after a successful finalize exits 0 (rc=$rc)"
+grep -qF "node is current" "$WORK/finupdate.out" && pass "finalize: update after a successful finalize reports the node current" || fail "finalize: update after a successful finalize reports the node current"
+
+# finalize on an unknown/un-adopted path fails the same shape as update
+finunadopted="$WORK/finalize-unadopted"
+mkdir -p "$finunadopted"
+"$NODE" finalize "$finunadopted" >/dev/null 2>"$WORK/finalize-unadopted.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: an un-adopted path (no .agent) exits nonzero" || fail "finalize: an un-adopted path (no .agent) exits nonzero"
+grep -qF "no .agent directory at" "$WORK/finalize-unadopted.err" && pass "finalize: an un-adopted path prints the same refusal shape as update" || fail "finalize: an un-adopted path prints the same refusal shape as update"
+
+finnomanifest="$WORK/finalize-no-manifest"
+mkdir -p "$finnomanifest/.agent"
+touch "$finnomanifest/.agent/placeholder"
+"$NODE" finalize "$finnomanifest" >/dev/null 2>"$WORK/finalize-nomanifest.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: an unknown (no-manifest) node exits nonzero" || fail "finalize: an unknown (no-manifest) node exits nonzero"
+grep -qF "no dot-agent manifest found at" "$WORK/finalize-nomanifest.err" && pass "finalize: an unknown (no-manifest) node prints the same refusal shape as update" || fail "finalize: an unknown (no-manifest) node prints the same refusal shape as update"
 
 # ---- 8. log.sh ----
 logroot="$WORK/log-tests"
@@ -5018,7 +5095,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=678
+EXPECTED_CHECKS=697
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

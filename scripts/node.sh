@@ -8,6 +8,7 @@
 # Usage:
 #   node.sh init --preset <name> --mode <mode> [root]
 #   node.sh update [root]
+#   node.sh finalize [root]
 #
 #   <name> matches a file in the source repo's presets/ (currently
 #   software-development, academic-research, domain-knowledge).
@@ -28,6 +29,7 @@ usage() {
 Usage:
   node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [root]
   node.sh update [root]
+  node.sh finalize [root]
 
 root defaults to . — the script operates on <root>/.agent
 EOF
@@ -66,6 +68,30 @@ write_migration_target() {
       "$wmt_purpose" >"$wmt_new"
   fi
   mv "$wmt_new" "$wmt_purpose"
+}
+
+# Stamps version to the given value using the same read/write mechanism as
+# write_migration_target: rewrite the existing line in place. version always
+# exists (init writes it), so unlike write_migration_target there is no
+# insert branch.
+write_version() {
+  wv_purpose="$1"
+  wv_value="$2"
+  wv_new="$(dirname "$wv_purpose")/.purpose.md.new"
+  wv_line=$(grep -n -m1 '^  version:' "$wv_purpose" | cut -d: -f1)
+  sed -E "${wv_line}s/^(  version:).*/\1 \"$wv_value\"/" "$wv_purpose" >"$wv_new"
+  mv "$wv_new" "$wv_purpose"
+}
+
+# Removes the migration_target line entirely. Called only after write_version
+# has already stamped version — never the reverse, so a crash between the
+# two calls leaves a node that still reads as mid-migration rather than one
+# that falsely reads as finished.
+remove_migration_target() {
+  rmt_purpose="$1"
+  rmt_new="$(dirname "$rmt_purpose")/.purpose.md.new"
+  grep -v '^  migration_target:' "$rmt_purpose" >"$rmt_new"
+  mv "$rmt_new" "$rmt_purpose"
 }
 
 memory_headers_stale() {
@@ -477,6 +503,75 @@ EOF
   echo "node.sh: $header_note"
   echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, and finish.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
+  exit 0
+  ;;
+
+finalize)
+  root="${1:-.}"
+  agent="$root/.agent"
+  purpose="$agent/purpose.md"
+
+  if [ ! -d "$agent" ]; then
+    echo "node.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$purpose" ] || ! head -n 10 "$purpose" | grep -qF "dot-agent:"; then
+    cat >&2 <<EOF
+node.sh: no dot-agent manifest found at $purpose.
+This looks like a pre-V6 node. node.sh finalize only handles manifested
+(V6+) nodes — restoring a missing manifest is an agent-driven task, not a
+mechanical one. Read CHANGELOG.md (the pre-V6 migration checklist) and
+update this node by hand in a normal session.
+EOF
+    exit 1
+  fi
+
+  migration_target_line=$(grep -m1 '^  migration_target:' "$purpose")
+  migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
+
+  if [ -z "$migration_target" ]; then
+    echo "node.sh: $agent already finalized — no migration_target pending"
+    exit 0
+  fi
+
+  # The node's own status.sh, not this repo's copy: update already
+  # refreshed it into the node, so it is current by the time a node can be
+  # pending.
+  statussh="$agent/scripts/status.sh"
+  if [ ! -x "$statussh" ]; then
+    echo "node.sh: $statussh missing or not executable — cannot verify the node before finalize (refusing)" >&2
+    exit 1
+  fi
+
+  status_out=$("$statussh" "$root" 2>&1)
+  # status.sh does not exit non-zero for its own findings (and may not
+  # later either) — the decision comes from the emitted REPAIR: lines, not
+  # the exit code. A run with no output at all is treated as a refusal
+  # (fail closed), never as a pass.
+  if [ -z "$status_out" ]; then
+    echo "node.sh: $statussh produced no output — refusing to finalize (fail closed)" >&2
+    exit 1
+  fi
+  # Every REPAIR: line gates finalize except status.sh's own pending-
+  # migration line: that line exists to warn a reader who calls status.sh
+  # directly, and is true by definition for as long as migration_target is
+  # set — including the run that is about to clear it. Counting it here
+  # would make finalize refuse every pending node unconditionally.
+  repairs=$(printf '%s\n' "$status_out" | grep '^REPAIR:' | grep -v '^REPAIR: purpose\.md has migration_target ')
+  if [ -n "$repairs" ]; then
+    echo "node.sh: finalize refused — $agent has outstanding REPAIR findings; reconcile these, then re-run finalize:" >&2
+    printf '%s\n' "$repairs" >&2
+    exit 1
+  fi
+
+  # Stamp then clear, never the reverse: a crash between the two calls must
+  # leave the node looking un-migrated (migration_target still present),
+  # not falsely finished.
+  write_version "$purpose" "$migration_target"
+  remove_migration_target "$purpose"
+
+  echo "node.sh: finalized $agent — version is now $migration_target"
   exit 0
   ;;
 

@@ -160,6 +160,17 @@ if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
 
+# REPAIR: a pending migration. version stays at the pre-migration value
+# until finalize stamps it, so a node holding migration_target is mid-
+# migration no matter how clean everything else checks — never present it
+# as finished. Named target and command so the finding is actionable
+# without opening the manifest.
+migration_target_line=$(grep -m1 '^  migration_target:' "$purpose" 2>/dev/null)
+if [[ -n "$migration_target_line" ]]; then
+  migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
+  echo "REPAIR: purpose.md has migration_target \"$migration_target\" pending — run node.sh finalize to stamp version $migration_target and clear migration_target"
+fi
+
 # REPAIR: the two bootstrap steps done by judgement, which nothing else can
 # tell apart from a finished node.
 if [[ -s "$contract" ]]; then
