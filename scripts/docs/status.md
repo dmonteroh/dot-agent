@@ -15,8 +15,9 @@ Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agen
 | `INDEX:` | a `docs/` file and the routing table disagree |
 | `TOOLS:` | environment availability — advisory, not actionable |
 | `LOAD:` | what the always-loaded set costs, in words — an advisory measurement printed every run, deliberately without a threshold |
+| `PAYLOAD:` | the exact bytes `--load` would write — the four files it emits, markers included — against `PAYLOAD_MAX_BYTES` |
 
-No finding prints on pass. The recent entries and the `LOAD:` line are information, not flags. **No finding reaches the exit status**, which is 0 for every node the check can read: this is information on the load path, not a completion gate. The one non-zero exit is a usage error — a root holding no `.agent/` — which is not a finding about a node and must never be reported as one. The binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path. `GROOM:` work may go to one subagent scoped to the flagged files.
+No finding prints on pass. The recent entries and the `LOAD:` and `PAYLOAD:` lines are information, not flags. **No finding reaches the exit status**, which is 0 for every node the check can read: this is information on the load path, not a completion gate. The one non-zero exit is a usage error — a root holding no `.agent/` — which is not a finding about a node and must never be reported as one. The binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path. `GROOM:` work may go to one subagent scoped to the flagged files.
 
 ## Thresholds
 
@@ -34,6 +35,7 @@ Review triggers, not caps: nothing refuses a write for size. Every number is eit
 | `DOCS_MAX_WORDS` | 2000 | chosen default |
 | `ENTRYPOINT_MAX_WORDS` | 600 | the canonical template's ~289-word body, ~300 once filled, with 2× grace |
 | `TAIL_LINES` | 25 | chosen default |
+| `PAYLOAD_MAX_BYTES` | 30000 | the harness's tool-result cap — "about 30 KB on Claude Code, measured" (see `--load` below and `operating-model.md`) — not a chosen headroom figure |
 | `PROBE_TOOLS` | `rg fd jq gh python3 curl tree` | the tools a session is expected to have |
 
 `learned.md` is always-loaded and has no disclosure tier, so every word of it is paid on every session — which is why it carries both a rule count and a word trigger.
@@ -41,6 +43,8 @@ Review triggers, not caps: nothing refuses a write for size. Every number is eit
 ## `--load`
 
 `status.sh --load` prints the always-loaded set after the findings, in the entry point's order — `rules/learned.md`, `rules/contract.md`, `purpose.md`, `memory.md` — each under a `==== <path> ====` marker naming it. The entry point's bootstrap is then one tool call instead of five, and the session reads the four files from that output rather than opening them again. The text is the same either way; only the call count changes, and a session's cost scales with its calls. The printed set must fit the harness's tool-result cap (about 30 KB on Claude Code, measured); a filled contract plus the three small files is under 20 KB, and the `LOAD:` line is the number to watch as a node grows.
+
+The cap is enforced, not just watched. Every run prints a `PAYLOAD:` line measuring the exact bytes `--load` would write — the same four files, in bytes, with each file's `==== <path> ====` marker overhead included — against `PAYLOAD_MAX_BYTES` (default 30000, tunable in `status.conf`). `LOAD:` and `PAYLOAD:` measure different things on purpose: `LOAD:` is what the session ends up holding, in words, and includes members `--load` never prints (`architecture.md`, the entry point); `PAYLOAD:` is what one tool call carries, in bytes, and covers only what `--load` actually emits. When the total exceeds the budget — strictly, a payload exactly at the budget still emits in full — `--load` prints one `REPAIR:` line naming all four paths and writes no marker and no file content at all: overflow suppresses the whole payload rather than risk the harness truncating mid-file, which is the same failure with a different cause. The `REPAIR:` line does not change the exit status.
 
 The memory `GROOM:` line names what a groom must carry over: every ticket id, constant, path, host, command, date, number with a unit, and backticked span the flagged fact holds, extracted by word shape. An undercount leaves a fact unlisted and an overcount lists a plain word; neither is a judgement about meaning. It turns "shape, never content" into a checklist the session can tick.
 

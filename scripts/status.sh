@@ -38,6 +38,10 @@ DOCS_MAX_WORDS=2000
 ENTRYPOINT_MAX_WORDS=600
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
+# Not a chosen headroom figure: the documented harness tool-result cap
+# (operating-model.md's bootstrap paragraph, scripts/docs/status.md's
+# `--load` section — both say "about 30 KB, measured"), made executable.
+PAYLOAD_MAX_BYTES=30000
 
 root="."
 load=0
@@ -54,7 +58,10 @@ advisory TOOLS: and LOAD: lines. No finding prints on pass.
 
 --load then prints the always-loaded set — rules/learned.md, rules/contract.md,
 purpose.md, memory.md — each under a "==== <path> ====" marker, so the
-bootstrap is one call.
+bootstrap is one call. A PAYLOAD: line reports the exact bytes this set
+would write against PAYLOAD_MAX_BYTES; over budget, --load prints one line
+(REPAIR:, naming the four paths) instead, with no marker and no file
+content written.
 
 root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
 root holding no .agent/ is a usage error and exits 1.
@@ -112,6 +119,7 @@ if [[ -f "$conf" ]]; then
   conf_num DOCS_MAX_WORDS
   conf_num ENTRYPOINT_MAX_WORDS
   conf_num TAIL_LINES
+  conf_num PAYLOAD_MAX_BYTES
   v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
 fi
 log="$agent/session-log.md"
@@ -493,15 +501,48 @@ if [[ "$load_total" -gt 0 ]]; then
   echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
 fi
 
+# PAYLOAD: the exact bytes --load would write to stdout for the four files
+# it actually emits (learned, contract, purpose, memory — not architecture.md
+# and not the entry point, neither of which --load ever prints), each with
+# the "==== path ====" marker overhead that precedes it. Measured with wc -c,
+# never wc -m, because the constraint is bytes and the gate runs under three
+# locales. PAYLOAD_MAX_BYTES is the tool-result cap named where the default
+# is set above. Informational, not a finding: no GROOM:/REPAIR:/INDEX:
+# prefix, and it never touches the exit status.
+payload_total=0
+payload_detail=""
+payload_add() { # $1: label  $2: file path
+  [[ -s "$2" ]] || return 0
+  local marker fbytes
+  marker=$(printf '\n==== %s ====\n' "${2#"$root"/}" | wc -c | tr -d '[:space:]')
+  fbytes=$((marker + $(wc -c <"$2" | tr -d '[:space:]')))
+  payload_total=$((payload_total + fbytes))
+  payload_detail="$payload_detail, $1 $fbytes"
+}
+payload_add learned "$learned"
+payload_add contract "$contract"
+payload_add purpose "$purpose"
+payload_add memory "$memory"
+if [[ "$payload_total" -gt 0 ]]; then
+  echo "PAYLOAD: --load would write $payload_total bytes of a $PAYLOAD_MAX_BYTES byte budget (${payload_detail#, })"
+fi
+
 # --load: the always-loaded set, in the entry point's order, after the
 # findings. The marker names the path so nothing has to be re-opened to know
-# where a sentence came from.
+# where a sentence came from. The total above is computed before this loop
+# runs so overflow can suppress the whole payload — a partial dump is the
+# same harness-truncation failure with a different cause, so the loop either
+# runs in full or not at all.
 if [[ "$load" -eq 1 ]]; then
-  for f in "$learned" "$contract" "$purpose" "$memory"; do
-    [[ -s "$f" ]] || continue
-    printf '\n==== %s ====\n' "${f#"$root"/}"
-    cat "$f"
-  done
+  if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+    echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+  else
+    for f in "$learned" "$contract" "$purpose" "$memory"; do
+      [[ -s "$f" ]] || continue
+      printf '\n==== %s ====\n' "${f#"$root"/}"
+      cat "$f"
+    done
+  fi
 fi
 
 exit 0

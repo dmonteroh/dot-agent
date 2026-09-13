@@ -1148,7 +1148,7 @@ f21h=$(status_flags "$rtm5")
 # ---- 20. status.sh on a bootstrapped node: no findings, one LOAD line ----
 fresh19="$WORK/init-academic-research-track-all"
 out19all=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
-out19=$(printf '%s\n' "$out19all" | grep -v '^LOAD:')
+out19=$(printf '%s\n' "$out19all" | grep -v '^LOAD:' | grep -v '^PAYLOAD:')
 [ -z "$out19" ] && pass "status.sh: bootstrapped node prints no findings (no stray blank line)" || fail "status.sh: bootstrapped node prints no findings (no stray blank line)"
 [ "$(printf '%s\n' "$out19all" | grep -c '^LOAD:')" = "1" ] && pass "status.sh: exactly one LOAD line on a quiet node" || fail "status.sh: exactly one LOAD line on a quiet node ($out19all)"
 
@@ -1535,6 +1535,109 @@ sum32=$(printf '%s\n' "$loadline" | sed -E 's/.*\((.*)\).*/\1/' | tr ',' '\n' | 
 printf 'Session bootstrap: run .agent/scripts/status.sh first.\n' >"$ld/CLAUDE.md"
 loadline32b=$("$ld/.agent/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
 printf '%s\n' "$loadline32b" | grep -q '(entry ' && pass "status.sh: LOAD counts the entry point once wired" || fail "status.sh: LOAD counts the entry point once wired ($loadline32b)"
+
+# ---- 32b. status.sh: the PAYLOAD line and the byte budget ----
+# LOAD: measures the always-loaded set in words and includes members --load
+# never prints (architecture.md, the entry point). PAYLOAD: measures exactly
+# what --load writes, in bytes — markers included — because the harness's
+# tool-result cap is a byte cap, not a word one.
+pb="$WORK/payload-budget"
+mkdir -p "$pb"
+"$NODE" init --preset software-development --mode track-all "$pb" >/dev/null 2>&1
+finish_bootstrap "$pb"
+
+"$pb/.agent/scripts/status.sh" "$pb" >"$WORK/pb-noload.out" 2>&1
+"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-load.out" 2>&1
+payloadline_a=$(grep '^PAYLOAD:' "$WORK/pb-load.out")
+[ -n "$payloadline_a" ] && pass "status.sh: PAYLOAD line prints on a node under budget" || fail "status.sh: PAYLOAD line prints on a node under budget"
+grep -q '^REPAIR:.*payload' "$WORK/pb-load.out" && fail "status.sh: an under-budget node does not overflow" || pass "status.sh: an under-budget node does not overflow"
+[ -z "$(status_flags "$pb")" ] && pass "status.sh: PAYLOAD is informational — a quiet under-budget node stays quiet" || fail "status.sh: PAYLOAD is informational — a quiet under-budget node stays quiet ($(status_flags "$pb"))"
+
+# The reported total must equal the exact bytes --load appended to stdout.
+# Both calls share the same informational prefix (findings/TOOLS/LOAD/
+# PAYLOAD), so the byte difference between the plain call and the --load
+# call is exactly what the --load loop wrote — markers and all.
+reported_a=$(printf '%s\n' "$payloadline_a" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
+bytes_noload_a=$(wc -c <"$WORK/pb-noload.out" | tr -d '[:space:]')
+bytes_load_a=$(wc -c <"$WORK/pb-load.out" | tr -d '[:space:]')
+actual_a=$((bytes_load_a - bytes_noload_a))
+[ -n "$reported_a" ] && [ "$reported_a" = "$actual_a" ] \
+  && pass "status.sh: PAYLOAD total equals the exact bytes --load writes" \
+  || fail "status.sh: PAYLOAD total equals the exact bytes --load writes (reported $reported_a, actual $actual_a)"
+
+# Boundary: pad memory.md to a computed size so the total lands exactly on
+# PAYLOAD_MAX_BYTES, then push one byte past it.
+budget_default=$(sed -n 's/^PAYLOAD_MAX_BYTES=//p' "$reporoot/scripts/status.sh" | head -n 1)
+pad_needed=$((budget_default - reported_a))
+[ "$pad_needed" -gt 0 ] || fail "status.sh: fixture's natural payload already exceeds PAYLOAD_MAX_BYTES — cannot build the boundary case"
+printf '%*s' "$pad_needed" '' | tr ' ' 'x' >>"$pb/.agent/memory.md"
+
+"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-exact.out" 2>&1
+payloadline_exact=$(grep '^PAYLOAD:' "$WORK/pb-exact.out")
+reported_exact=$(printf '%s\n' "$payloadline_exact" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
+[ "$reported_exact" = "$budget_default" ] \
+  && pass "status.sh: boundary fixture lands exactly on PAYLOAD_MAX_BYTES" \
+  || fail "status.sh: boundary fixture lands exactly on PAYLOAD_MAX_BYTES (reported $reported_exact, budget $budget_default)"
+grep -q '^REPAIR:.*payload' "$WORK/pb-exact.out" && fail "status.sh: a payload exactly at budget does not overflow" || pass "status.sh: a payload exactly at budget does not overflow"
+grep -q '^==== .*memory.md ====' "$WORK/pb-exact.out" && pass "status.sh: a payload exactly at budget still emits its markers and content" || fail "status.sh: a payload exactly at budget still emits its markers and content"
+
+printf 'x' >>"$pb/.agent/memory.md"
+"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-over.out" 2>&1
+rc_over=$?
+overline=$(grep '^REPAIR:.*payload' "$WORK/pb-over.out")
+[ -n "$overline" ] && pass "status.sh: one byte over budget reports overflow" || fail "status.sh: one byte over budget reports overflow ($(cat "$WORK/pb-over.out"))"
+missing_paths=""
+for p in rules/learned.md rules/contract.md purpose.md memory.md; do
+  printf '%s\n' "$overline" | grep -qF "$p" || missing_paths="$missing_paths $p"
+done
+[ -z "$missing_paths" ] && pass "status.sh: the overflow REPAIR line names all four paths" || fail "status.sh: the overflow REPAIR line names all four paths (missing:$missing_paths)"
+grep -q '^====' "$WORK/pb-over.out" && fail "status.sh: overflow emits no ==== markers or file content" || pass "status.sh: overflow emits no ==== markers or file content"
+[ "$rc_over" -eq 0 ] && pass "status.sh: overflow does not change the exit status" || fail "status.sh: overflow does not change the exit status (rc=$rc_over)"
+
+# A lowered PAYLOAD_MAX_BYTES pushes an otherwise-normal, unpadded node over.
+lo="$WORK/payload-lowered"
+mkdir -p "$lo"
+"$NODE" init --preset software-development --mode track-all "$lo" >/dev/null 2>&1
+finish_bootstrap "$lo"
+printf 'PAYLOAD_MAX_BYTES=10\n' >>"$lo/.agent/scripts/status.conf"
+out32e=$("$lo/.agent/scripts/status.sh" --load "$lo" 2>&1)
+printf '%s\n' "$out32e" | grep -q '^REPAIR:.*payload' \
+  && pass "status.conf: a lowered PAYLOAD_MAX_BYTES pushes a normal node over budget" \
+  || fail "status.conf: a lowered PAYLOAD_MAX_BYTES pushes a normal node over budget ($out32e)"
+printf '%s\n' "$out32e" | grep -q '^====' \
+  && fail "status.sh: overflow from a lowered budget still emits no markers" \
+  || pass "status.sh: overflow from a lowered budget still emits no markers"
+
+# A non-numeric PAYLOAD_MAX_BYTES keeps the shipped default and draws the
+# same generic conf-parse REPAIR every other threshold key already gets —
+# no special-cased handling for this key.
+nc="$WORK/payload-nonnumeric"
+mkdir -p "$nc"
+"$NODE" init --preset software-development --mode track-all "$nc" >/dev/null 2>&1
+finish_bootstrap "$nc"
+printf 'PAYLOAD_MAX_BYTES=huge\n' >>"$nc/.agent/scripts/status.conf"
+out32f=$("$nc/.agent/scripts/status.sh" --load "$nc" 2>&1)
+printf '%s\n' "$out32f" | grep -q '^REPAIR: status.conf PAYLOAD_MAX_BYTES=huge is not a whole number' \
+  && pass "status.conf: a non-numeric PAYLOAD_MAX_BYTES draws the generic conf REPAIR line" \
+  || fail "status.conf: a non-numeric PAYLOAD_MAX_BYTES draws the generic conf REPAIR line ($out32f)"
+payloadline_f=$(printf '%s\n' "$out32f" | grep '^PAYLOAD:')
+printf '%s\n' "$payloadline_f" | grep -qF "of a $budget_default byte budget" \
+  && pass "status.conf: PAYLOAD_MAX_BYTES keeps its shipped default when the override is invalid" \
+  || fail "status.conf: PAYLOAD_MAX_BYTES keeps its shipped default when the override is invalid ($payloadline_f)"
+
+# A multibyte fixture reports the same byte total under all three locales
+# the CI gate runs the whole suite under — wc -c must not vary with LC_ALL.
+mb="$WORK/payload-multibyte"
+mkdir -p "$mb"
+"$NODE" init --preset software-development --mode track-all "$mb" >/dev/null 2>&1
+finish_bootstrap "$mb"
+printf '\nCafé naïve façade — 日本語のテスト — €£¥\n' >>"$mb/.agent/memory.md"
+total_mb_c=$(LC_ALL=C "$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
+total_mb_iso=$(LC_ALL=en_US.ISO8859-1 "$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
+total_mb_default=$("$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
+[ -n "$total_mb_c" ] && [ "$total_mb_c" = "$total_mb_iso" ] && [ "$total_mb_c" = "$total_mb_default" ] \
+  && pass "status.sh: a multibyte fixture's byte total is locale-invariant" \
+  || fail "status.sh: a multibyte fixture's byte total is locale-invariant (C=$total_mb_c ISO=$total_mb_iso default=$total_mb_default)"
 
 # ---- 33. status.sh: session-log entry shape ----
 # The 25-word entry format lives in the header contract and in log.sh — one
@@ -2010,7 +2113,7 @@ printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a
 mismatch36=""
 for k in LOG_MAX_ENTRIES LOG_MAX_WORDS LOG_ENTRY_MAX_WORDS MEMORY_MAX_WORDS \
          MEMORY_MAX_ENTRIES LEARNED_MAX_RULES LEARNED_MAX_WORDS \
-         DOCS_MAX_WORDS ENTRYPOINT_MAX_WORDS TAIL_LINES; do
+         DOCS_MAX_WORDS ENTRYPOINT_MAX_WORDS TAIL_LINES PAYLOAD_MAX_BYTES; do
   sdef=$(sed -n "s/^$k=//p" "$reporoot/scripts/status.sh" | head -n 1 | tr -d '"')
   cdef=$(sed -n "s/^# $k=//p" "$reporoot/scripts/status.conf" | head -n 1)
   [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36="$mismatch36 $k"
@@ -5227,7 +5330,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=712
+EXPECTED_CHECKS=728
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
