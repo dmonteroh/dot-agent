@@ -437,14 +437,17 @@ if [[ -d "$memdir" ]]; then
   done
 fi
 
-# REPAIR: .agent/ is the sole durable memory only if the tool's own store is
-# off, and that rests on a setting no other check reads. Absent or true both
-# mean a second store can collect knowledge this node will never see. The
-# file is checked textually so the check needs no JSON parser.
+# This check reads three files textually — $root/.claude/settings.json,
+# $root/.claude/settings.local.json, and $HOME/.claude/settings.json — for
+# one setting, autoMemoryEnabled. It does not read the tool's managed or
+# enterprise settings, command-line setting overrides, or environment
+# overrides, so a clean result here means only that these three files
+# request the tool's own store off, not that it is off. Checked textually
+# so the check needs no JSON parser.
 for settings in "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
   [[ -s "$settings" ]] || continue
   if grep -q '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*true' "$settings"; then
-    echo "REPAIR: ${settings#"$root"/} sets autoMemoryEnabled true — .agent/ is not the sole durable memory; set it false and harvest any silo (see retro)"
+    echo "REPAIR: ${settings#"$root"/} sets autoMemoryEnabled true — set it false and harvest any silo (see retro)"
   fi
 done
 # Settings merge user-level over node-level, so a node inherits a setting it
@@ -453,7 +456,7 @@ if [[ -d "$root/.claude" ]] \
   && ! grep -qs '"autoMemoryEnabled"' \
     "$root/.claude/settings.json" "$root/.claude/settings.local.json" \
     "${HOME:-/nonexistent}/.claude/settings.json"; then
-  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false so .agent/ stays the sole durable memory"
+  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false so these files request the tool's own store off"
 fi
 
 # TOOLS: availability facts for the environment this session runs in.

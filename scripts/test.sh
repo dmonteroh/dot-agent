@@ -1320,7 +1320,7 @@ mkdir -p "$bc/.github"
 printf '# Team conventions\n\nUse conventional commits.\n' >"$bc/.github/copilot-instructions.md"
 [ -z "$(status_flags "$bc")" ] && pass "entry points: a file that never references status.sh is not a mirror" || fail "entry points: a file that never references status.sh is not a mirror ($(status_flags "$bc"))"
 
-# ---- 24. native memory: the setting the sole-durable-store claim rests on ----
+# ---- 24. native memory: what the three inspected settings files request ----
 nm="$WORK/native-memory"
 mkdir -p "$nm/.claude"
 "$NODE" init --preset software-development --mode track-all "$nm" >/dev/null 2>&1
@@ -1342,6 +1342,14 @@ mkdir -p "$WORK/nm-home/.claude"
 printf '{ "autoMemoryEnabled": false }\n' >"$WORK/nm-home/.claude/settings.json"
 f24d=$(HOME="$WORK/nm-home" status_flags "$nm")
 [ -z "$f24d" ] && pass "native memory: a user-level setting is inherited, not re-flagged" || fail "native memory: a user-level setting is inherited, not re-flagged ($f24d)"
+
+# The two node-level files can disagree; the diagnostic names the file that
+# requests memory on rather than resolving to one verdict for the node.
+printf '{ "autoMemoryEnabled": true }\n' >"$nm/.claude/settings.json"
+printf '{ "autoMemoryEnabled": false }\n' >"$nm/.claude/settings.local.json"
+f24e=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
+printf '%s\n' "$f24e" | grep -qF '.claude/settings.json sets autoMemoryEnabled true' && pass "native memory: a disagreement names the offending file" || fail "native memory: a disagreement names the offending file ($f24e)"
+printf '%s\n' "$f24e" | grep -qiE 'sole|effective|resolved' && fail "native memory: no line claims a resolved effective state ($f24e)" || pass "native memory: no line claims a resolved effective state"
 
 # ---- 25. learned.md: the word trigger fires under the rule ceiling ----
 lr="$WORK/learned-words"
@@ -5469,7 +5477,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=743
+EXPECTED_CHECKS=745
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

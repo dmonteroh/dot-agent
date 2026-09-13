@@ -6,7 +6,7 @@ Claude Code is the wiring matrix's fully verified column (see the operating mode
 
 `settings-example.json` ships two things:
 
-- `"autoMemoryEnabled": false`, the setting the bootstrap copies so `.agent/` stays the sole durable memory (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
+- `"autoMemoryEnabled": false`, the setting the bootstrap copies — it requests that Claude Code's own store stay off (see the operating model's [Native tool memory](../../operating-model.md#native-tool-memory)).
 - A permissions allowlist for reading and writing `.agent/**`, so the self-maintenance contract doesn't hit permission prompts.
 
 Merge the relevant sections into your `~/.claude/settings.json` (user-level) or the project's `.claude/settings.json` (committed in `track-shared`/`track-all` modes so the setting holds for every developer).

@@ -327,9 +327,9 @@ In `track-shared`, a PR that touches `learned.md` gets human review: every rule 
 
 ### Native tool memory
 
-`.agent/` is the sole durable memory. Disable tool-native memory via the tool's *setting*, not via instructions. Four reasons, all architectural. `~` is ephemeral in devcontainers, so home-directory memory dies with the container. Repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store. Solo projects still want their memory versioned. Agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer.
+`.agent/` is meant to be the durable memory, which means disabling tool-native memory too — via the tool's *setting*, not via instructions. Four reasons, all architectural. `~` is ephemeral in devcontainers, so home-directory memory dies with the container. Repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store. Solo projects still want their memory versioned. Agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer.
 
-The setting is the whole mechanism, so `status.sh` checks it: `autoMemoryEnabled` set true, or set nowhere the node can inherit it from, is a `REPAIR:` line. A claim that `.agent/` is the sole durable store is only as good as one line of JSON, and that line is exactly the kind of artifact a load-path check exists to verify.
+`status.sh` checks the setting the way it checks everything else on the load path: by reading the files that request it, not by evaluating the tool's effective configuration. It inspects `.claude/settings.json`, `.claude/settings.local.json`, and the user-level `~/.claude/settings.json` textually for `autoMemoryEnabled`; set true in one of them, or set nowhere the node can inherit it from, is a `REPAIR:` line. It does not read the tool's managed or enterprise settings, command-line setting overrides, or environment overrides, so a clean result establishes only that these three files request the tool's own store off, not that it is off.
 
 This is a blast-radius stance, not a claim that native memory is unreliable. The harvest step is a repair path, not a routine one. If a node reaches retro with a tool-collected silo — because the setting wasn't applied to that node, or another tool populated one of its own — fold what's there into `.agent/` and delete the silo. A node with the setting applied has no silo to harvest.
 
@@ -537,7 +537,7 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 
 **Why not `.cursor/` or `.claude/`?** Tool-specific directories create silos. `.agent/` is neutral: any tool, same context.
 
-**Why disable tool-native memory?** Four architectural reasons, not a claim that it's unreliable. Home-directory memory is ephemeral in devcontainers, repo knowledge needs to travel through git with the repo, solo projects still want memory versioned, and agents should not write outside the project directory. `.agent/` stays the sole durable store either way.
+**Why disable tool-native memory?** Four architectural reasons, not a claim that it's unreliable. Home-directory memory is ephemeral in devcontainers, repo knowledge needs to travel through git with the repo, solo projects still want memory versioned, and agents should not write outside the project directory. Off, the setting requests that `.agent/` remain the only durable store either way.
 
 **Why does the agent write the docs, not the user?** The user explains the project in conversation. The agent converts it into documentation. The user's job is to think and direct, not to format.
 

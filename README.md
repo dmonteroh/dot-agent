@@ -16,7 +16,7 @@ Two costs follow the knowledge that does get written down. It drifts, because a 
 
 A `.agent/` directory of markdown at the project root. Any agent reads it, any agent writes it, and it travels with the code through git.
 
-**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. The operating model's wiring matrix records what is actually verified per tool, with dates, instead of asserting it. Native tool memory is switched off where the tool has a setting for it (Claude Code's is shipped and checked, and the matrix tracks the rest), leaving one store instead of several.
+**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. The operating model's wiring matrix records what is actually verified per tool, with dates, instead of asserting it. Native tool memory is switched off where the tool has a setting for it (Claude Code's is shipped and checked, and the matrix tracks the rest), requesting a single store rather than several.
 
 **Shareable without a platform.** A tracking mode, chosen once, decides what enters git. `track-shared` publishes purpose, rules, and docs for the team to review in a pull request, while memory and session logs stay personal to each developer.
 
