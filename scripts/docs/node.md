@@ -19,7 +19,7 @@ Header contracts in `operating-model.md` remain the format authority: this scrip
 
 ## What init writes
 
-The skeleton, the manifest, the gitignore for the chosen mode, the preset as `rules/contract.md`, the six shipped scripts, and the three starter confs.
+The skeleton, the manifest, the gitignore for the chosen mode, the preset as `rules/contract.md`, the seven shipped scripts, and the three starter confs.
 
 The starter confs are seeded because the scripts are executed rather than read: without the file on disk, a knob is one nobody finds. They are configs from that moment on — the node edits or deletes them freely.
 
