@@ -104,7 +104,7 @@ tool, never raw kubectl.
 EOF
   cat >"$fx/.agent/session-log.md" <<'EOF'
 # Session log
-<!-- One entry per session, newest last. -->
+<!-- One entry per turn that changed files, newest last. -->
 
 - [2026-01-01] (claude) fixture bootstrap for smoke tests (testing). verify: pass.
 EOF
@@ -537,9 +537,10 @@ mkdir -p "$finroot/src"
 finish_bootstrap "$finroot"
 printf 'export const a = 1\n' >"$finroot/src/a.ts"
 git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-# A turn that changed nothing is not a session that finished: the log records
+# A turn that changed nothing is not a turn that finished: the log records
 # work, and there is none to record. Without this the hand-back fires on
-# every message while the artifact it writes is per session.
+# every message while the artifact it writes is one entry per turn that
+# changed files.
 out8e=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
@@ -614,6 +615,144 @@ cp "$WORK/fs-status-clean.sh" "$fsroot/.agent/scripts/status.sh"
 rc=$?
 n8l=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "finish.sh: a clean status check still allows completion" || fail "finish.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
+
+# ---- 8m. finish.sh: one entry per turn that changed files, across real commits ----
+seqA="$WORK/seq-edit-commit-edit-commit-noedit"
+mkdir -p "$seqA/src"
+"$NODE" init --preset software-development --mode track-all "$seqA" >/dev/null 2>&1
+finish_bootstrap "$seqA"
+printf 'export const a = 1\n' >"$seqA/src/a.ts"
+git -C "$seqA" init -q && git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+
+printf 'export const b = 2\n' >>"$seqA/src/a.ts"
+"$seqA/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "turn one edit" "$seqA" >/dev/null 2>&1
+rc_a1=$?
+git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-one
+
+printf 'export const c = 3\n' >>"$seqA/src/a.ts"
+"$seqA/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "turn two edit" "$seqA" >/dev/null 2>&1
+rc_a2=$?
+git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-two
+n_a2=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
+
+out_a3=$("$seqA/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "turn three no edit" "$seqA" 2>&1)
+rc_a3=$?
+n_a3=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
+
+[ "$rc_a1" -eq 0 ] && [ "$rc_a2" -eq 0 ] && [ "$n_a2" -eq 2 ] \
+  && pass "sequence: edit-commit-edit-commit writes exactly two entries" \
+  || fail "sequence: edit-commit-edit-commit writes exactly two entries (rc1=$rc_a1 rc2=$rc_a2 entries=$n_a2)"
+[ "$rc_a3" -ne 0 ] && [ "$n_a3" -eq 2 ] && printf '%s' "$out_a3" | grep -q 'nothing changed' \
+  && pass "sequence: the trailing no-edit turn exits nonzero and writes nothing" \
+  || fail "sequence: the trailing no-edit turn exits nonzero and writes nothing (rc=$rc_a3 entries=$n_a3)"
+
+seqB="$WORK/seq-noedit-then-edit"
+mkdir -p "$seqB/src"
+"$NODE" init --preset software-development --mode track-all "$seqB" >/dev/null 2>&1
+finish_bootstrap "$seqB"
+printf 'export const a = 1\n' >"$seqB/src/a.ts"
+git -C "$seqB" init -q && git -C "$seqB" add -A && git -C "$seqB" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+
+out_b1=$("$seqB/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
+rc_b1=$?
+n_b1=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
+[ "$rc_b1" -ne 0 ] && [ "$n_b1" -eq 0 ] && printf '%s' "$out_b1" | grep -q 'nothing changed' \
+  && pass "sequence: no-edit before any edit exits nonzero and writes nothing" \
+  || fail "sequence: no-edit before any edit exits nonzero and writes nothing (rc=$rc_b1 entries=$n_b1)"
+
+printf 'export const b = 2\n' >>"$seqB/src/a.ts"
+"$seqB/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "second turn edits" "$seqB" >/dev/null 2>&1
+rc_b2=$?
+n_b2=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
+[ "$rc_b2" -eq 0 ] && [ "$n_b2" -eq 1 ] \
+  && pass "sequence: no-edit then edit writes exactly one entry total" \
+  || fail "sequence: no-edit then edit writes exactly one entry total (rc=$rc_b2 entries=$n_b2)"
+
+seqC="$WORK/seq-noedit-only"
+mkdir -p "$seqC/src"
+"$NODE" init --preset software-development --mode track-all "$seqC" >/dev/null 2>&1
+finish_bootstrap "$seqC"
+printf 'export const a = 1\n' >"$seqC/src/a.ts"
+git -C "$seqC" init -q && git -C "$seqC" add -A && git -C "$seqC" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+"$seqC/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "only answered, nothing to record" "$seqC" >/dev/null 2>&1
+rc_c1=$?
+n_c1=$(grep -c '^- \[' "$seqC/.agent/session-log.md")
+[ "$rc_c1" -ne 0 ] && [ "$n_c1" -eq 0 ] \
+  && pass "sequence: a no-edit-only turn over a committed baseline writes zero entries" \
+  || fail "sequence: a no-edit-only turn over a committed baseline writes zero entries (rc=$rc_c1 entries=$n_c1)"
+
+# ---- 8n. node.sh update: session-log.md header migration, below-target version ----
+migBelow="$WORK/migrate-session-log-below-target"
+mkdir -p "$migBelow"
+make_v6_fixture "$migBelow"
+subst "$migBelow/.agent/session-log.md" 's/One entry per turn that changed files, newest last\./One entry per session, newest last./'
+before_mb=$(grep '^- \[' "$migBelow/.agent/session-log.md")
+"$NODE" update "$migBelow" >/dev/null 2>&1
+after_mb=$(grep '^- \[' "$migBelow/.agent/session-log.md")
+grep -qF 'One entry per turn that changed files, newest last.' "$migBelow/.agent/session-log.md" \
+  && pass "migrate (below-target): session-log.md header is replaced" \
+  || fail "migrate (below-target): session-log.md header is replaced"
+[ "$before_mb" = "$after_mb" ] \
+  && pass "migrate (below-target): every existing log entry is preserved byte-identical, in order" \
+  || fail "migrate (below-target): every existing log entry is preserved byte-identical, in order"
+out_mb2=$("$NODE" update "$migBelow" 2>&1)
+after_mb2=$(grep '^- \[' "$migBelow/.agent/session-log.md")
+[ "$after_mb" = "$after_mb2" ] && printf '%s' "$out_mb2" | grep -qF 'session log header already current' \
+  && pass "migrate (below-target): a second run reports the header already current, no further rewrite" \
+  || fail "migrate (below-target): a second run reports the header already current, no further rewrite ($out_mb2)"
+
+# ---- 8o. node.sh update: session-log.md header migration, already at target version ----
+migSame="$WORK/migrate-session-log-same-version"
+mkdir -p "$migSame"
+"$NODE" init --preset software-development --mode track-shared "$migSame" >/dev/null 2>&1
+printf -- '- [2026-02-02] (claude) pre-migration entry (testing). verify: pass.\n' >>"$migSame/.agent/session-log.md"
+subst "$migSame/.agent/session-log.md" 's/One entry per turn that changed files, newest last\./One entry per session, newest last./'
+before_ms=$(grep '^- \[' "$migSame/.agent/session-log.md")
+"$NODE" update "$migSame" >/dev/null 2>&1
+rc_ms1=$?
+after_ms=$(grep '^- \[' "$migSame/.agent/session-log.md")
+[ "$rc_ms1" -eq 0 ] && grep -qF 'One entry per turn that changed files, newest last.' "$migSame/.agent/session-log.md" \
+  && pass "migrate (same-version): a 6.2 node with the old header is refreshed by the shape-refresh branch" \
+  || fail "migrate (same-version): a 6.2 node with the old header is refreshed by the shape-refresh branch"
+[ "$before_ms" = "$after_ms" ] \
+  && pass "migrate (same-version): every existing log entry is preserved byte-identical, in order" \
+  || fail "migrate (same-version): every existing log entry is preserved byte-identical, in order"
+[ -f "$migSame/.agent.backup-v6.2-shape/session-log.md" ] && grep -qF 'One entry per session, newest last.' "$migSame/.agent.backup-v6.2-shape/session-log.md" \
+  && pass "migrate (same-version): the pre-refresh header is preserved behind the existing shape backup" \
+  || fail "migrate (same-version): the pre-refresh header is preserved behind the existing shape backup"
+out_ms2=$("$NODE" update "$migSame" 2>&1)
+rc_ms2=$?
+after_ms2=$(grep '^- \[' "$migSame/.agent/session-log.md")
+[ "$rc_ms2" -eq 0 ] && [ "$after_ms" = "$after_ms2" ] && printf '%s' "$out_ms2" | grep -qF 'current' \
+  && pass "migrate (same-version): a second run leaves the node current with no further rewrite" \
+  || fail "migrate (same-version): a second run leaves the node current with no further rewrite ($out_ms2)"
+
+migNew="$WORK/migrate-session-log-already-new"
+mkdir -p "$migNew"
+"$NODE" init --preset software-development --mode ignore-all "$migNew" >/dev/null 2>&1
+before_mn=$(cat "$migNew/.agent/session-log.md")
+out_mn=$("$NODE" update "$migNew" 2>&1)
+after_mn=$(cat "$migNew/.agent/session-log.md")
+[ "$before_mn" = "$after_mn" ] && printf '%s' "$out_mn" | grep -qF 'current' \
+  && pass "migrate: update on a node already carrying the new header rewrites nothing and reports current" \
+  || fail "migrate: update on a node already carrying the new header rewrites nothing and reports current"
+
+# ---- 8p. node.sh update: a session-log.md with no header comment is left alone ----
+noHeaderRoot="$WORK/session-log-no-header"
+mkdir -p "$noHeaderRoot"
+"$NODE" init --preset software-development --mode ignore-all "$noHeaderRoot" >/dev/null 2>&1
+printf '%s\n' '# Session log' >"$noHeaderRoot/.agent/session-log.md"
+printf -- '- [2026-01-01] (claude) test entry (testing). verify: pass.\n' >>"$noHeaderRoot/.agent/session-log.md"
+before_nh=$(cat "$noHeaderRoot/.agent/session-log.md")
+out_nh=$("$NODE" update "$noHeaderRoot" 2>&1)
+rc_nh=$?
+after_nh=$(cat "$noHeaderRoot/.agent/session-log.md")
+[ "$rc_nh" -eq 0 ] && [ "$before_nh" = "$after_nh" ] \
+  && pass "update: a session-log.md with no header comment is left untouched" \
+  || fail "update: a session-log.md with no header comment is left untouched (rc=$rc_nh)"
+printf '%s' "$out_nh" | grep -qF 'no header comment' \
+  && pass "update: a headerless session-log.md draws a report, not an error" \
+  || fail "update: a headerless session-log.md draws a report, not an error ($out_nh)"
 
 # ---- 9. memory.sh new ----
 memroot="$WORK/memory-tests"
@@ -2280,7 +2419,7 @@ om_check() { # $1 = path under .agent/, $2 = a distinctive phrase in the header
     grep -qF "$line" "$reporoot/operating-model.md" || om_drift="$om_drift $1"
   fi
 }
-om_check session-log.md "One entry per session"
+om_check session-log.md "One entry per turn that changed files"
 om_check memory.md "Index only, one line per fact file"
 om_check rules/learned.md "Binding rules distilled"
 om_check docs/architecture.md "One entry per doc in this directory"
@@ -5330,7 +5469,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=728
+EXPECTED_CHECKS=743
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

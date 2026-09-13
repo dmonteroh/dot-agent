@@ -94,17 +94,18 @@ if [ -z "$base" ]; then
   fi
 fi
 
-# A turn that changed nothing is not a session that finished. The entry
-# point's bootstrap is scoped to the conversation but the hand-back is not —
-# handing back happens on every message — so an unqualified finish.sh runs
-# per turn while the artifact it writes is per session: one measured
-# three-turn session wrote three log entries, two of them a question
-# answered. At a hundred messages that is a hundred entries riding the
-# printed tail into every future session. The clean tree is the observable
-# the agent lacks: no diff to gate, nothing verified, nothing to record.
-# Committed work still logs — it names its parent with --base — and a
-# project that is not a git checkout has no signal here, so it keeps the
-# old behavior rather than being refused on a guess.
+# A turn that changed nothing writes no entry — the design is one entry per
+# turn that changed files, not one per session. The entry point's bootstrap
+# is scoped to the conversation but the hand-back is not — handing back
+# happens on every message — so without this gate an unqualified finish.sh
+# would run on every turn regardless: one measured three-turn session wrote
+# three log entries, two of them just a question answered. At a hundred
+# messages that is a hundred entries riding the printed tail into every
+# future session. The clean tree is the observable the agent lacks: no diff
+# to gate, nothing verified, nothing to record. Committed work still logs —
+# it names its parent with --base — and a project that is not a git
+# checkout has no signal here, so it keeps the old behavior rather than
+# being refused on a guess.
 if [ "$unchanged" -eq 1 ]; then
   echo "finish.sh: nothing changed — the working tree is clean and no --base was given, so there is no diff to gate and no work to record. A turn that only answered writes no entry. Pass --base <ref> if this session's work is already committed." >&2
   exit 1

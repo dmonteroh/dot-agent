@@ -94,6 +94,17 @@ remove_migration_target() {
   mv "$rmt_new" "$rmt_purpose"
 }
 
+# session-log.md's title plus header comment. node.sh writes it down two
+# paths: init and the migration (both the version-migration path and the
+# same-version shape-refresh branch). One writer keeps a node created today
+# and a node updated today on the same contract.
+write_session_log_header() {
+  cat >"$1" <<'EOF'
+# Session log
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag is this change's own verification result: a baseline failure that predates the change goes in the summary text, not the tag. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+EOF
+}
+
 memory_headers_stale() {
   mh_agent="$1"
   memory_index_header_stale "$mh_agent/memory.md" && return 0
@@ -200,6 +211,44 @@ migrate_doc_headers() {
   return 0
 }
 
+# session-log.md's header comment. A node may carry any earlier wording —
+# the 6.2 "one entry per session" phrasing or something older still — so
+# this is negative-on-the-new-sentinel, not a check for the exact old
+# string, the same shape as memory_index_header_stale.
+session_log_header_stale() {
+  slh_log="$1"
+  [ -f "$slh_log" ] || return 1
+  grep -qF 'One entry per turn that changed files, newest last.' "$slh_log" || return 0
+  return 1
+}
+
+# Exact-string, like migrate_memory_headers: the header comment is located
+# by its closing --> and everything below it (the actual log entries) is
+# preserved byte-identical, in order. A file with no header comment at all
+# in its first five lines is left completely untouched — restoring a header
+# a node deliberately deleted is a different decision. Sets migrate_log_note.
+migrate_session_log_header() {
+  msl_agent="$1"
+  msl_log="$msl_agent/session-log.md"
+  migrate_log_note="session log header already current"
+  [ -f "$msl_log" ] || return 0
+  session_log_header_stale "$msl_log" || return 0
+  if ! head -n 5 "$msl_log" | grep -qF '<!--'; then
+    migrate_log_note="session-log.md has no header comment — left untouched"
+    return 0
+  fi
+  msl_end=$(grep -n -- '-->' "$msl_log" | head -n1 | cut -d: -f1)
+  msl_body="$msl_agent/.session-log-body.tmp"
+  tail -n +"$((msl_end + 1))" "$msl_log" \
+    | awk 'NR == 1 && /^# Session log[[:space:]]*$/ { next } { print }' \
+    | sed -e '/./,$!d' >"$msl_body"
+  write_session_log_header "$msl_log"
+  cat "$msl_body" >>"$msl_log"
+  rm -f "$msl_body"
+  migrate_log_note="session-log.md header refreshed"
+  return 0
+}
+
 case "$cmd" in
 init)
   preset=""
@@ -254,10 +303,7 @@ init)
   mkdir -p "$agent/rules" "$agent/memory" "$agent/docs" "$agent/archive" "$agent/scripts" \
     || { echo "node.sh: could not create the node skeleton under $agent" >&2; exit 1; }
 
-  cat >"$agent/session-log.md" <<'EOF'
-# Session log
-<!-- One entry per session, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag is this change's own verification result: a baseline failure that predates the change goes in the summary text, not the tag. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
-EOF
+  write_session_log_header "$agent/session-log.md"
 
   write_memory_header "$agent/memory.md"
 
@@ -389,7 +435,7 @@ EOF
     # migration and would never reach the block below. Only when there is
     # something to migrate, and behind the same backup, since memory/ is
     # untracked in every mode but track-all.
-    if memory_headers_stale "$agent" || doc_headers_stale "$agent"; then
+    if memory_headers_stale "$agent" || doc_headers_stale "$agent" || session_log_header_stale "$agent/session-log.md"; then
       if [ "$mode" != "track-all" ]; then
         # Same-version pre-release refreshes must not collide with the backup
         # created by an earlier version migration or shape refresh.
@@ -406,6 +452,8 @@ EOF
       echo "node.sh: $migrate_note"
       migrate_doc_headers "$agent"
       echo "node.sh: $migrate_doc_note"
+      migrate_session_log_header "$agent"
+      echo "node.sh: $migrate_log_note"
     fi
     echo "node.sh: node is current (version $oldversion)"
     exit 0
@@ -477,7 +525,8 @@ EOF
 
   migrate_memory_headers "$agent"
   migrate_doc_headers "$agent"
-  header_note="$migrate_note; $migrate_doc_note"
+  migrate_session_log_header "$agent"
+  header_note="$migrate_note; $migrate_doc_note; $migrate_log_note"
 
   # Refresh the shipped scripts from the source repo — by exactly these
   # names. Anything else under scripts/ is the node's own and is never
