@@ -5530,6 +5530,43 @@ else
   fail "scripts/finish.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present (flagstands_ok=$flagstands_ok statusrc_ok=$statusrc_ok)"
 fi
 
+# ---- 47. the manifest version example matches the version node.sh stamps ----
+# F10c: operating-model.md's example node manifest is a reference copy a
+# reader is meant to recognize on their own purpose.md. It is not generated
+# from node.sh's TARGET_VERSION, so nothing stops the two from drifting —
+# exactly what happened before this check: the example read "6.1" while
+# node.sh stamped "6.2". Extract TARGET_VERSION from node.sh at test time
+# (never hard-code it here — hard-coding on both sides would defeat the
+# point of the check) and compare it against every quoted `version: "…"`
+# line in operating-model.md's manifest examples. An empty extraction or a
+# document with no `version: "…"` line at all is drift too and must fail,
+# not pass vacuously.
+node_target_version=$(grep -m1 '^TARGET_VERSION="' "$reporoot/scripts/node.sh" | sed -e 's/^TARGET_VERSION="//' -e 's/"$//')
+if [ -z "$node_target_version" ]; then
+  fail "scripts/node.sh: TARGET_VERSION could not be extracted (expected a line matching TARGET_VERSION=\"…\")"
+else
+  doc_versions=$(grep -o 'version: "[^"]*"' "$reporoot/operating-model.md" | sed -e 's/^version: "//' -e 's/"$//')
+  if [ -z "$doc_versions" ]; then
+    fail "operating-model.md: no version: \"…\" manifest example found (node.sh TARGET_VERSION=\"$node_target_version\")"
+  else
+    mismatch=""
+    while IFS= read -r doc_version; do
+      [ -n "$doc_version" ] || continue
+      if [ "$doc_version" != "$node_target_version" ]; then
+        mismatch="$doc_version"
+        break
+      fi
+    done <<EOF
+$doc_versions
+EOF
+    if [ -z "$mismatch" ]; then
+      pass "operating-model.md: every version: \"…\" manifest example matches scripts/node.sh's TARGET_VERSION (\"$node_target_version\")"
+    else
+      fail "operating-model.md: version: \"$mismatch\" disagrees with scripts/node.sh's TARGET_VERSION=\"$node_target_version\""
+    fi
+  fi
+fi
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -5537,7 +5574,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=748
+EXPECTED_CHECKS=749
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

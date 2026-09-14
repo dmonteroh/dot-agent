@@ -249,7 +249,7 @@ Every node carries its identity as YAML frontmatter on `purpose.md`, the least-r
 # Do not remove or rewrite this block; update passes may set `migration_target` — version changes only at finalize.
 dot-agent:
   source: https://github.com/dmonteroh/dot-agent
-  version: "6.1"
+  version: "6.2"
   preset: software-development
   mode: track-shared        # ignore-all | track-shared | track-all
   children: []              # repo-relative paths to child .agent/ nodes
