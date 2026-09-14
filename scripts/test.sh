@@ -5567,6 +5567,34 @@ EOF
   fi
 fi
 
+# ---- 48. routing guidance names architecture.md, and only architecture.md ----
+# F10d: the Context loading bullet used to fall back to "the entry point's
+# doc index" when architecture.md had no routing table — a mechanism that
+# was never built. templates/entry-point.md's step 3 has always pointed at
+# architecture.md alone; F6b made the routing table required, so the
+# fallback was wrong twice over. Check one pins every routing-guidance file
+# to the one routing source that ships. Check two retires the vocabulary
+# itself: "doc index" must not survive anywhere routing is described, but
+# the bare word "index" is legitimate (memory.md's own index is named two
+# lines below the fixed bullet) and must not trip the check.
+routing_files48="$reporoot/templates/entry-point.md"
+for p48 in "$reporoot"/presets/*.md; do
+  grep -qi "routing" "$p48" && routing_files48="$routing_files48 $p48"
+done
+missing48=""
+for f48 in $routing_files48; do
+  grep -qF "architecture.md" "$f48" || missing48="$missing48 $f48"
+done
+[ -z "$missing48" ] && pass "routing guidance: every routing-aware file names architecture.md" || fail "routing guidance: architecture.md not named in:$missing48"
+
+phrase_hits48=""
+for f48 in "$reporoot/templates/entry-point.md" "$reporoot/README.md" "$reporoot/operating-model.md" "$reporoot"/presets/*.md; do
+  [ -f "$f48" ] || continue
+  hit48=$(grep -n "doc index" "$f48") && phrase_hits48="$phrase_hits48
+$f48: $hit48"
+done
+[ -z "$phrase_hits48" ] && pass "routing guidance: the retired phrase \"doc index\" appears nowhere" || fail "routing guidance: retired phrase \"doc index\" found:$phrase_hits48"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -5574,7 +5602,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=749
+EXPECTED_CHECKS=751
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

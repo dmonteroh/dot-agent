@@ -17,7 +17,7 @@ Goal: correct, useful, auditable changes. Be concise: each sentence must carry o
 
 ## Context loading
 
-- Scale reads: typo/single-file = entry point + target file. Feature = purpose + memory + area doc. Domain/behavior change = purpose + memory + relevant docs. If `.agent/docs/architecture.md` has a routing table, pick area docs there. Otherwise use the entry point's doc index.
+- Scale reads: typo/single-file = entry point + target file. Feature = purpose + memory + area doc. Domain/behavior change = purpose + memory + relevant docs. Pick area docs from the routing table in `.agent/docs/architecture.md`.
 - Reads scale by task size. Catalogs are the exception and route by task kind. Any task that creates a new endpoint, component, service, module, migration, or worker reads that area's catalog first, however small the task looks — that is the read that finds the building block already there.
 - `memory.md`'s index stays in context all session. Opening a fact file is a per-task decision, not a per-session one: when the work moves to a new area or a new task begins, re-scan the hooks and open what now matches.
 - Check `.agent/` context before asking about unknown files, concepts, or deliverables.
