@@ -5474,10 +5474,20 @@ fi
 # F10b: README.md used to end its load-path paragraph with "There is no
 # completion-time gate," which was false — finish.sh withholds the
 # session-log entry on a standing flag or a status check that failed to run
-# cleanly. These checks pin the mechanism facts and the retired phrase, not
-# a sentence: any honest rewording keeps naming finish.sh, status.sh, and a
-# flag prefix together, so only reintroducing the stale claim or dropping
-# the mechanism from the docs or the script can trip them.
+# cleanly. These checks pin the mechanism facts and the retired phrase: the
+# anchor check requires status.sh to appear on the SAME README line that
+# names finish.sh (not merely somewhere across the union of all
+# finish.sh-mentioning lines, which a stray "status.sh" on an unrelated line
+# could satisfy on its own), and requires a GROOM:/REPAIR:/INDEX: flag to
+# appear in the part of that line AFTER the finish.sh mention specifically —
+# that line's opening sentences name the flags for an unrelated reason (what
+# the load-time status check prints), so a bare same-line check stays
+# satisfied even after the finish.sh-describing clause's own flag mention is
+# cut; anchoring to text after finish.sh closes that gap. The script check
+# anchors each fail-closed branch to its own distinguishing message text
+# rather than a floating count that unrelated code (the comment-gate
+# branches also say "No log entry written.") could keep satisfied after one
+# branch is deleted.
 
 # -- the retired claim does not return anywhere it was cut from --
 stale_hits=$(grep -rIn -- "no completion-time gate" \
@@ -5489,29 +5499,35 @@ else
   fail "docs: 'no completion-time gate' does not appear in README.md, operating-model.md, presets/, templates/, or tools/ (found: $(printf '%s' "$stale_hits" | head -n1))"
 fi
 
-# -- the README's finish.sh lines still name the status check and a flag prefix --
-finishsh_lines=$(grep -F "finish.sh" "$reporoot/README.md")
+# -- a single README line naming finish.sh also names status.sh, and names a
+#    flag prefix in the text that follows the finish.sh mention itself --
 finishsh_anchor_ok=0
-if printf '%s\n' "$finishsh_lines" | grep -qF "status.sh" \
-  && printf '%s\n' "$finishsh_lines" | grep -qE 'REPAIR:|GROOM:|INDEX:'; then
-  finishsh_anchor_ok=1
-fi
+while IFS= read -r line; do
+  case "$line" in
+  *finish.sh*status.sh*) ;;
+  *status.sh*finish.sh*) ;;
+  *) continue ;;
+  esac
+  after_finishsh=${line#*finish.sh}
+  case "$after_finishsh" in
+  *GROOM:* | *REPAIR:* | *INDEX:*) finishsh_anchor_ok=1 ;;
+  esac
+done < <(grep -F "finish.sh" "$reporoot/README.md")
 if [ "$finishsh_anchor_ok" -eq 1 ]; then
-  pass "README.md: a finish.sh line also names status.sh and a GROOM:/REPAIR:/INDEX: flag"
+  pass "README.md: a finish.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the finish.sh mention"
 else
-  fail "README.md: a finish.sh line also names status.sh and a GROOM:/REPAIR:/INDEX: flag"
+  fail "README.md: a finish.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the finish.sh mention"
 fi
 
-# -- finish.sh still implements both fail-closed branches --
-no_entry_count=$(grep -cF "No log entry written." "$reporoot/scripts/finish.sh")
-statusrc_line_ok=0
-if grep -F "No log entry written." "$reporoot/scripts/finish.sh" | grep -qF "status.sh rc="; then
-  statusrc_line_ok=1
-fi
-if [ "$no_entry_count" -ge 2 ] && [ "$statusrc_line_ok" -eq 1 ]; then
-  pass "scripts/finish.sh: both fail-closed branches ('No log entry written.', one with 'status.sh rc=') are present"
+# -- finish.sh still implements both fail-closed branches, each by its own message --
+flagstands_ok=0
+grep -qF "the flags above are this session's to handle" "$reporoot/scripts/finish.sh" && flagstands_ok=1
+statusrc_ok=0
+grep -qF "status.sh rc=" "$reporoot/scripts/finish.sh" && statusrc_ok=1
+if [ "$flagstands_ok" -eq 1 ] && [ "$statusrc_ok" -eq 1 ]; then
+  pass "scripts/finish.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present"
 else
-  fail "scripts/finish.sh: both fail-closed branches ('No log entry written.', one with 'status.sh rc=') are present (count=$no_entry_count statusrc_ok=$statusrc_line_ok)"
+  fail "scripts/finish.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present (flagstands_ok=$flagstands_ok statusrc_ok=$statusrc_ok)"
 fi
 
 # ---- summary ----
