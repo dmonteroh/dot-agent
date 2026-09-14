@@ -5581,11 +5581,36 @@ routing_files48="$reporoot/templates/entry-point.md"
 for p48 in "$reporoot"/presets/*.md; do
   grep -qi "routing" "$p48" && routing_files48="$routing_files48 $p48"
 done
+# For a file that carries its own routing-clause marker ("Routing:" in
+# templates/entry-point.md, "Pick area docs" in the preset that has one),
+# architecture.md must be named AFTER that marker on the SAME line — not
+# merely present somewhere in the file, which a stray mention in the
+# unrelated docs/ paragraph (every preset has one) would keep satisfied even
+# after the routing clause itself regresses into an if/otherwise fallback
+# that names architecture.md only before the marker. This mirrors section
+# 46's after-marker anchoring. A file with no such marker line is judged on
+# file-wide presence, same as before — there is no clause to anchor to.
 missing48=""
 for f48 in $routing_files48; do
-  grep -qF "architecture.md" "$f48" || missing48="$missing48 $f48"
+  if grep -qiE "routing:|pick area docs" "$f48"; then
+    ok48=0
+    while IFS= read -r line48; do
+      low48=$(printf '%s' "$line48" | tr '[:upper:]' '[:lower:]')
+      case "$low48" in
+      *routing:*) after48=${low48#*routing:} ;;
+      *"pick area docs"*) after48=${low48#*"pick area docs"} ;;
+      *) continue ;;
+      esac
+      case "$after48" in
+      *architecture.md*) ok48=1 ;;
+      esac
+    done < <(grep -niE "routing:|pick area docs" "$f48")
+    [ "$ok48" -eq 1 ] || missing48="$missing48 $f48"
+  else
+    grep -qF "architecture.md" "$f48" || missing48="$missing48 $f48"
+  fi
 done
-[ -z "$missing48" ] && pass "routing guidance: every routing-aware file names architecture.md" || fail "routing guidance: architecture.md not named in:$missing48"
+[ -z "$missing48" ] && pass "routing guidance: every routing-aware file names architecture.md after its routing marker" || fail "routing guidance: architecture.md not named after the routing marker in:$missing48"
 
 phrase_hits48=""
 for f48 in "$reporoot/templates/entry-point.md" "$reporoot/README.md" "$reporoot/operating-model.md" "$reporoot"/presets/*.md; do
