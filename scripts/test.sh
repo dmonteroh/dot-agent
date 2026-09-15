@@ -1648,6 +1648,7 @@ mkdir -p "$nm/.claude"
 finish_bootstrap "$nm"
 f24=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
 printf '%s\n' "$f24" | grep -qF 'autoMemoryEnabled is set nowhere' && pass "native memory: an unconfigured .claude/ draws a REPAIR flag" || fail "native memory: an unconfigured .claude/ draws a REPAIR flag ($f24)"
+printf '%s\n' "$f24" | grep -qF 'add "autoMemoryEnabled": false to .claude/settings.json' && pass "native memory: the unconfigured-node repair names the settings file to edit" || fail "native memory: the unconfigured-node repair names the settings file to edit ($f24)"
 
 printf '{ "autoMemoryEnabled": true }\n' >"$nm/.claude/settings.json"
 f24b=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
@@ -5948,7 +5949,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=796
+EXPECTED_CHECKS=797
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

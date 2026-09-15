@@ -456,7 +456,7 @@ if [[ -d "$root/.claude" ]] \
   && ! grep -qs '"autoMemoryEnabled"' \
     "$root/.claude/settings.json" "$root/.claude/settings.local.json" \
     "${HOME:-/nonexistent}/.claude/settings.json"; then
-  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false so these files request the tool's own store off"
+  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false to .claude/settings.json so it requests the tool's own store off"
 fi
 
 # TOOLS: availability facts for the environment this session runs in.
