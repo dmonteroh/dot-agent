@@ -54,18 +54,42 @@ memory_index_header_stale() {
 # insert one right after `version:` if none exists yet. Idempotent —
 # writing the value it already holds is a no-op edit — so callers never
 # need to special-case a resumed update.
+#
+# Returns nonzero, and leaves $wmt_purpose byte-identical, if the write
+# cannot be proven complete: the transform command itself failing, the
+# scratch file ending up empty or the wrong line count (a partial or
+# truncated write), or the target line missing the value once written all
+# count as failure, never a silent partial replacement. Replacement of the
+# manifest is write-then-rename within the same directory, so it is atomic:
+# either the caller sees the fully-written new content, or the original file
+# is untouched. On failure the scratch file is removed only if this call
+# created it as a plain file — a pre-existing non-file collision at that
+# path (e.g. a directory) is left exactly as found, since it was not this
+# invocation's to clean up.
 write_migration_target() {
   wmt_purpose="$1"
   wmt_value="$2"
   wmt_new="$(dirname "$wmt_purpose")/.purpose.md.new"
+  wmt_old_lines=$(wc -l <"$wmt_purpose" 2>/dev/null || echo 0)
   if grep -q '^  migration_target:' "$wmt_purpose"; then
     wmt_line=$(grep -n -m1 '^  migration_target:' "$wmt_purpose" | cut -d: -f1)
     sed -E "${wmt_line}s/^(  migration_target:).*/\1 \"$wmt_value\"/" "$wmt_purpose" >"$wmt_new"
+    wmt_rc=$?
+    wmt_expect_lines="$wmt_old_lines"
   else
     wmt_line=$(grep -n -m1 '^  version:' "$wmt_purpose" | cut -d: -f1)
     awk -v n="$wmt_line" -v val="$wmt_value" \
       'NR==n { print; print "  migration_target: \"" val "\""; next } { print }' \
       "$wmt_purpose" >"$wmt_new"
+    wmt_rc=$?
+    wmt_expect_lines=$((wmt_old_lines + 1))
+  fi
+  wmt_new_lines=$(wc -l <"$wmt_new" 2>/dev/null || echo 0)
+  if [ "$wmt_rc" -ne 0 ] || [ ! -s "$wmt_new" ] \
+    || [ "$wmt_new_lines" -ne "$wmt_expect_lines" ] \
+    || ! grep -qF "migration_target: \"$wmt_value\"" "$wmt_new"; then
+    [ -f "$wmt_new" ] && rm -f "$wmt_new"
+    return 1
   fi
   mv "$wmt_new" "$wmt_purpose"
 }
@@ -73,24 +97,46 @@ write_migration_target() {
 # Stamps version to the given value using the same read/write mechanism as
 # write_migration_target: rewrite the existing line in place. version always
 # exists (init writes it), so unlike write_migration_target there is no
-# insert branch.
+# insert branch. Same failure contract as write_migration_target: nonzero
+# return and an untouched $wv_purpose unless the scratch file is proven to
+# hold a complete, correct rewrite before the atomic rename.
 write_version() {
   wv_purpose="$1"
   wv_value="$2"
   wv_new="$(dirname "$wv_purpose")/.purpose.md.new"
+  wv_old_lines=$(wc -l <"$wv_purpose" 2>/dev/null || echo 0)
   wv_line=$(grep -n -m1 '^  version:' "$wv_purpose" | cut -d: -f1)
   sed -E "${wv_line}s/^(  version:).*/\1 \"$wv_value\"/" "$wv_purpose" >"$wv_new"
+  wv_rc=$?
+  wv_new_lines=$(wc -l <"$wv_new" 2>/dev/null || echo 0)
+  if [ "$wv_rc" -ne 0 ] || [ ! -s "$wv_new" ] \
+    || [ "$wv_new_lines" -ne "$wv_old_lines" ] \
+    || ! grep -qF "version: \"$wv_value\"" "$wv_new"; then
+    [ -f "$wv_new" ] && rm -f "$wv_new"
+    return 1
+  fi
   mv "$wv_new" "$wv_purpose"
 }
 
 # Removes the migration_target line entirely. Called only after write_version
 # has already stamped version — never the reverse, so a crash between the
 # two calls leaves a node that still reads as mid-migration rather than one
-# that falsely reads as finished.
+# that falsely reads as finished. Same failure contract as the writers above:
+# nonzero return and an untouched $rmt_purpose unless the scratch file is
+# proven to hold exactly the original minus the one line removed.
 remove_migration_target() {
   rmt_purpose="$1"
   rmt_new="$(dirname "$rmt_purpose")/.purpose.md.new"
+  rmt_old_lines=$(wc -l <"$rmt_purpose" 2>/dev/null || echo 0)
   grep -v '^  migration_target:' "$rmt_purpose" >"$rmt_new"
+  rmt_rc=$?
+  rmt_new_lines=$(wc -l <"$rmt_new" 2>/dev/null || echo 0)
+  if [ "$rmt_rc" -eq 2 ] || [ ! -s "$rmt_new" ] \
+    || [ "$rmt_new_lines" -ne "$((rmt_old_lines - 1))" ] \
+    || grep -q '^  migration_target:' "$rmt_new"; then
+    [ -f "$rmt_new" ] && rm -f "$rmt_new"
+    return 1
+  fi
   mv "$rmt_new" "$rmt_purpose"
 }
 
@@ -487,8 +533,11 @@ EOF
   # Record the pending migration before any node content is mutated, so an
   # interruption anywhere below is detectable from the manifest alone.
   # version itself is untouched here — it stays at $oldversion until
-  # finalize stamps it.
-  write_migration_target "$purpose" "$TARGET_VERSION"
+  # finalize stamps it. A failed write must abort here, before any content
+  # mutation below, or a crash would be undetectable from the manifest —
+  # the exact defect this record-first ordering exists to prevent.
+  write_migration_target "$purpose" "$TARGET_VERSION" \
+    || { echo "node.sh: failed to record migration_target in $purpose — aborting before touching node content" >&2; exit 1; }
 
   # Memory split baseline (guarded by memory/ absence — safe to re-run).
   memdir="$agent/memory"
@@ -624,9 +673,14 @@ EOF
 
   # Stamp then clear, never the reverse: a crash between the two calls must
   # leave the node looking un-migrated (migration_target still present),
-  # not falsely finished.
-  write_version "$purpose" "$migration_target"
-  remove_migration_target "$purpose"
+  # not falsely finished. A failed version write aborts before the marker
+  # is touched at all; a failed marker removal still returns failure so the
+  # node keeps reading as pending (detectable, retryable) rather than
+  # silently finished with a stale marker.
+  write_version "$purpose" "$migration_target" \
+    || { echo "node.sh: failed to write version $migration_target to $purpose — aborting before removing the pending marker" >&2; exit 1; }
+  remove_migration_target "$purpose" \
+    || { echo "node.sh: version is now $migration_target but failed to remove the pending migration_target marker from $purpose — re-run finalize to retry" >&2; exit 1; }
 
   echo "node.sh: finalized $agent — version is now $migration_target"
   exit 0
