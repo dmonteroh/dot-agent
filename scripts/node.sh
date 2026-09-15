@@ -593,13 +593,21 @@ EOF
     exit 1
   fi
 
-  status_out=$("$statussh" "$root" 2>&1)
-  # status.sh does not exit non-zero for its own findings (and may not
-  # later either) — the decision comes from the emitted REPAIR: lines, not
-  # the exit code. A run with no output at all is treated as a refusal
-  # (fail closed), never as a pass.
-  if [ -z "$status_out" ]; then
-    echo "node.sh: $statussh produced no output — refusing to finalize (fail closed)" >&2
+  # stdout and stderr are captured separately (never folded together with
+  # 2>&1) so a crash cannot be mistaken for findings: status.sh does not
+  # exit non-zero for its own REPAIR/GROOM findings, so those come from
+  # stdout's content below, but a nonzero exit or any stderr output means
+  # the inspection itself did not complete and is refused before the
+  # findings are even read. An empty stdout is refused the same way — it
+  # is never a pass, no matter how it came about.
+  status_stderr_file=$(mktemp "${TMPDIR:-/tmp}/node-finalize-status.XXXXXX")
+  status_out=$("$statussh" "$root" 2>"$status_stderr_file")
+  status_rc=$?
+  status_err=$(cat "$status_stderr_file")
+  rm -f "$status_stderr_file"
+  if [ "$status_rc" -ne 0 ] || [ -n "$status_err" ] || [ -z "$status_out" ]; then
+    echo "node.sh: $statussh did not run cleanly (exit $status_rc) — refusing to finalize (fail closed)" >&2
+    [ -n "$status_err" ] && printf '%s\n' "$status_err" >&2
     exit 1
   fi
   # Every REPAIR: line gates finalize except status.sh's own pending-
