@@ -528,8 +528,9 @@ mkdir -p "$vwfail/.agent/.purpose.md.new"
 "$NODE" finalize "$vwfail" >"$WORK/vwf.out" 2>"$WORK/vwf.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a blocked version write aborts" || fail "finalize: a blocked version write aborts (rc=$rc)"
-grep -qF "failed to write version" "$WORK/vwf.err" && pass "finalize: a blocked version write prints an actionable error" || fail "finalize: a blocked version write prints an actionable error"
-grep -qF "aborting before removing the pending marker" "$WORK/vwf.err" && pass "finalize: a blocked version write names the abort-before-removal ordering" || fail "finalize: a blocked version write names the abort-before-removal ordering"
+grep -qF "failed to write version" "$WORK/vwf.err" && grep -qF "aborting before removing the pending marker" "$WORK/vwf.err" \
+  && pass "finalize: a blocked version write prints an actionable error naming the abort-before-removal ordering" \
+  || fail "finalize: a blocked version write prints an actionable error naming the abort-before-removal ordering"
 grep -qiF "finalized" "$WORK/vwf.out" && fail "finalize: a blocked version write prints no success message" || pass "finalize: a blocked version write prints no success message"
 diff -q "$WORK/vwf-purpose-pending.md" "$vwfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a blocked version write preserves the pending marker and original version" || fail "finalize: a blocked version write preserves the pending marker and original version"
 
@@ -576,6 +577,105 @@ grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && pass "finalize: a 
 rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: retrying after a failed marker removal succeeds" || fail "finalize: retrying after a failed marker removal succeeds (rc=$rc, err=$(cat "$WORK/rmf-retry.err"))"
 grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && fail "finalize: the retry actually removes the marker" || pass "finalize: the retry actually removes the marker"
+
+# Case 4: a transform that exits 0 but writes corrupted output (wrong line
+# count, value missing) is a different failure mode than the OS-level mv
+# failures above — the transform itself never errors, so only the helper's
+# own line-count-delta and content-grep checks can catch it. A fake awk
+# that intercepts only the migration_target insert (matched by the literal
+# "migration_target:" text in its script argument) and otherwise defers to
+# the real awk exercises exactly that path without disturbing the other awk
+# calls update makes (memory split, etc).
+wmtcfail="$WORK/update-wmt-corrupt"
+mkdir -p "$wmtcfail"
+make_v6_fixture "$wmtcfail"
+cp -R "$wmtcfail/.agent" "$WORK/wmtc-snapshot"
+fakebin_awk="$WORK/fakebin-awk-corrupt"
+mkdir -p "$fakebin_awk"
+cat >"$fakebin_awk/awk" <<'EOF'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *'migration_target:'*)
+      echo "corrupted"
+      exit 0
+      ;;
+  esac
+done
+exec /usr/bin/awk "$@"
+EOF
+chmod +x "$fakebin_awk/awk"
+PATH="$fakebin_awk:$PATH" "$NODE" update "$wmtcfail" >"$WORK/wmtc.out" 2>"$WORK/wmtc.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "update: a corrupted migration_target write (transform exits 0, output truncated) aborts" || fail "update: a corrupted migration_target write (transform exits 0, output truncated) aborts (rc=$rc)"
+grep -qF "failed to record migration_target" "$WORK/wmtc.err" && pass "update: a corrupted migration_target write prints the same actionable error as an OS-level failure" || fail "update: a corrupted migration_target write prints the same actionable error as an OS-level failure"
+diff -r "$WORK/wmtc-snapshot" "$wmtcfail/.agent" >/dev/null 2>&1 && pass "update: a corrupted migration_target write leaves node content and the manifest unchanged" || fail "update: a corrupted migration_target write leaves node content and the manifest unchanged"
+
+# Case 5: same discriminating coverage for write_version. The fake sed
+# intercepts only the version-stamp rewrite (matched by the literal
+# "(  version:)" text unique to that sed program, as opposed to the
+# version-extraction sed calls elsewhere which use a different pattern) and
+# otherwise defers to the real sed.
+wvcfail="$WORK/finalize-wv-corrupt"
+mkdir -p "$wvcfail"
+make_v6_fixture "$wvcfail"
+"$NODE" update "$wvcfail" >/dev/null 2>&1
+cp "$wvcfail/.agent/purpose.md" "$WORK/wvc-purpose-pending.md"
+fakebin_sed="$WORK/fakebin-sed-corrupt"
+mkdir -p "$fakebin_sed"
+cat >"$fakebin_sed/sed" <<'EOF'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *'(  version:)'*)
+      echo "corrupted"
+      exit 0
+      ;;
+  esac
+done
+exec /usr/bin/sed "$@"
+EOF
+chmod +x "$fakebin_sed/sed"
+PATH="$fakebin_sed:$PATH" "$NODE" finalize "$wvcfail" >"$WORK/wvc.out" 2>"$WORK/wvc.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: a corrupted version write (transform exits 0, output truncated) aborts" || fail "finalize: a corrupted version write (transform exits 0, output truncated) aborts (rc=$rc)"
+grep -qF "failed to write version" "$WORK/wvc.err" && pass "finalize: a corrupted version write prints the same actionable error as an OS-level failure" || fail "finalize: a corrupted version write prints the same actionable error as an OS-level failure"
+diff -q "$WORK/wvc-purpose-pending.md" "$wvcfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a corrupted version write preserves the pending marker and original version" || fail "finalize: a corrupted version write preserves the pending marker and original version"
+
+# Case 6: same discriminating coverage for remove_migration_target. The fake
+# grep intercepts only the marker-removal call (matched by the combination
+# of -v and the migration_target pattern, as opposed to the -q/-n lookups
+# elsewhere that use the same pattern without -v) and otherwise defers to
+# the real grep.
+rmcfail="$WORK/finalize-rm-corrupt"
+mkdir -p "$rmcfail"
+make_v6_fixture "$rmcfail"
+"$NODE" update "$rmcfail" >/dev/null 2>&1
+fakebin_grep="$WORK/fakebin-grep-corrupt"
+mkdir -p "$fakebin_grep"
+cat >"$fakebin_grep/grep" <<'EOF'
+#!/usr/bin/env bash
+has_v=0
+has_pat=0
+for a in "$@"; do
+  case "$a" in
+    -v) has_v=1 ;;
+    '^  migration_target:') has_pat=1 ;;
+  esac
+done
+if [ "$has_v" -eq 1 ] && [ "$has_pat" -eq 1 ]; then
+  echo "corrupted"
+  exit 0
+fi
+exec /usr/bin/grep "$@"
+EOF
+chmod +x "$fakebin_grep/grep"
+PATH="$fakebin_grep:$PATH" "$NODE" finalize "$rmcfail" >"$WORK/rmc.out" 2>"$WORK/rmc.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: a corrupted marker-removal write (transform exits 0, line not actually removed) returns nonzero" || fail "finalize: a corrupted marker-removal write (transform exits 0, line not actually removed) returns nonzero (rc=$rc)"
+grep -qF "failed to remove the pending migration_target marker" "$WORK/rmc.err" && pass "finalize: a corrupted marker-removal write prints the same actionable error as an OS-level failure" || fail "finalize: a corrupted marker-removal write prints the same actionable error as an OS-level failure"
+grep -q '^  version: "6.2"$' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write still leaves version stamped" || fail "finalize: a corrupted marker-removal write still leaves version stamped"
+grep -q '^  migration_target:' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write retains a detectable pending migration" || fail "finalize: a corrupted marker-removal write retains a detectable pending migration"
 
 # ---- 8. log.sh ----
 logroot="$WORK/log-tests"
@@ -5769,7 +5869,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=774
+EXPECTED_CHECKS=783
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
