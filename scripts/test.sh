@@ -435,6 +435,65 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: an unknown (no-manifest) node exits nonzero" || fail "finalize: an unknown (no-manifest) node exits nonzero"
 grep -qF "no dot-agent manifest found at" "$WORK/finalize-nomanifest.err" && pass "finalize: an unknown (no-manifest) node prints the same refusal shape as update" || fail "finalize: an unknown (no-manifest) node prints the same refusal shape as update"
 
+# ---- 7c. finalize refuses when status inspection itself fails ----
+# A broken status.sh must refuse finalize before its findings are even
+# read — nonzero exit, stderr output, or empty stdout are each, on their
+# own, a reason to refuse. The node's own status.sh is swapped out for a
+# fake one that exercises each shape in turn; the manifest must stay
+# byte-identical across every refusal.
+finstatusfail="$WORK/finalize-status-fail"
+mkdir -p "$finstatusfail"
+make_v6_fixture "$finstatusfail"
+"$NODE" update "$finstatusfail" >/dev/null 2>&1
+cp "$finstatusfail/.agent/purpose.md" "$WORK/fin-statusfail-purpose.md"
+realstatussh="$finstatusfail/.agent/scripts/status.sh"
+cp "$realstatussh" "$WORK/fin-statusfail-status.sh.orig"
+
+# Case 1: nonzero exit, with both stdout and stderr output.
+cat >"$realstatussh" <<'EOF'
+#!/usr/bin/env bash
+echo "INDEX: fake finding"
+echo "fake status.sh crash" >&2
+exit 2
+EOF
+chmod +x "$realstatussh"
+"$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail1.out" 2>"$WORK/finalize-statusfail1.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits nonzero with stdout and stderr" || fail "finalize: refuses when status.sh exits nonzero with stdout and stderr (rc=$rc)"
+diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a nonzero-exit refusal leaves the manifest byte-identical" || fail "finalize: a nonzero-exit refusal leaves the manifest byte-identical"
+
+# Case 2: zero exit, but stderr output present alongside otherwise-clean findings.
+cat >"$realstatussh" <<'EOF'
+#!/usr/bin/env bash
+echo "INDEX: fake finding"
+echo "fake status.sh warning" >&2
+exit 0
+EOF
+chmod +x "$realstatussh"
+"$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail2.out" 2>"$WORK/finalize-statusfail2.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits zero but writes to stderr" || fail "finalize: refuses when status.sh exits zero but writes to stderr (rc=$rc)"
+diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a stderr-output refusal leaves the manifest byte-identical" || fail "finalize: a stderr-output refusal leaves the manifest byte-identical"
+
+# Case 3: zero exit, empty stdout, no stderr.
+cat >"$realstatussh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$realstatussh"
+"$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail3.out" 2>"$WORK/finalize-statusfail3.err"
+rc=$?
+[ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits zero with empty stdout" || fail "finalize: refuses when status.sh exits zero with empty stdout (rc=$rc)"
+diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: an empty-stdout refusal leaves the manifest byte-identical" || fail "finalize: an empty-stdout refusal leaves the manifest byte-identical"
+
+# Restoring the real status.sh and finalizing again proves the new gate
+# does not interfere with the ordinary clean path.
+cp "$WORK/fin-statusfail-status.sh.orig" "$realstatussh"
+chmod +x "$realstatussh"
+"$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail4.out" 2>"$WORK/finalize-statusfail4.err"
+rc=$?
+[ "$rc" -eq 0 ] && pass "finalize: succeeds once the real status.sh runs cleanly again" || fail "finalize: succeeds once the real status.sh runs cleanly again (rc=$rc, err=$(cat "$WORK/finalize-statusfail4.err"))"
+
 # ---- 8. log.sh ----
 logroot="$WORK/log-tests"
 mkdir -p "$logroot"
@@ -5627,7 +5686,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=751
+EXPECTED_CHECKS=758
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
