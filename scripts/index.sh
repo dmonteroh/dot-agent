@@ -1,0 +1,347 @@
+#!/usr/bin/env bash
+# scripts/index.sh — generated-mode Markdown index cache.
+#
+# Refreshes bounded Markdown indexes under <root>/.agent/indexes/ before an
+# agent reads them, and reuses a verified prior build when nothing that
+# feeds it has changed. Full documentation: scripts/docs/index.md.
+#
+# Usage:
+#   index.sh ensure [--root <path>] [--budget <bytes>]
+#   index.sh check  [--root <path>] [--budget <bytes>]
+#   index.sh --help
+#   index.sh --version
+#
+# ensure validates the existing entry against a fresh fingerprint of the
+# canonical sources (<root>/.agent/rules/**/*.md and
+# <root>/.agent/docs/**/*.md), reusing it on a match or rendering and
+# publishing a new immutable generation otherwise. It prints one absolute
+# path — <root>/.agent/indexes/current.md — to stdout on success. check
+# performs the same validation without ever writing the cache and prints
+# only FRESH or STALE to stdout. Both put HIT/BUILT/FRESH/STALE and every
+# diagnostic on stderr; stdout never carries rule bodies or routing tables,
+# only the bounded status documented above.
+#
+# Exit status: 0 success (ensure: HIT or BUILT; check: FRESH). 1 the
+# answer is "not fresh" — ensure falls back to canonical sources named on
+# stderr; check reports STALE. 2 a usage error: bad flags, a budget out of
+# range, or a root with no <root>/.agent directory to index.
+#
+# bash 3.2 / BSD portable: no associative arrays, no GNU-only flags.
+# No -E (errtrace): the ERR trap below is a top-level safety net for a
+# command left unguarded in the main flow. Every helper function instead
+# fails through its own explicit `|| return 1` / `|| fallback`, called
+# only from if-conditions or the left of `||` — the contexts errexit
+# already treats as "the caller decides". Without -E a subshell spawned
+# while evaluating one of those (a command substitution, a `( ... )`
+# pipeline stage) never re-fires this trap on its own account, so one
+# real failure never prints more than one ERROR/FALLBACK pair.
+set -euo pipefail
+export LC_ALL=C
+
+schema_version=1
+usage() {
+  cat <<'EOF'
+Usage:
+  index.sh ensure [--root <path>] [--budget <bytes>]
+  index.sh check  [--root <path>] [--budget <bytes>]
+  index.sh --help
+  index.sh --version
+
+root defaults to . — the cache lives at <root>/.agent/indexes/.
+budget defaults to 30000 and bounds each generated page and the entry
+file, in bytes (256..1000000).
+EOF
+}
+
+self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+self="$self_dir/${BASH_SOURCE[0]##*/}"
+
+# Generations older than this, and not the newly published or immediately
+# prior one, are reclaimed after a successful publish. Wide enough that no
+# realistically concurrent build (seconds, per the benchmark) is ever a
+# candidate; a crash-abandoned generation is reclaimed on the next publish
+# that happens to run at least this long afterward.
+CLEANUP_AGE_SECONDS=${INDEX_CLEANUP_AGE_SECONDS:-300}
+MAX_BUILD_ATTEMPTS=5
+
+case "${1:-}" in
+--help | -h) usage; exit 0 ;;
+--version) printf 'index.sh schema %s\n' "$schema_version"; exit 0 ;;
+esac
+
+op="${1:-}"
+case "$op" in
+ensure | check) shift ;;
+*) usage >&2; exit 2 ;;
+esac
+
+root=$PWD
+budget=30000
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+  --root | --budget)
+    [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+    case "$1" in --root) root=$2 ;; --budget) budget=$2 ;; esac
+    shift 2 ;;
+  --help | -h) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+  esac
+done
+case "$budget" in '' | *[!0-9]*) usage >&2; exit 2 ;; esac
+[ "$budget" -ge 256 ] && [ "$budget" -le 1000000 ] || { usage >&2; exit 2; }
+[ -d "$root" ] || { usage >&2; exit 2; }
+root=$(cd "$root" && pwd -P)
+case "$root" in *\\* | *$'\n'* | *$'\r'* | *$'\t'*)
+  printf 'index.sh: unsupported project path\n' >&2; exit 2 ;;
+esac
+[ -d "$root/.agent" ] || {
+  printf 'index.sh: no %s/.agent directory — not a dot-agent node\n' "$root" >&2
+  exit 2
+}
+cd "$root"
+cache="$root/.agent/indexes"
+entry="$cache/current.md"
+
+gen=''
+entry_tmp=''
+keep=0
+cleanup() {
+  [ -z "$entry_tmp" ] || rm -f "$entry_tmp"
+  if [ -n "$gen" ] && [ "$keep" -eq 0 ]; then rm -rf "$gen"; fi
+}
+fallback() {
+  printf 'ERROR: %s\n' "$*" >&2
+  printf 'FALLBACK: read canonical Markdown under %s/.agent/rules/ and %s/.agent/docs/\n' "$root" "$root" >&2
+  exit 1
+}
+trap cleanup EXIT
+trap 'fallback "refresh failed at line $LINENO"' ERR
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+[ ! -L "$cache" ] || fallback 'cache path is a symlink'
+[ ! -d "$entry" ] || fallback 'entry path is a directory'
+
+generator=$(git hash-object --no-filters -- "$self")
+
+# Restricted relative names make line-oriented batch hashing unambiguous
+# and rule out path characters that would break the entry file's grammar.
+paths() {
+  proot="$1"
+  ( [ -d "$proot/.agent/rules" ] && find "$proot/.agent/rules" -type l -print
+    [ -d "$proot/.agent/docs" ] && find "$proot/.agent/docs" -type l -print
+    true ) 2>/dev/null \
+    | awk 'END { if (NR) exit 1 }' || return 1
+  ( [ -d "$proot/.agent/rules" ] && find "$proot/.agent/rules" -type f -name '*.md' -print0
+    [ -d "$proot/.agent/docs" ] && find "$proot/.agent/docs" -type f -name '*.md' -print0
+    true ) \
+    | while IFS= read -r -d '' file; do
+        rel=${file#"$proot"/}
+        case "$rel" in *[!a-zA-Z0-9_./-]*) exit 1 ;; esac
+        printf '%s\n' "$rel"
+      done | sort
+}
+
+absolute_paths() {
+  aproot="$1"
+  while IFS= read -r file; do printf '%s/%s\n' "$aproot" "$file"; done
+}
+
+# Fingerprint binds generator bytes, render configuration (schema and
+# budget), the project path, every canonical source's relative path, and
+# its content bytes (via git hash-object, so an edit that preserves mtime
+# still changes the hash). Git never writes an object for this — hashing
+# is a pure content digest, not a repository write.
+snapshot() {
+  sn_list=$(paths "$root") || return 1
+  [ -n "$sn_list" ] || return 1
+  sn_hashes=$(printf '%s\n' "$sn_list" | absolute_paths "$root" | git hash-object --no-filters --stdin-paths) || return 1
+  printf '%s\n%s\n%s\n%s\n' "$schema_version/$budget/$generator" "$root" "$sn_list" "$sn_hashes" | git hash-object --stdin
+}
+
+# The tree digest binds every published page's name to its content, so
+# damage to one page, a missing page, or an extra stray file all change it.
+tree_digest() {
+  td_dir="$1"
+  [ -d "$td_dir" ] && [ ! -L "$td_dir" ] || return 1
+  td_list=$(cd "$td_dir" && find . -type f -name '*.md' | sed 's|^\./||' | sort) || return 1
+  [ -n "$td_list" ] || return 1
+  td_hashes=$(cd "$td_dir" && printf '%s\n' "$td_list" | absolute_paths "$td_dir" | git hash-object --no-filters --stdin-paths) || return 1
+  printf '%s\n%s\n' "$td_list" "$td_hashes" | git hash-object --stdin
+}
+
+mtime_epoch() {
+  if stat -f '%m' "$1" >/dev/null 2>&1; then
+    stat -f '%m' "$1"
+  else
+    stat -c '%Y' "$1"
+  fi
+}
+
+# Builds the exact byte content a valid, matching entry file must have for
+# generation $1 (fingerprint/generation/tree header, then one direct READ
+# line per page — no intermediate index file to open first). Used both to
+# publish a new entry and to verify a candidate cache hit.
+expected_entry() {
+  ee_fp="$1" ee_gen="$2" ee_dir="$3"
+  {
+    printf '%s\n%s\n%s\n\n' "$ee_fp" "${ee_gen##*/}" "$(tree_digest "$ee_dir")"
+    ( cd "$ee_dir" && find . -type f -name '*.md' | sed 's|^\./||' | sort ) \
+      | while IFS= read -r pg; do printf 'READ: %s/%s\n' "$ee_dir" "$pg"; done
+  }
+}
+
+# Sets HIT_ENTRY only on a fully verified hit: fingerprint match, a
+# readable generation whose tree digest matches the recorded one, AND the
+# entry's own bytes matching what that generation would produce today —
+# catches direct tampering with current.md itself, not just its pages.
+HIT_ENTRY=''
+valid_hit() {
+  vh_fp="$1"
+  [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+  vh_contents=$(cat "$entry") || return 1
+  vh_old_fp=${vh_contents%%$'\n'*}; vh_rest=${vh_contents#*$'\n'}
+  vh_old_gen=${vh_rest%%$'\n'*}
+  case "$vh_old_gen" in
+  gen.*) case "$vh_old_gen" in *[!a-zA-Z0-9.]* | *..*) return 1 ;; esac ;;
+  *) return 1 ;;
+  esac
+  [ "$vh_old_fp" = "$vh_fp" ] || return 1
+  vh_dir="$cache/$vh_old_gen"
+  [ -d "$vh_dir" ] && [ ! -L "$vh_dir" ] || return 1
+  vh_expected=$(expected_entry "$vh_fp" "$vh_old_gen" "$vh_dir") || return 1
+  [ "$vh_contents" = "$vh_expected" ] || return 1
+  HIT_ENTRY="$entry"
+  return 0
+}
+
+# One awk process renders every record. .agent/rules/**/*.md become
+# complete "rules" pages, each record's full body verbatim behind a
+# "Source:" pointer. Everything else under .agent/docs/ becomes one
+# "routes" line per file: its first "# " heading as title, the first
+# "<!-- Read when: ... -->" comment's payload as hook (or "(no hook)"),
+# and a direct READ pointer at the canonical source — the grammar this
+# task defines and F15 adapts existing records to. Each page and the
+# route index share one hard byte budget; a record too large to fit its
+# own page, or an index line too large to fit the running index, fails
+# rendering rather than truncating anything.
+render() {
+  rd_gen="$1"
+  shift
+  awk -v out="$rd_gen" -v canonical="$root" -v cap="$budget" '
+    function emit(kind, text,    n,path) {
+      n = length(text) + 1
+      if (n > cap) { print "record exceeds page budget: " FILENAME_PREV > "/dev/stderr"; exit 4 }
+      if (!page[kind] || size[kind] + n > cap) { page[kind]++; size[kind] = 0 }
+      path = out "/" kind "-" page[kind] ".md"
+      print text > path
+      size[kind] += n
+    }
+    function flush() {
+      if (!seen) return
+      if (FILENAME_PREV ~ /^\.agent\/rules\//) {
+        emit("rules", "Source: " canonical "/" FILENAME_PREV "\n" body)
+      } else {
+        h = hook; if (h == "") h = "(no hook)"
+        emit("routes", "- " title " | " h " | READ: " canonical "/" FILENAME_PREV)
+      }
+    }
+    FNR == 1 { flush(); FILENAME_PREV = FILENAME; seen = 1; title = FILENAME; hook = ""; body = ""; titlefound = 0 }
+    {
+      if (!titlefound && /^# /) { title = substr($0, 3); titlefound = 1 }
+      if (hook == "" && match($0, /Read when:[ \t]*/)) {
+        h = substr($0, RSTART + RLENGTH)
+        sub(/-->[ \t]*$/, "", h)
+        sub(/[ \t]+$/, "", h)
+        hook = h
+      }
+      if (FILENAME ~ /^\.agent\/rules\//) body = body $0 "\n"
+    }
+    END { flush() }
+  ' "$@"
+}
+
+# --- resolve the current fingerprint and try a cache hit first ----------
+fingerprint=$(snapshot) || fallback 'cannot fingerprint canonical source paths and bytes'
+
+if valid_hit "$fingerprint"; then
+  if [ "$op" = check ]; then
+    printf 'FRESH\n'
+    printf 'FRESH\n' >&2
+    exit 0
+  fi
+  printf 'HIT\n' >&2
+  printf '%s\n' "$HIT_ENTRY"
+  exit 0
+fi
+
+if [ "$op" = check ]; then
+  printf 'STALE\n'
+  printf 'STALE\n' >&2
+  exit 1
+fi
+
+# --- ensure: render, recheck sources, publish -----------------------------
+mkdir -p "$cache"
+
+prev_gen=''
+if [ -f "$entry" ] && [ ! -L "$entry" ]; then
+  prev_contents=$(cat "$entry" 2>/dev/null || true)
+  prev_gen=${prev_contents#*$'\n'}; prev_gen=${prev_gen%%$'\n'*}
+  case "$prev_gen" in gen.*) ;; *) prev_gen='' ;; esac
+fi
+
+attempt=1
+while :; do
+  pre_fp=$(snapshot) || fallback 'cannot fingerprint canonical source paths and bytes'
+  gen=$(mktemp -d "$cache/gen.XXXXXXXX")
+  files=()
+  while IFS= read -r file; do files[${#files[@]}]=$file; done < <(paths "$root")
+  [ "${#files[@]}" -gt 0 ] || fallback 'no source records under .agent/rules/ or .agent/docs/'
+  render "$gen" "${files[@]}" || fallback 'render failed or a record exceeds the page budget'
+  [ -n "$(find "$gen" -type f -name '*.md' -print -quit 2>/dev/null)" ] || fallback 'render produced no pages'
+  [ "${INDEX_FAIL_AT:-}" != after-render ] || fallback 'injected failure after render'
+  post_fp=$(snapshot) || fallback 'source recheck failed'
+  [ "$post_fp" = "$pre_fp" ] && break
+  rm -rf "$gen"; gen=''
+  attempt=$((attempt + 1))
+  [ "$attempt" -le "$MAX_BUILD_ATTEMPTS" ] \
+    || fallback "sources changed on every attempt; exhausted $MAX_BUILD_ATTEMPTS render attempts"
+done
+fingerprint="$post_fp"
+
+entry_tmp=$(mktemp "$cache/.entry.XXXXXXXX")
+expected_entry "$fingerprint" "$gen" "$gen" >"$entry_tmp"
+entry_bytes=$(wc -c <"$entry_tmp")
+[ "$entry_bytes" -le "$budget" ] || fallback 'entry exceeds page budget'
+[ "${INDEX_FAIL_AT:-}" != before-publish ] || fallback 'injected failure before publication'
+
+# Immutable generations avoid mixed reads: this generation is never
+# mutated again, and readers who already opened a prior entry keep a
+# generation that publication below does not touch.
+keep=1
+mv -f "$entry_tmp" "$entry"
+entry_tmp=''
+new_gen="$gen"
+gen=''
+
+# Bounded cleanup: reclaim generations that are neither the one just
+# published nor the one it replaced, and only once they are old enough
+# that no build racing this one could still be relying on them (see
+# CLEANUP_AGE_SECONDS above). This can never delete a generation a reader
+# has already selected, because a reader selects a generation by reading
+# current.md, and the two most recent generations are always exempt.
+now=$(date +%s)
+for d in "$cache"/gen.*; do
+  [ -d "$d" ] || continue
+  base=${d##*/}
+  [ "$base" = "${new_gen##*/}" ] && continue
+  [ "$base" = "$prev_gen" ] && continue
+  dm=$(mtime_epoch "$d") || continue
+  age=$((now - dm))
+  [ "$age" -ge "$CLEANUP_AGE_SECONDS" ] || continue
+  rm -rf "$d"
+done
+
+printf 'BUILT\n' >&2
+printf '%s\n' "$entry"

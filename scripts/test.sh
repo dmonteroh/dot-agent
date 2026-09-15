@@ -16,6 +16,7 @@ selfdir=$(cd "$(dirname "$0")" && pwd)
 reporoot=$(cd "$selfdir/.." && pwd)
 NODE="$reporoot/scripts/node.sh"
 LOGSH="$reporoot/scripts/log.sh"
+IDXSH="$reporoot/scripts/index.sh"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/dot-agent-test.XXXXXX")
 cleanup() { rm -rf "$WORK"; }
@@ -135,6 +136,41 @@ EOF
     sed "s/^  mode: ignore-all/  mode: $fxmode/" "$fx/.agent/purpose.md" >"$fx/.agent/purpose.md.tmp"
     mv "$fx/.agent/purpose.md.tmp" "$fx/.agent/purpose.md"
   fi
+}
+
+# root -> a minimal .agent/rules + .agent/docs tree for index.sh: one rule
+# record and one route record, both real enough that render produces one
+# page of each kind. index.sh's own fixtures are built here rather than as
+# checked-in files, the same way make_v6_fixture is — disposable, built
+# fresh per test under $WORK, never touching this repo.
+make_index_fixture() {
+  ifx="$1"
+  mkdir -p "$ifx/.agent/rules" "$ifx/.agent/docs"
+  cat >"$ifx/.agent/rules/contract.md" <<'EOF'
+# Contract
+
+## Project guardrails
+
+- Build: `true`
+EOF
+  cat >"$ifx/.agent/docs/architecture.md" <<'EOF'
+# Alpha
+<!-- Read when: working on auth -->
+Body text describing the alpha area.
+EOF
+}
+
+# path -> epoch mtime, BSD or GNU stat.
+idx_mtime() {
+  stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1"
+}
+
+# path -> a snapshot of every file's relative path, byte count, and mtime
+# under it, sorted — used to prove a warm run touches nothing at all.
+idx_snapshot() {
+  find "$1" -type f -exec sh -c 'for f; do
+    sz=$(wc -c <"$f"); mt=$(stat -f "%m" "$f" 2>/dev/null || stat -c "%Y" "$f"); printf "%s %s %s\n" "$f" "$sz" "$mt"
+  done' sh {} + | sort
 }
 
 # ---- 1. init x 3 presets x 3 modes ----
@@ -5942,6 +5978,455 @@ $f48: $hit48"
 done
 [ -z "$phrase_hits48" ] && pass "routing guidance: the retired phrase \"doc index\" appears nowhere" || fail "routing guidance: retired phrase \"doc index\" found:$phrase_hits48"
 
+# ---- 41. index.sh: canonical Markdown metadata grammar (parser fixtures) ----
+# Pinned before the rendering tests below build on it. A rule record's full
+# body renders verbatim behind a Source: pointer; a route record's title
+# and hook come from its first "# " heading and first "Read when:" comment,
+# with documented fallbacks when either is absent.
+g41="$WORK/g41"
+mkdir -p "$g41/.agent/rules" "$g41/.agent/docs"
+printf '# Rule Title\nLine one.\nLine two.\n' >"$g41/.agent/rules/r.md"
+printf '# Doc With Hook\n<!-- Read when: working on billing -->\nBody.\n' >"$g41/.agent/docs/hooked.md"
+printf 'No heading here.\n<!-- Read when: no title case -->\n' >"$g41/.agent/docs/notitle.md"
+printf '# Doc Without Hook\nJust body, no hook comment.\n' >"$g41/.agent/docs/nohook.md"
+"$IDXSH" ensure --root "$g41" >"$WORK/g41.out" 2>"$WORK/g41.err"
+g41gen=$(sed -n 2p "$g41/.agent/indexes/current.md")
+g41dir="$g41/.agent/indexes/$g41gen"
+
+grep -qF "Source: $g41/.agent/rules/r.md" "$g41dir"/rules-*.md \
+  && grep -qF 'Line one.' "$g41dir"/rules-*.md && grep -qF 'Line two.' "$g41dir"/rules-*.md \
+  && pass "grammar: a rule record's full body renders verbatim behind its Source: line" \
+  || fail "grammar: a rule record's full body renders verbatim behind its Source: line"
+
+grep -qF -- "- Doc With Hook | working on billing | READ: $g41/.agent/docs/hooked.md" "$g41dir"/routes-*.md \
+  && pass "grammar: a route record's title and hook come from its heading and Read-when comment" \
+  || fail "grammar: a route record's title and hook come from its heading and Read-when comment"
+
+grep -qF "READ: $g41/.agent/docs/notitle.md" "$g41dir"/routes-*.md \
+  && grep -qF '.agent/docs/notitle.md | no title case | READ:' "$g41dir"/routes-*.md \
+  && pass "grammar: a missing heading falls back to the record's own path as title" \
+  || fail "grammar: a missing heading falls back to the record's own path as title"
+
+grep -qF -- '- Doc Without Hook | (no hook) | READ:' "$g41dir"/routes-*.md \
+  && pass "grammar: a missing Read-when comment renders as (no hook)" \
+  || fail "grammar: a missing Read-when comment renders as (no hook)"
+
+# ---- 42. index.sh: initial build, then a warm hit touches nothing ----
+i42="$WORK/i42"
+make_index_fixture "$i42"
+"$IDXSH" ensure --root "$i42" >"$WORK/i42.out1" 2>"$WORK/i42.err1"
+grep -q '^BUILT$' "$WORK/i42.err1" && pass "ensure: a missing index is an initial BUILT, not an error" \
+  || fail "ensure: a missing index is an initial BUILT, not an error"
+[ "$(cat "$WORK/i42.out1")" = "$i42/.agent/indexes/current.md" ] \
+  && pass "ensure: stdout is the absolute entry path" || fail "ensure: stdout is the absolute entry path"
+i42old=$(cat "$i42/.agent/indexes/current.md")
+idx_snapshot "$i42/.agent/indexes" >"$WORK/i42.before"
+"$IDXSH" ensure --root "$i42" >"$WORK/i42.out2" 2>"$WORK/i42.err2"
+idx_snapshot "$i42/.agent/indexes" >"$WORK/i42.after"
+grep -q '^HIT$' "$WORK/i42.err2" && pass "ensure: an unchanged tree is a warm HIT" || fail "ensure: an unchanged tree is a warm HIT"
+[ "$i42old" = "$(cat "$i42/.agent/indexes/current.md")" ] && pass "ensure: a warm hit republishes nothing" || fail "ensure: a warm hit republishes nothing"
+cmp -s "$WORK/i42.before" "$WORK/i42.after" && pass "ensure: a warm hit writes zero bytes and touches no mtime" \
+  || fail "ensure: a warm hit writes zero bytes and touches no mtime"
+
+# ---- 43. index.sh: changed inputs invalidate the cache ----
+i43="$WORK/i43"
+make_index_fixture "$i43"
+"$IDXSH" ensure --root "$i43" >/dev/null 2>&1
+i43old=$(cat "$i43/.agent/indexes/current.md")
+
+printf '# Added\nNew record.\n' >"$i43/.agent/docs/added.md"
+"$IDXSH" ensure --root "$i43" >/dev/null 2>"$WORK/i43.a.err"
+i43new=$(cat "$i43/.agent/indexes/current.md")
+[ "$i43old" != "$i43new" ] && grep -q '^BUILT$' "$WORK/i43.a.err" && pass "invalidation: a source addition rebuilds" \
+  || fail "invalidation: a source addition rebuilds"
+i43old="$i43new"
+
+printf 'Uncommitted change.\n' >>"$i43/.agent/docs/architecture.md"
+"$IDXSH" ensure --root "$i43" >/dev/null 2>&1
+i43new=$(cat "$i43/.agent/indexes/current.md")
+[ "$i43old" != "$i43new" ] && pass "invalidation: an uncommitted content change rebuilds" \
+  || fail "invalidation: an uncommitted content change rebuilds"
+i43old="$i43new"
+
+touch -r "$i43/.agent/docs/architecture.md" "$WORK/i43.stamp"
+sed 's/alpha/omega/' "$i43/.agent/docs/architecture.md" >"$WORK/i43.edit"
+cat "$WORK/i43.edit" >"$i43/.agent/docs/architecture.md"
+touch -r "$WORK/i43.stamp" "$i43/.agent/docs/architecture.md"
+"$IDXSH" ensure --root "$i43" >/dev/null 2>&1
+i43new=$(cat "$i43/.agent/indexes/current.md")
+[ "$i43old" != "$i43new" ] && pass "invalidation: a same-length, timestamp-preserving edit rebuilds" \
+  || fail "invalidation: a same-length, timestamp-preserving edit rebuilds"
+i43old="$i43new"
+
+mv "$i43/.agent/docs/added.md" "$i43/.agent/docs/renamed.md"
+"$IDXSH" ensure --root "$i43" >/dev/null 2>&1
+i43new=$(cat "$i43/.agent/indexes/current.md")
+[ "$i43old" != "$i43new" ] && pass "invalidation: a rename rebuilds" || fail "invalidation: a rename rebuilds"
+i43old="$i43new"
+
+rm "$i43/.agent/docs/renamed.md"
+"$IDXSH" ensure --root "$i43" >/dev/null 2>&1
+i43new=$(cat "$i43/.agent/indexes/current.md")
+[ "$i43old" != "$i43new" ] && pass "invalidation: a deletion rebuilds" || fail "invalidation: a deletion rebuilds"
+
+# ---- 44. index.sh: damaged pages, missing pages, and entry tampering ----
+i44="$WORK/i44"
+make_index_fixture "$i44"
+"$IDXSH" ensure --root "$i44" >/dev/null 2>&1
+i44gen=$(sed -n 2p "$i44/.agent/indexes/current.md")
+printf 'damage\n' >>"$i44/.agent/indexes/$i44gen"/routes-1.md
+"$IDXSH" ensure --root "$i44" >/dev/null 2>"$WORK/i44.d.err"
+grep -q '^BUILT$' "$WORK/i44.d.err" && pass "verification: a damaged page forces a rebuild" \
+  || fail "verification: a damaged page forces a rebuild"
+
+i44gen=$(sed -n 2p "$i44/.agent/indexes/current.md")
+rm "$i44/.agent/indexes/$i44gen"/rules-1.md
+"$IDXSH" ensure --root "$i44" >/dev/null 2>"$WORK/i44.m.err"
+grep -q '^BUILT$' "$WORK/i44.m.err" && pass "verification: a missing page forces a rebuild" \
+  || fail "verification: a missing page forces a rebuild"
+
+printf 'unexpected instruction\n' >>"$i44/.agent/indexes/current.md"
+"$IDXSH" ensure --root "$i44" >/dev/null 2>"$WORK/i44.e.err"
+grep -q '^BUILT$' "$WORK/i44.e.err" && pass "verification: tampering with the entry itself forces a rebuild" \
+  || fail "verification: tampering with the entry itself forces a rebuild"
+
+# ---- 45. index.sh: generator and render-configuration invalidation, and
+# deterministic rendering of equivalent inputs ----
+i45="$WORK/i45"
+make_index_fixture "$i45"
+"$IDXSH" ensure --root "$i45" >/dev/null 2>&1
+i45old=$(cat "$i45/.agent/indexes/current.md")
+cp "$IDXSH" "$WORK/i45-index.sh"
+printf '\n# a generator revision\n' >>"$WORK/i45-index.sh"
+chmod +x "$WORK/i45-index.sh"
+"$WORK/i45-index.sh" ensure --root "$i45" >/dev/null 2>"$WORK/i45.g.err"
+i45new=$(cat "$i45/.agent/indexes/current.md")
+[ "$i45old" != "$i45new" ] && grep -q '^BUILT$' "$WORK/i45.g.err" \
+  && pass "invalidation: a changed generator rebuilds" || fail "invalidation: a changed generator rebuilds"
+
+i45oldgen=$(sed -n 2p "$i45/.agent/indexes/current.md")
+"$IDXSH" ensure --root "$i45" --budget 4096 >/dev/null 2>"$WORK/i45.b.err"
+i45newgen=$(sed -n 2p "$i45/.agent/indexes/current.md")
+[ "$i45oldgen" != "$i45newgen" ] && grep -q '^BUILT$' "$WORK/i45.b.err" \
+  && pass "invalidation: a changed budget rebuilds" || fail "invalidation: a changed budget rebuilds"
+cmp -s "$i45/.agent/indexes/$i45oldgen"/rules-1.md "$i45/.agent/indexes/$i45newgen"/rules-1.md \
+  && cmp -s "$i45/.agent/indexes/$i45oldgen"/routes-1.md "$i45/.agent/indexes/$i45newgen"/routes-1.md \
+  && pass "rendering: equivalent inputs and budget render byte-identical pages" \
+  || fail "rendering: equivalent inputs and budget render byte-identical pages"
+
+# ---- 46. index.sh: check reports MISSING/STALE without ever writing,
+# then FRESH once ensure has published ----
+i46="$WORK/i46"
+make_index_fixture "$i46"
+i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err1"); i46rc=$?
+[ "$i46rc" -eq 1 ] && [ "$i46out" = STALE ] && [ ! -e "$i46/.agent/indexes" ] \
+  && pass "check: no index yet is STALE and creates nothing" || fail "check: no index yet is STALE and creates nothing"
+"$IDXSH" ensure --root "$i46" >/dev/null 2>&1
+i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err2"); i46rc=$?
+[ "$i46rc" -eq 0 ] && [ "$i46out" = FRESH ] && pass "check: a valid cache is FRESH at exit 0" \
+  || fail "check: a valid cache is FRESH at exit 0"
+printf 'more\n' >>"$i46/.agent/docs/architecture.md"
+i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err3"); i46rc=$?
+[ "$i46rc" -eq 1 ] && [ "$i46out" = STALE ] && pass "check: a changed source is STALE at exit 1" \
+  || fail "check: a changed source is STALE at exit 1"
+
+# ---- 47. index.sh: rejected records, oversized records, and entry overflow
+# fall back explicitly and never truncate ----
+i47sym="$WORK/i47sym"
+make_index_fixture "$i47sym"
+ln -s architecture.md "$i47sym/.agent/docs/link.md"
+"$IDXSH" ensure --root "$i47sym" >/dev/null 2>"$WORK/i47.sym.err"
+grep -q 'FALLBACK:' "$WORK/i47.sym.err" && pass "rejection: a source symlink falls back rather than being indexed" \
+  || fail "rejection: a source symlink falls back rather than being indexed"
+
+i47bad="$WORK/i47bad"
+make_index_fixture "$i47bad"
+printf '# Bad\n' >"$i47bad/.agent/docs/bad name.md"
+"$IDXSH" ensure --root "$i47bad" >/dev/null 2>"$WORK/i47.bad.err"
+grep -q 'FALLBACK:' "$WORK/i47.bad.err" && pass "rejection: an unsupported filename falls back rather than being indexed" \
+  || fail "rejection: an unsupported filename falls back rather than being indexed"
+
+i47big="$WORK/i47big"
+mkdir -p "$i47big/.agent/rules"
+awk 'BEGIN { for (i = 0; i < 2000; i++) print "long rule line filler text" }' >"$i47big/.agent/rules/large.md"
+"$IDXSH" ensure --root "$i47big" --budget 256 >/dev/null 2>"$WORK/i47.big.err"
+grep -q 'record exceeds page budget' "$WORK/i47.big.err" && grep -q 'FALLBACK:' "$WORK/i47.big.err" \
+  && pass "overflow: a record too large for its own page falls back without truncation" \
+  || fail "overflow: a record too large for its own page falls back without truncation"
+
+i47long="$WORK/i47long/$(printf '%0140d' 0)"
+mkdir -p "$i47long/.agent/docs"
+printf '# A\n' >"$i47long/.agent/docs/a.md"
+"$IDXSH" ensure --root "$i47long" >/dev/null 2>&1
+cp "$i47long/.agent/indexes/current.md" "$WORK/i47.long-entry"
+i47smallbudget=$((${#i47long} + 80))
+"$IDXSH" ensure --root "$i47long" --budget "$i47smallbudget" >/dev/null 2>"$WORK/i47.long.err"
+grep -q 'entry exceeds page budget' "$WORK/i47.long.err" && grep -q 'FALLBACK:' "$WORK/i47.long.err" \
+  && cmp -s "$WORK/i47.long-entry" "$i47long/.agent/indexes/current.md" \
+  && pass "overflow: an entry too large for the budget falls back and preserves the prior publication" \
+  || fail "overflow: an entry too large for the budget falls back and preserves the prior publication"
+
+# ---- 48. index.sh: bounded retries on sources that keep changing during
+# rendering ----
+i48="$WORK/i48"
+make_index_fixture "$i48"
+"$IDXSH" ensure --root "$i48" >/dev/null 2>&1
+real_awk=$(command -v awk)
+mkdir -p "$WORK/i48bin"
+cat >"$WORK/i48bin/awk" <<WRAPPER
+#!/bin/sh
+"$real_awk" "\$@"
+rc=\$?
+case "\$*" in *out=*)
+  if [ "\${TEST_MODE:-}" = mutate_once ] && [ ! -f "\$MARKER" ]; then
+    : >"\$MARKER"
+    printf 'transient\n' >>"\$TARGET"
+  elif [ "\${TEST_MODE:-}" = mutate_always ]; then
+    printf 'mutation\n' >>"\$TARGET"
+  elif [ "\${TEST_MODE:-}" = pause ]; then
+    printf ready >"\$GATE"
+    n=0
+    while [ ! -f "\$GATE.go" ]; do sleep 0.05; n=\$((n + 1)); [ "\$n" -lt 100 ] || break; done
+    printf done >"\$GATE.done"
+  fi ;;
+esac
+exit "\$rc"
+WRAPPER
+chmod +x "$WORK/i48bin/awk"
+
+printf 'stale-before-retry\n' >>"$i48/.agent/docs/architecture.md"
+i48old=$(cat "$i48/.agent/indexes/current.md")
+rm -f "$WORK/i48.marker"
+PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_once MARKER="$WORK/i48.marker" TARGET="$i48/.agent/docs/architecture.md" \
+  "$IDXSH" ensure --root "$i48" >/dev/null 2>"$WORK/i48.once.err"
+grep -q '^BUILT$' "$WORK/i48.once.err" && [ "$i48old" != "$(cat "$i48/.agent/indexes/current.md")" ] \
+  && pass "retry: a one-time transient mutation during rendering still succeeds via retry" \
+  || fail "retry: a one-time transient mutation during rendering still succeeds via retry"
+
+i48old=$(cat "$i48/.agent/indexes/current.md")
+printf 'force-stale\n' >>"$i48/.agent/docs/architecture.md"
+PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_always TARGET="$i48/.agent/docs/architecture.md" \
+  "$IDXSH" ensure --root "$i48" >/dev/null 2>"$WORK/i48.always.err"; i48rc=$?
+[ "$i48rc" -eq 1 ] && grep -q 'exhausted' "$WORK/i48.always.err" \
+  && [ "$i48old" = "$(cat "$i48/.agent/indexes/current.md")" ] \
+  && pass "retry: sources changing on every attempt exhausts the bound and preserves the prior entry" \
+  || fail "retry: sources changing on every attempt exhausts the bound and preserves the prior entry"
+
+# ---- 49. index.sh: concurrent refreshes and a killed writer ----
+i49="$WORK/i49"
+make_index_fixture "$i49"
+"$IDXSH" ensure --root "$i49" >/dev/null 2>&1
+i49gen=$(sed -n 2p "$i49/.agent/indexes/current.md")
+cp -R "$i49/.agent/indexes/$i49gen" "$WORK/i49-old-generation"
+printf 'concurrency\n' >>"$i49/.agent/docs/architecture.md"
+i49pids=""
+for n in 1 2 3 4; do
+  "$IDXSH" ensure --root "$i49" >"$WORK/i49.$n.out" 2>"$WORK/i49.$n.err" &
+  i49pids="$i49pids $!"
+done
+for p in $i49pids; do wait "$p"; done
+i49fell_back=""
+for n in 1 2 3 4; do grep -q 'FALLBACK:' "$WORK/i49.$n.err" && i49fell_back="$i49fell_back $n"; done
+[ -z "$i49fell_back" ] && pass "concurrency: four parallel writers all complete without falling back" \
+  || fail "concurrency: four parallel writers all complete without falling back (writer(s):$i49fell_back)"
+"$IDXSH" ensure --root "$i49" >/dev/null 2>"$WORK/i49.final.err"
+grep -q '^HIT$' "$WORK/i49.final.err" && pass "concurrency: the state after concurrent writers is itself a valid, consistent hit" \
+  || fail "concurrency: the state after concurrent writers is itself a valid, consistent hit"
+diff -r "$WORK/i49-old-generation" "$i49/.agent/indexes/$i49gen" >/dev/null 2>&1 \
+  && pass "concurrency: an old generation a reader already selected is left untouched" \
+  || fail "concurrency: an old generation a reader already selected is left untouched"
+
+i49k="$WORK/i49k"
+make_index_fixture "$i49k"
+"$IDXSH" ensure --root "$i49k" >/dev/null 2>&1
+i49kold=$(cat "$i49k/.agent/indexes/current.md")
+printf 'crash-trigger\n' >>"$i49k/.agent/docs/architecture.md"
+PATH="$WORK/i48bin:$PATH" TEST_MODE=pause GATE="$WORK/i49k.gate" \
+  "$IDXSH" ensure --root "$i49k" >"$WORK/i49k.out" 2>"$WORK/i49k.err" &
+i49kpid=$!
+i49kn=0
+while [ ! -f "$WORK/i49k.gate" ]; do sleep 0.05; i49kn=$((i49kn + 1)); [ "$i49kn" -lt 100 ] || break; done
+kill -KILL "$i49kpid" 2>/dev/null || true
+wait "$i49kpid" 2>/dev/null || true
+# The paused awk wrapper is a grandchild of this shell (a child of the now-
+# dead index.sh), so killing i49kpid alone leaves it orphaned and running.
+# Release it immediately rather than letting it idle for up to its own
+# 5-second bound — an orphan still writing into $WORK can otherwise race
+# this suite's own end-of-run "rm -rf $WORK" and turn into a spurious
+# "Directory not empty".
+: >"$WORK/i49k.gate.go"
+i49kdn=0
+while [ ! -f "$WORK/i49k.gate.done" ]; do sleep 0.05; i49kdn=$((i49kdn + 1)); [ "$i49kdn" -lt 100 ] || break; done
+[ "$i49kold" = "$(cat "$i49k/.agent/indexes/current.md")" ] \
+  && pass "concurrency: a killed writer publishes nothing and leaves the prior entry readable" \
+  || fail "concurrency: a killed writer publishes nothing and leaves the prior entry readable"
+"$IDXSH" ensure --root "$i49k" >/dev/null 2>"$WORK/i49k.retry1.err"
+"$IDXSH" ensure --root "$i49k" >/dev/null 2>"$WORK/i49k.retry2.err"
+grep -q '^BUILT$' "$WORK/i49k.retry1.err" && grep -q '^HIT$' "$WORK/i49k.retry2.err" \
+  && pass "concurrency: the next run after a kill rebuilds cleanly with no lock recovery" \
+  || fail "concurrency: the next run after a kill rebuilds cleanly with no lock recovery"
+
+# ---- 50. index.sh: bounded cleanup reclaims only old, unreferenced
+# generations, never one just published or the one it replaced ----
+i50="$WORK/i50"
+make_index_fixture "$i50"
+"$IDXSH" ensure --root "$i50" >/dev/null 2>&1
+i50a=$(sed -n 2p "$i50/.agent/indexes/current.md")
+touch -t 202001010000 "$i50/.agent/indexes/$i50a"
+printf 'v2\n' >>"$i50/.agent/docs/architecture.md"
+INDEX_CLEANUP_AGE_SECONDS=60 "$IDXSH" ensure --root "$i50" >/dev/null 2>&1
+i50b=$(sed -n 2p "$i50/.agent/indexes/current.md")
+[ -d "$i50/.agent/indexes/$i50a" ] \
+  && pass "cleanup: the generation this build replaced is exempt even when old" \
+  || fail "cleanup: the generation this build replaced is exempt even when old"
+touch -t 202001010000 "$i50/.agent/indexes/$i50b"
+printf 'v3\n' >>"$i50/.agent/docs/architecture.md"
+INDEX_CLEANUP_AGE_SECONDS=60 "$IDXSH" ensure --root "$i50" >/dev/null 2>&1
+i50c=$(sed -n 2p "$i50/.agent/indexes/current.md")
+[ ! -d "$i50/.agent/indexes/$i50a" ] && [ -d "$i50/.agent/indexes/$i50b" ] && [ -d "$i50/.agent/indexes/$i50c" ] \
+  && pass "cleanup: an old generation two publishes stale is reclaimed once past the age bound" \
+  || fail "cleanup: an old generation two publishes stale is reclaimed once past the age bound"
+
+i50f="$WORK/i50f"
+make_index_fixture "$i50f"
+"$IDXSH" ensure --root "$i50f" >/dev/null 2>&1
+i50fa=$(sed -n 2p "$i50f/.agent/indexes/current.md")
+printf 'v2\n' >>"$i50f/.agent/docs/architecture.md"
+INDEX_CLEANUP_AGE_SECONDS=300 "$IDXSH" ensure --root "$i50f" >/dev/null 2>&1
+[ -d "$i50f/.agent/indexes/$i50fa" ] \
+  && pass "cleanup: a fresh superseded generation stays within the age bound's grace window" \
+  || fail "cleanup: a fresh superseded generation stays within the age bound's grace window"
+
+# ---- 51. index.sh: real branch switches and two linked worktrees ----
+i51="$WORK/i51"
+make_index_fixture "$i51"
+git -C "$i51" init -q
+git -C "$i51" config user.name Tester
+git -C "$i51" config user.email tester@example.invalid
+printf '.agent/indexes/\n' >"$i51/.gitignore"
+git -C "$i51" add .
+git -C "$i51" commit -qm initial
+i51base=$(git -C "$i51" symbolic-ref --short HEAD)
+"$IDXSH" ensure --root "$i51" >/dev/null 2>&1
+i51old=$(cat "$i51/.agent/indexes/current.md")
+git -C "$i51" checkout -qb alternate
+printf 'alternate branch content\n' >>"$i51/.agent/docs/architecture.md"
+git -C "$i51" commit -qam alternate
+"$IDXSH" ensure --root "$i51" >/dev/null 2>&1
+[ "$i51old" != "$(cat "$i51/.agent/indexes/current.md")" ] \
+  && pass "branch switch: checking out a branch with different content invalidates the cache" \
+  || fail "branch switch: checking out a branch with different content invalidates the cache"
+git -C "$i51" checkout -q "$i51base"
+"$IDXSH" ensure --root "$i51" >/dev/null 2>&1
+i51back=$(cat "$i51/.agent/indexes/current.md")
+[ "$i51old" != "$i51back" ] \
+  && pass "branch switch: returning to the original branch rebuilds a fresh generation" \
+  || fail "branch switch: returning to the original branch rebuilds a fresh generation"
+[ "$(printf '%s\n' "$i51old" | head -1)" = "$(printf '%s\n' "$i51back" | head -1)" ] \
+  && pass "branch switch: the fingerprint itself returns to the original value" \
+  || fail "branch switch: the fingerprint itself returns to the original value"
+
+git -C "$i51" worktree add -q "$WORK/i51-wt" alternate
+"$IDXSH" ensure --root "$WORK/i51-wt" >/dev/null 2>&1
+[ -f "$WORK/i51-wt/.agent/indexes/current.md" ] \
+  && pass "worktree: a linked worktree builds its own cache" || fail "worktree: a linked worktree builds its own cache"
+cmp -s "$i51/.agent/indexes/current.md" "$WORK/i51-wt/.agent/indexes/current.md" \
+  && fail "worktree: the two worktrees' caches are isolated" \
+  || pass "worktree: the two worktrees' caches are isolated"
+[ -z "$(git -C "$i51" status --porcelain)" ] && [ -z "$(git -C "$WORK/i51-wt" status --porcelain)" ] \
+  && pass "worktree: the ignored cache leaves both working trees clean" \
+  || fail "worktree: the ignored cache leaves both working trees clean"
+git -C "$i51" worktree remove -f "$WORK/i51-wt" >/dev/null 2>&1 || rm -rf "$WORK/i51-wt"
+
+# ---- 52. index.sh: check never writes, under repeated calls ----
+i52="$WORK/i52"
+make_index_fixture "$i52"
+"$IDXSH" ensure --root "$i52" >/dev/null 2>&1
+idx_snapshot "$i52/.agent/indexes" >"$WORK/i52.before"
+"$IDXSH" check --root "$i52" >/dev/null 2>&1
+"$IDXSH" check --root "$i52" >/dev/null 2>&1
+idx_snapshot "$i52/.agent/indexes" >"$WORK/i52.after"
+cmp -s "$WORK/i52.before" "$WORK/i52.after" && pass "check: repeated calls write zero bytes and touch no mtime" \
+  || fail "check: repeated calls write zero bytes and touch no mtime"
+
+# ---- 53. index.sh: usage and the documented exit-status table ----
+"$IDXSH" --help >"$WORK/i53.help" 2>&1; i53rc=$?
+[ "$i53rc" -eq 0 ] && head -n 1 "$WORK/i53.help" | grep -q '^Usage:$' && grep -qF 'index.sh ensure' "$WORK/i53.help" \
+  && pass "usage: --help prints usage at exit 0" || fail "usage: --help prints usage at exit 0"
+"$IDXSH" --version >"$WORK/i53.version" 2>&1; i53rc=$?
+[ "$i53rc" -eq 0 ] && grep -qF 'index.sh schema' "$WORK/i53.version" \
+  && pass "usage: --version prints at exit 0" || fail "usage: --version prints at exit 0"
+"$IDXSH" >/dev/null 2>&1; [ "$?" -eq 2 ] && pass "usage: no operation is a usage error (exit 2)" \
+  || fail "usage: no operation is a usage error (exit 2)"
+"$IDXSH" bogus >/dev/null 2>&1; [ "$?" -eq 2 ] && pass "usage: an unknown operation is a usage error (exit 2)" \
+  || fail "usage: an unknown operation is a usage error (exit 2)"
+"$IDXSH" ensure --budget 4 >/dev/null 2>&1; [ "$?" -eq 2 ] && pass "usage: a budget outside 256..1000000 is a usage error (exit 2)" \
+  || fail "usage: a budget outside 256..1000000 is a usage error (exit 2)"
+i53noagent="$WORK/i53noagent"
+mkdir -p "$i53noagent"
+"$IDXSH" ensure --root "$i53noagent" >/dev/null 2>&1; [ "$?" -eq 2 ] \
+  && pass "usage: a root with no .agent/ is a usage error (exit 2)" || fail "usage: a root with no .agent/ is a usage error (exit 2)"
+i53="$WORK/i53"
+make_index_fixture "$i53"
+"$IDXSH" ensure --root "$i53" >/dev/null 2>&1; [ "$?" -eq 0 ] \
+  && pass "exit status: ensure BUILT is exit 0" || fail "exit status: ensure BUILT is exit 0"
+"$IDXSH" ensure --root "$i53" >/dev/null 2>&1; [ "$?" -eq 0 ] \
+  && pass "exit status: ensure HIT is exit 0" || fail "exit status: ensure HIT is exit 0"
+"$IDXSH" check --root "$i53" >/dev/null 2>&1; [ "$?" -eq 0 ] \
+  && pass "exit status: check FRESH is exit 0" || fail "exit status: check FRESH is exit 0"
+
+# ---- 54. index.sh: every generated entry resolves to the canonical source
+# or a complete generated page ----
+i54="$WORK/i54"
+mkdir -p "$i54/.agent/rules" "$i54/.agent/docs/sub"
+printf '# Rule A\nBody A.\n' >"$i54/.agent/rules/a.md"
+printf '# Rule B\nBody B.\n' >"$i54/.agent/rules/b.md"
+printf '# Doc A\n<!-- Read when: doc a -->\nBody.\n' >"$i54/.agent/docs/a.md"
+printf '# Sub Doc\n<!-- Read when: sub area -->\nBody.\n' >"$i54/.agent/docs/sub/s.md"
+"$IDXSH" ensure --root "$i54" >/dev/null 2>&1
+i54gen=$(sed -n 2p "$i54/.agent/indexes/current.md")
+i54dir="$i54/.agent/indexes/$i54gen"
+i54bad=""
+while IFS= read -r rl; do
+  target=${rl#READ: }
+  [ -f "$target" ] || i54bad="$i54bad $target"
+done < <(grep '^READ:' "$i54/.agent/indexes/current.md")
+[ -z "$i54bad" ] && pass "resolution: every entry-file READ line names a file that exists" \
+  || fail "resolution: every entry-file READ line names a file that exists ($i54bad)"
+i54routebad=""
+while IFS= read -r rl; do
+  target=${rl##*READ: }
+  [ -f "$target" ] || i54routebad="$i54routebad $target"
+done < <(grep -h '| READ:' "$i54dir"/routes-*.md)
+[ -z "$i54routebad" ] && pass "resolution: every route line's READ pointer resolves to a real canonical source" \
+  || fail "resolution: every route line's READ pointer resolves to a real canonical source ($i54routebad)"
+i54srcbad=""
+for f in "$i54dir"/rules-*.md; do
+  src=$(sed -n 's/^Source: //p' "$f" | head -1)
+  [ -f "$src" ] || i54srcbad="$i54srcbad $src"
+done
+[ -z "$i54srcbad" ] && pass "resolution: every rule page's Source: pointer resolves to a real canonical source" \
+  || fail "resolution: every rule page's Source: pointer resolves to a real canonical source ($i54srcbad)"
+grep -qF 'Body A.' "$i54dir"/rules-*.md && grep -qF 'Body B.' "$i54dir"/rules-*.md \
+  && pass "resolution: rule pages are complete — every rule record's body is present" \
+  || fail "resolution: rule pages are complete — every rule record's body is present"
+
+# ---- 55. index.sh: the stdout/stderr contract — bounded status only ----
+i55="$WORK/i55"
+make_index_fixture "$i55"
+"$IDXSH" ensure --root "$i55" >"$WORK/i55.out" 2>"$WORK/i55.err"
+[ "$(wc -l <"$WORK/i55.out" | tr -d ' ')" -eq 1 ] && [ "$(cat "$WORK/i55.out")" = "$i55/.agent/indexes/current.md" ] \
+  && pass "contract: ensure's stdout is exactly one line, the entry path" \
+  || fail "contract: ensure's stdout is exactly one line, the entry path"
+grep -qi 'Read when\|Project guardrails\|Body text' "$WORK/i55.out" \
+  && fail "contract: ensure's stdout never carries rule bodies or routing tables" \
+  || pass "contract: ensure's stdout never carries rule bodies or routing tables"
+"$IDXSH" check --root "$i55" >"$WORK/i55.check.out" 2>"$WORK/i55.check.err"
+[ "$(cat "$WORK/i55.check.out")" = FRESH ] \
+  && pass "contract: check's stdout is exactly FRESH or STALE, nothing else" \
+  || fail "contract: check's stdout is exactly FRESH or STALE, nothing else"
+
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -5949,7 +6434,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=797
+EXPECTED_CHECKS=857
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
