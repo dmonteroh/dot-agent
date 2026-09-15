@@ -539,37 +539,78 @@ EOF
   write_migration_target "$purpose" "$TARGET_VERSION" \
     || { echo "node.sh: failed to record migration_target in $purpose — aborting before touching node content" >&2; exit 1; }
 
-  # Memory split baseline (guarded by memory/ absence — safe to re-run).
+  # Memory split baseline. memdir's mere existence cannot gate this: it
+  # cannot distinguish "never split" from "split, interrupted mid-write"
+  # from "already fully split into real fact files" — all three leave
+  # memdir present, and each needs different treatment. The outer gate
+  # below instead reads two independent signals:
+  #   - memdir already holding any *.md file (legacy.md or a real fact
+  #     file) means some split — this migration's or an earlier one's —
+  #     already produced content there, so a stale header alone (a
+  #     genuinely pre-split node due for migrate_memory_headers below, not
+  #     this block) must never trigger a re-extraction that would read the
+  #     current index as if it were an unsplit body and discard it into a
+  #     fresh legacy.md.
+  #   - a dedicated in-progress marker, written before the first content
+  #     write below and removed only after the last one succeeds, so a
+  #     crash between those two points is distinguishable from both a
+  #     fresh node and a genuinely already-split one, and a retry resumes
+  #     rather than silently skipping.
+  # Inside the gate, step 1 (extraction) and step 2 (the index link) are
+  # each independently idempotent: step 1 is gated on memory.md's own
+  # header contract (memory_index_header_stale, the same check
+  # migrate_memory_headers uses below) so a crash after step 1 already
+  # rewrote memory.md is never mistaken for an unsplit body; step 2 is
+  # gated on legacy.md existing with no index line yet, so a crash between
+  # the two writes resumes by finishing step 2 alone, without redoing step 1.
   memdir="$agent/memory"
   memory="$agent/memory.md"
+  split_marker="$memdir/.split-in-progress"
+  mkdir -p "$memdir" \
+    || { echo "node.sh: failed to create $memdir — aborting before touching node content" >&2; exit 1; }
+  memdir_has_content=0
+  for mdf in "$memdir"/*.md; do
+    [ -e "$mdf" ] && { memdir_has_content=1; break; }
+  done
   split_note="memory/ already present — split step skipped"
-  if [ ! -d "$memdir" ]; then
-    mkdir -p "$memdir"
-    body_tmp="$agent/.memory-body.tmp"
-    if [ -f "$memory" ]; then
-      # Honor a closing --> only when a header comment actually opens near
-      # the top. Keying on the first --> alone would silently drop every
-      # fact above an arrow token in the body of a header-less file.
-      header_end=""
-      if head -n 5 "$memory" | grep -qF '<!--'; then
-        header_end=$(grep -n -- '-->' "$memory" | head -n1 | cut -d: -f1)
+  if [ -e "$split_marker" ] \
+    || { [ "$memdir_has_content" -eq 0 ] && { [ ! -f "$memory" ] || memory_index_header_stale "$memory"; }; }; then
+    : >"$split_marker" \
+      || { echo "node.sh: failed to record $split_marker — aborting before touching node content" >&2; exit 1; }
+    if [ ! -f "$memory" ] || memory_index_header_stale "$memory"; then
+      body_tmp="$agent/.memory-body.tmp"
+      if [ -f "$memory" ]; then
+        # Honor a closing --> only when a header comment actually opens near
+        # the top. Keying on the first --> alone would silently drop every
+        # fact above an arrow token in the body of a header-less file.
+        header_end=""
+        if head -n 5 "$memory" | grep -qF '<!--'; then
+          header_end=$(grep -n -- '-->' "$memory" | head -n1 | cut -d: -f1)
+        fi
+        header_end=${header_end:-0}
+        tail -n +"$((header_end + 1))" "$memory" \
+          | awk 'NR == 1 && /^# Memory[[:space:]]*$/ { next } { print }' >"$body_tmp"
+      else
+        : >"$body_tmp"
       fi
-      header_end=${header_end:-0}
-      tail -n +"$((header_end + 1))" "$memory" \
-        | awk 'NR == 1 && /^# Memory[[:space:]]*$/ { next } { print }' >"$body_tmp"
-    else
-      : >"$body_tmp"
+      if grep -q '[^[:space:]]' "$body_tmp" 2>/dev/null; then
+        sed -e '/./,$!d' "$body_tmp" >"$memdir/legacy.md"
+        write_memory_header "$memory"
+        split_note="memory.md body moved to memory/legacy.md (GROOM flag will prompt the fact split)"
+      else
+        write_memory_header "$memory"
+        split_note="memory.md was empty/header-only — replaced with the index header, no legacy file"
+      fi
+      rm -f "$body_tmp"
     fi
-    if grep -q '[^[:space:]]' "$body_tmp" 2>/dev/null; then
-      sed -e '/./,$!d' "$body_tmp" >"$memdir/legacy.md"
-      write_memory_header "$memory"
+    if [ -f "$memdir/legacy.md" ] && ! grep -qF '(memory/legacy.md)' "$memory"; then
       printf '\n%s\n' '- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag' >>"$memory"
-      split_note="memory.md body moved to memory/legacy.md (GROOM flag will prompt the fact split)"
-    else
-      write_memory_header "$memory"
-      split_note="memory.md was empty/header-only — replaced with the index header, no legacy file"
+      case "$split_note" in
+      "memory/ already present — split step skipped")
+        split_note="memory/legacy.md already present from an interrupted split; resumed by appending its missing index link" ;;
+      esac
     fi
-    rm -f "$body_tmp"
+    rm -f "$split_marker"
   fi
 
   migrate_memory_headers "$agent"

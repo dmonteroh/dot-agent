@@ -309,6 +309,85 @@ legacy_count=$(grep -cF "[Legacy memory](memory/legacy.md)" "$interrupt/.agent/m
 [ "$legacy_count" -eq 1 ] && pass "update: retry does not duplicate the legacy memory index line" || fail "update: retry does not duplicate the legacy memory index line (count=$legacy_count)"
 grep -q '^  version: 6$' "$interrupt/.agent/purpose.md" 2>/dev/null && pass "update: retry still leaves version unbumped" || fail "update: retry still leaves version unbumped"
 
+# ---- 5d. memory split interrupted after memory/ is created, before legacy.md is written ----
+# Model the crash window inside the split step itself: memory/ exists
+# (mkdir succeeded) but nothing has been written into it yet, and
+# memory.md still holds its original pre-split prose body untouched.
+# FU05 (F4a follow-up): a memdir-existence gate cannot tell this apart
+# from a completed split, so it would skip the split forever, stranding
+# the prose body outside any legacy.md and never linking it from the
+# index.
+splitA="$WORK/update-split-interrupted-a"
+mkdir -p "$splitA/.agent/memory"
+make_v6_fixture "$splitA"
+cp -R "$splitA/.agent" "$splitA/.agent.backup-v6"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$splitA/.agent/purpose.md" >"$splitA/.agent/purpose.md.tmp"
+mv "$splitA/.agent/purpose.md.tmp" "$splitA/.agent/purpose.md"
+"$NODE" update "$splitA" >"$WORK/update-splitA.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "update: resume after memory/ created but empty exits 0" || fail "update: resume after memory/ created but empty exits 0 (rc=$rc)"
+grep -q "custom auth flow" "$splitA/.agent/memory/legacy.md" 2>/dev/null && pass "update: resume after an empty memory/ still moves the body to legacy.md" || fail "update: resume after an empty memory/ still moves the body to legacy.md"
+splitA_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitA/.agent/memory.md")
+[ "$splitA_links" -eq 1 ] && pass "update: resume after an empty memory/ adds exactly one index link" || fail "update: resume after an empty memory/ adds exactly one index link (count=$splitA_links)"
+grep -q "custom auth flow" "$splitA/.agent/memory.md" 2>/dev/null && fail "update: resume after an empty memory/ does not leave the body behind in memory.md" || pass "update: resume after an empty memory/ does not leave the body behind in memory.md"
+
+# ---- 5e. memory split interrupted after legacy.md is written, before memory.md is rewritten ----
+# Model the crash window between the two writes: legacy.md already holds
+# the moved body, but memory.md is still the untouched pre-split original
+# (the crash landed before write_memory_header ran). A memdir-existence
+# gate would see memory/ present and skip, leaving the fact duplicated —
+# once in legacy.md, once still as memory.md's own unconverted body.
+splitB="$WORK/update-split-interrupted-b"
+mkdir -p "$splitB/.agent/memory"
+make_v6_fixture "$splitB"
+printf 'This project uses a custom auth flow with rotating tokens. The staging\ndatabase resets nightly at 02:00 UTC. Deploy via the internal release\ntool, never raw kubectl.\n' \
+  >"$splitB/.agent/memory/legacy.md"
+: >"$splitB/.agent/memory/.split-in-progress"
+cp -R "$splitB/.agent" "$splitB/.agent.backup-v6"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$splitB/.agent/purpose.md" >"$splitB/.agent/purpose.md.tmp"
+mv "$splitB/.agent/purpose.md.tmp" "$splitB/.agent/purpose.md"
+"$NODE" update "$splitB" >"$WORK/update-splitB.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "update: resume after legacy.md written but memory.md not yet rewritten exits 0" || fail "update: resume after legacy.md written but memory.md not yet rewritten exits 0 (rc=$rc)"
+splitB_legacy_count=$(grep -c "custom auth flow" "$splitB/.agent/memory/legacy.md" 2>/dev/null)
+[ "$splitB_legacy_count" -eq 1 ] && pass "update: resume does not duplicate the fact inside legacy.md" || fail "update: resume does not duplicate the fact inside legacy.md (count=$splitB_legacy_count)"
+grep -q "custom auth flow" "$splitB/.agent/memory.md" 2>/dev/null && fail "update: resume converts memory.md into the index, not a second copy of the body" || pass "update: resume converts memory.md into the index, not a second copy of the body"
+splitB_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitB/.agent/memory.md")
+[ "$splitB_links" -eq 1 ] && pass "update: resume after legacy.md written adds exactly one index link" || fail "update: resume after legacy.md written adds exactly one index link (count=$splitB_links)"
+[ ! -e "$splitB/.agent/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
+
+# ---- 5f. memory split interrupted after memory.md is rewritten, before the index link is appended ----
+# Model the crash window after write_memory_header ran: memory.md already
+# reads as a fresh index (legacy.md exists with the moved fact), but the
+# index line pointing at legacy.md was never appended — the fact would be
+# orphaned (unreachable from memory.md, un-flagged by the GROOM check
+# that keys off the index line) if a retry re-derived from memory.md's
+# current content instead of finishing the append.
+splitC="$WORK/update-split-interrupted-c"
+mkdir -p "$splitC/.agent/memory"
+make_v6_fixture "$splitC"
+printf 'This project uses a custom auth flow with rotating tokens. The staging\ndatabase resets nightly at 02:00 UTC. Deploy via the internal release\ntool, never raw kubectl.\n' \
+  >"$splitC/.agent/memory/legacy.md"
+cat >"$splitC/.agent/memory.md" <<'MEMEOF'
+# Memory
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agent/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+MEMEOF
+: >"$splitC/.agent/memory/.split-in-progress"
+cp -R "$splitC/.agent" "$splitC/.agent.backup-v6"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$splitC/.agent/purpose.md" >"$splitC/.agent/purpose.md.tmp"
+mv "$splitC/.agent/purpose.md.tmp" "$splitC/.agent/purpose.md"
+"$NODE" update "$splitC" >"$WORK/update-splitC.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "update: resume after memory.md rewritten but link not yet appended exits 0" || fail "update: resume after memory.md rewritten but link not yet appended exits 0 (rc=$rc)"
+splitC_legacy_count=$(grep -c "custom auth flow" "$splitC/.agent/memory/legacy.md" 2>/dev/null)
+[ "$splitC_legacy_count" -eq 1 ] && pass "update: resume after a rewritten memory.md leaves legacy.md untouched" || fail "update: resume after a rewritten memory.md leaves legacy.md untouched (count=$splitC_legacy_count)"
+splitC_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitC/.agent/memory.md")
+[ "$splitC_links" -eq 1 ] && pass "update: resume finishes the orphaned legacy.md by appending its missing index link" || fail "update: resume finishes the orphaned legacy.md by appending its missing index link (count=$splitC_links)"
+[ ! -e "$splitC/.agent/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
+
 # ---- 5c. a backup collision WITHOUT a matching migration_target still aborts ----
 unexplained="$WORK/update-unexplained-backup"
 mkdir -p "$unexplained"
@@ -5869,7 +5948,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=783
+EXPECTED_CHECKS=796
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
