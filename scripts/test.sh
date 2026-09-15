@@ -5989,7 +5989,7 @@ printf '# Rule Title\nLine one.\nLine two.\n' >"$g41/.agent/rules/r.md"
 printf '# Doc With Hook\n<!-- Read when: working on billing -->\nBody.\n' >"$g41/.agent/docs/hooked.md"
 printf 'No heading here.\n<!-- Read when: no title case -->\n' >"$g41/.agent/docs/notitle.md"
 printf '# Doc Without Hook\nJust body, no hook comment.\n' >"$g41/.agent/docs/nohook.md"
-printf '# Linked Rule\nSee [sibling](other.md) and [abs](/etc/hosts) and [ext](https://example.com/page).\n' >"$g41/.agent/rules/linked.md"
+printf '# Linked Rule\nSee [sibling](other.md) and [abs](/etc/hosts) and [ext](https://example.com/page) and [titled](other.md "See the other").\n' >"$g41/.agent/rules/linked.md"
 printf '# Other\nOther content.\n' >"$g41/.agent/rules/other.md"
 mkdir -p "$g41/.agent/rules/sub"
 printf '# Nested Rule\nSee [alpha doc](../../docs/hooked.md) for context.\n' >"$g41/.agent/rules/sub/nested.md"
@@ -6032,6 +6032,13 @@ g41nested=$(grep -ohE '\[alpha doc\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | 
 [ -n "$g41nested" ] && [ -f "$g41nested" ] && [ "$g41nested" = "$g41/.agent/docs/hooked.md" ] \
   && pass "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc" \
   || fail "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc"
+
+g41titled=$(grep -ohE '\[titled\]\(.*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[titled\]\((.*)\)$/\1/')
+g41titledpath=$(printf '%s\n' "$g41titled" | sed -E 's/ "[^"]*"$//')
+[ -n "$g41titledpath" ] && [ -f "$g41titledpath" ] && [ "$g41titledpath" = "$g41/.agent/rules/other.md" ] \
+  && printf '%s\n' "$g41titled" | grep -qF '"See the other"' \
+  && pass "links: a titled relative link rewrites the path and preserves the title" \
+  || fail "links: a titled relative link rewrites the path and preserves the title ($g41titled)"
 
 # ---- 42. index.sh: initial build, then a warm hit touches nothing ----
 i42="$WORK/i42"
@@ -6456,7 +6463,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=861
+EXPECTED_CHECKS=862
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

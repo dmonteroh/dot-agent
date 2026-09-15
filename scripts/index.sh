@@ -272,16 +272,26 @@ render() {
     # dir (the source record own directory, project-relative).
     # Absolute paths, #-only anchors, and scheme URLs pass through
     # unchanged; a #fragment on a relative target is preserved.
-    function rewrite_links(line, dir,    res, pos, s, full, sep, label, url, frag, base, resolved, fi) {
+    function rewrite_links(line, dir,    res, pos, s, mlen, full, sep, label, url, frag, base, resolved, fi, title, ti) {
       res = ""
       pos = 1
       while (match(substr(line, pos), /\[[^]]*\]\([^)]*\)/)) {
         s = pos + RSTART - 1
-        full = substr(line, s, RLENGTH)
+        mlen = RLENGTH
+        full = substr(line, s, mlen)
         res = res substr(line, pos, RSTART - 1)
         sep = index(full, "](")
         label = substr(full, 1, sep + 1)
         url = substr(full, sep + 2, length(full) - sep - 2)
+        # A link may carry an optional ` "title"` or ` 'title'` suffix
+        # after the URL. Strip it before treating the remainder as the
+        # path to rewrite, then reattach it unmodified afterward.
+        title = ""
+        ti = match(url, /[ \t]+["'\''][^"'\'']*["'\'']$/)
+        if (ti > 0) {
+          title = substr(url, ti)
+          url = substr(url, 1, ti - 1)
+        }
         if (is_relative_link(url)) {
           frag = ""; base = url
           fi = index(url, "#")
@@ -291,8 +301,8 @@ render() {
             url = canonical "/" resolved frag
           }
         }
-        res = res label url ")"
-        pos = s + RLENGTH
+        res = res label url title ")"
+        pos = s + mlen
       }
       res = res substr(line, pos)
       return res
