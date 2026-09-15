@@ -216,15 +216,20 @@ valid_hit() {
 }
 
 # One awk process renders every record. .agent/rules/**/*.md become
-# complete "rules" pages, each record's full body verbatim behind a
-# "Source:" pointer. Everything else under .agent/docs/ becomes one
-# "routes" line per file: its first "# " heading as title, the first
-# "<!-- Read when: ... -->" comment's payload as hook (or "(no hook)"),
-# and a direct READ pointer at the canonical source — the grammar this
-# task defines and F15 adapts existing records to. Each page and the
-# route index share one hard byte budget; a record too large to fit its
-# own page, or an index line too large to fit the running index, fails
-# rendering rather than truncating anything.
+# complete "rules" pages, each record's full body behind a "Source:"
+# pointer — verbatim except that a relative Markdown link
+# ([text](relative/path), not an absolute path, a #-only anchor, or a
+# URL with a scheme) is rewritten to an absolute path so it still
+# resolves once the body is copied into a generation directory elsewhere
+# under .agent/indexes/ (see rewrite_links below). Everything else under
+# .agent/docs/ becomes one "routes" line per file: its first "# "
+# heading as title, the first "<!-- Read when: ... -->" comment's
+# payload as hook (or "(no hook)"), and a direct READ pointer at the
+# canonical source — the grammar this task defines and F15 adapts
+# existing records to. Each page and the route index share one hard byte
+# budget; a record too large to fit its own page, or an index line too
+# large to fit the running index, fails rendering rather than truncating
+# anything.
 render() {
   rd_gen="$1"
   shift
@@ -237,6 +242,61 @@ render() {
       print text > path
       size[kind] += n
     }
+    # A link target is relative when it has no URL scheme (http:,
+    # mailto:, ...), is not rooted at "/", and is not a #-only anchor.
+    function is_relative_link(url) {
+      if (url == "") return 0
+      if (url ~ /^[A-Za-z][A-Za-z0-9+.-]*:/) return 0
+      if (url ~ /^\//) return 0
+      if (url ~ /^#/) return 0
+      return 1
+    }
+    # Collapses "." and ".." segments in a "/"-joined path (no leading
+    # slash assumed or produced) the same way a filesystem would.
+    function normalize_path(path,    n, parts, i, seg, outn, joined) {
+      n = split(path, parts, "/")
+      outn = 0
+      for (i = 1; i <= n; i++) {
+        seg = parts[i]
+        if (seg == "" || seg == ".") continue
+        if (seg == "..") { if (outn > 0) outn--; continue }
+        outn++
+        parts[outn] = seg
+      }
+      joined = ""
+      for (i = 1; i <= outn; i++) joined = joined (i > 1 ? "/" : "") parts[i]
+      return joined
+    }
+    # Rewrites every [text](relative/target) link in one line so the
+    # target is an absolute path back to its original location under
+    # dir (the source record own directory, project-relative).
+    # Absolute paths, #-only anchors, and scheme URLs pass through
+    # unchanged; a #fragment on a relative target is preserved.
+    function rewrite_links(line, dir,    res, pos, s, full, sep, label, url, frag, base, resolved, fi) {
+      res = ""
+      pos = 1
+      while (match(substr(line, pos), /\[[^]]*\]\([^)]*\)/)) {
+        s = pos + RSTART - 1
+        full = substr(line, s, RLENGTH)
+        res = res substr(line, pos, RSTART - 1)
+        sep = index(full, "](")
+        label = substr(full, 1, sep + 1)
+        url = substr(full, sep + 2, length(full) - sep - 2)
+        if (is_relative_link(url)) {
+          frag = ""; base = url
+          fi = index(url, "#")
+          if (fi > 0) { frag = substr(url, fi); base = substr(url, 1, fi - 1) }
+          if (base != "") {
+            resolved = normalize_path(dir "/" base)
+            url = canonical "/" resolved frag
+          }
+        }
+        res = res label url ")"
+        pos = s + RLENGTH
+      }
+      res = res substr(line, pos)
+      return res
+    }
     function flush() {
       if (!seen) return
       if (FILENAME_PREV ~ /^\.agent\/rules\//) {
@@ -246,7 +306,11 @@ render() {
         emit("routes", "- " title " | " h " | READ: " canonical "/" FILENAME_PREV)
       }
     }
-    FNR == 1 { flush(); FILENAME_PREV = FILENAME; seen = 1; title = FILENAME; hook = ""; body = ""; titlefound = 0 }
+    FNR == 1 {
+      flush(); FILENAME_PREV = FILENAME; seen = 1; title = FILENAME; hook = ""; body = ""; titlefound = 0
+      srcdir = FILENAME_PREV
+      sub(/\/[^\/]*$/, "", srcdir)
+    }
     {
       if (!titlefound && /^# /) { title = substr($0, 3); titlefound = 1 }
       if (hook == "" && match($0, /Read when:[ \t]*/)) {
@@ -255,7 +319,11 @@ render() {
         sub(/[ \t]+$/, "", h)
         hook = h
       }
-      if (FILENAME ~ /^\.agent\/rules\//) body = body $0 "\n"
+      if (FILENAME ~ /^\.agent\/rules\//) {
+        line = $0
+        if (index(line, "](") > 0) line = rewrite_links(line, srcdir)
+        body = body line "\n"
+      }
     }
     END { flush() }
   ' "$@"
@@ -318,9 +386,11 @@ entry_bytes=$(wc -c <"$entry_tmp")
 
 # Immutable generations avoid mixed reads: this generation is never
 # mutated again, and readers who already opened a prior entry keep a
-# generation that publication below does not touch.
-keep=1
-mv -f "$entry_tmp" "$entry"
+# generation that publication below does not touch. keep is set only
+# once the rename actually lands — a failed mv leaves keep=0, so the ERR
+# trap's cleanup() reclaims this now-orphaned generation instead of
+# leaking it.
+mv -f "$entry_tmp" "$entry" && keep=1
 entry_tmp=''
 new_gen="$gen"
 gen=''
@@ -328,9 +398,12 @@ gen=''
 # Bounded cleanup: reclaim generations that are neither the one just
 # published nor the one it replaced, and only once they are old enough
 # that no build racing this one could still be relying on them (see
-# CLEANUP_AGE_SECONDS above). This can never delete a generation a reader
-# has already selected, because a reader selects a generation by reading
-# current.md, and the two most recent generations are always exempt.
+# CLEANUP_AGE_SECONDS above). The two most recent generations are always
+# exempt regardless of age. On top of that, current.md's generation line
+# is re-read immediately before each removal — not just trusted from the
+# publish above — so a generation some other writer has since published
+# over current.md is never removed here even if it is neither new_gen nor
+# prev_gen and has aged past the bound.
 now=$(date +%s)
 for d in "$cache"/gen.*; do
   [ -d "$d" ] || continue
@@ -340,6 +413,11 @@ for d in "$cache"/gen.*; do
   dm=$(mtime_epoch "$d") || continue
   age=$((now - dm))
   [ "$age" -ge "$CLEANUP_AGE_SECONDS" ] || continue
+  live_gen=''
+  if [ -f "$entry" ] && [ ! -L "$entry" ]; then
+    live_gen=$(sed -n 2p "$entry" 2>/dev/null || true)
+  fi
+  [ "$base" = "$live_gen" ] && continue
   rm -rf "$d"
 done
 

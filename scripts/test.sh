@@ -5989,6 +5989,10 @@ printf '# Rule Title\nLine one.\nLine two.\n' >"$g41/.agent/rules/r.md"
 printf '# Doc With Hook\n<!-- Read when: working on billing -->\nBody.\n' >"$g41/.agent/docs/hooked.md"
 printf 'No heading here.\n<!-- Read when: no title case -->\n' >"$g41/.agent/docs/notitle.md"
 printf '# Doc Without Hook\nJust body, no hook comment.\n' >"$g41/.agent/docs/nohook.md"
+printf '# Linked Rule\nSee [sibling](other.md) and [abs](/etc/hosts) and [ext](https://example.com/page).\n' >"$g41/.agent/rules/linked.md"
+printf '# Other\nOther content.\n' >"$g41/.agent/rules/other.md"
+mkdir -p "$g41/.agent/rules/sub"
+printf '# Nested Rule\nSee [alpha doc](../../docs/hooked.md) for context.\n' >"$g41/.agent/rules/sub/nested.md"
 "$IDXSH" ensure --root "$g41" >"$WORK/g41.out" 2>"$WORK/g41.err"
 g41gen=$(sed -n 2p "$g41/.agent/indexes/current.md")
 g41dir="$g41/.agent/indexes/$g41gen"
@@ -6010,6 +6014,24 @@ grep -qF "READ: $g41/.agent/docs/notitle.md" "$g41dir"/routes-*.md \
 grep -qF -- '- Doc Without Hook | (no hook) | READ:' "$g41dir"/routes-*.md \
   && pass "grammar: a missing Read-when comment renders as (no hook)" \
   || fail "grammar: a missing Read-when comment renders as (no hook)"
+
+grep -qF -- '[abs](/etc/hosts)' "$g41dir"/rules-*.md \
+  && pass "links: an absolute-path link is left unmodified" \
+  || fail "links: an absolute-path link is left unmodified"
+
+grep -qF -- '[ext](https://example.com/page)' "$g41dir"/rules-*.md \
+  && pass "links: a scheme URL link is left unmodified" \
+  || fail "links: a scheme URL link is left unmodified"
+
+g41sibling=$(grep -ohE '\[sibling\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[sibling\]\(([^)]*)\)$/\1/')
+[ -n "$g41sibling" ] && [ -f "$g41sibling" ] && [ "$g41sibling" = "$g41/.agent/rules/other.md" ] \
+  && pass "links: a relative link between two rule records rewrites to a path that resolves to the original sibling" \
+  || fail "links: a relative link between two rule records rewrites to a path that resolves to the original sibling"
+
+g41nested=$(grep -ohE '\[alpha doc\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[alpha doc\]\(([^)]*)\)$/\1/')
+[ -n "$g41nested" ] && [ -f "$g41nested" ] && [ "$g41nested" = "$g41/.agent/docs/hooked.md" ] \
+  && pass "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc" \
+  || fail "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc"
 
 # ---- 42. index.sh: initial build, then a warm hit touches nothing ----
 i42="$WORK/i42"
@@ -6434,7 +6456,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=857
+EXPECTED_CHECKS=861
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
