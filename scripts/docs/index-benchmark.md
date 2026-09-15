@@ -4,7 +4,7 @@ Real measurements from `scripts/index-benchmark.sh`, run on this machine against
 
 ## Machine and revision
 
-- Commit: `d3cbfb96884438f35dfdcc53fa882057eda61132` (this branch)
+- Commit: `b5e2f747897707efc59333654efc7cddd494f3fe` (this branch)
 - macOS 26.6.2, Darwin 25.6.0, arm64 (Apple Silicon)
 - Bash 3.2.57, system `awk`, `git` for hashing
 - 20 repeats per case; cold removes `.agent/indexes/` before every invocation, warm primes one verified `HIT` before timing repeated hits
