@@ -99,11 +99,11 @@ write_migration_target() {
 
 # Writes indexes into the manifest frontmatter, beside mode, using the same
 # read/write mechanism as write_migration_target: rewrite the existing line
-# in place, or insert one right after `mode:` if none exists yet — a
-# pre-F15 node's only path here, since init always writes the line. Same
-# failure contract: nonzero return and an untouched $wi_purpose unless the
-# scratch file is proven to hold a complete, correct rewrite before the
-# atomic rename.
+# in place, or insert one right after `mode:` if none exists yet — the
+# only path a manifest predating the indexes field takes, since init
+# always writes the line. Same failure contract: nonzero return and an
+# untouched $wi_purpose unless the scratch file is proven to hold a
+# complete, correct rewrite before the atomic rename.
 write_indexes() {
   wi_purpose="$1"
   wi_value="$2"
@@ -448,7 +448,12 @@ EOF
   # A gitignore at $HOME is commonly git's global core.excludesFile. A
   # `.agent/` pattern there would ignore every project node in every repo.
   if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
-    [ "$mode" = "track-all" ] \
+    # track-all with indexes: manual writes no gitignore either way, so
+    # staying silent there matches today. Every other combination — every
+    # non-track-all mode, and track-all with indexes: generated, which
+    # would otherwise add .agent/indexes/ and .agent/rules/learned.md —
+    # writes something at $HOME and must warn instead of silently skipping it.
+    { [ "$mode" = "track-all" ] && [ "$indexes" != generated ]; } \
       || echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
   else
   case "$mode" in
@@ -553,10 +558,10 @@ EOF
   fi
 
   if [ "$oldversion" = "$TARGET_VERSION" ]; then
-    # A pre-F15 node carries no indexes line at all — backfill it as
-    # manual, the value an absent field already reads as, so nothing about
-    # the node's behavior changes. Skipped for a node newer than this
-    # script (the branch above): that path never touches the node at all.
+    # A manifest with no indexes line at all is backfilled as manual, the
+    # same value an absent field already reads as, so nothing about the
+    # node's behavior changes. Skipped for a node newer than this script
+    # (the branch above): that path never touches the node at all.
     if [ -z "$indexes_line" ]; then
       write_indexes "$purpose" manual \
         || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
@@ -637,8 +642,8 @@ EOF
   write_migration_target "$purpose" "$TARGET_VERSION" \
     || { echo "node.sh: failed to record migration_target in $purpose — aborting before touching node content" >&2; exit 1; }
 
-  # A pre-F15 node carries no indexes line at all — backfill it as manual,
-  # the value an absent field already reads as, so nothing about the
+  # A manifest with no indexes line at all is backfilled as manual, the
+  # same value an absent field already reads as, so nothing about the
   # node's behavior changes. After migration_target above, not before: a
   # blocked write here must never mask a genuine migration_target failure
   # behind a different error.

@@ -332,11 +332,12 @@ grep -q '^  migration_target: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && 
 [ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.2"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
 grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names the pending finalize step" || fail "update: closing message names the pending finalize step"
 
-# The pre-F15 fixture carries no indexes line at all; update backfills it as
-# manual — the same value an absent field already reads as — beside mode.
+# make_v6_fixture's manifest carries no indexes line at all; update
+# backfills it as manual — the same value an absent field already reads
+# as — beside mode.
 grep -qxF '  indexes: manual        # manual | generated' "$v6root/.agent/purpose.md" \
-  && pass "update: pre-F15 node is backfilled with indexes: manual" \
-  || fail "update: pre-F15 node is backfilled with indexes: manual"
+  && pass "update: a manifest with no indexes line is backfilled with indexes: manual" \
+  || fail "update: a manifest with no indexes line is backfilled with indexes: manual"
 [ "$(grep -A1 '^  mode:' "$v6root/.agent/purpose.md" | tail -n1)" = '  indexes: manual        # manual | generated' ] \
   && pass "update: the backfilled indexes line is inserted right after mode" \
   || fail "update: the backfilled indexes line is inserted right after mode"
@@ -346,6 +347,55 @@ grep -qF "indexes: manual backfilled" "$WORK/update.out" \
 [ -x "$v6root/.agent/scripts/index.sh" ] \
   && pass "update: index.sh is installed alongside the existing seven scripts" \
   || fail "update: index.sh is installed alongside the existing seven scripts"
+
+# ---- 4b. update leaves an already-present indexes line untouched ----
+# node.sh:555-564 (version-current) and node.sh:640-649 (older-version,
+# mid-migration) both gate the backfill write on the indexes line being
+# absent. This proves the gate holds — no duplicate line, no reset to
+# manual, no backfill message — when a line is already present, in
+# either value, on both branches.
+idxpresent_older() {
+  io_dir="$1" io_value="$2"
+  mkdir -p "$io_dir"
+  make_v6_fixture "$io_dir"
+  io_modeline=$(grep -n '^  mode:' "$io_dir/.agent/purpose.md" | head -1 | cut -d: -f1)
+  awk -v ln="$io_modeline" -v val="$io_value" \
+    'NR==ln { print; print "  indexes: " val "        # manual | generated"; next } { print }' \
+    "$io_dir/.agent/purpose.md" >"$io_dir/.agent/purpose.md.tmp"
+  mv "$io_dir/.agent/purpose.md.tmp" "$io_dir/.agent/purpose.md"
+  "$NODE" update "$io_dir" >"$io_dir.out" 2>&1
+  io_lines=$(grep -c '^  indexes:' "$io_dir/.agent/purpose.md")
+  [ "$io_lines" -eq 1 ] \
+    && pass "update (older-version): existing indexes: $io_value is not duplicated" \
+    || fail "update (older-version): existing indexes: $io_value is not duplicated (found $io_lines lines)"
+  grep -qxF "  indexes: $io_value        # manual | generated" "$io_dir/.agent/purpose.md" \
+    && pass "update (older-version): existing indexes: $io_value is left byte-unchanged" \
+    || fail "update (older-version): existing indexes: $io_value is left byte-unchanged"
+  grep -qF "indexes:" "$io_dir.out" \
+    && fail "update (older-version): no backfill message when indexes: $io_value is already present" \
+    || pass "update (older-version): no backfill message when indexes: $io_value is already present"
+}
+idxpresent_older "$WORK/idxpresent-older-generated" generated
+idxpresent_older "$WORK/idxpresent-older-manual" manual
+
+idxpresent_current() {
+  ic_src="$1" ic_value="$2"
+  ic_dir="$WORK/idxpresent-current-$ic_value"
+  cp -R "$ic_src" "$ic_dir"
+  "$NODE" update "$ic_dir" >"$ic_dir.out" 2>&1
+  ic_lines=$(grep -c '^  indexes:' "$ic_dir/.agent/purpose.md")
+  [ "$ic_lines" -eq 1 ] \
+    && pass "update (version-current): existing indexes: $ic_value is not duplicated" \
+    || fail "update (version-current): existing indexes: $ic_value is not duplicated (found $ic_lines lines)"
+  grep -qxF "  indexes: $ic_value        # manual | generated" "$ic_dir/.agent/purpose.md" \
+    && pass "update (version-current): existing indexes: $ic_value is left byte-unchanged" \
+    || fail "update (version-current): existing indexes: $ic_value is left byte-unchanged"
+  grep -qF "indexes:" "$ic_dir.out" \
+    && fail "update (version-current): no backfill message when indexes: $ic_value is already present" \
+    || pass "update (version-current): no backfill message when indexes: $ic_value is already present"
+}
+idxpresent_current "$idxgen" generated
+idxpresent_current "$idxman" manual
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
@@ -6532,14 +6582,37 @@ gi56_combo track-shared generated 1 1
 gi56_combo track-all manual 0 0
 gi56_combo track-all generated 1 1
 
-# The parent's own acceptance criterion: ignore-all's gitignore is
-# byte-identical whether or not indexes is generated.
+# ignore-all writes only the blanket .agent/ pattern, which the indexes
+# field never touches, so its gitignore stays byte-identical either way.
 [ "$(cat "$WORK/gi56-ignore-all-manual/.gitignore" 2>/dev/null)" = "$(cat "$WORK/gi56-ignore-all-generated/.gitignore" 2>/dev/null)" ] \
   && pass "gitignore: ignore-all is unchanged from today whether indexes is manual or generated" \
   || fail "gitignore: ignore-all is unchanged from today whether indexes is manual or generated"
 [ ! -e "$WORK/gi56-track-all-manual/.gitignore" ] \
   && pass "gitignore: track-all/manual writes no gitignore, as today" \
   || fail "gitignore: track-all/manual writes no gitignore, as today"
+
+# ---- 56b. $HOME guard: track-all + generated warns instead of silently
+# skipping the gitignore lines that indexes: generated would otherwise add ----
+gi56home="$WORK/gi56-home-track-all-generated"
+mkdir -p "$gi56home"
+HOME="$gi56home" "$NODE" init --preset software-development --mode track-all --indexes generated "$gi56home" >"$WORK/gi56home.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && [ -d "$gi56home/.agent" ] && pass "init at \$HOME, track-all/generated, exits 0 and creates the node" || fail "init at \$HOME, track-all/generated, exits 0 and creates the node"
+grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home.out" \
+  && pass "init at \$HOME, track-all/generated, warns about the skipped gitignore" \
+  || fail "init at \$HOME, track-all/generated, warns about the skipped gitignore"
+[ ! -e "$gi56home/.gitignore" ] \
+  && pass "init at \$HOME, track-all/generated, still writes no gitignore" \
+  || fail "init at \$HOME, track-all/generated, still writes no gitignore"
+
+# track-all + manual at $HOME stays silent, as today — only the generated
+# combination gained a warning.
+gi56homeman="$WORK/gi56-home-track-all-manual"
+mkdir -p "$gi56homeman"
+HOME="$gi56homeman" "$NODE" init --preset software-development --mode track-all --indexes manual "$gi56homeman" >"$WORK/gi56homeman.out" 2>&1
+grep -qF 'skipped gitignore at $HOME' "$WORK/gi56homeman.out" \
+  && fail "init at \$HOME, track-all/manual, stays silent (no warning)" \
+  || pass "init at \$HOME, track-all/manual, stays silent (no warning)"
 
 # ---- 57. generated-mode entry point: no heading drift against status.sh ----
 gep="$WORK/generated-entry-point"
@@ -6621,7 +6694,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=905
+EXPECTED_CHECKS=921
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
