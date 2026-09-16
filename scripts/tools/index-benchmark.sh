@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/index-benchmark.sh — measures index.sh's process latency at 100
+# scripts/tools/index-benchmark.sh — measures index.sh's process latency at 100
 # and 1,000 canonical-source records, cold and warm cache, on this
 # machine, and reports median and p95 real time (not mean/min/max).
 #
@@ -9,15 +9,15 @@
 # before every invocation; warm primes one verified HIT first, then
 # times repeated hits. Results: scripts/docs/index-benchmark.md.
 #
-# Usage: index-benchmark.sh [REPEATS >= 10]
+# Usage: scripts/tools/index-benchmark.sh [REPEATS >= 10]
 set -Eeuo pipefail
 export LC_ALL=C
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-idx="$here/index.sh"
+idx="$here/../index.sh"
 repeats=${1:-15}
-[ "$#" -le 1 ] || { printf 'Usage: index-benchmark.sh [REPEATS >= 10]\n' >&2; exit 2; }
-case "$repeats" in '' | *[!0-9]*) printf 'Usage: index-benchmark.sh [REPEATS >= 10]\n' >&2; exit 2 ;; esac
-[ "$repeats" -ge 10 ] || { printf 'Usage: index-benchmark.sh [REPEATS >= 10]\n' >&2; exit 2; }
+[ "$#" -le 1 ] || { printf 'Usage: scripts/tools/index-benchmark.sh [REPEATS >= 10]\n' >&2; exit 2; }
+case "$repeats" in '' | *[!0-9]*) printf 'Usage: scripts/tools/index-benchmark.sh [REPEATS >= 10]\n' >&2; exit 2 ;; esac
+[ "$repeats" -ge 10 ] || { printf 'Usage: scripts/tools/index-benchmark.sh [REPEATS >= 10]\n' >&2; exit 2; }
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/index-bench.XXXXXXXX")
 trap 'rm -rf "$scratch"' EXIT
