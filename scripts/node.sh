@@ -428,7 +428,7 @@ extract_learned_rules() {
     rm -f "$elr_starts"
     return 0
   fi
-  elr_total=$(wc -l <"$elr_learned" | tr -d '[:space:]')
+  elr_total=$(awk 'END { print NR }' "$elr_learned")
   elr_minted="$elr_agent/.learned-minted-ids.tmp"
   : >"$elr_minted"
   elr_span="$elr_agent/.learned-span.tmp"

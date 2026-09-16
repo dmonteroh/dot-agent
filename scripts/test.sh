@@ -6927,6 +6927,23 @@ Binding rules distilled from operator corrections and failed verifications on th
 - [2026-01-04] Fourth rule, flat, last one.
 EOF
 
+  mkdir -p "$r61_dir/.agent/memory"
+  cat >"$r61_dir/.agent/memory/staging-reset.md" <<'EOF'
+---
+date: 2026-01-01
+scope: project
+type: fact
+---
+
+The staging database resets nightly at 02:00 UTC.
+EOF
+  cat >"$r61_dir/.agent/memory.md" <<'EOF'
+# Memory
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agent/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+
+- [Staging reset](memory/staging-reset.md) — when the staging database resets.
+EOF
+
   mkdir -p "$r61_dir/.agent/docs/area"
   cat >"$r61_dir/.agent/docs/architecture.md" <<'EOF'
 # Architecture
@@ -6986,6 +7003,8 @@ r61dir="$WORK/r61-migration"
 r61build "$r61dir"
 cp "$r61dir/.agent/docs/architecture.md" "$WORK/r61-arch-before.md"
 cp "$r61dir/.agent/rules/learned.md" "$WORK/r61-learned-before.md"
+cp "$r61dir/.agent/memory.md" "$WORK/r61-memory-before.md"
+cp "$r61dir/.agent/memory/staging-reset.md" "$WORK/r61-memory-fact-before.md"
 cp "$r61dir/.agent/docs/hooked.md" "$WORK/r61-hooked-before.md"
 cp "$r61dir/.agent/docs/dup.md" "$WORK/r61-dup-before.md"
 cp "$r61dir/.agent/docs/badtable.md" "$WORK/r61-badtable-before.md"
@@ -7069,6 +7088,14 @@ diff -q "$WORK/r61-learned-before.md" "$r61dir/.agent/rules/learned.md" >/dev/nu
 diff -q "$WORK/r61-arch-before.md" "$r61dir/.agent/docs/architecture.md" >/dev/null 2>&1 \
   && pass "migration: architecture.md is byte-identical before and after" \
   || fail "migration: architecture.md is byte-identical before and after"
+
+diff -q "$WORK/r61-memory-before.md" "$r61dir/.agent/memory.md" >/dev/null 2>&1 \
+  && pass "migration: memory.md is byte-identical before and after" \
+  || fail "migration: memory.md is byte-identical before and after"
+
+diff -q "$WORK/r61-memory-fact-before.md" "$r61dir/.agent/memory/staging-reset.md" >/dev/null 2>&1 \
+  && pass "migration: a file under memory/ is byte-identical before and after" \
+  || fail "migration: a file under memory/ is byte-identical before and after"
 
 diff -q "$WORK/r61-hooked-before.md" "$r61dir/.agent/docs/hooked.md" >/dev/null 2>&1 \
   && pass "hook backfill: a doc that already carries a hook is left untouched" \
@@ -7228,6 +7255,40 @@ r61afterabort=$(find "$r61abortdir" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:
   && pass "identity minting: an aborted mint creates no additional record file" \
   || fail "identity minting: an aborted mint creates no additional record file"
 
+# ---- 61e. a rules/learned.md with no trailing newline still captures the
+# last bullet's final physical line ----
+r61ntdir="$WORK/r61-no-trailing-newline"
+mkdir -p "$r61ntdir"
+make_v6_fixture "$r61ntdir"
+r61nt_modeline=$(grep -n '^  mode:' "$r61ntdir/.agent/purpose.md" | head -1 | cut -d: -f1)
+awk -v ln="$r61nt_modeline" \
+  'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
+  "$r61ntdir/.agent/purpose.md" >"$r61ntdir/.agent/purpose.md.tmp"
+mv "$r61ntdir/.agent/purpose.md.tmp" "$r61ntdir/.agent/purpose.md"
+printf '%s\n' \
+  '# Learned rules' \
+  '' \
+  '<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->' \
+  '- [2026-01-01] First rule, flat.' \
+  '- [2026-01-02] Last rule spans two lines,' >"$r61ntdir/.agent/rules/learned.md"
+printf '  and this second line has NO trailing newline.' >>"$r61ntdir/.agent/rules/learned.md"
+
+"$NODE" update "$r61ntdir" >"$WORK/r61-nt-update.out" 2>&1
+r61ntrc=$?
+[ "$r61ntrc" -eq 0 ] && pass "no-trailing-newline rules/learned.md: update exits 0" || fail "no-trailing-newline rules/learned.md: update exits 0 (rc=$r61ntrc)"
+
+r61ntrecords=$(find "$r61ntdir/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+r61ntcount=$(printf '%s\n' "$r61ntrecords" | grep -c .)
+[ "$r61ntcount" -eq 2 ] && pass "no-trailing-newline rules/learned.md: two bullets produce two records" || fail "no-trailing-newline rules/learned.md: two bullets produce two records (found $r61ntcount)"
+
+r61ntlast=$(grep -lF 'NO trailing newline' $r61ntrecords)
+r61nt_expect=$(printf '%s\n' \
+  '- [2026-01-02] Last rule spans two lines,' \
+  '  and this second line has NO trailing newline.')
+[ "$(cat "$r61ntlast")" = "$r61nt_expect" ] \
+  && pass "rule extraction: a rules/learned.md with no trailing newline still captures the last bullet's final line verbatim" \
+  || fail "rule extraction: a rules/learned.md with no trailing newline still captures the last bullet's final line verbatim"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -7235,7 +7296,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=980
+EXPECTED_CHECKS=985
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
