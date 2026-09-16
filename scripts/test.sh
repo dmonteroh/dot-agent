@@ -2401,7 +2401,7 @@ printf '%s\n' "$out34n" | sed -n '/^BLOCK:/,$p' | grep -q 'old world' && pass "c
 rm -f "$cg/.agent/scripts/comments.conf" "$cg/src/Thing.cs"
 git_cg checkout -q -- src/app.ts
 
-# F18: chat residue. echo_re already catches request-shaped replies (e.g.
+# Chat residue: echo_re already catches request-shaped replies (e.g.
 # [as you ... requested], [as ... discussed]); this is the same audience
 # mistake in the shapes a code review produces instead — a feedback reference,
 # an agreement, an opening apology, a draft-revision label. Every fixture below pairs a
@@ -2487,9 +2487,9 @@ printf '%s\n' "$block34t" | grep -q 'rarely agree' && fail "comments.sh: \"agree
 printf '%s\n' "$block34t" | grep -q 'sorry-not-found' && fail "comments.sh: a mid-sentence \"sorry\" is not an opening apology" || pass "comments.sh: a mid-sentence \"sorry\" is not an opening apology"
 printf '%s\n' "$block34t" | grep -q 'not a draft; it defines' && fail "comments.sh: \"draft\" outside a revision label is not chat residue" || pass "comments.sh: \"draft\" outside a revision label is not chat residue"
 
-# F18 round 1: five reproduced false positives, each a legitimate engineering
-# comment (a vendor/contract reference, a technical description, an RFC/spec
-# version citation) that a naive keyword match on "agreement", "feedback", or
+# Five false-positive shapes, each a legitimate engineering comment (a
+# vendor/contract reference, a technical description, an RFC/spec version
+# citation) that a naive keyword match on "agreement", "feedback", or
 # "draft v<N>" wrongly BLOCKed. None of these may BLOCK.
 printf '%s\n' "$block34t" | grep -qF 'per the agreement with the vendor' && fail "comments.sh: a vendor-contract reference is not an agreement echo" || pass "comments.sh: a vendor-contract reference is not an agreement echo"
 printf '%s\n' "$block34t" | grep -qF "based on the feedback loop's sampling window" && fail "comments.sh: a feedback-loop description is not a feedback reference" || pass "comments.sh: a feedback-loop description is not a feedback reference"
@@ -2503,11 +2503,11 @@ printf '%s\n' "$block34t" | grep -B1 -F 'Draft v08 of this fix is ready for revi
 printf '%s\n' "$block34t" | grep -B1 -F "I'll ship the fix by Friday" | grep -qF '[chat residue]' && pass "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue" || fail "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F "revised draft based on your comments" | grep -qF '[chat residue]' && pass "comments.sh: a revised-draft label BLOCKs as chat residue" || fail "comments.sh: a revised-draft label BLOCKs as chat residue ($block34t)"
 
-# F18 round 2: "draft v2" only counts as a revision label when it opens the
-# comment itself, not merely the physical line being scanned. A multi-line
-# comment whose SECOND line happens to start with "Draft v2 of RFC ..." is
-# still the same spec-citation shape round 1 protected — it must not BLOCK
-# just because "^" matched that line in isolation.
+# "draft v2" only counts as a revision label when it opens the comment
+# itself, not merely the physical line being scanned. A multi-line comment
+# whose SECOND line happens to start with "Draft v2 of RFC ..." is still the
+# same RFC/spec version-citation shape as the "Per RFC draft v08" fixture
+# above — it must not BLOCK just because "^" matched that line in isolation.
 printf '%s\n' "$block34t" | grep -qF 'Draft v2 of RFC 9110 changed how the retry-after header must be parsed' && fail "comments.sh: a draft-v2 spec citation on a comment's second line is not a revision label" || pass "comments.sh: a draft-v2 spec citation on a comment's second line is not a revision label"
 
 # A lexical pass rules a shape out; it never certifies a shape as necessary.
@@ -2520,9 +2520,9 @@ printf '%s\n' "$review34t" | grep -qF 'fixed version is 2.3.1' && pass "comments
 # "does not block."
 printf '%s\n' "$review34t" | grep -qF 'Does NOT retry on 4xx responses because the vendor client treats retries as duplicate charges.' && pass "comments.sh: a negative constraint survives a negation, verbatim" || fail "comments.sh: a negative constraint survives a negation ($review34t)"
 
-# The necessary-constraint fixture from the writing spike: a callback whose
-# timing depends on a vendor's own contract is exactly what REVIEW exists to
-# let a human keep, and its meaning must reach REVIEW intact, not truncated.
+# The necessary-constraint fixture: a callback whose timing depends on a
+# vendor's own contract is exactly what REVIEW exists to let a human keep,
+# and its meaning must reach REVIEW intact, not truncated.
 printf '%s\n' "$review34t" | grep -qF 'The callback can arrive after cancellation because the vendor retains the handle.' && pass "comments.sh: a non-obvious callback constraint survives with its meaning intact" || fail "comments.sh: a non-obvious callback constraint survives with its meaning intact ($review34t)"
 
 # CHAT_RE_EXTRA follows the same conf contract as the other _EXTRA keys: ORed
