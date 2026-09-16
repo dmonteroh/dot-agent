@@ -8018,6 +8018,184 @@ e2e_bad_repairs=$(printf '%s\n' "$e2e_flags_after" \
   && pass "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note" \
   || fail "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note ($e2e_bad_repairs)"
 
+# ---- 63. human-text.sh: the human-facing text scanner's interface,
+# detection, freshness, and buffered failure ----
+# Nothing installs or calls this scanner yet, so its coverage lives in its
+# own section rather than riding along an install-time fixture: every
+# --kind value and every parser error, --help, the three finding classes
+# plus the four shapes that must survive them, a retry over unchanged and
+# then changed and then corrected content, every invalid-input exit, and
+# the buffering guarantee that a later read failure never lets an earlier
+# file's finding reach stderr.
+h62="$WORK/h62"
+mkdir -p "$h62" "$h62/spaced dir"
+printf '%s\n' 'Reject expired tokens before opening the socket. Preserve offline retries.' >"$h62/clean.txt"
+printf '%s\n' 'Update pagination as discussed.' >"$h62/chat.txt"
+printf '%s\n' 'Sorry, the previous draft used the wrong table.' >"$h62/apology.txt"
+printf '%s\n' 'Fixed version:' >"$h62/revision.txt"
+printf '%s\n' 'test_retries_without_network verifies retries without network access.' >"$h62/negative-property.txt"
+printf '%s\n' 'The fixed version is 2.3.1.' >"$h62/real-version.txt"
+printf '%s\n' 'The previous version could delete unsaved work. This release preserves it.' >"$h62/release-history.txt"
+: >"$h62/empty.txt"
+printf '   \t \n' >"$h62/whitespace.txt"
+printf '%s\n' 'Reject expired tokens before opening the socket. Preserve offline retries.' >"$h62/spaced dir/file with space.txt"
+
+# expected_rc label [args...] -- stdin from /dev/null throughout, since
+# every exit-2 parser case here dies before touching stdin or files.
+h62_run() {
+  h62_expected="$1"; h62_label="$2"; shift 2
+  "$reporoot/scripts/human-text.sh" "$@" </dev/null >"$WORK/h62-out" 2>"$WORK/h62-err"
+  h62_rc=$?
+  [ "$h62_rc" -eq "$h62_expected" ] && pass "$h62_label" || fail "$h62_label (rc=$h62_rc, expected $h62_expected)"
+}
+# label [args...] -- asserts exit 0 and silence on both streams, the
+# contract a clean scan makes.
+h62_clean() {
+  h62_label="$1"; shift
+  "$reporoot/scripts/human-text.sh" "$@" </dev/null >"$WORK/h62-out" 2>"$WORK/h62-err"
+  h62_rc=$?
+  [ "$h62_rc" -eq 0 ] && [ ! -s "$WORK/h62-out" ] && [ ! -s "$WORK/h62-err" ] \
+    && pass "$h62_label" || fail "$h62_label (rc=$h62_rc)"
+}
+
+# -- interface --
+h62_clean "human-text.sh: --kind commit scans a clean file cleanly" --kind commit "$h62/clean.txt"
+h62_clean "human-text.sh: --kind pr scans a clean file cleanly" --kind pr "$h62/clean.txt"
+h62_clean "human-text.sh: --kind release scans a clean file cleanly" --kind release "$h62/clean.txt"
+h62_run 2 "human-text.sh: a missing --kind is a usage error"
+h62_run 2 "human-text.sh: --kind with no value is a usage error" --kind
+h62_run 2 "human-text.sh: a repeated --kind is a usage error" --kind commit --kind pr
+h62_run 2 "human-text.sh: an invalid --kind value is a usage error" --kind agent
+h62_run 2 "human-text.sh: an unknown option is a usage error" --wat
+h62_run 2 "human-text.sh: --version is not a recognized option" --version
+
+"$reporoot/scripts/human-text.sh" --help >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 0 ] && pass "human-text.sh: --help exits 0" || fail "human-text.sh: --help exits 0 (rc=$h62_rc)"
+head -n 1 "$WORK/h62-out" | grep -q '^Usage: human-text.sh' \
+  && pass "human-text.sh: --help prints usage on stdout" || fail "human-text.sh: --help prints usage on stdout"
+[ ! -s "$WORK/h62-err" ] && pass "human-text.sh: --help writes nothing to stderr" || fail "human-text.sh: --help writes nothing to stderr"
+
+"$reporoot/scripts/human-text.sh" --kind pr <"$h62/clean.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 0 ] && [ ! -s "$WORK/h62-out" ] && [ ! -s "$WORK/h62-err" ] \
+  && pass "human-text.sh: implicit stdin scans clean input cleanly" \
+  || fail "human-text.sh: implicit stdin scans clean input cleanly"
+
+"$reporoot/scripts/human-text.sh" --kind pr - <"$h62/chat.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 1 ] && [ ! -s "$WORK/h62-out" ] \
+  && pass "human-text.sh: an explicit - reads stdin and finds residue" \
+  || fail "human-text.sh: an explicit - reads stdin and finds residue"
+grep -qF -- '-:1: chat-reference' "$WORK/h62-err" \
+  && pass "human-text.sh: an explicit-stdin finding names the source as -" \
+  || fail "human-text.sh: an explicit-stdin finding names the source as -"
+
+h62_run 2 "human-text.sh: - given twice reads stdin only once" --kind pr - -
+h62_clean "human-text.sh: several files scan together" --kind release "$h62/clean.txt" "$h62/negative-property.txt"
+h62_clean "human-text.sh: a path containing a space is read after --" --kind pr -- "$h62/spaced dir/file with space.txt"
+
+# -- detection: one fixture per finding class, plus the shapes that survive --
+"$reporoot/scripts/human-text.sh" --kind pr "$h62/chat.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 1 ] && [ ! -s "$WORK/h62-out" ] \
+  && pass "human-text.sh: a discussion reference is a chat-reference finding" \
+  || fail "human-text.sh: a discussion reference is a chat-reference finding"
+grep -qF "$h62/chat.txt:1: chat-reference" "$WORK/h62-err" \
+  && pass "human-text.sh: the chat-reference finding names source, line, and class" \
+  || fail "human-text.sh: the chat-reference finding names source, line, and class"
+
+"$reporoot/scripts/human-text.sh" --kind pr "$h62/apology.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 1 ] && [ ! -s "$WORK/h62-out" ] \
+  && pass "human-text.sh: an opening apology is an apology finding" \
+  || fail "human-text.sh: an opening apology is an apology finding"
+grep -qF "$h62/apology.txt:1: apology" "$WORK/h62-err" \
+  && pass "human-text.sh: the apology finding names source, line, and class" \
+  || fail "human-text.sh: the apology finding names source, line, and class"
+
+"$reporoot/scripts/human-text.sh" --kind pr "$h62/revision.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 1 ] && [ ! -s "$WORK/h62-out" ] \
+  && pass "human-text.sh: a standalone draft-revision label is a revision-label finding" \
+  || fail "human-text.sh: a standalone draft-revision label is a revision-label finding"
+grep -qF "$h62/revision.txt:1: revision-label" "$WORK/h62-err" \
+  && pass "human-text.sh: the revision-label finding names source, line, and class" \
+  || fail "human-text.sh: the revision-label finding names source, line, and class"
+
+h62_clean "human-text.sh: a negative property scans clean" --kind pr "$h62/negative-property.txt"
+h62_clean "human-text.sh: a real version report scans clean" --kind pr "$h62/real-version.txt"
+h62_clean "human-text.sh: supplied release history scans clean" --kind pr "$h62/release-history.txt"
+h62_clean "human-text.sh: an accepted correction stated as the new behavior scans clean" --kind pr "$h62/clean.txt"
+
+# -- freshness: every invocation reads the current input, not a cached verdict --
+printf '%s\n' 'Update pagination as discussed.' >"$h62/retry.txt"
+h62_run 1 "human-text.sh: a first scan over residue exits 1" --kind commit "$h62/retry.txt"
+h62_run 1 "human-text.sh: an identical retry over unchanged residue still exits 1" --kind commit "$h62/retry.txt"
+printf '%s\n' 'Sorry, this draft used the wrong table.' >"$h62/retry.txt"
+"$reporoot/scripts/human-text.sh" --kind commit "$h62/retry.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 1 ] && grep -qF "$h62/retry.txt:1: apology" "$WORK/h62-err" \
+  && pass "human-text.sh: replacing a file's body under an identical command scans the new content" \
+  || fail "human-text.sh: replacing a file's body under an identical command scans the new content"
+printf '%s\n' 'Preserve the cursor when pagination retries.' >"$h62/retry.txt"
+h62_clean "human-text.sh: replacing a file's body with clean text scans clean under the same command" --kind commit "$h62/retry.txt"
+
+# -- failure: every input validated before any of them is scanned --
+h62_run 2 "human-text.sh: a missing file exits 2" --kind commit "$h62/does-not-exist.txt"
+h62_run 2 "human-text.sh: an empty file exits 2" --kind commit "$h62/empty.txt"
+h62_run 2 "human-text.sh: a whitespace-only file exits 2" --kind commit "$h62/whitespace.txt"
+h62_run 2 "human-text.sh: a directory given where a file was expected exits 2" --kind commit "$h62"
+
+# The unreadable-file case depends on the filesystem enforcing permission
+# bits at all — probed directly, since running as root or on a filesystem
+# that ignores them would otherwise pass on a condition this environment
+# never created.
+: >"$WORK/h62-ro-probe"
+printf 'x\n' >"$WORK/h62-ro-probe"
+chmod a-r "$WORK/h62-ro-probe"
+if cat "$WORK/h62-ro-probe" >/dev/null 2>&1; then
+  h62_ro_enforced=0
+else
+  h62_ro_enforced=1
+fi
+chmod u+r "$WORK/h62-ro-probe"
+if [ "$h62_ro_enforced" -eq 1 ]; then
+  printf '%s\n' 'Reject expired tokens before opening the socket.' >"$h62/unreadable.txt"
+  chmod a-r "$h62/unreadable.txt"
+  h62_run 2 "human-text.sh: an unreadable file exits 2" --kind commit "$h62/unreadable.txt"
+  chmod u+r "$h62/unreadable.txt"
+else
+  pass "human-text.sh: unreadable-file handling not exercised — this environment ignores file permissions"
+fi
+
+# -- buffering: findings are held until every input has been scanned --
+# A stub cat ahead of the real one on PATH fails only the marked path,
+# simulating a read failure the pre-scan validation loop (which never
+# opens file content) cannot see coming.
+mkdir -p "$WORK/h62-stub-cat"
+cat >"$WORK/h62-stub-cat/cat" <<'EOF'
+#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    *h62-marked-unreadable*) exit 7 ;;
+  esac
+done
+exec /bin/cat "$@"
+EOF
+chmod +x "$WORK/h62-stub-cat/cat"
+printf '%s\n' 'Update pagination as discussed.' >"$h62/h62-marked-residue.txt"
+printf '%s\n' 'Reject expired tokens before opening the socket.' >"$h62/h62-marked-unreadable.txt"
+PATH="$WORK/h62-stub-cat:$PATH" "$reporoot/scripts/human-text.sh" --kind release \
+  "$h62/h62-marked-residue.txt" "$h62/h62-marked-unreadable.txt" >"$WORK/h62-out" 2>"$WORK/h62-err"
+h62_rc=$?
+[ "$h62_rc" -eq 2 ] && [ ! -s "$WORK/h62-out" ] \
+  && pass "human-text.sh: a read failure on a later file exits 2 with empty stdout" \
+  || fail "human-text.sh: a read failure on a later file exits 2 with empty stdout"
+grep -qF 'chat-reference' "$WORK/h62-err" \
+  && fail "human-text.sh: a read failure on a later file never publishes an earlier file's buffered finding" \
+  || pass "human-text.sh: a read failure on a later file never publishes an earlier file's buffered finding"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -8025,7 +8203,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1080
+EXPECTED_CHECKS=1119
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
