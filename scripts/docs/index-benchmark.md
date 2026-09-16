@@ -1,6 +1,6 @@
 # index.sh latency benchmark
 
-Real measurements from `scripts/index-benchmark.sh`, run on this machine against this commit's `index.sh`. Reports median and p95 process latency (`/usr/bin/time -p`, real time) at 100 and 1,000 canonical-source records, cold and warm cache — the F14 acceptance criterion. All numbers below were actually measured on this run, not estimated or carried over from the spike.
+Real measurements from `scripts/tools/index-benchmark.sh`, run on this machine against this commit's `index.sh`. Reports median and p95 process latency (`/usr/bin/time -p`, real time) at 100 and 1,000 canonical-source records, cold and warm cache — the F14 acceptance criterion. All numbers below were actually measured on this run, not estimated or carried over from the spike.
 
 ## Machine and revision
 
@@ -21,7 +21,7 @@ Real measurements from `scripts/index-benchmark.sh`, run on this machine against
 Reproduce with:
 
 ```
-scripts/index-benchmark.sh 20
+scripts/tools/index-benchmark.sh 20
 ```
 
 ## Comparison against the spike (`tmp/merge-6.2/spikes/indexes/RESULTS.md`)
@@ -36,7 +36,7 @@ scripts/index-benchmark.sh 20
 On the surface this run is faster everywhere, not slower. That is **not** an honest apples-to-apples win, and should not be read as one:
 
 - The spike's fixture was a real `docs/`+`rules/` corpus — 288,817 bytes across 100 records (~2.9 KB/record) per its own RESULTS.md. That fixture (`spikes/indexes/sources/`) is not checked into the repository, so it could not be reproduced for this run.
-- `scripts/index-benchmark.sh` instead generates a synthetic fixture (`make_fixture`) with a ~80-byte, three-line body per record, roughly 35x smaller per record than the spike's corpus. Less content means less for `git hash-object` to hash and less for `awk` to scan and copy — that gap plausibly accounts for most or all of the difference, independent of any change in the mechanism itself.
+- `scripts/tools/index-benchmark.sh` instead generates a synthetic fixture (`make_fixture`) with a ~80-byte, three-line body per record, roughly 35x smaller per record than the spike's corpus. Less content means less for `git hash-object` to hash and less for `awk` to scan and copy — that gap plausibly accounts for most or all of the difference, independent of any change in the mechanism itself.
 - This implementation does strictly more work per record than the spike's than the number the spike measured: it computes a tree digest over every rendered page (`tree_digest`), re-fingerprints sources before publish (bounded-retry recheck), and — as of this round's fix for relative-link preservation — scans every line of every rule body with an `awk` regex loop (`rewrite_links`) looking for `](`. None of that is free, and none of it is exercised meaningfully by a fixture with one short link-free line per record in most cases.
 
 **Conclusion: this benchmark cannot support a claim that the implementation is faster than the spike, only that it is not obviously slower at this fixture size.** A same-size, same-content comparison would need the spike's original fixture, which is not available in this repository. Anyone revisiting this budget should first restore or rebuild a byte-matched fixture (e.g. by copying `docs/` and `rules/` content of comparable size into `index-benchmark.sh`'s `make_fixture`) before drawing a real regression conclusion either way.
