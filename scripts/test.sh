@@ -2401,10 +2401,10 @@ printf '%s\n' "$out34n" | sed -n '/^BLOCK:/,$p' | grep -q 'old world' && pass "c
 rm -f "$cg/.agent/scripts/comments.conf" "$cg/src/Thing.cs"
 git_cg checkout -q -- src/app.ts
 
-# F18: chat residue. echo_re already catches request-shaped replies ("as you
-# requested", "as discussed"); this is the same audience mistake in the
-# shapes a code review produces instead — a feedback reference, an agreement,
-# an opening apology, a draft-revision label. Every fixture below pairs a
+# F18: chat residue. echo_re already catches request-shaped replies (e.g.
+# [as you ... requested], [as ... discussed]); this is the same audience
+# mistake in the shapes a code review produces instead — a feedback reference,
+# an agreement, an opening apology, a draft-revision label. Every fixture below pairs a
 # flagged line with a clean one sharing its vocabulary, so a pass here rules
 # out a naive keyword ban: "feedback", "agree", "suggested", "sorry", and
 # "draft" all also appear in comments that must NOT block.
@@ -2439,6 +2439,22 @@ const n11 = 11
 const n12 = 12
 // The callback can arrive after cancellation because the vendor retains the handle.
 const n13 = 13
+// This retry limit is set per the agreement with the vendor, not a guess.
+const n14 = 14
+// Latency is calculated based on the feedback loop's sampling window.
+const n15 = 15
+// Per RFC draft v08, the header must be lowercase or the vendor gateway drops it.
+const n16 = 16
+// The v2 draft of the protocol allows retries, unlike v1, which this client targets.
+const n17 = 17
+// As agreed by both parties during the handshake, the client sends its cipher list first.
+const n18 = 18
+// Draft v08 of this fix is ready for review.
+const n19 = 19
+// As agreed, I'll ship the fix by Friday.
+const n20 = 20
+// Here's the revised draft based on your comments.
+const n21 = 21
 EOF
 git_cg add -A >/dev/null
 git_cg commit -q -m chat34
@@ -2468,6 +2484,22 @@ printf '%s\n' "$block34t" | grep -q 'rarely agree' && fail "comments.sh: \"agree
 printf '%s\n' "$block34t" | grep -q 'sorry-not-found' && fail "comments.sh: a mid-sentence \"sorry\" is not an opening apology" || pass "comments.sh: a mid-sentence \"sorry\" is not an opening apology"
 printf '%s\n' "$block34t" | grep -q 'not a draft; it defines' && fail "comments.sh: \"draft\" outside a revision label is not chat residue" || pass "comments.sh: \"draft\" outside a revision label is not chat residue"
 
+# F18 round 1: five reproduced false positives, each a legitimate engineering
+# comment (a vendor/contract reference, a technical description, an RFC/spec
+# version citation) that a naive keyword match on "agreement", "feedback", or
+# "draft v<N>" wrongly BLOCKed. None of these may BLOCK.
+printf '%s\n' "$block34t" | grep -qF 'per the agreement with the vendor' && fail "comments.sh: a vendor-contract reference is not an agreement echo" || pass "comments.sh: a vendor-contract reference is not an agreement echo"
+printf '%s\n' "$block34t" | grep -qF "based on the feedback loop's sampling window" && fail "comments.sh: a feedback-loop description is not a feedback reference" || pass "comments.sh: a feedback-loop description is not a feedback reference"
+printf '%s\n' "$block34t" | grep -qF 'Per RFC draft v08' && fail "comments.sh: an RFC draft citation is not a draft-revision label" || pass "comments.sh: an RFC draft citation is not a draft-revision label"
+printf '%s\n' "$block34t" | grep -qF 'The v2 draft of the protocol' && fail "comments.sh: a protocol-version description is not a draft-revision label" || pass "comments.sh: a protocol-version description is not a draft-revision label"
+printf '%s\n' "$block34t" | grep -qF 'As agreed by both parties' && fail "comments.sh: a third-party agreement is not an agreement echo" || pass "comments.sh: a third-party agreement is not an agreement echo"
+
+# Minimal pairs: the same key word in an actually chat-shaped comment still
+# BLOCKs, so the narrowing above rules out a shape rather than a word.
+printf '%s\n' "$block34t" | grep -B1 -F 'Draft v08 of this fix is ready for review' | grep -qF '[chat residue]' && pass "comments.sh: a draft label opening the comment (\"draft v08\") BLOCKs as chat residue" || fail "comments.sh: a draft label opening the comment (\"draft v08\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F "I'll ship the fix by Friday" | grep -qF '[chat residue]' && pass "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue" || fail "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F "revised draft based on your comments" | grep -qF '[chat residue]' && pass "comments.sh: a revised-draft label BLOCKs as chat residue" || fail "comments.sh: a revised-draft label BLOCKs as chat residue ($block34t)"
+
 # A lexical pass rules a shape out; it never certifies a shape as necessary.
 # These two land in REVIEW, for the author to justify or delete — not a
 # silent pass that looks the same as "this comment is useful."
@@ -2487,7 +2519,7 @@ printf '%s\n' "$review34t" | grep -qF 'The callback can arrive after cancellatio
 # onto the shipped vocabulary, and a broken pattern fails the run closed
 # rather than silently passing as clean.
 printf 'CHAT_RE_EXTRA=(^|[^[:alnum:]])lgtm\n' >"$cg/.agent/scripts/comments.conf"
-printf '// lgtm, ship it\nconst n14 = 14\n' >>"$cg/src/app.ts"
+printf '// lgtm, ship it\nconst n22 = 22\n' >>"$cg/src/app.ts"
 out34u=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34u" | sed -n '/^BLOCK:/,$p' | grep -q 'lgtm, ship it' && pass "comments.sh: CHAT_RE_EXTRA joins the chat-residue class" || fail "comments.sh: CHAT_RE_EXTRA joins the chat-residue class ($out34u)"
 git_cg checkout -q -- src/app.ts
@@ -6591,7 +6623,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=882
+EXPECTED_CHECKS=890
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

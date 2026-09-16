@@ -253,7 +253,17 @@ echo_re='(^|[^[:alnum:]])(as (you |the user |the operator )?(requested|asked for
 # clone cannot. The version-label alternative needs a trailing colon, or a
 # genuine version report reading naturally would false-positive; see
 # scripts/docs/comments.md for the worked example this guards.
-chat_re='(^|[^[:alnum:]])(as (you |the reviewer |the operator )?suggested([^[:alnum:]]|$)|per (your|the reviewer.s|the operator.s|our) feedback|based on (your|the) feedback|to address (your|the) (feedback|comments?)|as (we |you |the team )?agreed([^[:alnum:]]|$)|per (our|the) agreement|here.s the fixed version|here is the fixed version|fixed version:|draft v[0-9]+|v[0-9]+ draft|revised (version|draft)|draft revision)'
+#
+# Three alternatives are narrowed against a third-party or spec noun rather
+# than a conversation: "draft v2" only counts as a revision label when it
+# opens the comment, since a version cited mid-sentence ("Per RFC draft
+# v08...") is a spec reference, not someone's redraft; "as agreed" only
+# counts when it ends its clause, since "as agreed by both parties" attributes
+# the agreement to a third party rather than echoing a review thread. The
+# generic "per our/the agreement" and "based on your/the feedback" shapes
+# matched vendor-contract and technical-loop language too often to keep —
+# a node that wants them back narrower can add them via CHAT_RE_EXTRA.
+chat_re='(^draft v[0-9]+([^[:alnum:]]|$))|((^|[^[:alnum:]])(as (you |the reviewer |the operator )?suggested([^[:alnum:]]|$)|per (your|the reviewer.s|the operator.s|our) feedback|to address (your|the) (feedback|comments?)|as (we |you |the team )?agreed([,.;:]|$)|here.s the fixed version|here is the fixed version|fixed version:|revised (version|draft)|draft revision))'
 [ -n "$CHAT_RE_EXTRA" ] && chat_re="$chat_re|$CHAT_RE_EXTRA"
 
 # An opening apology, not one buried mid-sentence: a comment quoting
