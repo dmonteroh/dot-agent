@@ -6,13 +6,15 @@
 # Full documentation: scripts/docs/node.md.
 #
 # Usage:
-#   node.sh init --preset <name> --mode <mode> [root]
+#   node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [root]
 #   node.sh update [root]
 #   node.sh finalize [root]
 #
 #   <name> matches a file in the source repo's presets/ (currently
 #   software-development, academic-research, domain-knowledge).
 #   <mode> is one of: ignore-all | track-shared | track-all.
+#   --indexes defaults to manual; generated wires up the local Markdown
+#   index cache (scripts/docs/index.md).
 #   root defaults to . — the script reads/writes <root>/.agent.
 
 set -u
@@ -27,11 +29,12 @@ srcroot=$(cd "$selfdir/.." && pwd)
 usage() {
   cat <<'EOF'
 Usage:
-  node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [root]
+  node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [root]
   node.sh update [root]
   node.sh finalize [root]
 
-root defaults to . — the script operates on <root>/.agent
+--indexes defaults to manual. root defaults to . — the script operates on
+<root>/.agent
 EOF
 }
 
@@ -92,6 +95,41 @@ write_migration_target() {
     return 1
   fi
   mv "$wmt_new" "$wmt_purpose"
+}
+
+# Writes indexes into the manifest frontmatter, beside mode, using the same
+# read/write mechanism as write_migration_target: rewrite the existing line
+# in place, or insert one right after `mode:` if none exists yet — a
+# pre-F15 node's only path here, since init always writes the line. Same
+# failure contract: nonzero return and an untouched $wi_purpose unless the
+# scratch file is proven to hold a complete, correct rewrite before the
+# atomic rename.
+write_indexes() {
+  wi_purpose="$1"
+  wi_value="$2"
+  wi_new="$(dirname "$wi_purpose")/.purpose.md.new"
+  wi_old_lines=$(wc -l <"$wi_purpose" 2>/dev/null || echo 0)
+  if grep -q '^  indexes:' "$wi_purpose"; then
+    wi_line=$(grep -n -m1 '^  indexes:' "$wi_purpose" | cut -d: -f1)
+    sed -E "${wi_line}s/^(  indexes:).*/\1 $wi_value        # manual | generated/" "$wi_purpose" >"$wi_new"
+    wi_rc=$?
+    wi_expect_lines="$wi_old_lines"
+  else
+    wi_line=$(grep -n -m1 '^  mode:' "$wi_purpose" | cut -d: -f1)
+    awk -v n="$wi_line" -v val="$wi_value" \
+      'NR==n { print; print "  indexes: " val "        # manual | generated"; next } { print }' \
+      "$wi_purpose" >"$wi_new"
+    wi_rc=$?
+    wi_expect_lines=$((wi_old_lines + 1))
+  fi
+  wi_new_lines=$(wc -l <"$wi_new" 2>/dev/null || echo 0)
+  if [ "$wi_rc" -ne 0 ] || [ ! -s "$wi_new" ] \
+    || [ "$wi_new_lines" -ne "$wi_expect_lines" ] \
+    || ! grep -qF "indexes: $wi_value" "$wi_new"; then
+    [ -f "$wi_new" ] && rm -f "$wi_new"
+    return 1
+  fi
+  mv "$wi_new" "$wi_purpose"
 }
 
 # Stamps version to the given value using the same read/write mechanism as
@@ -299,6 +337,7 @@ case "$cmd" in
 init)
   preset=""
   mode=""
+  indexes=""
   root="."
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -308,6 +347,9 @@ init)
     --mode)
       [ $# -ge 2 ] || { echo "node.sh: --mode needs a value" >&2; usage >&2; exit 1; }
       mode="$2"; shift 2 ;;
+    --indexes)
+      [ $# -ge 2 ] || { echo "node.sh: --indexes needs a value" >&2; usage >&2; exit 1; }
+      indexes="$2"; shift 2 ;;
     -h | --help)
       usage; exit 0 ;;
     --*)
@@ -336,6 +378,14 @@ init)
   ignore-all | track-shared | track-all) ;;
   *)
     echo "node.sh: unknown --mode: '$mode' (must be ignore-all, track-shared, or track-all)" >&2
+    usage >&2
+    exit 1 ;;
+  esac
+  indexes="${indexes:-manual}"
+  case "$indexes" in
+  manual | generated) ;;
+  *)
+    echo "node.sh: unknown --indexes: '$indexes' (must be manual or generated)" >&2
     usage >&2
     exit 1 ;;
   esac
@@ -369,6 +419,7 @@ dot-agent:
   version: "$TARGET_VERSION"
   preset: $preset
   mode: $mode        # ignore-all | track-shared | track-all
+  indexes: $indexes        # manual | generated
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 
@@ -380,7 +431,7 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh index.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
       || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
@@ -420,12 +471,34 @@ EOF
         echo "!.agent/docs/"
       } >>"$gitignore"
     fi
+    if [ "$indexes" = generated ]; then
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/indexes/" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/indexes/\n' >>"$gitignore"
+      fi
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/rules/learned.md\n' >>"$gitignore"
+      fi
+    fi
     ;;
-  track-all) ;;
+  track-all)
+    if [ "$indexes" = generated ]; then
+      gitignore="$root/.gitignore"
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/indexes/" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/indexes/\n' >>"$gitignore"
+      fi
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/rules/learned.md\n' >>"$gitignore"
+      fi
+    fi
+    ;;
   esac
   fi
 
-  echo "node.sh: initialized $agent (preset=$preset, mode=$mode)"
+  echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes)"
   exit 0
   ;;
 
@@ -454,6 +527,9 @@ EOF
   oldversion=$(printf '%s\n' "$version_line" | sed -E 's/^[[:space:]]*version:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
   mode_line=$(grep -m1 '^  mode:' "$purpose")
   mode=$(printf '%s\n' "$mode_line" | sed -E 's/^[[:space:]]*mode:[[:space:]]*([A-Za-z-]+).*/\1/')
+  indexes_line=$(grep -m1 '^  indexes:' "$purpose")
+  indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
+  [ -n "$indexes" ] || indexes=manual
   migration_target_line=$(grep -m1 '^  migration_target:' "$purpose")
   migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
 
@@ -475,7 +551,29 @@ EOF
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
+
   if [ "$oldversion" = "$TARGET_VERSION" ]; then
+    # A pre-F15 node carries no indexes line at all — backfill it as
+    # manual, the value an absent field already reads as, so nothing about
+    # the node's behavior changes. Skipped for a node newer than this
+    # script (the branch above): that path never touches the node at all.
+    if [ -z "$indexes_line" ]; then
+      write_indexes "$purpose" manual \
+        || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
+      echo "node.sh: indexes: manual backfilled into $purpose"
+    fi
+
+    # index.sh ships on every update, version-current nodes included:
+    # track-shared gitignores .agent/scripts/, so a fresh clone or worktree
+    # of an otherwise-current node has none of it, and this branch — which
+    # otherwise has nothing to migrate — is the only refresh path such a
+    # checkout ever reaches.
+    mkdir -p "$agent/scripts" \
+      || { echo "node.sh: could not create $agent/scripts" >&2; exit 1; }
+    cp "$srcroot/scripts/index.sh" "$agent/scripts/index.sh" \
+      || { echo "node.sh: index.sh copy failed" >&2; exit 1; }
+    chmod +x "$agent/scripts/index.sh"
+
     # Version-current is not shape-current: the fact-file header moved into
     # memory.md after 6.1 shipped, so a node already on 6.1 needs the same
     # migration and would never reach the block below. Only when there is
@@ -538,6 +636,17 @@ EOF
   # the exact defect this record-first ordering exists to prevent.
   write_migration_target "$purpose" "$TARGET_VERSION" \
     || { echo "node.sh: failed to record migration_target in $purpose — aborting before touching node content" >&2; exit 1; }
+
+  # A pre-F15 node carries no indexes line at all — backfill it as manual,
+  # the value an absent field already reads as, so nothing about the
+  # node's behavior changes. After migration_target above, not before: a
+  # blocked write here must never mask a genuine migration_target failure
+  # behind a different error.
+  if [ -z "$indexes_line" ]; then
+    write_indexes "$purpose" manual \
+      || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
+    echo "node.sh: indexes: manual backfilled into $purpose"
+  fi
 
   # Memory split baseline. memdir's mere existence cannot gate this: it
   # cannot distinguish "never split" from "split, interrupted mid-write"
@@ -623,7 +732,7 @@ EOF
   # overwritten. A missing starter conf is seeded, the one write that
   # cannot clobber node content.
   mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh index.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script"
     chmod +x "$agent/scripts/$script"
   done
@@ -640,7 +749,7 @@ EOF
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, and finish.sh refreshed from source repo"
+  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, finish.sh, and index.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
   exit 0
   ;;

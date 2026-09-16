@@ -199,7 +199,7 @@ for preset in $PRESETS; do
     # The shipped set, stated here independently of node.sh's copy loop —
     # deriving it from the script under test would pass a dropped entry.
     missing=""
-    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh index.sh; do
       [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
@@ -209,6 +209,12 @@ for preset in $PRESETS; do
     # A node receives executables and their confs. This repo's design notes
     # under scripts/docs/ are not a node's to carry.
     [ ! -e "$root/.agent/scripts/docs" ] && pass "init $preset/$mode: scripts/docs is not shipped into the node" || fail "init $preset/$mode: scripts/docs is not shipped into the node"
+
+    # --indexes defaults to manual when the flag is omitted, so an
+    # unmodified `init` call is unaffected by the new field.
+    grep -qxF '  indexes: manual        # manual | generated' "$root/.agent/purpose.md" \
+      && pass "init $preset/$mode: manifest defaults to indexes: manual" \
+      || fail "init $preset/$mode: manifest defaults to indexes: manual"
   done
 done
 
@@ -273,6 +279,33 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "unknown --mode exits nonzero" || fail "unknown --mode exits nonzero"
 [ ! -e "$unk_mode/.agent" ] && pass "unknown --mode creates nothing" || fail "unknown --mode creates nothing"
 
+unk_indexes="$WORK/unknown-indexes"
+mkdir -p "$unk_indexes"
+"$NODE" init --preset software-development --mode ignore-all --indexes bogus-indexes "$unk_indexes" >/dev/null 2>"$WORK/err4"
+rc=$?
+[ "$rc" -ne 0 ] && pass "unknown --indexes exits nonzero" || fail "unknown --indexes exits nonzero"
+[ ! -e "$unk_indexes/.agent" ] && pass "unknown --indexes creates nothing" || fail "unknown --indexes creates nothing"
+grep -qF "unknown --indexes: 'bogus-indexes' (must be manual or generated)" "$WORK/err4" \
+  && pass "unknown --indexes: message matches the --mode refusal style" \
+  || fail "unknown --indexes: message matches the --mode refusal style"
+
+idxman="$WORK/init-indexes-manual"
+mkdir -p "$idxman"
+"$NODE" init --preset software-development --mode ignore-all --indexes manual "$idxman" >/dev/null 2>&1
+grep -qxF '  indexes: manual        # manual | generated' "$idxman/.agent/purpose.md" \
+  && pass "init --indexes manual: manifest carries the line" \
+  || fail "init --indexes manual: manifest carries the line"
+
+idxgen="$WORK/init-indexes-generated"
+mkdir -p "$idxgen"
+"$NODE" init --preset software-development --mode ignore-all --indexes generated "$idxgen" >/dev/null 2>&1
+grep -qxF '  indexes: generated        # manual | generated' "$idxgen/.agent/purpose.md" \
+  && pass "init --indexes generated: manifest carries the line" \
+  || fail "init --indexes generated: manifest carries the line"
+[ -x "$idxgen/.agent/scripts/index.sh" ] \
+  && pass "init --indexes generated: index.sh is installed" \
+  || fail "init --indexes generated: index.sh is installed"
+
 # ---- 4. update: V6 fixture reaches the mechanical baseline ----
 v6root="$WORK/update-v6"
 mkdir -p "$v6root"
@@ -291,13 +324,28 @@ legacy="$v6root/.agent/memory/legacy.md"
 
 grep -qF "[Legacy memory](memory/legacy.md)" "$v6root/.agent/memory.md" 2>/dev/null && pass "update: memory.md is the new index with the legacy line" || fail "update: memory.md is the new index with the legacy line"
 
-grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:' >"$WORK/pb-noversion"
-grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' >"$WORK/pa-noversion"
-diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version and migration_target lines" || fail "update: manifest diff touches only the version and migration_target lines"
+grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pb-noversion"
+grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pa-noversion"
+diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version, migration_target, and indexes lines" || fail "update: manifest diff touches only the version, migration_target, and indexes lines"
 grep -q '^  version: 6$' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version stays at 6 (unbumped) — finalize's job" || fail "update: version stays at 6 (unbumped) — finalize's job"
 grep -q '^  migration_target: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.2\"" || fail "update: migration_target is now \"6.2\""
 [ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.2"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
 grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names the pending finalize step" || fail "update: closing message names the pending finalize step"
+
+# The pre-F15 fixture carries no indexes line at all; update backfills it as
+# manual — the same value an absent field already reads as — beside mode.
+grep -qxF '  indexes: manual        # manual | generated' "$v6root/.agent/purpose.md" \
+  && pass "update: pre-F15 node is backfilled with indexes: manual" \
+  || fail "update: pre-F15 node is backfilled with indexes: manual"
+[ "$(grep -A1 '^  mode:' "$v6root/.agent/purpose.md" | tail -n1)" = '  indexes: manual        # manual | generated' ] \
+  && pass "update: the backfilled indexes line is inserted right after mode" \
+  || fail "update: the backfilled indexes line is inserted right after mode"
+grep -qF "indexes: manual backfilled" "$WORK/update.out" \
+  && pass "update: the backfill is reported" \
+  || fail "update: the backfill is reported"
+[ -x "$v6root/.agent/scripts/index.sh" ] \
+  && pass "update: index.sh is installed alongside the existing seven scripts" \
+  || fail "update: index.sh is installed alongside the existing seven scripts"
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
@@ -1991,6 +2039,7 @@ lint_re='claude|cursor|copilot|codex|anthropic|openai|sonnet|opus|haiku|gpt-|age
 hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   presets/software-development.md presets/academic-research.md \
   presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
+  templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
   scripts/links.sh scripts/comments.sh scripts/finish.sh scripts/comments.conf \
   scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
@@ -3108,7 +3157,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | finish.sh | status.conf | log.conf | comments.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | finish.sh | index.sh | status.conf | log.conf | comments.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
@@ -6455,6 +6504,115 @@ grep -qi 'Read when\|Project guardrails\|Body text' "$WORK/i55.out" \
   && pass "contract: check's stdout is exactly FRESH or STALE, nothing else" \
   || fail "contract: check's stdout is exactly FRESH or STALE, nothing else"
 
+# ---- 56. indexes manifest field: gitignore across the six mode combinations ----
+# indexes: generated adds two gitignore rules under track-shared and
+# track-all (.agent/indexes/ and .agent/rules/learned.md); manual and
+# ignore-all are untouched from today, learned.md's ignore-or-not follows
+# the tracking mode's own allowlist, and .agent/indexes/ is covered by the
+# blanket .agent/* pattern in track-shared regardless of the new lines.
+gi56_combo() {
+  gi56_mode="$1" gi56_idx="$2" gi56_exp_learned="$3" gi56_exp_indexes="$4"
+  gi56_dir="$WORK/gi56-$gi56_mode-$gi56_idx"
+  mkdir -p "$gi56_dir"
+  "$NODE" init --preset software-development --mode "$gi56_mode" --indexes "$gi56_idx" "$gi56_dir" >/dev/null 2>&1
+  git -C "$gi56_dir" init -q
+  if git -C "$gi56_dir" check-ignore -q .agent/rules/learned.md; then gi56_ign1=1; else gi56_ign1=0; fi
+  [ "$gi56_ign1" -eq "$gi56_exp_learned" ] \
+    && pass "gitignore $gi56_mode/$gi56_idx: .agent/rules/learned.md ignored=$gi56_exp_learned" \
+    || fail "gitignore $gi56_mode/$gi56_idx: .agent/rules/learned.md ignored=$gi56_exp_learned (got $gi56_ign1)"
+  if git -C "$gi56_dir" check-ignore -q .agent/indexes/current.md; then gi56_ign2=1; else gi56_ign2=0; fi
+  [ "$gi56_ign2" -eq "$gi56_exp_indexes" ] \
+    && pass "gitignore $gi56_mode/$gi56_idx: .agent/indexes/ ignored=$gi56_exp_indexes" \
+    || fail "gitignore $gi56_mode/$gi56_idx: .agent/indexes/ ignored=$gi56_exp_indexes (got $gi56_ign2)"
+}
+gi56_combo ignore-all manual 1 1
+gi56_combo ignore-all generated 1 1
+gi56_combo track-shared manual 0 1
+gi56_combo track-shared generated 1 1
+gi56_combo track-all manual 0 0
+gi56_combo track-all generated 1 1
+
+# The parent's own acceptance criterion: ignore-all's gitignore is
+# byte-identical whether or not indexes is generated.
+[ "$(cat "$WORK/gi56-ignore-all-manual/.gitignore" 2>/dev/null)" = "$(cat "$WORK/gi56-ignore-all-generated/.gitignore" 2>/dev/null)" ] \
+  && pass "gitignore: ignore-all is unchanged from today whether indexes is manual or generated" \
+  || fail "gitignore: ignore-all is unchanged from today whether indexes is manual or generated"
+[ ! -e "$WORK/gi56-track-all-manual/.gitignore" ] \
+  && pass "gitignore: track-all/manual writes no gitignore, as today" \
+  || fail "gitignore: track-all/manual writes no gitignore, as today"
+
+# ---- 57. generated-mode entry point: no heading drift against status.sh ----
+gep="$WORK/generated-entry-point"
+mkdir -p "$gep"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$gep" >/dev/null 2>&1
+finish_bootstrap "$gep"
+cp "$reporoot/templates/entry-point-generated.md" "$gep/CLAUDE.md"
+cp "$reporoot/templates/entry-point-generated.md" "$gep/AGENTS.md"
+gep_flags=$(status_flags "$gep")
+[ -z "$gep_flags" ] \
+  && pass "generated-mode entry point: templates/entry-point-generated.md draws no status.sh finding" \
+  || fail "generated-mode entry point: templates/entry-point-generated.md draws no status.sh finding ($gep_flags)"
+
+# A mismatched pairing (generated template in one file, manual in the
+# other) is real drift and must still be caught, same as any other mirror
+# mismatch — the two templates are not interchangeable within one node.
+cp "$reporoot/templates/entry-point.md" "$gep/AGENTS.md"
+gep_flags2=$(status_flags "$gep")
+printf '%s\n' "$gep_flags2" | grep -qF 'REPAIR: AGENTS.md differs from CLAUDE.md' \
+  && pass "generated-mode entry point: pairing it with the manual template draws a drift REPAIR" \
+  || fail "generated-mode entry point: pairing it with the manual template draws a drift REPAIR ($gep_flags2)"
+
+# ---- 58. index.sh install wiring survives a fresh clone and a fresh
+#          worktree of a track-shared node ----
+i58src="$WORK/i58-source"
+mkdir -p "$i58src"
+"$NODE" init --preset software-development --mode track-shared --indexes generated "$i58src" >/dev/null 2>&1
+git -C "$i58src" init -q
+git -C "$i58src" config user.name Tester
+git -C "$i58src" config user.email tester@example.invalid
+git -C "$i58src" add -A
+git -C "$i58src" commit -qm bootstrap
+i58base=$(git -C "$i58src" symbolic-ref --short HEAD)
+
+# Clone: track-shared gitignores .agent/scripts/, so the clone starts
+# without index.sh.
+i58clone="$WORK/i58-clone"
+git clone -q "$i58src" "$i58clone"
+[ ! -e "$i58clone/.agent/scripts/index.sh" ] \
+  && pass "clone: a fresh clone of a track-shared node starts without index.sh (gitignored)" \
+  || fail "clone: a fresh clone of a track-shared node starts without index.sh (gitignored)"
+"$NODE" update "$i58clone" >"$WORK/i58-clone-update.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "clone: node.sh update exits 0" || fail "clone: node.sh update exits 0 (rc=$rc)"
+[ -x "$i58clone/.agent/scripts/index.sh" ] \
+  && pass "clone: node.sh update obtains index.sh" \
+  || fail "clone: node.sh update obtains index.sh"
+"$i58clone/.agent/scripts/index.sh" ensure --root "$i58clone" >"$WORK/i58-clone-ensure.out" 2>"$WORK/i58-clone-ensure.err"
+rc=$?
+[ "$rc" -eq 0 ] && [ -f "$i58clone/.agent/indexes/current.md" ] \
+  && pass "clone: index.sh ensure succeeds once the indexer is present" \
+  || fail "clone: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-clone-ensure.err"))"
+
+# Worktree: a second working tree off the same source repo shares the
+# gitignore, so it starts in the same missing-scripts state as the clone.
+i58wt="$WORK/i58-worktree"
+git -C "$i58src" worktree add -q -b i58-branch "$i58wt" "$i58base"
+[ ! -e "$i58wt/.agent/scripts/index.sh" ] \
+  && pass "worktree: a fresh worktree of a track-shared node starts without index.sh (gitignored)" \
+  || fail "worktree: a fresh worktree of a track-shared node starts without index.sh (gitignored)"
+"$NODE" update "$i58wt" >"$WORK/i58-wt-update.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "worktree: node.sh update exits 0" || fail "worktree: node.sh update exits 0 (rc=$rc)"
+[ -x "$i58wt/.agent/scripts/index.sh" ] \
+  && pass "worktree: node.sh update obtains index.sh" \
+  || fail "worktree: node.sh update obtains index.sh"
+"$i58wt/.agent/scripts/index.sh" ensure --root "$i58wt" >"$WORK/i58-wt-ensure.out" 2>"$WORK/i58-wt-ensure.err"
+rc=$?
+[ "$rc" -eq 0 ] && [ -f "$i58wt/.agent/indexes/current.md" ] \
+  && pass "worktree: index.sh ensure succeeds once the indexer is present" \
+  || fail "worktree: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-wt-ensure.err"))"
+git -C "$i58src" worktree remove -f "$i58wt" >/dev/null 2>&1 || rm -rf "$i58wt"
+
 
 # ---- summary ----
 ran=$((PASS + FAIL))
@@ -6463,7 +6621,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=862
+EXPECTED_CHECKS=905
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
