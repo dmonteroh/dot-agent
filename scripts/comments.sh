@@ -2,9 +2,10 @@
 # comments.sh — the comment gate. Flags comments a diff adds to source
 # files, against the preset's Comments rule. BLOCK (exit 1): the comment is
 # dead on arrival — it cites what a fresh clone cannot open, is commented-out
-# code, narrates the change, answers the prompt, or narrates the structure of
-# the code under it. REVIEW (exit 0): every other added comment, for the
-# author to justify or delete.
+# code, narrates the change, answers the prompt, is chat residue (a feedback
+# reference, an agreement, an apology, a draft-revision label), or narrates
+# the structure of the code under it. REVIEW (exit 0): every other added
+# comment, for the author to justify or delete.
 #
 # Tunables: comments.conf beside this script, which lists every key.
 # Full documentation: scripts/docs/comments.md in the dot-agent repo.
@@ -39,6 +40,7 @@ BLOCK_RE_EXTRA=""
 NARRATION_RE_EXTRA=""
 CONSTRAINT_RE_EXTRA=""
 PRAGMA_RE_EXTRA=""
+CHAT_RE_EXTRA=""
 ROUTINE_MAX_WORDS=8
 RESTATE_CHECK=true
 
@@ -55,6 +57,7 @@ if [ -f "$conf" ]; then
   v=$(conf_get PRAGMA_RE_EXTRA);    [ -n "$v" ] && PRAGMA_RE_EXTRA="$v"
   v=$(conf_get ROUTINE_MAX_WORDS);  [ -n "$v" ] && ROUTINE_MAX_WORDS="$v"
   v=$(conf_get RESTATE_CHECK);      [ -n "$v" ] && RESTATE_CHECK="$v"
+  v=$(conf_get CHAT_RE_EXTRA);      [ -n "$v" ] && CHAT_RE_EXTRA="$v"
 fi
 
 # The one numeric key. It reaches awk rather than a shell arithmetic context,
@@ -89,6 +92,7 @@ re_require awk EXCLUDE_RE "$EXCLUDE_RE"
 [ -n "$NARRATION_RE_EXTRA" ]  && re_require awk NARRATION_RE_EXTRA "$NARRATION_RE_EXTRA"
 [ -n "$CONSTRAINT_RE_EXTRA" ] && re_require awk CONSTRAINT_RE_EXTRA "$CONSTRAINT_RE_EXTRA"
 [ -n "$PRAGMA_RE_EXTRA" ]     && re_require awk PRAGMA_RE_EXTRA "$PRAGMA_RE_EXTRA"
+[ -n "$CHAT_RE_EXTRA" ]       && re_require awk CHAT_RE_EXTRA "$CHAT_RE_EXTRA"
 
 base="${1:-$BASE_REF}"
 
@@ -243,6 +247,42 @@ narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed 
 # who never saw the question.
 echo_re='(^|[^[:alnum:]])(as (you |the user |the operator )?(requested|asked for|instructed)|as (we |you )?discussed|per (your|the user.s|the operator.s) (request|instruction|ask|comment)|you asked|per our (discussion|chat|conversation)|to answer (your|the) question)'
 
+# Chat residue: the same audience mistake as echo_re, in the review-thread
+# shapes rather than the request shapes — a feedback reference, an agreement
+# reference, or a draft-revision label a reviewer would recognize but a fresh
+# clone cannot. The version-label alternative needs a trailing colon, or a
+# genuine version report reading naturally would false-positive; see
+# scripts/docs/comments.md for the worked example this guards.
+#
+# Three alternatives are narrowed against a third-party or spec noun rather
+# than a conversation: "draft v2" only counts as a revision label when it
+# opens the comment — checked separately below via draft_v_re, gated behind
+# opens_comment() at the call site, since a version cited mid-sentence or on
+# a later line ("Per RFC draft v08..." / a second line of a multi-line
+# comment) is a spec reference, not someone's redraft; "as agreed" only
+# counts when it ends its clause, since "as agreed by both parties" attributes
+# the agreement to a third party rather than echoing a review thread. The
+# generic "per our/the agreement" and "based on your/the feedback" shapes
+# matched vendor-contract and technical-loop language too often to keep —
+# a node that wants them back narrower can add them via CHAT_RE_EXTRA.
+chat_re='(^|[^[:alnum:]])(as (you |the reviewer |the operator )?suggested([^[:alnum:]]|$)|per (your|the reviewer.s|the operator.s|our) feedback|to address (your|the) (feedback|comments?)|as (we |you |the team )?agreed([,.;:]|$)|here.s the fixed version|here is the fixed version|fixed version:|revised (version|draft)|draft revision)'
+[ -n "$CHAT_RE_EXTRA" ] && chat_re="$chat_re|$CHAT_RE_EXTRA"
+
+# The draft-v2 revision label. Unlike the rest of chat_re, this alternative
+# must match only at the true start of a comment (its opening line), not the
+# start of whatever physical line is being scanned — a multi-line comment's
+# second line starting with "Draft v2 of RFC ..." is a spec citation, not a
+# revision label. So this is combined at the awk call site behind
+# opens_comment(i), the same way apology_re is, instead of living inside
+# chat_re where "^" only ever means "start of this physical line".
+draft_v_re='^draft v[0-9]+([^[:alnum:]]|$)'
+
+# An opening apology, not one buried mid-sentence: a comment quoting
+# user-facing "sorry" text is not chat residue, and only the first line of a
+# comment can be the residue of an actual reply, so this matches the start
+# of the comment's own opening line rather than anywhere in its body.
+apology_re='^(sorry|my apologies|apologies)([^[:alnum:]]|$)'
+
 # Structure narration: the comment that says in English what the next few
 # lines say in code — "build the rows", "loop over the items", "increment
 # the counter". It is the single most common valueless comment, and unlike a
@@ -261,6 +301,7 @@ constraint_re='because|otherwise|unless|without|so that|until|workaround|bug|qui
 findings=$(printf '%s\n' "$added" \
   | PRAGMA_RE="$pragma_re" BLOCK_RE="$block_re" NARRATION_RE="$narration_re" \
     ECHO_RE="$echo_re" ROUTINE_RE="$routine_re" CONSTRAINT_RE="$constraint_re" \
+    CHAT_RE="$chat_re" DRAFT_V_RE="$draft_v_re" APOLOGY_RE="$apology_re" \
     ROUTINE_MAX_WORDS="$ROUTINE_MAX_WORDS" RESTATE_CHECK="$RESTATE_CHECK" \
     awk '
   # A marker opens a comment only in the languages where it does: "#" in
@@ -391,6 +432,9 @@ findings=$(printf '%s\n' "$added" \
     echo_re    = tolower(ENVIRON["ECHO_RE"])
     routine_re = tolower(ENVIRON["ROUTINE_RE"])
     constr_re  = tolower(ENVIRON["CONSTRAINT_RE"])
+    chat_re    = tolower(ENVIRON["CHAT_RE"])
+    draft_v_re = tolower(ENVIRON["DRAFT_V_RE"])
+    apology_re = tolower(ENVIRON["APOLOGY_RE"])
     routine_max = ENVIRON["ROUTINE_MAX_WORDS"] + 0
     restate    = (ENVIRON["RESTATE_CHECK"] != "false")
   }
@@ -419,6 +463,8 @@ findings=$(printf '%s\n' "$added" \
       else if (is_code(body)) { class = "BLOCK"; reason = "commented-out code" }
       else if (lb ~ narr_re)  { class = "BLOCK"; reason = "change narration" }
       else if (lb ~ echo_re)  { class = "BLOCK"; reason = "answers the prompt" }
+      else if (lb ~ chat_re || (opens_comment(i) && (lb ~ apology_re || lb ~ draft_v_re))) \
+                              { class = "BLOCK"; reason = "chat residue" }
       # Routine narration blocks only while it is short. Past the word cap a
       # comment is carrying a clause the verb alone cannot account for, so it
       # is labeled and left to the author rather than deleted on a keyword.
@@ -458,8 +504,10 @@ if [ -n "$blocked" ]; then
   [ -n "$review" ] && echo
   echo "BLOCK: comments that are dead on arrival — a citation a fresh clone cannot"
   echo "       open, code left commented out, narration of the change or of the"
-  echo "       structure below, or an answer to the prompt. Delete them, or state"
-  echo "       the constraint the code cannot; durable why goes to docs:"
+  echo "       structure below, an answer to the prompt, or chat residue (a"
+  echo "       feedback reference, an agreement, an apology, a draft-revision"
+  echo "       label). Delete them, or state the constraint the code cannot;"
+  echo "       durable why goes to docs:"
   printf '%s\n' "$blocked" | show
   exit 1
 fi
