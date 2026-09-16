@@ -408,19 +408,20 @@ extract_one_rule_span() {
     "$eor_n" "$eor_preview" "$eor_id" "$eor_id" "$eor_disp" >>"$eor_inventory"
 }
 
-# Splits $1/rules/learned.md into one record per top-level "^- " bullet.
-# The span starts at that line and runs to the line before the next "^- "
-# line, or to end of file — indented sub-bullets, blank lines, and
-# continuation paragraphs inside that span belong to the record that
-# opened it. The header above the first bullet (title, prose, and the
-# "<!-- Format: … -->" comment, whose own "- [" is never at line start) is
-# never read. No-op when $1/rules/learned.md does not exist or holds no
-# bullet. Appends one inventory line per bullet to $2.
+# Splits $1/rules/learned.md into one record per top-level "^- " bullet,
+# written under output directory $3. The span starts at that line and
+# runs to the line before the next "^- " line, or to end of file —
+# indented sub-bullets, blank lines, and continuation paragraphs inside
+# that span belong to the record that opened it. The header above the
+# first bullet (title, prose, and the "<!-- Format: … -->" comment, whose
+# own "- [" is never at line start) is never read. No-op when
+# $1/rules/learned.md does not exist or holds no bullet. Appends one
+# inventory line per bullet to $2.
 extract_learned_rules() {
   elr_agent="$1"
   elr_inventory="$2"
+  elr_dir="$3"
   elr_learned="$elr_agent/rules/learned.md"
-  elr_dir="$elr_agent/rules/learned"
   [ -f "$elr_learned" ] || return 0
   elr_starts="$elr_agent/.learned-bullet-starts.tmp"
   grep -n '^- ' "$elr_learned" | cut -d: -f1 >"$elr_starts"
@@ -539,20 +540,50 @@ backfill_doc_hooks() {
 # no-op — nothing minted, written, or touched — whenever rules/learned/
 # already holds any *.md record, which is this pass's own completion
 # marker: there is no separate resume state.
+#
+# Records are extracted into a staging directory directly under .agent/
+# (never under .agent/rules/, which index.sh walks for canonical sources)
+# and moved into rules/learned/ with one rename — the single point this
+# pass commits new identities. A crash before that rename leaves
+# rules/learned/ absent, so the completion marker above stays literally
+# true and a retry discards the staging directory outright rather than
+# resuming inside it: a partially populated rules/learned/ would already
+# read as complete to index.sh's own aggregate trigger. The pre-rename
+# bullet set is snapshotted to .agent/.learned-bullets-before, since once
+# the caller regenerates rules/learned.md from the new records that file
+# can no longer serve as its own pre-migration reference.
 migrate_learned_and_docs() {
   mld_agent="$1"
-  mkdir -p "$mld_agent/rules/learned" || return 1
-  for mld_existing in "$mld_agent/rules/learned"/*.md; do
+  mld_dir="$mld_agent/rules/learned"
+  for mld_existing in "$mld_dir"/*.md; do
     [ -e "$mld_existing" ] && return 0
   done
+
+  mld_staging="$mld_agent/.learned-staging"
+  rm -rf "$mld_staging"
+  rm -f "$mld_agent"/.learned-*.tmp
+  mkdir -p "$mld_staging" || return 1
+
+  mld_learned="$mld_agent/rules/learned.md"
+  mld_before="$mld_agent/.learned-bullets-before"
+  if [ -f "$mld_learned" ] && [ ! -e "$mld_before" ]; then
+    grep '^- ' "$mld_learned" >"$mld_before" 2>/dev/null || : >"$mld_before"
+  fi
+
   mld_inventory_tmp="$mld_agent/.migration-inventory.tmp"
   : >"$mld_inventory_tmp"
-  extract_learned_rules "$mld_agent" "$mld_inventory_tmp" || { rm -f "$mld_inventory_tmp"; return 1; }
+  extract_learned_rules "$mld_agent" "$mld_inventory_tmp" "$mld_staging" \
+    || { rm -rf "$mld_staging"; rm -f "$mld_inventory_tmp"; return 1; }
   backfill_doc_hooks "$mld_agent" "$mld_inventory_tmp"
   { printf '# Migration inventory\n\nOne line per original authoritative item: its new location, identity, and disposition.\n\n'
     cat "$mld_inventory_tmp"
   } >"$mld_agent/migration-inventory.md"
   rm -f "$mld_inventory_tmp"
+
+  if [ -d "$mld_dir" ]; then
+    rmdir "$mld_dir" 2>/dev/null || { rm -rf "$mld_staging"; return 1; }
+  fi
+  mv "$mld_staging" "$mld_dir" || return 1
   return 0
 }
 
@@ -973,11 +1004,66 @@ EOF
 
   # Generated-mode only: extract rules/learned.md into rules/learned/
   # records and backfill missing doc hooks. Runs on the node the backup
-  # above already covers. rules/learned.md stays tracked and in place;
-  # nothing here untracks it or checks the aggregate.
+  # above already covers. The tail below then ignores, regenerates, checks,
+  # and only on success untracks rules/learned.md — never in the other
+  # order, since an ignore rule with no verified aggregate behind it would
+  # be the silent re-tracking risk this task exists to close.
   if [ "$indexes" = generated ]; then
     migrate_learned_and_docs "$agent" \
       || { echo "node.sh: learned-rule extraction or doc-hook backfill failed under $agent — aborting" >&2; exit 1; }
+
+    if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
+      echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
+    else
+      gitignore="$root/.gitignore"
+      case "$mode" in
+      track-shared | track-all)
+        if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/indexes/" "$gitignore"; then
+          [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+          printf '.agent/indexes/\n' >>"$gitignore"
+        fi
+        if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$gitignore"; then
+          [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+          printf '.agent/rules/learned.md\n' >>"$gitignore"
+        fi
+        ;;
+      esac
+
+      "$agent/scripts/index.sh" ensure --root "$root" >/dev/null \
+        || { echo "node.sh: index.sh ensure failed while regenerating rules/learned.md under $agent — aborting before untracking" >&2; exit 1; }
+
+      learned_md="$agent/rules/learned.md"
+      bullets_before="$agent/.learned-bullets-before"
+      source_bullets="$bullets_before"
+      [ -f "$source_bullets" ] || source_bullets="$learned_md"
+      before_bullets_tmp="$agent/.learned-bullets-before-check.tmp"
+      after_bullets_tmp="$agent/.learned-bullets-after-check.tmp"
+      grep '^- ' "$source_bullets" 2>/dev/null | sort >"$before_bullets_tmp"
+      grep '^- ' "$learned_md" 2>/dev/null | sort >"$after_bullets_tmp"
+      if diff -q "$before_bullets_tmp" "$after_bullets_tmp" >/dev/null 2>&1; then
+        rm -f "$before_bullets_tmp" "$after_bullets_tmp"
+      else
+        rm -f "$before_bullets_tmp" "$after_bullets_tmp"
+        echo "node.sh: regenerated $learned_md does not reproduce every original bullet under $agent — aborting before untracking" >&2
+        exit 1
+      fi
+
+      untrack_skip_reason=""
+      if [ "$mode" = ignore-all ]; then
+        untrack_skip_reason="mode is ignore-all"
+      elif ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        untrack_skip_reason="$root is not inside a git work tree"
+      elif ! git -C "$root" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1; then
+        untrack_skip_reason=".agent/rules/learned.md is not tracked"
+      fi
+      if [ -z "$untrack_skip_reason" ]; then
+        git -C "$root" rm --cached --quiet -- .agent/rules/learned.md \
+          || { echo "node.sh: git rm --cached .agent/rules/learned.md failed under $root — aborting" >&2; exit 1; }
+      else
+        echo "node.sh: skipped untracking .agent/rules/learned.md ($untrack_skip_reason)"
+      fi
+      rm -f "$bullets_before"
+    fi
   fi
 
   # No version write here — version stays at $oldversion until finalize

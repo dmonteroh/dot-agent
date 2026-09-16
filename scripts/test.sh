@@ -7190,6 +7190,30 @@ Body.
 EOF
 }
 
+# r61build, then override mode away from its ignore-all default — the same
+# post-hoc rewrite make_v6_fixture applies to its own mode argument.
+r61mode() {
+  r61m_dir="$1"
+  r61m_mode="$2"
+  r61build "$r61m_dir"
+  if [ "$r61m_mode" != ignore-all ]; then
+    sed "s/^  mode: ignore-all/  mode: $r61m_mode/" "$r61m_dir/.agent/purpose.md" \
+      >"$r61m_dir/.agent/purpose.md.tmp"
+    mv "$r61m_dir/.agent/purpose.md.tmp" "$r61m_dir/.agent/purpose.md"
+  fi
+}
+
+# True when every one of r61build's four original bullets is present
+# somewhere in $1 — order-independent, since the aggregate concatenates
+# records in identity-sorted order, not original file order.
+r61_bullets_present() {
+  rbp_file="$1"
+  for rbp_marker in 'First rule, flat' 'nested sub-bullet' 'multi paragraph' 'Fourth rule, flat'; do
+    grep -qF "$rbp_marker" "$rbp_file" || return 1
+  done
+  return 0
+}
+
 r61dir="$WORK/r61-migration"
 r61build "$r61dir"
 cp "$r61dir/.agent/docs/architecture.md" "$WORK/r61-arch-before.md"
@@ -7272,9 +7296,9 @@ grep -qF "rules/learned/$r61id4.md | id=$r61id4 | migrated" "$r61inv" \
   && pass "migration inventory: flat rule 4 lists migrated with its real identity" \
   || fail "migration inventory: flat rule 4 lists migrated with its real identity"
 
-diff -q "$WORK/r61-learned-before.md" "$r61dir/.agent/rules/learned.md" >/dev/null 2>&1 \
-  && pass "migration: rules/learned.md stays tracked and byte-identical beside the new records" \
-  || fail "migration: rules/learned.md stays tracked and byte-identical beside the new records"
+r61_bullets_present "$r61dir/.agent/rules/learned.md" \
+  && pass "migration: the regenerated rules/learned.md reproduces every original bullet" \
+  || fail "migration: the regenerated rules/learned.md reproduces every original bullet"
 
 diff -q "$WORK/r61-arch-before.md" "$r61dir/.agent/docs/architecture.md" >/dev/null 2>&1 \
   && pass "migration: architecture.md is byte-identical before and after" \
@@ -7480,6 +7504,520 @@ r61nt_expect=$(printf '%s\n' \
   && pass "rule extraction: a rules/learned.md with no trailing newline still captures the last bullet's final line verbatim" \
   || fail "rule extraction: a rules/learned.md with no trailing newline still captures the last bullet's final line verbatim"
 
+# ---- 62. generated-mode migration, boundary 1: interrupted after the
+# backup and migration_target write, before anything is staged ----
+b1="$WORK/mig-boundary1"
+mkdir -p "$b1"
+r61mode "$b1" track-shared
+cp -R "$b1/.agent" "$b1/.agent.backup-v6"
+printf 'pre-existing backup marker\n' >"$b1/.agent.backup-v6/.marker"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$b1/.agent/purpose.md" >"$b1/.agent/purpose.md.tmp"
+mv "$b1/.agent/purpose.md.tmp" "$b1/.agent/purpose.md"
+"$NODE" update "$b1" >"$WORK/b1-update.out" 2>&1
+b1rc=$?
+[ "$b1rc" -eq 0 ] && pass "boundary 1: resume before anything is staged exits 0" || fail "boundary 1: resume before anything is staged exits 0 (rc=$b1rc)"
+grep -qF "backup path already exists" "$WORK/b1-update.out" \
+  && fail "boundary 1: resume does not abort on its own backup" \
+  || pass "boundary 1: resume does not abort on its own backup"
+[ -f "$b1/.agent.backup-v6/.marker" ] \
+  && pass "boundary 1: the pre-existing backup is not re-copied" \
+  || fail "boundary 1: the pre-existing backup is not re-copied"
+b1count=$(find "$b1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
+[ "$b1count" -eq 4 ] \
+  && pass "boundary 1: resume completes a full migration (four records)" \
+  || fail "boundary 1: resume completes a full migration (four records) (found $b1count)"
+b1gi1=$(grep -cxF '.agent/indexes/' "$b1/.gitignore" 2>/dev/null)
+b1gi2=$(grep -cxF '.agent/rules/learned.md' "$b1/.gitignore" 2>/dev/null)
+[ "$b1gi1" -eq 1 ] && [ "$b1gi2" -eq 1 ] \
+  && pass "boundary 1: resume writes both generated-mode gitignore lines exactly once" \
+  || fail "boundary 1: resume writes both generated-mode gitignore lines exactly once"
+r61_bullets_present "$b1/.agent/rules/learned.md" \
+  && pass "boundary 1: the regenerated rules/learned.md reproduces every original bullet" \
+  || fail "boundary 1: the regenerated rules/learned.md reproduces every original bullet"
+
+# ---- 62b. generated-mode migration, boundary 2: some records staged
+# (plus a zero-byte claimed record), before the rename ----
+b2="$WORK/mig-boundary2"
+mkdir -p "$b2"
+r61mode "$b2" track-shared
+cp -R "$b2/.agent" "$b2/.agent.backup-v6"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$b2/.agent/purpose.md" >"$b2/.agent/purpose.md.tmp"
+mv "$b2/.agent/purpose.md.tmp" "$b2/.agent/purpose.md"
+
+# RANDOM is seeded here only for the discarded staging attempt, never for
+# the resumed run below, so a resume that happened to re-mint the same
+# identities would not go undetected.
+b2staging="$b2/.agent/.learned-staging"
+mkdir -p "$b2staging"
+b2id1=$(bash -c 'RANDOM=6101; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b2id2=$(bash -c 'RANDOM=6102; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b2id3=$(bash -c 'RANDOM=6103; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b2staging/$b2id1.md"
+printf '%s\n' \
+  '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
+  '  - qualifier one' \
+  '  - qualifier two' >"$b2staging/$b2id2.md"
+: >"$b2staging/$b2id3.md"
+b2stagedids="$b2id1 $b2id2 $b2id3"
+
+"$NODE" update "$b2" >"$WORK/b2-update.out" 2>&1
+b2rc=$?
+[ "$b2rc" -eq 0 ] && pass "boundary 2: resume after partial staging exits 0" || fail "boundary 2: resume after partial staging exits 0 (rc=$b2rc)"
+[ ! -e "$b2staging" ] \
+  && pass "boundary 2: the staging directory is gone after resume" \
+  || fail "boundary 2: the staging directory is gone after resume"
+b2count=$(find "$b2/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
+[ "$b2count" -eq 4 ] \
+  && pass "boundary 2: resume records exactly the four original bullets" \
+  || fail "boundary 2: resume records exactly the four original bullets (found $b2count)"
+r61_bullets_present "$b2/.agent/rules/learned.md" \
+  && pass "boundary 2: every original bullet is present in the regenerated aggregate" \
+  || fail "boundary 2: every original bullet is present in the regenerated aggregate"
+b2leak=0
+[ -e "$b2staging" ] && b2leak=1
+for b2id in $b2stagedids; do
+  [ -e "$b2/.agent/rules/learned/$b2id.md" ] && b2leak=1
+  grep -rlF "$b2id" "$b2/.agent" >/dev/null 2>&1 && b2leak=1
+done
+[ "$b2leak" -eq 0 ] \
+  && pass "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agent/" \
+  || fail "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agent/"
+
+# ---- 62c. generated-mode migration, boundary 3: interrupted after the
+# rename, before index.sh ensure succeeds ----
+b3="$WORK/mig-boundary3"
+mkdir -p "$b3"
+r61mode "$b3" track-shared
+git -C "$b3" init -q
+git -C "$b3" config user.name Tester
+git -C "$b3" config user.email tester@example.invalid
+git -C "$b3" add .agent
+git -C "$b3" commit -qm initial
+
+cp -R "$b3/.agent" "$b3/.agent.backup-v6"
+grep '^- ' "$b3/.agent/rules/learned.md" >"$b3/.agent/.learned-bullets-before"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$b3/.agent/purpose.md" >"$b3/.agent/purpose.md.tmp"
+mv "$b3/.agent/purpose.md.tmp" "$b3/.agent/purpose.md"
+
+mkdir -p "$b3/.agent/rules/learned"
+b3id1=$(bash -c 'RANDOM=6201; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b3id2=$(bash -c 'RANDOM=6202; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b3id3=$(bash -c 'RANDOM=6203; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b3id4=$(bash -c 'RANDOM=6204; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b3/.agent/rules/learned/$b3id1.md"
+printf '%s\n' \
+  '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
+  '  - qualifier one' \
+  '  - qualifier two' >"$b3/.agent/rules/learned/$b3id2.md"
+printf '%s\n' \
+  '- [2026-01-03] Third rule, multi paragraph.' \
+  '' \
+  '  Continuation paragraph here.' >"$b3/.agent/rules/learned/$b3id3.md"
+printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b3/.agent/rules/learned/$b3id4.md"
+
+"$NODE" update "$b3" >"$WORK/b3-update.out" 2>&1
+b3rc=$?
+[ "$b3rc" -eq 0 ] && pass "boundary 3: resume after the rename, before ensure, exits 0" || fail "boundary 3: resume after the rename, before ensure, exits 0 (rc=$b3rc)"
+b3gi1=$(grep -cxF '.agent/indexes/' "$b3/.gitignore" 2>/dev/null)
+b3gi2=$(grep -cxF '.agent/rules/learned.md' "$b3/.gitignore" 2>/dev/null)
+[ "$b3gi1" -eq 1 ] && [ "$b3gi2" -eq 1 ] \
+  && pass "boundary 3: resume writes both generated-mode gitignore lines exactly once" \
+  || fail "boundary 3: resume writes both generated-mode gitignore lines exactly once"
+r61_bullets_present "$b3/.agent/rules/learned.md" \
+  && pass "boundary 3: resume regenerates the aggregate and reproduces every original bullet" \
+  || fail "boundary 3: resume regenerates the aggregate and reproduces every original bullet"
+git -C "$b3" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "boundary 3: resume untracks rules/learned.md" \
+  || pass "boundary 3: resume untracks rules/learned.md"
+[ ! -e "$b3/.agent/.learned-bullets-before" ] \
+  && pass "boundary 3: the resume snapshot is removed once the untrack completes" \
+  || fail "boundary 3: the resume snapshot is removed once the untrack completes"
+
+# ---- 62d. generated-mode migration, boundary 4: interrupted after the
+# aggregate check passes, before git rm --cached completes ----
+b4="$WORK/mig-boundary4"
+mkdir -p "$b4"
+r61mode "$b4" track-shared
+git -C "$b4" init -q
+git -C "$b4" config user.name Tester
+git -C "$b4" config user.email tester@example.invalid
+git -C "$b4" add .agent
+git -C "$b4" commit -qm initial
+
+cp -R "$b4/.agent" "$b4/.agent.backup-v6"
+grep '^- ' "$b4/.agent/rules/learned.md" >"$b4/.agent/.learned-bullets-before"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$b4/.agent/purpose.md" >"$b4/.agent/purpose.md.tmp"
+mv "$b4/.agent/purpose.md.tmp" "$b4/.agent/purpose.md"
+
+mkdir -p "$b4/.agent/rules/learned"
+b4id1=$(bash -c 'RANDOM=6301; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b4id2=$(bash -c 'RANDOM=6302; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b4id3=$(bash -c 'RANDOM=6303; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b4id4=$(bash -c 'RANDOM=6304; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b4/.agent/rules/learned/$b4id1.md"
+printf '%s\n' \
+  '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
+  '  - qualifier one' \
+  '  - qualifier two' >"$b4/.agent/rules/learned/$b4id2.md"
+printf '%s\n' \
+  '- [2026-01-03] Third rule, multi paragraph.' \
+  '' \
+  '  Continuation paragraph here.' >"$b4/.agent/rules/learned/$b4id3.md"
+printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b4/.agent/rules/learned/$b4id4.md"
+
+"$IDXSH" ensure --root "$b4" >/dev/null 2>&1
+printf '.agent/indexes/\n' >"$b4/.gitignore"
+printf '.agent/rules/learned.md\n' >>"$b4/.gitignore"
+
+"$NODE" update "$b4" >"$WORK/b4-update.out" 2>&1
+b4rc=$?
+[ "$b4rc" -eq 0 ] && pass "boundary 4: resume after the aggregate check, before untrack, exits 0" || fail "boundary 4: resume after the aggregate check, before untrack, exits 0 (rc=$b4rc)"
+b4gi1=$(grep -cxF '.agent/indexes/' "$b4/.gitignore" 2>/dev/null)
+b4gi2=$(grep -cxF '.agent/rules/learned.md' "$b4/.gitignore" 2>/dev/null)
+[ "$b4gi1" -eq 1 ] && [ "$b4gi2" -eq 1 ] \
+  && pass "boundary 4: resume adds no duplicate gitignore line" \
+  || fail "boundary 4: resume adds no duplicate gitignore line"
+git -C "$b4" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "boundary 4: resume untracks rules/learned.md exactly once" \
+  || pass "boundary 4: resume untracks rules/learned.md exactly once"
+[ ! -e "$b4/.agent/.learned-bullets-before" ] \
+  && pass "boundary 4: the resume snapshot is removed after the untrack" \
+  || fail "boundary 4: the resume snapshot is removed after the untrack"
+r61_bullets_present "$b4/.agent/rules/learned.md" \
+  && pass "boundary 4: the aggregate still reproduces every original bullet after resume" \
+  || fail "boundary 4: the aggregate still reproduces every original bullet after resume"
+
+# ---- 62e. generated-mode migration: the aggregate-reproduction check
+# aborts before untracking when the regenerated aggregate does not
+# reproduce every snapshotted bullet, and rules/learned.md is never
+# untracked on that failure ----
+b5="$WORK/mig-boundary-abort"
+mkdir -p "$b5"
+r61mode "$b5" track-shared
+git -C "$b5" init -q
+git -C "$b5" config user.name Tester
+git -C "$b5" config user.email tester@example.invalid
+git -C "$b5" add .agent
+git -C "$b5" commit -qm initial
+
+cp -R "$b5/.agent" "$b5/.agent.backup-v6"
+# Seed the pre-migration snapshot with a bogus bullet that no record will
+# ever reproduce, forcing the reproduction check to fail deterministically
+# rather than corrupting a real record's content.
+grep '^- ' "$b5/.agent/rules/learned.md" >"$b5/.agent/.learned-bullets-before"
+printf -- '- [2026-01-09] Bogus bullet never present in any record.\n' >>"$b5/.agent/.learned-bullets-before"
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+  "$b5/.agent/purpose.md" >"$b5/.agent/purpose.md.tmp"
+mv "$b5/.agent/purpose.md.tmp" "$b5/.agent/purpose.md"
+
+mkdir -p "$b5/.agent/rules/learned"
+b5id1=$(bash -c 'RANDOM=6501; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b5id2=$(bash -c 'RANDOM=6502; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b5id3=$(bash -c 'RANDOM=6503; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+b5id4=$(bash -c 'RANDOM=6504; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b5/.agent/rules/learned/$b5id1.md"
+printf '%s\n' \
+  '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
+  '  - qualifier one' \
+  '  - qualifier two' >"$b5/.agent/rules/learned/$b5id2.md"
+printf '%s\n' \
+  '- [2026-01-03] Third rule, multi paragraph.' \
+  '' \
+  '  Continuation paragraph here.' >"$b5/.agent/rules/learned/$b5id3.md"
+printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b5/.agent/rules/learned/$b5id4.md"
+
+"$NODE" update "$b5" >"$WORK/b5-update.out" 2>&1
+b5rc=$?
+[ "$b5rc" -ne 0 ] \
+  && pass "abort path: update exits nonzero when the regenerated aggregate does not reproduce every snapshotted bullet" \
+  || fail "abort path: update exits nonzero when the regenerated aggregate does not reproduce every snapshotted bullet (rc=$b5rc)"
+git -C "$b5" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && pass "abort path: rules/learned.md stays tracked when the aggregate-reproduction check fails" \
+  || fail "abort path: rules/learned.md stays tracked when the aggregate-reproduction check fails"
+[ -e "$b5/.agent/.learned-bullets-before" ] \
+  && pass "abort path: .learned-bullets-before is not removed when the aggregate-reproduction check fails" \
+  || fail "abort path: .learned-bullets-before is not removed when the aggregate-reproduction check fails"
+
+# ---- 63. generated-mode migration, tracking-mode matrix: gitignore,
+# untrack, no-duplicate lines on a second update, and a customized doc's
+# ownership and visibility, per mode ----
+mm_build() {
+  mm_dir="$1"
+  mm_mode="$2"
+  mm_git="$3"
+  mkdir -p "$mm_dir"
+  r61mode "$mm_dir" "$mm_mode"
+  printf '# Custom\n\nHand-authored project note that must survive migration untouched.\n' \
+    >"$mm_dir/.agent/docs/custom.md"
+  if [ "$mm_git" = yes ]; then
+    git -C "$mm_dir" init -q
+    git -C "$mm_dir" config user.name Tester
+    git -C "$mm_dir" config user.email tester@example.invalid
+    git -C "$mm_dir" add .agent
+    git -C "$mm_dir" commit -qm initial
+  fi
+}
+
+# track-shared, real git repo.
+mmA="$WORK/mm-track-shared"
+mm_build "$mmA" track-shared yes
+cp "$mmA/.agent/docs/custom.md" "$WORK/mmA-custom-before.md"
+"$NODE" update "$mmA" >"$WORK/mmA-update.out" 2>&1
+mmA_rc=$?
+[ "$mmA_rc" -eq 0 ] && pass "mode matrix (track-shared): update exits 0" || fail "mode matrix (track-shared): update exits 0 (rc=$mmA_rc)"
+mmA_gi1=$(grep -cxF '.agent/indexes/' "$mmA/.gitignore" 2>/dev/null)
+mmA_gi2=$(grep -cxF '.agent/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
+[ "$mmA_gi1" -eq 1 ] && [ "$mmA_gi2" -eq 1 ] \
+  && pass "mode matrix (track-shared): both gitignore lines are present exactly once" \
+  || fail "mode matrix (track-shared): both gitignore lines are present exactly once"
+git -C "$mmA" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "mode matrix (track-shared): rules/learned.md is untracked after migration" \
+  || pass "mode matrix (track-shared): rules/learned.md is untracked after migration"
+diff -q "$WORK/mmA-custom-before.md" "$mmA/.agent/docs/custom.md" >/dev/null 2>&1 \
+  && pass "mode matrix (track-shared): the customized doc's content survives untouched" \
+  || fail "mode matrix (track-shared): the customized doc's content survives untouched"
+git -C "$mmA" ls-files --error-unmatch -- .agent/docs/custom.md >/dev/null 2>&1 \
+  && pass "mode matrix (track-shared): the customized doc keeps its tracked ownership" \
+  || fail "mode matrix (track-shared): the customized doc keeps its tracked ownership"
+"$NODE" update "$mmA" >"$WORK/mmA-update2.out" 2>&1
+mmA_rc2=$?
+[ "$mmA_rc2" -eq 0 ] && pass "mode matrix (track-shared): a second update exits 0" || fail "mode matrix (track-shared): a second update exits 0 (rc=$mmA_rc2)"
+mmA_gi1b=$(grep -cxF '.agent/indexes/' "$mmA/.gitignore" 2>/dev/null)
+mmA_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
+[ "$mmA_gi1b" -eq 1 ] && [ "$mmA_gi2b" -eq 1 ] \
+  && pass "mode matrix (track-shared): a second update adds no duplicate gitignore line" \
+  || fail "mode matrix (track-shared): a second update adds no duplicate gitignore line"
+
+# track-all, real git repo: no backup is ever created.
+mmB="$WORK/mm-track-all"
+mm_build "$mmB" track-all yes
+cp "$mmB/.agent/docs/custom.md" "$WORK/mmB-custom-before.md"
+"$NODE" update "$mmB" >"$WORK/mmB-update.out" 2>&1
+mmB_rc=$?
+[ "$mmB_rc" -eq 0 ] && pass "mode matrix (track-all): update exits 0" || fail "mode matrix (track-all): update exits 0 (rc=$mmB_rc)"
+[ ! -e "$mmB/.agent.backup-v6" ] \
+  && pass "mode matrix (track-all): no backup is created" \
+  || fail "mode matrix (track-all): no backup is created"
+mmB_gi1=$(grep -cxF '.agent/indexes/' "$mmB/.gitignore" 2>/dev/null)
+mmB_gi2=$(grep -cxF '.agent/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
+[ "$mmB_gi1" -eq 1 ] && [ "$mmB_gi2" -eq 1 ] \
+  && pass "mode matrix (track-all): both gitignore lines are present exactly once" \
+  || fail "mode matrix (track-all): both gitignore lines are present exactly once"
+git -C "$mmB" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "mode matrix (track-all): rules/learned.md is untracked after migration" \
+  || pass "mode matrix (track-all): rules/learned.md is untracked after migration"
+diff -q "$WORK/mmB-custom-before.md" "$mmB/.agent/docs/custom.md" >/dev/null 2>&1 \
+  && pass "mode matrix (track-all): the customized doc's content survives untouched" \
+  || fail "mode matrix (track-all): the customized doc's content survives untouched"
+git -C "$mmB" ls-files --error-unmatch -- .agent/docs/custom.md >/dev/null 2>&1 \
+  && pass "mode matrix (track-all): the customized doc keeps its tracked ownership" \
+  || fail "mode matrix (track-all): the customized doc keeps its tracked ownership"
+"$NODE" update "$mmB" >"$WORK/mmB-update2.out" 2>&1
+mmB_gi1b=$(grep -cxF '.agent/indexes/' "$mmB/.gitignore" 2>/dev/null)
+mmB_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
+[ "$mmB_gi1b" -eq 1 ] && [ "$mmB_gi2b" -eq 1 ] \
+  && pass "mode matrix (track-all): a second update adds no duplicate gitignore line" \
+  || fail "mode matrix (track-all): a second update adds no duplicate gitignore line"
+
+# ignore-all, outside any git work tree: neither gitignore line, no
+# untrack attempted.
+mmC="$WORK/mm-ignore-all"
+mm_build "$mmC" ignore-all no
+cp "$mmC/.agent/docs/custom.md" "$WORK/mmC-custom-before.md"
+"$NODE" update "$mmC" >"$WORK/mmC-update.out" 2>&1
+mmC_rc=$?
+[ "$mmC_rc" -eq 0 ] && pass "mode matrix (ignore-all, no git): update exits 0" || fail "mode matrix (ignore-all, no git): update exits 0 (rc=$mmC_rc)"
+[ ! -e "$mmC/.gitignore" ] \
+  && pass "mode matrix (ignore-all, no git): no gitignore is written" \
+  || fail "mode matrix (ignore-all, no git): no gitignore is written"
+diff -q "$WORK/mmC-custom-before.md" "$mmC/.agent/docs/custom.md" >/dev/null 2>&1 \
+  && pass "mode matrix (ignore-all, no git): the customized doc's content survives untouched" \
+  || fail "mode matrix (ignore-all, no git): the customized doc's content survives untouched"
+"$NODE" update "$mmC" >"$WORK/mmC-update2.out" 2>&1
+mmC_rc2=$?
+[ "$mmC_rc2" -eq 0 ] && pass "mode matrix (ignore-all, no git): a second update exits 0" || fail "mode matrix (ignore-all, no git): a second update exits 0 (rc=$mmC_rc2)"
+
+# track-shared, outside any git work tree: gitignore lines are still
+# written (a plain text file, no git needed), but the untrack is skipped
+# for lack of a work tree, never as an error.
+mmD="$WORK/mm-track-shared-nogit"
+mm_build "$mmD" track-shared no
+cp "$mmD/.agent/docs/custom.md" "$WORK/mmD-custom-before.md"
+"$NODE" update "$mmD" >"$WORK/mmD-update.out" 2>&1
+mmD_rc=$?
+[ "$mmD_rc" -eq 0 ] && pass "mode matrix (track-shared, no git): update exits 0" || fail "mode matrix (track-shared, no git): update exits 0 (rc=$mmD_rc)"
+mmD_gi1=$(grep -cxF '.agent/indexes/' "$mmD/.gitignore" 2>/dev/null)
+mmD_gi2=$(grep -cxF '.agent/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
+[ "$mmD_gi1" -eq 1 ] && [ "$mmD_gi2" -eq 1 ] \
+  && pass "mode matrix (track-shared, no git): both gitignore lines are still written" \
+  || fail "mode matrix (track-shared, no git): both gitignore lines are still written"
+diff -q "$WORK/mmD-custom-before.md" "$mmD/.agent/docs/custom.md" >/dev/null 2>&1 \
+  && pass "mode matrix (track-shared, no git): the customized doc's content survives untouched" \
+  || fail "mode matrix (track-shared, no git): the customized doc's content survives untouched"
+"$NODE" update "$mmD" >"$WORK/mmD-update2.out" 2>&1
+mmD_gi1b=$(grep -cxF '.agent/indexes/' "$mmD/.gitignore" 2>/dev/null)
+mmD_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
+[ "$mmD_gi1b" -eq 1 ] && [ "$mmD_gi2b" -eq 1 ] \
+  && pass "mode matrix (track-shared, no git): a second update adds no duplicate gitignore line" \
+  || fail "mode matrix (track-shared, no git): a second update adds no duplicate gitignore line"
+
+# ---- 63e. generated-mode migration, mode not ignore-all, root inside a
+# git work tree, but rules/learned.md is already untracked when the
+# untrack step runs. Distinct from the ignore-all skip (mmC) and the
+# outside-a-work-tree skip (mmD): here git is present and the mode would
+# normally untrack, but there is nothing left to untrack.
+au="$WORK/mm-already-untracked"
+mm_build "$au" track-shared yes
+"$NODE" update "$au" >"$WORK/au-update1.out" 2>&1
+git -C "$au" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "already-untracked: the first update untracks rules/learned.md, setting up the fixture" \
+  || pass "already-untracked: the first update untracks rules/learned.md, setting up the fixture"
+git -C "$au" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  && pass "already-untracked: the fixture remains inside a git work tree" \
+  || fail "already-untracked: the fixture remains inside a git work tree"
+
+"$NODE" update "$au" >"$WORK/au-update2.out" 2>&1
+au_rc2=$?
+[ "$au_rc2" -eq 0 ] \
+  && pass "already-untracked: a second update, with the file already untracked, exits 0" \
+  || fail "already-untracked: a second update, with the file already untracked, exits 0 (rc=$au_rc2)"
+grep -qF 'skipped untracking .agent/rules/learned.md (.agent/rules/learned.md is not tracked)' "$WORK/au-update2.out" \
+  && pass "already-untracked: the second update reports the not-tracked skip and runs no git rm --cached" \
+  || fail "already-untracked: the second update reports the not-tracked skip and runs no git rm --cached"
+git -C "$au" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "already-untracked: rules/learned.md is still not tracked after the second update" \
+  || pass "already-untracked: rules/learned.md is still not tracked after the second update"
+
+# ---- 64. generated-mode migration, real git merges and a linear replay
+# against a migrated node ----
+mg="$WORK/mig-merge-base"
+mkdir -p "$mg"
+r61mode "$mg" track-shared
+git -C "$mg" init -q
+git -C "$mg" config user.name Tester
+git -C "$mg" config user.email tester@example.invalid
+git -C "$mg" add .agent
+git -C "$mg" commit -qm initial
+"$NODE" update "$mg" >/dev/null 2>&1
+git -C "$mg" add -A
+git -C "$mg" commit -qm "post-migration state"
+mgbase=$(git -C "$mg" symbolic-ref --short HEAD)
+
+# A and B each add one distinct new record on their own branch; merging
+# both into the base is clean and both bullets reach the regenerated
+# aggregate.
+git -C "$mg" checkout -qb recA "$mgbase"
+printf -- '- [2026-02-01] Branch A added this rule.\n' >"$mg/.agent/rules/learned/branch-a-record.md"
+git -C "$mg" add .agent/rules/learned/branch-a-record.md
+git -C "$mg" commit -qm "branch A record"
+
+git -C "$mg" checkout -q "$mgbase"
+git -C "$mg" checkout -qb recB "$mgbase"
+printf -- '- [2026-02-02] Branch B added this rule.\n' >"$mg/.agent/rules/learned/branch-b-record.md"
+git -C "$mg" add .agent/rules/learned/branch-b-record.md
+git -C "$mg" commit -qm "branch B record"
+
+git -C "$mg" checkout -qb merge-ab "$mgbase"
+git -C "$mg" merge -q --no-edit recA >"$WORK/mg-merge-a.out" 2>&1
+mgmerge1rc=$?
+git -C "$mg" merge -q --no-edit recB >"$WORK/mg-merge-b.out" 2>&1
+mgmerge2rc=$?
+[ "$mgmerge1rc" -eq 0 ] && [ "$mgmerge2rc" -eq 0 ] \
+  && pass "merge fixture: two disjoint new records merge clean" \
+  || fail "merge fixture: two disjoint new records merge clean"
+"$mg/.agent/scripts/index.sh" ensure --root "$mg" >/dev/null 2>&1
+grep -qF 'Branch A added this rule.' "$mg/.agent/rules/learned.md" \
+  && grep -qF 'Branch B added this rule.' "$mg/.agent/rules/learned.md" \
+  && pass "merge fixture: both merged records reach the regenerated aggregate" \
+  || fail "merge fixture: both merged records reach the regenerated aggregate"
+
+# C and D each edit the same record's body differently; the second merge
+# conflicts on that record file rather than silently picking a winner.
+git -C "$mg" checkout -q "$mgbase"
+mgeditfile=$(grep -lF 'First rule, flat' "$mg/.agent/rules/learned"/*.md | head -n1)
+mgeditrel=${mgeditfile#"$mg"/}
+
+git -C "$mg" checkout -qb editC "$mgbase"
+printf -- '- [2026-01-01] First rule, flat. Trigger: something -- edited by C.\n' >"$mgeditfile"
+git -C "$mg" commit -qam "branch C edit"
+
+git -C "$mg" checkout -qb editD "$mgbase"
+printf -- '- [2026-01-01] First rule, flat. Trigger: something -- edited by D.\n' >"$mgeditfile"
+git -C "$mg" commit -qam "branch D edit"
+
+git -C "$mg" checkout -qb merge-cd "$mgbase"
+git -C "$mg" merge -q --no-edit editC >"$WORK/mg-merge-c.out" 2>&1
+mgmerge3rc=$?
+git -C "$mg" merge -q --no-edit editD >"$WORK/mg-merge-d.out" 2>&1
+mgmerge4rc=$?
+[ "$mgmerge3rc" -eq 0 ] \
+  && pass "merge fixture: the first same-record edit applies clean" \
+  || fail "merge fixture: the first same-record edit applies clean"
+[ "$mgmerge4rc" -ne 0 ] \
+  && pass "merge fixture: a second edit to the same record conflicts rather than silently choosing a winner" \
+  || fail "merge fixture: a second edit to the same record conflicts rather than silently choosing a winner"
+git -C "$mg" diff --name-only --diff-filter=U 2>/dev/null | grep -qF "$mgeditrel" \
+  && pass "merge fixture: the conflict lands on the edited record file" \
+  || fail "merge fixture: the conflict lands on the edited record file"
+git -C "$mg" merge --abort >/dev/null 2>&1
+
+# Linear replay: two successive commits, each adding one record; both
+# bullets survive.
+git -C "$mg" checkout -qb linear "$mgbase"
+printf -- '- [2026-02-03] Linear commit one added this rule.\n' >"$mg/.agent/rules/learned/linear-one.md"
+git -C "$mg" add .agent/rules/learned/linear-one.md
+git -C "$mg" commit -qm "linear commit one"
+printf -- '- [2026-02-04] Linear commit two added this rule.\n' >"$mg/.agent/rules/learned/linear-two.md"
+git -C "$mg" add .agent/rules/learned/linear-two.md
+git -C "$mg" commit -qm "linear commit two"
+"$mg/.agent/scripts/index.sh" ensure --root "$mg" >/dev/null 2>&1
+grep -qF 'Linear commit one added this rule.' "$mg/.agent/rules/learned.md" \
+  && grep -qF 'Linear commit two added this rule.' "$mg/.agent/rules/learned.md" \
+  && pass "linear replay: both sequential commits' records survive in the regenerated aggregate" \
+  || fail "linear replay: both sequential commits' records survive in the regenerated aggregate"
+
+# ---- 65. generated-mode migration, end-to-end: an unmodified status.sh
+# run after the real migration chain (migrate_learned_and_docs -> gitignore
+# -> index.sh ensure -> aggregate-reproduction check -> git rm --cached)
+# emits no REPAIR: finding referencing rules/learned.md or the migration.
+# Distinct from check 60's fixture, which hand-writes rules/learned/ and
+# calls index.sh ensure directly — it never calls migrate_learned_and_docs,
+# writes no gitignore, and never untracks, so it never exercises this
+# chain end to end.
+e2e="$WORK/mig-e2e-status"
+mkdir -p "$e2e"
+r61mode "$e2e" track-shared
+git -C "$e2e" init -q
+git -C "$e2e" config user.name Tester
+git -C "$e2e" config user.email tester@example.invalid
+git -C "$e2e" add .agent
+git -C "$e2e" commit -qm initial
+
+"$NODE" update "$e2e" >"$WORK/e2e-update.out" 2>&1
+e2e_rc=$?
+[ "$e2e_rc" -eq 0 ] && pass "end-to-end migration: update exits 0" || fail "end-to-end migration: update exits 0 (rc=$e2e_rc)"
+git -C "$e2e" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "end-to-end migration: the real chain untracks rules/learned.md" \
+  || pass "end-to-end migration: the real chain untracks rules/learned.md"
+
+# The pending-migration_target REPAIR is status.sh's own expected finding
+# until finalize runs (see the update-command checks above) — filter it
+# out, then assert nothing else about rules/learned.md or the migration
+# mechanism remains. Unrelated REPAIR/GROOM findings elsewhere in the node
+# are not asserted about either way.
+e2e_flags_after=$(status_flags "$e2e")
+e2e_bad_repairs=$(printf '%s\n' "$e2e_flags_after" \
+  | grep '^REPAIR:' \
+  | grep -v '^REPAIR: purpose\.md has migration_target ' \
+  | grep -i 'learned')
+[ -z "$e2e_bad_repairs" ] \
+  && pass "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note" \
+  || fail "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note ($e2e_bad_repairs)"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -7487,7 +8025,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1020
+EXPECTED_CHECKS=1080
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
