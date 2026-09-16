@@ -22,7 +22,13 @@ Usage: index.sh ensure [--root <path>] [--budget <bytes>]
 
 ## Canonical sources and the grammar F15 adapts records to
 
-Every `*.md` file under `<root>/.agent/rules/` or `<root>/.agent/docs/` (recursively, sub-docs included) is a canonical source record. Everything else in the project is out of scope — index.sh never reads it and never writes anywhere outside `<root>/.agent/indexes/`.
+Every `*.md` file under `<root>/.agent/rules/` or `<root>/.agent/docs/` (recursively, sub-docs included) is a canonical source record, with one named exception: whenever `<root>/.agent/rules/learned/` exists and holds at least one `*.md` file, those files are the canonical source records and `<root>/.agent/rules/learned.md` is excluded from the source set instead — see "The learned-rules aggregate" below. Everything else in the project is out of scope — index.sh never reads it.
+
+### The learned-rules aggregate
+
+`status.sh` still reads a single `<root>/.agent/rules/learned.md` file for its REPAIR, GROOM, and payload checks; it does not yet know about `<root>/.agent/rules/learned/`. So that a node which moves its rules under `rules/learned/` does not look broken the moment it does, `ensure` regenerates `rules/learned.md` — whenever `rules/learned/` holds at least one record — as a lossless, path-sorted concatenation of those records' bodies behind the same fixed header `node.sh init` writes today, and publishes it with the same write-then-same-directory-rename mechanism the entry file uses: a reader never sees a half-written aggregate, a failed `ensure` leaves the previous aggregate exactly as it was, and the write is skipped entirely when the recomputed bytes already match. `rules/learned.md` is excluded from both the source-record set above and the fingerprint that decides whether a rebuild is needed — the aggregate is derived, never a source, and it is gitignored.
+
+This is the only write `ensure` performs outside `<root>/.agent/indexes/`, and it is transitional: `check` never performs it (or any other write), and it exists only because `status.sh` cannot yet be taught the `rules/learned/` shape. It goes away once `status.sh` reads the record directory directly.
 
 A record's directory decides how it renders:
 

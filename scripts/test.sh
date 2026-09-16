@@ -6686,6 +6686,203 @@ rc=$?
   || fail "worktree: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-wt-ensure.err"))"
 git -C "$i58src" worktree remove -f "$i58wt" >/dev/null 2>&1 || rm -rf "$i58wt"
 
+# ---- 59. index.sh: rules/learned/ as a canonical source set, and
+# rules/learned.md as its generated, gitignored aggregate ----
+
+# An empty rules/learned/ directory is exactly as inactive as a missing
+# one: learned.md stays an ordinary rule record and ensure never touches it.
+l59="$WORK/l59"
+mkdir -p "$l59/.agent/rules/learned" "$l59/.agent/docs"
+printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n' >"$l59/.agent/rules/learned.md"
+printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l59/.agent/docs/d.md"
+l59before=$(idx_snapshot "$l59/.agent/rules")
+"$IDXSH" ensure --root "$l59" >/dev/null 2>"$WORK/l59.err"
+l59gen=$(sed -n 2p "$l59/.agent/indexes/current.md")
+l59after=$(idx_snapshot "$l59/.agent/rules")
+[ "$l59before" = "$l59after" ] \
+  && pass "learned aggregate: an empty rules/learned/ directory leaves learned.md untouched, same as no directory at all" \
+  || fail "learned aggregate: an empty rules/learned/ directory leaves learned.md untouched, same as no directory at all"
+grep -qF "Source: $l59/.agent/rules/learned.md" "$l59/.agent/indexes/$l59gen"/rules-*.md \
+  && pass "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record" \
+  || fail "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record"
+
+# No rules/learned/ directory at all: learned.md renders exactly as any
+# other rule record did before this feature, and ensure never rewrites it.
+l61="$WORK/l61"
+mkdir -p "$l61/.agent/rules" "$l61/.agent/docs"
+printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n\n- [2026-01-01] Legacy single-file rule.\n' >"$l61/.agent/rules/learned.md"
+printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l61/.agent/docs/d.md"
+l61learnedbefore=$(cat "$l61/.agent/rules/learned.md")
+"$IDXSH" ensure --root "$l61" >/dev/null 2>"$WORK/l61.err"
+l61gen=$(sed -n 2p "$l61/.agent/indexes/current.md")
+grep -qF "Source: $l61/.agent/rules/learned.md" "$l61/.agent/indexes/$l61gen"/rules-*.md \
+  && grep -qF -- '- [2026-01-01] Legacy single-file rule.' "$l61/.agent/indexes/$l61gen"/rules-*.md \
+  && pass "learned aggregate: with no rules/learned/ directory, learned.md renders as an ordinary source record" \
+  || fail "learned aggregate: with no rules/learned/ directory, learned.md renders as an ordinary source record"
+[ "$(cat "$l61/.agent/rules/learned.md")" = "$l61learnedbefore" ] \
+  && pass "learned aggregate: with no rules/learned/ directory, ensure never rewrites learned.md" \
+  || fail "learned aggregate: with no rules/learned/ directory, ensure never rewrites learned.md"
+
+# One record, many records, and a record whose body carries several ^-
+# lines — the aggregate must carry every one of them forward, path-sorted,
+# with qualifiers, Trigger: clauses, and dates intact, and no rule body may
+# render twice across the published pages (the gen.*/*.md pages — not the
+# standalone aggregate, which is never one of them).
+l60="$WORK/l60"
+mkdir -p "$l60/.agent/rules/learned" "$l60/.agent/docs"
+printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l60/.agent/docs/d.md"
+printf -- '- [2026-01-01] First rule. Trigger: alpha.\n' >"$l60/.agent/rules/learned/aa-first.md"
+printf -- '- [2026-01-02] Second rule.\n- [2026-01-03] Third rule. Trigger: beta.\n' >"$l60/.agent/rules/learned/bb-second.md"
+printf -- '- [2026-01-04] Fourth rule.\n- inline sub-bullet, not a dated rule\n' >"$l60/.agent/rules/learned/cc-third.md"
+"$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.err"
+l60gen=$(sed -n 2p "$l60/.agent/indexes/current.md")
+l60dir="$l60/.agent/indexes/$l60gen"
+l60agg="$l60/.agent/rules/learned.md"
+
+grep -qF -- '- [2026-01-01] First rule. Trigger: alpha.' "$l60agg" \
+  && grep -qF -- '- [2026-01-02] Second rule.' "$l60agg" \
+  && grep -qF -- '- [2026-01-03] Third rule. Trigger: beta.' "$l60agg" \
+  && grep -qF -- '- [2026-01-04] Fourth rule.' "$l60agg" \
+  && grep -qF -- '- inline sub-bullet, not a dated rule' "$l60agg" \
+  && pass "learned aggregate: every ^- line from every record is present, qualifiers and Trigger clauses intact" \
+  || fail "learned aggregate: every ^- line from every record is present, qualifiers and Trigger clauses intact"
+
+l60posA=$(grep -n -F -- 'First rule' "$l60agg" | head -1 | cut -d: -f1)
+l60posB=$(grep -n -F -- 'Second rule' "$l60agg" | head -1 | cut -d: -f1)
+l60posC=$(grep -n -F -- 'Fourth rule' "$l60agg" | head -1 | cut -d: -f1)
+[ -n "$l60posA" ] && [ -n "$l60posB" ] && [ -n "$l60posC" ] \
+  && [ "$l60posA" -lt "$l60posB" ] && [ "$l60posB" -lt "$l60posC" ] \
+  && pass "learned aggregate: records concatenate in path-sorted order" \
+  || fail "learned aggregate: records concatenate in path-sorted order"
+
+l60rulecount=$(grep -c '^- ' "$l60agg")
+[ "$l60rulecount" -eq 5 ] \
+  && pass "learned aggregate: the ^- line count is the sum of every record's own rule lines, real bullets and incidental ones alike" \
+  || fail "learned aggregate: the ^- line count is the sum of every record's own rule lines, real bullets and incidental ones alike ($l60rulecount)"
+
+l60totalfirst=$(grep -hc -F -- 'First rule' "$l60dir"/*.md 2>/dev/null | awk '{s+=$1} END{print s+0}')
+[ "$l60totalfirst" -eq 1 ] \
+  && pass "learned aggregate: no rule body from rules/learned/ renders twice across the published pages" \
+  || fail "learned aggregate: no rule body from rules/learned/ renders twice across the published pages ($l60totalfirst)"
+
+# Editing one record and re-running ensure updates the aggregate.
+l60aggbefore=$(cat "$l60agg")
+printf -- '- [2026-01-05] Fifth rule appended.\n' >>"$l60/.agent/rules/learned/aa-first.md"
+"$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.edit.err"
+grep -q '^BUILT$' "$WORK/l60.edit.err" && pass "learned aggregate: editing a record rebuilds" \
+  || fail "learned aggregate: editing a record rebuilds"
+l60aggafter=$(cat "$l60agg")
+[ "$l60aggbefore" != "$l60aggafter" ] && grep -qF -- 'Fifth rule appended.' "$l60agg" \
+  && pass "learned aggregate: editing one record and re-running ensure updates the aggregate" \
+  || fail "learned aggregate: editing one record and re-running ensure updates the aggregate"
+
+# A cache hit (nothing changed) writes nothing at all.
+l60hitsnap1=$(idx_snapshot "$l60/.agent/rules")
+"$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.hit.err"
+grep -q '^HIT$' "$WORK/l60.hit.err" && pass "learned aggregate: an unchanged tree after the edit is a warm HIT" \
+  || fail "learned aggregate: an unchanged tree after the edit is a warm HIT"
+l60hitsnap2=$(idx_snapshot "$l60/.agent/rules")
+[ "$l60hitsnap1" = "$l60hitsnap2" ] \
+  && pass "learned aggregate: a cache hit writes nothing" \
+  || fail "learned aggregate: a cache hit writes nothing"
+
+# check performs no write to the aggregate, even with a stale, changed record.
+l60aggcheckbefore=$(cat "$l60agg")
+printf -- '- [2026-01-06] Stale edit for check.\n' >>"$l60/.agent/rules/learned/bb-second.md"
+"$IDXSH" check --root "$l60" >/dev/null 2>&1
+"$IDXSH" check --root "$l60" >/dev/null 2>&1
+[ "$(cat "$l60agg")" = "$l60aggcheckbefore" ] \
+  && pass "learned aggregate: check writes no file under any input, even a stale record change" \
+  || fail "learned aggregate: check writes no file under any input, even a stale record change"
+
+# A failed ensure leaves both the previous entry file and the previous
+# aggregate exactly as they were, with no leftover temp file either.
+"$IDXSH" ensure --root "$l60" >/dev/null 2>&1
+l60entrybefore=$(cat "$l60/.agent/indexes/current.md")
+l60aggfailbefore=$(cat "$l60agg")
+printf -- '- [2026-01-07] Should never land.\n' >>"$l60/.agent/rules/learned/cc-third.md"
+INDEX_FAIL_AT=before-publish "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.fail.err"
+l60failrc=$?
+[ "$l60failrc" -eq 1 ] && grep -q 'FALLBACK:' "$WORK/l60.fail.err" \
+  && pass "learned aggregate: an injected failure before publication is reported and exits 1" \
+  || fail "learned aggregate: an injected failure before publication is reported and exits 1"
+[ "$(cat "$l60/.agent/indexes/current.md")" = "$l60entrybefore" ] && [ "$(cat "$l60agg")" = "$l60aggfailbefore" ] \
+  && pass "learned aggregate: a failed ensure leaves both the previous entry file and the previous aggregate exactly as they were" \
+  || fail "learned aggregate: a failed ensure leaves both the previous entry file and the previous aggregate exactly as they were"
+[ -z "$(find "$l60/.agent/indexes" -maxdepth 1 -name '.entry.*' 2>/dev/null)" ] \
+  && [ -z "$(find "$l60/.agent/rules" -maxdepth 1 -name '.learned.*' 2>/dev/null)" ] \
+  && pass "learned aggregate: a failed ensure leaves no leftover temp files" \
+  || fail "learned aggregate: a failed ensure leaves no leftover temp files"
+
+# ---- 60. index.sh + status.sh: an unmodified status.sh run against a
+# migrated fixture matches the pre-migration verdict ----
+m60ctl="$WORK/m60-control"
+mkdir -p "$m60ctl"
+# indexes: generated on both sides, matching the migrated fixture below —
+# the only difference under test is the learned-rules shape, not this field.
+"$NODE" init --preset software-development --mode track-all --indexes generated "$m60ctl" >/dev/null 2>&1
+finish_bootstrap "$m60ctl"
+cat >"$m60ctl/.agent/rules/learned.md" <<'EOF'
+# Learned rules
+
+Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
+
+<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
+
+- [2026-01-01] Rule one about deploys.
+- [2026-01-02] Rule two about tests. Trigger: a flaky suite.
+- [2026-01-03] Rule three about review turnaround.
+EOF
+m60ctlflags=$(status_flags "$m60ctl")
+m60ctlplain=$("$m60ctl/.agent/scripts/status.sh" "$m60ctl" 2>/dev/null)
+m60ctlpayload=$(printf '%s\n' "$m60ctlplain" | grep '^PAYLOAD:' | grep -oE '[0-9]+' | head -1)
+
+m60mig="$WORK/m60-migrated"
+mkdir -p "$m60mig"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$m60mig" >/dev/null 2>&1
+finish_bootstrap "$m60mig"
+rm -f "$m60mig/.agent/rules/learned.md"
+mkdir -p "$m60mig/.agent/rules/learned"
+printf -- '- [2026-01-01] Rule one about deploys.\n' >"$m60mig/.agent/rules/learned/0001.md"
+printf -- '- [2026-01-02] Rule two about tests. Trigger: a flaky suite.\n' >"$m60mig/.agent/rules/learned/0002.md"
+printf -- '- [2026-01-03] Rule three about review turnaround.\n' >"$m60mig/.agent/rules/learned/0003.md"
+"$m60mig/.agent/scripts/index.sh" ensure --root "$m60mig" >/dev/null 2>"$WORK/m60mig.ensure.err"
+
+# The generated aggregate carries one required line the pre-migration file
+# never had — the "hand edits are lost" marker this task's brief mandates
+# — so it is byte-identical to the control only once that one line is
+# removed; everything else (header, blank line, every rule bullet in
+# path-sorted order) must still match exactly.
+m60migstripped=$(grep -vF '<!-- Generated by index.sh from rules/learned/' "$m60mig/.agent/rules/learned.md")
+m60ctlcontent=$(cat "$m60ctl/.agent/rules/learned.md")
+[ "$m60migstripped" = "$m60ctlcontent" ] \
+  && pass "migration: the regenerated aggregate matches the pre-migration file exactly, apart from the one mandated generated-marker line" \
+  || fail "migration: the regenerated aggregate matches the pre-migration file exactly, apart from the one mandated generated-marker line"
+
+m60migflags=$(status_flags "$m60mig")
+m60migplain=$("$m60mig/.agent/scripts/status.sh" "$m60mig" 2>/dev/null)
+m60migpayload=$(printf '%s\n' "$m60migplain" | grep '^PAYLOAD:' | grep -oE '[0-9]+' | head -1)
+m60markerbytes=$(printf '%s\n' '<!-- Generated by index.sh from rules/learned/*.md — hand edits here are lost on the next ensure. -->' | wc -c | tr -d '[:space:]')
+
+printf '%s\n' "$m60migflags" | grep -qF 'REPAIR: rules/learned.md missing/empty' \
+  && fail "migration: an unmodified status.sh emits no REPAIR: rules/learned.md missing/empty against the migrated fixture" \
+  || pass "migration: an unmodified status.sh emits no REPAIR: rules/learned.md missing/empty against the migrated fixture"
+[ "$m60ctlflags" = "$m60migflags" ] \
+  && pass "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration" \
+  || fail "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration ($m60migflags)"
+# The only payload difference the migration may introduce is the one
+# mandated generated-marker line's own bytes — anything else would mean a
+# rule was dropped, duplicated, or reformatted in the regenerated aggregate.
+[ -n "$m60ctlpayload" ] && [ -n "$m60migpayload" ] \
+  && [ "$((m60migpayload - m60ctlpayload))" -eq "$m60markerbytes" ] \
+  && pass "migration: status.sh bills the same payload pre- and post-migration, plus exactly the mandated marker line's own bytes" \
+  || fail "migration: status.sh bills the same payload pre- and post-migration, plus exactly the mandated marker line's own bytes (ctl=$m60ctlpayload mig=$m60migpayload marker=$m60markerbytes)"
+
+printf '\n--- status.sh output against the migrated fixture (%s) ---\n' "$m60mig"
+"$m60mig/.agent/scripts/status.sh" "$m60mig"
+printf -- '--- status.sh --load against the migrated fixture ---\n'
+"$m60mig/.agent/scripts/status.sh" --load "$m60mig" 2>/dev/null
+printf -- '--- end status.sh output ---\n\n'
 
 # ---- summary ----
 ran=$((PASS + FAIL))
@@ -6694,7 +6891,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=921
+EXPECTED_CHECKS=941
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
