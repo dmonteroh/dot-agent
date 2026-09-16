@@ -1,6 +1,6 @@
 # index.sh — the generated-mode index cache
 
-Refreshes bounded Markdown indexes under `<root>/.agent/indexes/` before an agent reads them, and reuses a verified prior build when nothing that feeds it has changed. Not yet wired into bootstrap or `finish.sh` — that is F16's task. This is the mechanism alone: two operations, a fingerprint, and an atomic publish.
+Refreshes bounded Markdown indexes under `<root>/.agent/indexes/` before an agent reads them, and reuses a verified prior build when nothing that feeds it has changed. Nothing yet calls `ensure` or `check` automatically — no bootstrap step or `finish.sh` run builds the cache on its own, so a session gets one only by running this script directly. This is the mechanism alone: two operations, a fingerprint, and an atomic publish.
 
 ```
 Usage: index.sh ensure [--root <path>] [--budget <bytes>]
@@ -20,7 +20,7 @@ Usage: index.sh ensure [--root <path>] [--budget <bytes>]
 
 `check` needs its own non-zero code for "not fresh" the same way `ensure` needs one for "could not publish": a caller must tell "read the canonical sources, this is stale" apart from "the arguments were wrong," or a broken invocation reads as a stale-but-otherwise-healthy cache.
 
-## Canonical sources and the grammar F15 adapts records to
+## Canonical sources and the grammar records are adapted to
 
 Every `*.md` file under `<root>/.agent/rules/` or `<root>/.agent/docs/` (recursively, sub-docs included) is a canonical source record, with one named exception: whenever `<root>/.agent/rules/learned/` exists and holds at least one `*.md` file, those files are the canonical source records and `<root>/.agent/rules/learned.md` is excluded from the source set instead — see "The learned-rules aggregate" below. Everything else in the project is out of scope — index.sh never reads it.
 
@@ -35,7 +35,7 @@ A record's directory decides how it renders:
 - **`.agent/rules/**/*.md`** — a *rule record*. Its complete body is copied verbatim into a rule page behind one `Source: <absolute path>` line. Nothing here is ever truncated or summarized; a rule record too large to fit in one page fails the build (see Failure modes) rather than splitting a rule's meaning across a page boundary.
 - **`.agent/docs/**/*.md`** — a *route record*. It contributes one line to a routes page: `- <title> | <hook> | READ: <absolute path>`, where title is the record's first `# ` heading (or its path, if it has none) and hook is the payload of its first `<!-- Read when: ... -->` comment (or `(no hook)`, if it has none) — the same header `docs.sh` already writes for every doc.
 
-This is the whole grammar: one heading, one optional hook comment, and relative Markdown links inside rule bodies rewritten to their canonical location (below) — nothing else index.sh parses. F15 adapts the node's real `rules/` and `docs/` files to it; this task only proves the mechanism against disposable fixtures and pins the grammar with parser fixtures in `scripts/test.sh` (heading present/absent, hook present/absent, multi-line rule bodies) before the render tests build on it.
+This is the whole grammar: one heading, one optional hook comment, and relative Markdown links inside rule bodies rewritten to their canonical location (below) — nothing else index.sh parses. The node's real `rules/` and `docs/` files are migrated to this grammar as described in `scripts/docs/node.md`. Parser fixtures in `scripts/test.sh` pin the grammar itself (heading present/absent, hook present/absent, multi-line rule bodies) independently of the render tests that build on it.
 
 ### Relative links inside a rule body
 
@@ -87,6 +87,6 @@ Every failure prints one `ERROR:` line and one `FALLBACK:` line to stderr naming
 - Bounded cleanup is not garbage collection: an idle project's cache can hold two full generations indefinitely, and nothing here reclaims disk if `ensure` is never run again.
 - Bounded cleanup re-checks `current.md` right before each removal (above), so it cannot sweep whatever generation is published at that instant — but it still cannot protect a reader that already read an *older* entry and opened one of that entry's pages before a later publish's cleanup pass ran. That reader holds a path, not a lock; nothing in this mechanism tracks who is reading which generation, so an old generation can still be removed out from under a reader slow enough to still be consuming it two full publish cycles later.
 - Hash validation catches accidental damage — a truncated page, a stray edit to `current.md` — not a writer that controls both the cache directory and the entry's own hashes.
-- This mechanism does not install itself, migrate existing `rules/`/`docs/` records to the grammar above, or wire into bootstrap: F15 and F16, respectively.
+- This mechanism does not install itself, migrate existing `rules/`/`docs/` records to the grammar above, or wire into bootstrap. Installation and migration are `scripts/docs/node.md`'s (`node.sh update`, and the generated-mode migration step it runs). Bootstrap wiring does not exist yet.
 - A link label containing a nested `[...]` (e.g. `[a [nested] label](weird.md)`) is not recognized as a link at all, so its still-relative target is left unrewritten and will not resolve once the page moves.
 - [`index-benchmark.md`](index-benchmark.md) records measured median/p95 latency at 100 and 1,000 records and an honest comparison against the spike's numbers, including why that comparison is not apples-to-apples.
