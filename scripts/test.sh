@@ -2458,6 +2458,18 @@ const n21 = 21
 // This module implements the retry-header negotiation path end to end.
 // Draft v2 of RFC 9110 changed how the retry-after header must be parsed.
 const n22 = 22
+// Here's the fixed version.
+const n23 = 23
+// Fixed version: the retry loop now caps at three attempts.
+const n24 = 24
+// This is the revised version of the retry loop.
+const n25 = 25
+// This comment is a draft revision of the retry loop.
+const n26 = 26
+// Updated the cache handling to address your comments.
+const n27 = 27
+// My apologies, the config value here is stale.
+const n28 = 28
 EOF
 git_cg add -A >/dev/null
 git_cg commit -q -m chat34
@@ -2476,6 +2488,15 @@ printf '%s\n' "$block34t" | grep -B1 -F 'remains available, as agreed' | grep -q
 printf '%s\n' "$block34t" | grep -B1 -F 'Sorry, this cache uses the wrong table' | grep -qF '[chat residue]' && pass "comments.sh: an opening apology (\"sorry\") BLOCKs as chat residue" || fail "comments.sh: an opening apology (\"sorry\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'Here is the fixed version' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"here is the fixed version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"here is the fixed version\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'Draft v2 of the retry loop' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"draft v2\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"draft v2\") BLOCKs as chat residue ($block34t)"
+
+# The remaining named forms of the draft-revision label, plus a second
+# example each for the feedback reference and the opening apology.
+printf '%s\n' "$block34t" | grep -B1 -F "Here's the fixed version" | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"here's the fixed version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"here's the fixed version\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'Fixed version: the retry loop now caps at three attempts' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"fixed version:\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"fixed version:\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'the revised version of the retry loop' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"revised version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"revised version\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'a draft revision of the retry loop' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"draft revision\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"draft revision\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'Updated the cache handling to address your comments' | grep -qF '[chat residue]' && pass "comments.sh: a feedback reference (\"to address your comments\") BLOCKs as chat residue" || fail "comments.sh: a feedback reference (\"to address your comments\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'My apologies, the config value here is stale' | grep -qF '[chat residue]' && pass "comments.sh: an opening apology (\"my apologies\") BLOCKs as chat residue" || fail "comments.sh: an opening apology (\"my apologies\") BLOCKs as chat residue ($block34t)"
 
 # Clean, sharing vocabulary with a flagged line above: a lexical ban on
 # "feedback", "agree", "suggested", "sorry", or "draft" alone would also
@@ -6633,7 +6654,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=891
+EXPECTED_CHECKS=897
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
