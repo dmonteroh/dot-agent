@@ -2455,6 +2455,9 @@ const n19 = 19
 const n20 = 20
 // Here's the revised draft based on your comments.
 const n21 = 21
+// This module implements the retry-header negotiation path end to end.
+// Draft v2 of RFC 9110 changed how the retry-after header must be parsed.
+const n22 = 22
 EOF
 git_cg add -A >/dev/null
 git_cg commit -q -m chat34
@@ -2499,6 +2502,13 @@ printf '%s\n' "$block34t" | grep -qF 'As agreed by both parties' && fail "commen
 printf '%s\n' "$block34t" | grep -B1 -F 'Draft v08 of this fix is ready for review' | grep -qF '[chat residue]' && pass "comments.sh: a draft label opening the comment (\"draft v08\") BLOCKs as chat residue" || fail "comments.sh: a draft label opening the comment (\"draft v08\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F "I'll ship the fix by Friday" | grep -qF '[chat residue]' && pass "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue" || fail "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F "revised draft based on your comments" | grep -qF '[chat residue]' && pass "comments.sh: a revised-draft label BLOCKs as chat residue" || fail "comments.sh: a revised-draft label BLOCKs as chat residue ($block34t)"
+
+# F18 round 2: "draft v2" only counts as a revision label when it opens the
+# comment itself, not merely the physical line being scanned. A multi-line
+# comment whose SECOND line happens to start with "Draft v2 of RFC ..." is
+# still the same spec-citation shape round 1 protected — it must not BLOCK
+# just because "^" matched that line in isolation.
+printf '%s\n' "$block34t" | grep -qF 'Draft v2 of RFC 9110 changed how the retry-after header must be parsed' && fail "comments.sh: a draft-v2 spec citation on a comment's second line is not a revision label" || pass "comments.sh: a draft-v2 spec citation on a comment's second line is not a revision label"
 
 # A lexical pass rules a shape out; it never certifies a shape as necessary.
 # These two land in REVIEW, for the author to justify or delete — not a
@@ -6623,7 +6633,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=890
+EXPECTED_CHECKS=891
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

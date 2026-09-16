@@ -256,15 +256,26 @@ echo_re='(^|[^[:alnum:]])(as (you |the user |the operator )?(requested|asked for
 #
 # Three alternatives are narrowed against a third-party or spec noun rather
 # than a conversation: "draft v2" only counts as a revision label when it
-# opens the comment, since a version cited mid-sentence ("Per RFC draft
-# v08...") is a spec reference, not someone's redraft; "as agreed" only
+# opens the comment — checked separately below via draft_v_re, gated behind
+# opens_comment() at the call site, since a version cited mid-sentence or on
+# a later line ("Per RFC draft v08..." / a second line of a multi-line
+# comment) is a spec reference, not someone's redraft; "as agreed" only
 # counts when it ends its clause, since "as agreed by both parties" attributes
 # the agreement to a third party rather than echoing a review thread. The
 # generic "per our/the agreement" and "based on your/the feedback" shapes
 # matched vendor-contract and technical-loop language too often to keep —
 # a node that wants them back narrower can add them via CHAT_RE_EXTRA.
-chat_re='(^draft v[0-9]+([^[:alnum:]]|$))|((^|[^[:alnum:]])(as (you |the reviewer |the operator )?suggested([^[:alnum:]]|$)|per (your|the reviewer.s|the operator.s|our) feedback|to address (your|the) (feedback|comments?)|as (we |you |the team )?agreed([,.;:]|$)|here.s the fixed version|here is the fixed version|fixed version:|revised (version|draft)|draft revision))'
+chat_re='(^|[^[:alnum:]])(as (you |the reviewer |the operator )?suggested([^[:alnum:]]|$)|per (your|the reviewer.s|the operator.s|our) feedback|to address (your|the) (feedback|comments?)|as (we |you |the team )?agreed([,.;:]|$)|here.s the fixed version|here is the fixed version|fixed version:|revised (version|draft)|draft revision)'
 [ -n "$CHAT_RE_EXTRA" ] && chat_re="$chat_re|$CHAT_RE_EXTRA"
+
+# The draft-v2 revision label. Unlike the rest of chat_re, this alternative
+# must match only at the true start of a comment (its opening line), not the
+# start of whatever physical line is being scanned — a multi-line comment's
+# second line starting with "Draft v2 of RFC ..." is a spec citation, not a
+# revision label. So this is combined at the awk call site behind
+# opens_comment(i), the same way apology_re is, instead of living inside
+# chat_re where "^" only ever means "start of this physical line".
+draft_v_re='^draft v[0-9]+([^[:alnum:]]|$)'
 
 # An opening apology, not one buried mid-sentence: a comment quoting
 # user-facing "sorry" text is not chat residue, and only the first line of a
@@ -290,7 +301,7 @@ constraint_re='because|otherwise|unless|without|so that|until|workaround|bug|qui
 findings=$(printf '%s\n' "$added" \
   | PRAGMA_RE="$pragma_re" BLOCK_RE="$block_re" NARRATION_RE="$narration_re" \
     ECHO_RE="$echo_re" ROUTINE_RE="$routine_re" CONSTRAINT_RE="$constraint_re" \
-    CHAT_RE="$chat_re" APOLOGY_RE="$apology_re" \
+    CHAT_RE="$chat_re" DRAFT_V_RE="$draft_v_re" APOLOGY_RE="$apology_re" \
     ROUTINE_MAX_WORDS="$ROUTINE_MAX_WORDS" RESTATE_CHECK="$RESTATE_CHECK" \
     awk '
   # A marker opens a comment only in the languages where it does: "#" in
@@ -422,6 +433,7 @@ findings=$(printf '%s\n' "$added" \
     routine_re = tolower(ENVIRON["ROUTINE_RE"])
     constr_re  = tolower(ENVIRON["CONSTRAINT_RE"])
     chat_re    = tolower(ENVIRON["CHAT_RE"])
+    draft_v_re = tolower(ENVIRON["DRAFT_V_RE"])
     apology_re = tolower(ENVIRON["APOLOGY_RE"])
     routine_max = ENVIRON["ROUTINE_MAX_WORDS"] + 0
     restate    = (ENVIRON["RESTATE_CHECK"] != "false")
@@ -451,7 +463,7 @@ findings=$(printf '%s\n' "$added" \
       else if (is_code(body)) { class = "BLOCK"; reason = "commented-out code" }
       else if (lb ~ narr_re)  { class = "BLOCK"; reason = "change narration" }
       else if (lb ~ echo_re)  { class = "BLOCK"; reason = "answers the prompt" }
-      else if (lb ~ chat_re || (opens_comment(i) && lb ~ apology_re)) \
+      else if (lb ~ chat_re || (opens_comment(i) && (lb ~ apology_re || lb ~ draft_v_re))) \
                               { class = "BLOCK"; reason = "chat residue" }
       # Routine narration blocks only while it is short. Past the word cap a
       # comment is carrying a clause the verb alone cannot account for, so it
