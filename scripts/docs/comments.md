@@ -14,7 +14,7 @@ The base ref is the change's true parent — the branch base, or the commit befo
 
 | Finding | Exit | Meaning |
 |---|---|---|
-| `BLOCK:` | 1 | the comment is dead on arrival, in one of the five classes below. Delete these, or state the constraint the code cannot. Durable *why* goes to docs |
+| `BLOCK:` | 1 | the comment is dead on arrival, in one of the six classes below. Delete these, or state the constraint the code cannot. Durable *why* goes to docs |
 | `REVIEW:` | 0 | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
 Every finding carries its class in brackets after the path, because "delete this" and "justify this" are different instructions and a list that mixes them gets skimmed as one:
@@ -43,6 +43,7 @@ BLOCK: comments that are dead on arrival — a citation a fresh clone cannot
 | `commented-out code` | code left in a comment instead of deleted | a code shape **and** a code character: a lone brace, a statement ending in `;` that also holds `= ( ) { } [ ] :: ->`, a keyword opening a line that also holds one of those, a bare `name(args)` call, or an assignment whose right side is a single token ending the line. A sentence that opens with "if" or ends with a semicolon is neither |
 | `change narration` | the comment written from the diff's point of view — "previously", "no longer", "now returns", "renamed from", "in this change" | `NARRATION_RE` plus the node's `NARRATION_RE_EXTRA` |
 | `answers the prompt` | "as you requested", "as discussed", "per your comment" | a fixed pattern; the answer belongs in the reply, not the file |
+| `chat residue` | "per your feedback", "as agreed", an opening "sorry" or "my apologies", a draft-revision label ("draft v2", "fixed version:") | `CHAT_RE` plus the node's `CHAT_RE_EXTRA`, for review-thread residue rather than the request-shapes `answers the prompt` already covers |
 | `routine narration` | the comment that says in English what the code under it says: "build the rows", "gets the user name", "loop over the items", "increment the counter" | `ROUTINE_RE` — a verb of routine action plus an article — minus two guards, below |
 
 A comment matching more than one is reported under the first in that order.
@@ -56,6 +57,14 @@ It is the only class that reasons about English rather than about shape, and it 
 **The word cap.** Blocking stops at `ROUTINE_MAX_WORDS` (8, chosen default: structure narration is a fragment, not a sentence with a consequence). `Build the rows` is three words and blocks. `Update the cache after every write, or a reader sees the previous generation` is twelve, carries a clause the opening verb cannot account for, and is labeled in `REVIEW:` instead. `ROUTINE_MAX_WORDS=0` stops the class blocking at all; the label stays.
 
 A false positive here is repaired by naming the constraint — rewriting `Create a client because the SDK caches credentials` as `The SDK caches credentials, so each request needs an isolated client` — not by an exception.
+
+### Chat residue
+
+A reviewer's or the operator's half of a conversation, drafted into the file instead of the thread: "Retain the cached result per your feedback", "The cached result remains available, as agreed", "Sorry, this cache uses the wrong table", "Here is the fixed version", "Draft v2". It carries the same audience mistake as `answers the prompt` — it means something to whoever was in the conversation and nothing to the next reader, who was not — in the shapes a code review produces rather than the shapes a request produces.
+
+An opening apology only matches at the start of the comment's own opening line, not buried mid-sentence — a comment quoting user-facing "sorry" text is not chat residue, and a continuation line of a wrapped comment is not an opening. A draft-revision label requires the shape that makes it a label rather than a sentence: `fixed version:` needs the colon, so "The fixed version is 2.3.1." — an actual version report — stays valid. `CHAT_RE_EXTRA` adds a node's own phrasing — a bot's stock apology, a review tool's own label.
+
+A negated constraint is not chat residue merely for containing a negation: "does NOT retry on 4xx" names a real property and matches none of these patterns, the same way it survives `routine narration`'s constraint escape.
 
 ### The review label
 
@@ -111,7 +120,10 @@ Plain `KEY=value`, parsed and never executed: a config the gate reads on every r
 | `ROUTINE_MAX_WORDS` | longest `routine narration` comment that still BLOCKs (8). `0` leaves the class as a label only |
 | `PRAGMA_RE_EXTRA` | ERE of tooling pragmas to skip, ORed onto the defaults |
 | `RESTATE_CHECK` | `false` turns off the restatement label |
+| `CHAT_RE_EXTRA` | ERE of chat-residue phrasings that BLOCK, ORed onto the defaults |
 
 Ticket and task-reference shapes belong in `BLOCK_RE_EXTRA`, and house narration terms in `NARRATION_RE_EXTRA`, not in the shipped core: no two teams number or phrase work the same way. The shipped core names only the universal ones. The retro skill routes comment-hygiene lessons here — and routes nothing at all when the gate already catches the shape.
 
 What the gate does not decide: whether a comment duplicates an explanation that already exists elsewhere in different words, and whether a competent reader would have been surprised. A regex cannot establish semantic equivalence. Those stay `REVIEW:` findings, which is what the justify-or-delete instruction is for.
+
+This is a lexical pass, and a lexical pass can only rule a comment out, never rule one in: nothing here concludes a comment is necessary, non-obvious, or worth keeping. `BLOCK:` says a shape is always dead; `REVIEW:` says the shape did not rule it out, which is silence, not endorsement — the deciding question, "would clearer code have said this instead", is answered by the author rereading the comment cold, not by the absence of a finding. The default stays no comment: routine work adds none, and `REVIEW:`'s exit 0 is not a quota met.

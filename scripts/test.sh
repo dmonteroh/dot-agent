@@ -2401,6 +2401,134 @@ printf '%s\n' "$out34n" | sed -n '/^BLOCK:/,$p' | grep -q 'old world' && pass "c
 rm -f "$cg/.agent/scripts/comments.conf" "$cg/src/Thing.cs"
 git_cg checkout -q -- src/app.ts
 
+# F18: chat residue. echo_re already catches request-shaped replies ("as you
+# requested", "as discussed"); this is the same audience mistake in the
+# shapes a code review produces instead — a feedback reference, an agreement,
+# an opening apology, a draft-revision label. Every fixture below pairs a
+# flagged line with a clean one sharing its vocabulary, so a pass here rules
+# out a naive keyword ban: "feedback", "agree", "suggested", "sorry", and
+# "draft" all also appear in comments that must NOT block.
+git_cg checkout -q base
+git_cg checkout -q -b chat34
+cat >>"$cg/src/app.ts" <<'EOF'
+// As you suggested, cache the response for five minutes.
+const n0 = 0
+// Retain the cached result per your feedback.
+const n1 = 1
+// The cached result remains available, as agreed.
+const n2 = 2
+// Sorry, this cache uses the wrong table.
+const n3 = 3
+// Here is the fixed version.
+const n4 = 4
+// Draft v2 of the retry loop.
+const n5 = 5
+// The fixed version is 2.3.1.
+const n6 = 6
+// The audio pipeline debounces feedback from the microphone to prevent howling.
+const n7 = 7
+// The compiler suggested inlining this call, but the profiler disagreed.
+const n8 = 8
+// The two clocks rarely agree, so reads are staged through this buffer to hide the drift.
+const n9 = 9
+// The API returns a 404, not a sorry-not-found redirect, when the vendor id is missing.
+const n10 = 10
+// This document is not a draft; it defines the wire protocol precisely.
+const n11 = 11
+// Does NOT retry on 4xx responses because the vendor client treats retries as duplicate charges.
+const n12 = 12
+// The callback can arrive after cancellation because the vendor retains the handle.
+const n13 = 13
+EOF
+git_cg add -A >/dev/null
+git_cg commit -q -m chat34
+out34t=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+rc34t=$?
+block34t=$(printf '%s\n' "$out34t" | sed -n '/^BLOCK:/,$p')
+review34t=$(printf '%s\n' "$out34t" | awk '/^BLOCK:/ { exit } { print }')
+[ "$rc34t" -eq 1 ] && pass "comments.sh: chat residue exits 1" || fail "comments.sh: chat residue exits 1 (rc=$rc34t; $out34t)"
+
+# Flagged: a feedback reference, an agreement, an opening apology, and a
+# draft-revision label — each named "chat residue" rather than an unrelated
+# class, and each recognizable by the exact wording the task named.
+printf '%s\n' "$block34t" | grep -B1 -F 'As you suggested, cache the response' | grep -qF '[chat residue]' && pass "comments.sh: a feedback-request echo (\"as you suggested\") BLOCKs as chat residue" || fail "comments.sh: a feedback-request echo (\"as you suggested\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'Retain the cached result per your feedback' | grep -qF '[chat residue]' && pass "comments.sh: a feedback reference (\"per your feedback\") BLOCKs as chat residue" || fail "comments.sh: a feedback reference (\"per your feedback\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'remains available, as agreed' | grep -qF '[chat residue]' && pass "comments.sh: an agreement reference (\"as agreed\") BLOCKs as chat residue" || fail "comments.sh: an agreement reference (\"as agreed\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'Sorry, this cache uses the wrong table' | grep -qF '[chat residue]' && pass "comments.sh: an opening apology (\"sorry\") BLOCKs as chat residue" || fail "comments.sh: an opening apology (\"sorry\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'Here is the fixed version' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"here is the fixed version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"here is the fixed version\") BLOCKs as chat residue ($block34t)"
+printf '%s\n' "$block34t" | grep -B1 -F 'Draft v2 of the retry loop' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"draft v2\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"draft v2\") BLOCKs as chat residue ($block34t)"
+
+# Clean, sharing vocabulary with a flagged line above: a lexical ban on
+# "feedback", "agree", "suggested", "sorry", or "draft" alone would also
+# catch these, and it must not.
+printf '%s\n' "$block34t" | grep -q 'fixed version is 2.3.1' && fail "comments.sh: a real version report is not a draft-revision label" || pass "comments.sh: a real version report is not a draft-revision label"
+printf '%s\n' "$block34t" | grep -q 'debounces feedback' && fail "comments.sh: audio feedback is not a feedback reference" || pass "comments.sh: audio feedback is not a feedback reference"
+printf '%s\n' "$block34t" | grep -q 'profiler disagreed' && fail "comments.sh: \"suggested\" outside \"as you suggested\" is not chat residue" || pass "comments.sh: \"suggested\" outside \"as you suggested\" is not chat residue"
+printf '%s\n' "$block34t" | grep -q 'rarely agree' && fail "comments.sh: \"agree\" outside \"as agreed\" is not chat residue" || pass "comments.sh: \"agree\" outside \"as agreed\" is not chat residue"
+printf '%s\n' "$block34t" | grep -q 'sorry-not-found' && fail "comments.sh: a mid-sentence \"sorry\" is not an opening apology" || pass "comments.sh: a mid-sentence \"sorry\" is not an opening apology"
+printf '%s\n' "$block34t" | grep -q 'not a draft; it defines' && fail "comments.sh: \"draft\" outside a revision label is not chat residue" || pass "comments.sh: \"draft\" outside a revision label is not chat residue"
+
+# A lexical pass rules a shape out; it never certifies a shape as necessary.
+# These two land in REVIEW, for the author to justify or delete — not a
+# silent pass that looks the same as "this comment is useful."
+printf '%s\n' "$review34t" | grep -qF 'fixed version is 2.3.1' && pass "comments.sh: the real version report lands in REVIEW, not silently endorsed" || fail "comments.sh: the real version report lands in REVIEW ($review34t)"
+
+# Negation is not chat residue and not routine narration: a comment stating
+# a real negative property survives with its exact wording, not merely
+# "does not block."
+printf '%s\n' "$review34t" | grep -qF 'Does NOT retry on 4xx responses because the vendor client treats retries as duplicate charges.' && pass "comments.sh: a negative constraint survives a negation, verbatim" || fail "comments.sh: a negative constraint survives a negation ($review34t)"
+
+# The necessary-constraint fixture from the writing spike: a callback whose
+# timing depends on a vendor's own contract is exactly what REVIEW exists to
+# let a human keep, and its meaning must reach REVIEW intact, not truncated.
+printf '%s\n' "$review34t" | grep -qF 'The callback can arrive after cancellation because the vendor retains the handle.' && pass "comments.sh: a non-obvious callback constraint survives with its meaning intact" || fail "comments.sh: a non-obvious callback constraint survives with its meaning intact ($review34t)"
+
+# CHAT_RE_EXTRA follows the same conf contract as the other _EXTRA keys: ORed
+# onto the shipped vocabulary, and a broken pattern fails the run closed
+# rather than silently passing as clean.
+printf 'CHAT_RE_EXTRA=(^|[^[:alnum:]])lgtm\n' >"$cg/.agent/scripts/comments.conf"
+printf '// lgtm, ship it\nconst n14 = 14\n' >>"$cg/src/app.ts"
+out34u=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf '%s\n' "$out34u" | sed -n '/^BLOCK:/,$p' | grep -q 'lgtm, ship it' && pass "comments.sh: CHAT_RE_EXTRA joins the chat-residue class" || fail "comments.sh: CHAT_RE_EXTRA joins the chat-residue class ($out34u)"
+git_cg checkout -q -- src/app.ts
+
+printf 'CHAT_RE_EXTRA=(unterminated\n' >"$cg/.agent/scripts/comments.conf"
+(cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
+rc34v=$?
+[ "$rc34v" -eq 2 ] && pass "comments.sh: an invalid CHAT_RE_EXTRA fails closed rather than passing clean" || fail "comments.sh: an invalid CHAT_RE_EXTRA fails closed (rc=$rc34v)"
+rm -f "$cg/.agent/scripts/comments.conf"
+
+# Exclusion scope stays exactly what it was: Markdown never joins the scanned
+# extensions, and a hidden directory (.agent/ included) stays out of the scan
+# generically — chat residue is a new class inside the existing gate, not a
+# new gate with its own reach.
+printf '# As you suggested, cache the response for five minutes.\n' >"$cg/notes.md"
+mkdir -p "$cg/.agent/docs"
+printf '// As you suggested, cache the response for five minutes.\n' >"$cg/.agent/docs/note.ts"
+out34w=$(cd "$cg" && .agent/scripts/comments.sh chat34 2>&1)
+rc34w=$?
+[ "$rc34w" -eq 0 ] && [ -z "$out34w" ] && pass "comments.sh: chat residue in Markdown and under .agent/ stays out of the gate" || fail "comments.sh: chat residue in Markdown and under .agent/ stays out of the gate (rc=$rc34w; $out34w)"
+rm -rf "$cg/notes.md" "$cg/.agent/docs"
+
+# Routine implementation work adds no comment at all, and that is the
+# expected shape, not a shortfall the gate makes up for: no comment quota,
+# no narration expected in exchange for a clean pass.
+cat >>"$cg/src/app.ts" <<'EOF'
+function retryOnce(fn) {
+  try {
+    return fn()
+  } catch (e) {
+    return fn()
+  }
+}
+EOF
+out34x=$(cd "$cg" && .agent/scripts/comments.sh chat34 2>&1)
+rc34x=$?
+[ "$rc34x" -eq 0 ] && [ -z "$out34x" ] && pass "comments.sh: a routine implementation adding zero comments is silent, not flagged for lacking one" || fail "comments.sh: a routine implementation adding zero comments is silent (rc=$rc34x; $out34x)"
+git_cg checkout -q -- src/app.ts
+
+git_cg checkout -q base
+
 # A base resolving to HEAD over a clean tree is an empty diff. Exiting 0
 # there is a pass meaning "this run read nothing", which in a transcript is
 # indistinguishable from "the comments are clean" — and it is the state a
@@ -6463,7 +6591,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=862
+EXPECTED_CHECKS=882
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
