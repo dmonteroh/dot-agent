@@ -6894,6 +6894,340 @@ printf -- '--- status.sh --load against the migrated fixture ---\n'
 "$m60mig/.agent/scripts/status.sh" --load "$m60mig" 2>/dev/null
 printf -- '--- end status.sh output ---\n\n'
 
+# ---- 61. node.sh update, generated indexes: learned-rule extraction,
+# doc-hook backfill, and the migration inventory ----
+
+# A V6 fixture (oldversion 6, below TARGET_VERSION, so update takes the
+# real-migration branch) with indexes: generated added beside mode,
+# rules/learned.md exercising four bullet shapes, and an
+# architecture.md/docs/ tree exercising every hook-backfill departure.
+r61build() {
+  r61_dir="$1"
+  mkdir -p "$r61_dir"
+  make_v6_fixture "$r61_dir"
+  r61_modeline=$(grep -n '^  mode:' "$r61_dir/.agent/purpose.md" | head -1 | cut -d: -f1)
+  awk -v ln="$r61_modeline" \
+    'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
+    "$r61_dir/.agent/purpose.md" >"$r61_dir/.agent/purpose.md.tmp"
+  mv "$r61_dir/.agent/purpose.md.tmp" "$r61_dir/.agent/purpose.md"
+
+  cat >"$r61_dir/.agent/rules/learned.md" <<'EOF'
+# Learned rules
+
+Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
+
+<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
+- [2026-01-01] First rule, flat. Trigger: something.
+- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.
+  - qualifier one
+  - qualifier two
+- [2026-01-03] Third rule, multi paragraph.
+
+  Continuation paragraph here.
+- [2026-01-04] Fourth rule, flat, last one.
+EOF
+
+  mkdir -p "$r61_dir/.agent/docs/area"
+  cat >"$r61_dir/.agent/docs/architecture.md" <<'EOF'
+# Architecture
+
+### `hooked.md`
+- **Read when:** already hooked, never touched.
+
+### `unhooked.md`
+- **Read when:** doing unhooked work.
+
+### `area/sub.md`
+- **Read when:** doing area sub work.
+
+### `dup.md`
+- **Read when:** first dup entry.
+
+### `dup.md`
+- **Read when:** second dup entry.
+
+### `badtable.md`
+Hand-edited row with no bold marker: whatever hook text.
+EOF
+  cat >"$r61_dir/.agent/docs/hooked.md" <<'EOF'
+<!-- Read when: already hooked, never touched. -->
+# Hooked
+
+Body.
+EOF
+  cat >"$r61_dir/.agent/docs/unhooked.md" <<'EOF'
+# Unhooked
+
+Body.
+EOF
+  cat >"$r61_dir/.agent/docs/area/sub.md" <<'EOF'
+# Sub
+
+Body.
+EOF
+  cat >"$r61_dir/.agent/docs/dup.md" <<'EOF'
+# Dup
+
+Body.
+EOF
+  cat >"$r61_dir/.agent/docs/badtable.md" <<'EOF'
+# Badtable
+
+Body.
+EOF
+  cat >"$r61_dir/.agent/docs/noentry.md" <<'EOF'
+# Noentry
+
+Body.
+EOF
+}
+
+r61dir="$WORK/r61-migration"
+r61build "$r61dir"
+cp "$r61dir/.agent/docs/architecture.md" "$WORK/r61-arch-before.md"
+cp "$r61dir/.agent/rules/learned.md" "$WORK/r61-learned-before.md"
+cp "$r61dir/.agent/docs/hooked.md" "$WORK/r61-hooked-before.md"
+cp "$r61dir/.agent/docs/dup.md" "$WORK/r61-dup-before.md"
+cp "$r61dir/.agent/docs/badtable.md" "$WORK/r61-badtable-before.md"
+cp "$r61dir/.agent/docs/noentry.md" "$WORK/r61-noentry-before.md"
+
+"$NODE" update "$r61dir" >"$WORK/r61-update.out" 2>&1
+r61rc=$?
+[ "$r61rc" -eq 0 ] && pass "generated-mode update: exits 0" || fail "generated-mode update: exits 0 (rc=$r61rc)"
+
+r61records=$(find "$r61dir/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+r61count=$(printf '%s\n' "$r61records" | grep -c .)
+[ "$r61count" -eq 4 ] && pass "rule extraction: four bullets produce four records" || fail "rule extraction: four bullets produce four records (found $r61count)"
+
+r61badnames=0
+for r61f in $r61records; do
+  r61base=$(basename "$r61f" .md)
+  case "$r61base" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  *) r61badnames=$((r61badnames + 1)) ;;
+  esac
+done
+[ "$r61badnames" -eq 0 ] \
+  && pass "rule extraction: every record filename is 12 lowercase hex characters" \
+  || fail "rule extraction: every record filename is 12 lowercase hex characters ($r61badnames bad)"
+
+r61uniq=$(printf '%s\n' "$r61records" | xargs -n1 basename | sort -u | wc -l | tr -d '[:space:]')
+[ "$r61uniq" -eq 4 ] && pass "rule extraction: no two records share an identity" || fail "rule extraction: no two records share an identity"
+
+r61flat1=$(grep -lF 'First rule, flat' $r61records)
+r61nested=$(grep -lF 'nested sub-bullet' $r61records)
+r61multi=$(grep -lF 'multi paragraph' $r61records)
+r61flat2=$(grep -lF 'Fourth rule, flat' $r61records)
+
+[ "$(cat "$r61flat1")" = '- [2026-01-01] First rule, flat. Trigger: something.' ] \
+  && pass "rule extraction: a flat bullet's record is verbatim, nothing added" \
+  || fail "rule extraction: a flat bullet's record is verbatim, nothing added"
+[ "$(cat "$r61flat2")" = '- [2026-01-04] Fourth rule, flat, last one.' ] \
+  && pass "rule extraction: the last flat bullet's record runs to end of file, verbatim" \
+  || fail "rule extraction: the last flat bullet's record runs to end of file, verbatim"
+
+r61nested_expect=$(printf '%s\n' \
+  '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
+  '  - qualifier one' \
+  '  - qualifier two')
+[ "$(cat "$r61nested")" = "$r61nested_expect" ] \
+  && pass "rule extraction: nested sub-bullets stay inside the record that opened them" \
+  || fail "rule extraction: nested sub-bullets stay inside the record that opened them"
+
+r61multi_expect=$(printf '%s\n' \
+  '- [2026-01-03] Third rule, multi paragraph.' \
+  '' \
+  '  Continuation paragraph here.')
+[ "$(cat "$r61multi")" = "$r61multi_expect" ] \
+  && pass "rule extraction: a multi-paragraph bullet keeps its continuation paragraph" \
+  || fail "rule extraction: a multi-paragraph bullet keeps its continuation paragraph"
+
+r61inv="$r61dir/.agent/migration-inventory.md"
+[ -f "$r61inv" ] && pass "migration inventory: .agent/migration-inventory.md is written" || fail "migration inventory: .agent/migration-inventory.md is written"
+
+r61id1=$(basename "$r61flat1" .md)
+r61id2=$(basename "$r61nested" .md)
+r61id3=$(basename "$r61multi" .md)
+r61id4=$(basename "$r61flat2" .md)
+grep -qF "rules/learned/$r61id1.md | id=$r61id1 | migrated" "$r61inv" \
+  && pass "migration inventory: flat rule 1 lists migrated with its real identity" \
+  || fail "migration inventory: flat rule 1 lists migrated with its real identity"
+grep -qF "rules/learned/$r61id2.md | id=$r61id2 | semantic-review-pending" "$r61inv" \
+  && pass "migration inventory: the nested-sub-bullet rule lists semantic-review-pending" \
+  || fail "migration inventory: the nested-sub-bullet rule lists semantic-review-pending"
+grep -qF "rules/learned/$r61id3.md | id=$r61id3 | semantic-review-pending" "$r61inv" \
+  && pass "migration inventory: the multi-paragraph rule lists semantic-review-pending" \
+  || fail "migration inventory: the multi-paragraph rule lists semantic-review-pending"
+grep -qF "rules/learned/$r61id4.md | id=$r61id4 | migrated" "$r61inv" \
+  && pass "migration inventory: flat rule 4 lists migrated with its real identity" \
+  || fail "migration inventory: flat rule 4 lists migrated with its real identity"
+
+diff -q "$WORK/r61-learned-before.md" "$r61dir/.agent/rules/learned.md" >/dev/null 2>&1 \
+  && pass "migration: rules/learned.md stays tracked and byte-identical beside the new records" \
+  || fail "migration: rules/learned.md stays tracked and byte-identical beside the new records"
+
+diff -q "$WORK/r61-arch-before.md" "$r61dir/.agent/docs/architecture.md" >/dev/null 2>&1 \
+  && pass "migration: architecture.md is byte-identical before and after" \
+  || fail "migration: architecture.md is byte-identical before and after"
+
+diff -q "$WORK/r61-hooked-before.md" "$r61dir/.agent/docs/hooked.md" >/dev/null 2>&1 \
+  && pass "hook backfill: a doc that already carries a hook is left untouched" \
+  || fail "hook backfill: a doc that already carries a hook is left untouched"
+
+[ "$(sed -n 1p "$r61dir/.agent/docs/unhooked.md")" = '<!-- Read when: doing unhooked work. -->' ] \
+  && pass "hook backfill: a missing hook with a matching architecture.md entry is backfilled" \
+  || fail "hook backfill: a missing hook with a matching architecture.md entry is backfilled"
+[ "$(tail -n +2 "$r61dir/.agent/docs/unhooked.md")" = "$(printf '# Unhooked\n\nBody.')" ] \
+  && pass "hook backfill: backfilling a hook changes nothing else in the doc" \
+  || fail "hook backfill: backfilling a hook changes nothing else in the doc"
+
+[ "$(sed -n 1p "$r61dir/.agent/docs/area/sub.md")" = '<!-- Read when: doing area sub work. -->' ] \
+  && pass "hook backfill: a sub-doc under docs/<area>/ resolves its entry key as area/sub.md" \
+  || fail "hook backfill: a sub-doc under docs/<area>/ resolves its entry key as area/sub.md"
+
+diff -q "$WORK/r61-dup-before.md" "$r61dir/.agent/docs/dup.md" >/dev/null 2>&1 \
+  && pass "hook backfill: a duplicate architecture.md entry key is left untouched (no winner picked)" \
+  || fail "hook backfill: a duplicate architecture.md entry key is left untouched (no winner picked)"
+
+diff -q "$WORK/r61-badtable-before.md" "$r61dir/.agent/docs/badtable.md" >/dev/null 2>&1 \
+  && pass "hook backfill: a hand-edited entry with no bold Read-when line is left untouched" \
+  || fail "hook backfill: a hand-edited entry with no bold Read-when line is left untouched"
+
+diff -q "$WORK/r61-noentry-before.md" "$r61dir/.agent/docs/noentry.md" >/dev/null 2>&1 \
+  && pass "hook backfill: a doc with no architecture.md entry at all is left untouched" \
+  || fail "hook backfill: a doc with no architecture.md entry at all is left untouched"
+
+grep -qF 'doc docs/hooked.md -> docs/hooked.md | id=hooked.md | migrated' "$r61inv" \
+  && pass "migration inventory: the already-hooked doc lists migrated" \
+  || fail "migration inventory: the already-hooked doc lists migrated"
+grep -qF 'doc docs/unhooked.md -> docs/unhooked.md | id=unhooked.md | migrated' "$r61inv" \
+  && pass "migration inventory: the backfilled doc lists migrated" \
+  || fail "migration inventory: the backfilled doc lists migrated"
+grep -qF 'doc docs/area/sub.md -> docs/area/sub.md | id=area/sub.md | migrated' "$r61inv" \
+  && pass "migration inventory: the backfilled sub-doc lists migrated" \
+  || fail "migration inventory: the backfilled sub-doc lists migrated"
+grep -qF 'doc docs/dup.md -> docs/dup.md | id=dup.md | hook-missing' "$r61inv" \
+  && pass "migration inventory: the duplicate-key doc lists hook-missing" \
+  || fail "migration inventory: the duplicate-key doc lists hook-missing"
+grep -qF 'doc docs/badtable.md -> docs/badtable.md | id=badtable.md | hook-missing' "$r61inv" \
+  && pass "migration inventory: the hand-edited unparseable doc lists hook-missing" \
+  || fail "migration inventory: the hand-edited unparseable doc lists hook-missing"
+grep -qF 'doc docs/noentry.md -> docs/noentry.md | id=noentry.md | hook-missing' "$r61inv" \
+  && pass "migration inventory: the doc with no architecture.md entry lists hook-missing" \
+  || fail "migration inventory: the doc with no architecture.md entry lists hook-missing"
+
+grep -qF 'docs/architecture.md' "$r61inv" \
+  && fail "migration inventory: architecture.md itself is never listed as a walked item" \
+  || pass "migration inventory: architecture.md itself is never listed as a walked item"
+
+# ---- 61b. a second update over an already-populated rules/learned/ mints
+# no new identity, rewrites no record, and changes no file ----
+r61snapshot() { find "$1/.agent" -type f | sort | xargs shasum 2>/dev/null | sort; }
+r61before2=$(r61snapshot "$r61dir")
+"$NODE" update "$r61dir" >"$WORK/r61-update2.out" 2>&1
+r61rc2=$?
+r61after2=$(r61snapshot "$r61dir")
+[ "$r61rc2" -eq 0 ] && pass "re-run over an already-populated rules/learned/: exits 0" || fail "re-run over an already-populated rules/learned/: exits 0 (rc=$r61rc2)"
+[ "$r61before2" = "$r61after2" ] \
+  && pass "re-run over an already-populated rules/learned/: mints no identity, rewrites no record, changes no file" \
+  || fail "re-run over an already-populated rules/learned/: mints no identity, rewrites no record, changes no file"
+
+# ---- 61c. a rules/learned.md with zero bullets produces zero records and
+# no rule line in the inventory ----
+r61zero="$WORK/r61-zero"
+mkdir -p "$r61zero"
+make_v6_fixture "$r61zero"
+r61zero_modeline=$(grep -n '^  mode:' "$r61zero/.agent/purpose.md" | head -1 | cut -d: -f1)
+awk -v ln="$r61zero_modeline" \
+  'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
+  "$r61zero/.agent/purpose.md" >"$r61zero/.agent/purpose.md.tmp"
+mv "$r61zero/.agent/purpose.md.tmp" "$r61zero/.agent/purpose.md"
+cat >"$r61zero/.agent/rules/learned.md" <<'EOF'
+# Learned rules
+
+Prose paragraph, no rules recorded yet.
+
+<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
+EOF
+"$NODE" update "$r61zero" >"$WORK/r61-zero-update.out" 2>&1
+r61zerorc=$?
+[ "$r61zerorc" -eq 0 ] && pass "zero-bullet rules/learned.md: update exits 0" || fail "zero-bullet rules/learned.md: update exits 0 (rc=$r61zerorc)"
+r61zerocount=$(find "$r61zero/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
+[ "$r61zerocount" -eq 0 ] && pass "zero-bullet rules/learned.md: no records are created" || fail "zero-bullet rules/learned.md: no records are created (found $r61zerocount)"
+grep -q '^- rule ' "$r61zero/.agent/migration-inventory.md" \
+  && fail "zero-bullet rules/learned.md: the inventory carries no rule line" \
+  || pass "zero-bullet rules/learned.md: the inventory carries no rule line"
+
+# ---- 61d. identity minting: the collision-retry path and the
+# 100-consecutive-rejection abort, exercised deterministically ----
+# mint_learned_id reads $RANDOM directly (never inside a `$(...)` fork,
+# which would perturb bash's generator on every call), so seeding RANDOM
+# and sourcing just the function definitions — everything above the
+# command dispatch — reproduces its candidate sequence exactly. This
+# tests the function in isolation; it does not invoke node.sh's own
+# command dispatch, which always exits and so cannot be sourced and
+# resumed within one process.
+sed -n '1,/^case "\$cmd" in/p' "$NODE" | sed '$d' >"$WORK/node-funcs.sh"
+
+r61mintdir="$WORK/r61-mint-retry"
+mkdir -p "$r61mintdir"
+r61seed=777
+r61first=$(bash -c "RANDOM=$r61seed; printf '%04x%04x%04x' \"\$RANDOM\" \"\$RANDOM\" \"\$RANDOM\"")
+: >"$r61mintdir/$r61first.md"
+r61mintout=$(bash -c '
+  RANDOM='"$r61seed"'
+  source "'"$WORK"'/node-funcs.sh"
+  : >"'"$r61mintdir"'/.minted"
+  if mint_learned_id "'"$r61mintdir"'" "'"$r61mintdir"'/.minted"; then
+    printf "MINTED:%s" "$mint_id_result"
+  else
+    printf "ABORTED"
+  fi
+')
+case "$r61mintout" in
+MINTED:*)
+  r61second=${r61mintout#MINTED:}
+  [ "$r61second" != "$r61first" ] && [ -e "$r61mintdir/$r61second.md" ] \
+    && pass "identity minting: a collision on the first candidate is rejected and retried to a fresh id" \
+    || fail "identity minting: a collision on the first candidate is rejected and retried to a fresh id ($r61mintout)"
+  ;;
+*) fail "identity minting: a collision on the first candidate is rejected and retried to a fresh id ($r61mintout)" ;;
+esac
+[ -e "$r61mintdir/$r61first.md" ] \
+  && pass "identity minting: the file that caused the collision is left exactly as it was" \
+  || fail "identity minting: the file that caused the collision is left exactly as it was"
+
+r61abortdir="$WORK/r61-mint-abort"
+mkdir -p "$r61abortdir"
+r61abortseed=999
+bash -c '
+  RANDOM='"$r61abortseed"'
+  i=0
+  while [ "$i" -lt 100 ]; do
+    printf -v id "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"
+    : >"'"$r61abortdir"'/$id.md"
+    i=$((i + 1))
+  done
+'
+r61beforeabort=$(find "$r61abortdir" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+r61abortout=$(bash -c '
+  RANDOM='"$r61abortseed"'
+  source "'"$WORK"'/node-funcs.sh"
+  : >"'"$r61abortdir"'/.minted"
+  if mint_learned_id "'"$r61abortdir"'" "'"$r61abortdir"'/.minted"; then
+    printf "MINTED:%s" "$mint_id_result"
+  else
+    printf "ABORTED"
+  fi
+')
+[ "$r61abortout" = "ABORTED" ] \
+  && pass "identity minting: 100 consecutive rejections abort minting with no identity" \
+  || fail "identity minting: 100 consecutive rejections abort minting with no identity ($r61abortout)"
+r61afterabort=$(find "$r61abortdir" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+[ "$r61beforeabort" -eq "$r61afterabort" ] \
+  && pass "identity minting: an aborted mint creates no additional record file" \
+  || fail "identity minting: an aborted mint creates no additional record file"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -6901,7 +7235,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=942
+EXPECTED_CHECKS=980
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

@@ -333,6 +333,229 @@ migrate_session_log_header() {
   return 0
 }
 
+# Mints a 12-lowercase-hex-char identity unused as a filename in $1 and not
+# yet minted this run (one id per line in $2), then claims it by creating
+# the empty record file with `set -C` — a lost create race is one more
+# rejection, never an overwrite. Every $RANDOM read happens directly in
+# this shell, never inside a `$(...)` fork: forking to capture output
+# perturbs bash's generator on each fork, which would make every mint
+# after the first re-walk and collide with all earlier ids instead of
+# advancing past them. Sets $mint_id_result on success. Returns nonzero
+# after 100 consecutive rejections, having minted and written nothing.
+mint_learned_id() {
+  mli_dir="$1"
+  mli_minted="$2"
+  mli_tries=0
+  mint_id_result=""
+  while :; do
+    mli_r1="$RANDOM"
+    mli_r2="$RANDOM"
+    mli_r3="$RANDOM"
+    printf -v mli_id '%04x%04x%04x' "$mli_r1" "$mli_r2" "$mli_r3"
+    mli_target="$mli_dir/$mli_id.md"
+    if [ -e "$mli_target" ] || { [ -s "$mli_minted" ] && grep -qxF "$mli_id" "$mli_minted"; }; then
+      mli_tries=$((mli_tries + 1))
+      [ "$mli_tries" -lt 100 ] && continue
+      return 1
+    fi
+    if (set -C; : >"$mli_target") 2>/dev/null; then
+      printf '%s\n' "$mli_id" >>"$mli_minted"
+      mint_id_result="$mli_id"
+      return 0
+    fi
+    mli_tries=$((mli_tries + 1))
+    [ "$mli_tries" -lt 100 ] || return 1
+  done
+}
+
+# A rule span (verbatim lines in file $1, first line included) is
+# semantic-review-pending when it carries an indented sub-bullet, or a
+# second paragraph after a blank line — the two shapes a mechanical split
+# cannot tell apart from one rule that reads as two subjects.
+classify_rule_span() {
+  crs_span="$1"
+  if tail -n +2 "$crs_span" | grep -qE '^[[:space:]]+[-*][[:space:]]'; then
+    printf 'semantic-review-pending'
+    return 0
+  fi
+  if tail -n +2 "$crs_span" | awk '
+    /^[[:space:]]*$/ { blank = 1; next }
+    blank { multi = 1 }
+    END { exit multi ? 0 : 1 }
+  '; then
+    printf 'semantic-review-pending'
+    return 0
+  fi
+  printf 'migrated'
+}
+
+# One bullet span, lines $3..$4 inclusive of $2 (rules/learned.md), mints
+# an identity, writes the span verbatim to $5/<id>.md, classifies it, and
+# appends its inventory line to $8. $9 numbers the bullet for the
+# inventory's item label only — never the identity, which is minted, not
+# derived from position.
+extract_one_rule_span() {
+  eor_learned="$1"; eor_start="$2"; eor_end="$3"
+  eor_dir="$4"; eor_minted="$5"; eor_span="$6"; eor_inventory="$7"; eor_n="$8"
+  mint_learned_id "$eor_dir" "$eor_minted" \
+    || { echo "node.sh: aborting learned-rule extraction — 100 consecutive identity collisions in $eor_dir" >&2; return 1; }
+  eor_id="$mint_id_result"
+  sed -n "${eor_start},${eor_end}p" "$eor_learned" >"$eor_span"
+  cat "$eor_span" >"$eor_dir/$eor_id.md"
+  eor_preview=$(head -n1 "$eor_span" | cut -c1-72)
+  eor_disp=$(classify_rule_span "$eor_span")
+  printf -- '- rule %s: `%s` -> rules/learned/%s.md | id=%s | %s\n' \
+    "$eor_n" "$eor_preview" "$eor_id" "$eor_id" "$eor_disp" >>"$eor_inventory"
+}
+
+# Splits $1/rules/learned.md into one record per top-level "^- " bullet.
+# The span starts at that line and runs to the line before the next "^- "
+# line, or to end of file — indented sub-bullets, blank lines, and
+# continuation paragraphs inside that span belong to the record that
+# opened it. The header above the first bullet (title, prose, and the
+# "<!-- Format: … -->" comment, whose own "- [" is never at line start) is
+# never read. No-op when $1/rules/learned.md does not exist or holds no
+# bullet. Appends one inventory line per bullet to $2.
+extract_learned_rules() {
+  elr_agent="$1"
+  elr_inventory="$2"
+  elr_learned="$elr_agent/rules/learned.md"
+  elr_dir="$elr_agent/rules/learned"
+  [ -f "$elr_learned" ] || return 0
+  elr_starts="$elr_agent/.learned-bullet-starts.tmp"
+  grep -n '^- ' "$elr_learned" | cut -d: -f1 >"$elr_starts"
+  if [ ! -s "$elr_starts" ]; then
+    rm -f "$elr_starts"
+    return 0
+  fi
+  elr_total=$(wc -l <"$elr_learned" | tr -d '[:space:]')
+  elr_minted="$elr_agent/.learned-minted-ids.tmp"
+  : >"$elr_minted"
+  elr_span="$elr_agent/.learned-span.tmp"
+  elr_prev=""
+  elr_n=0
+  elr_rc=0
+  while IFS= read -r elr_start; do
+    if [ -n "$elr_prev" ]; then
+      elr_n=$((elr_n + 1))
+      extract_one_rule_span "$elr_learned" "$elr_prev" "$((elr_start - 1))" \
+        "$elr_dir" "$elr_minted" "$elr_span" "$elr_inventory" "$elr_n" || { elr_rc=1; break; }
+    fi
+    elr_prev="$elr_start"
+  done <"$elr_starts"
+  if [ "$elr_rc" -eq 0 ] && [ -n "$elr_prev" ]; then
+    elr_n=$((elr_n + 1))
+    extract_one_rule_span "$elr_learned" "$elr_prev" "$elr_total" \
+      "$elr_dir" "$elr_minted" "$elr_span" "$elr_inventory" "$elr_n" || elr_rc=1
+  fi
+  rm -f "$elr_starts" "$elr_minted" "$elr_span"
+  return "$elr_rc"
+}
+
+# Backfills a doc's missing "Read when:" hook from its architecture.md
+# entry. The lookup is copied from status.sh's own doc_hook/entry_block
+# (read-only there) rather than sourced, since this runs during a
+# migration status.sh has not walked yet. Leaves the doc byte-identical
+# whenever the lookup cannot be trusted: no architecture.md, no entry line
+# for $2, more than one entry line for $2, an entry block with no
+# "- **Read when:**" line, or an extracted hook that is empty or contains
+# "-->". Only ever inserts the hook as the doc's new first line; nothing
+# else in the file changes. Prints "migrated" or "hook-missing".
+backfill_doc_hook() {
+  bdh_doc="$1"
+  bdh_key="$2"
+  bdh_arch="$3"
+
+  if head -n 5 "$bdh_doc" | grep -q '^<!-- Read when: .* -->$'; then
+    printf 'migrated'
+    return 0
+  fi
+
+  if [ ! -s "$bdh_arch" ]; then
+    printf 'hook-missing'
+    return 0
+  fi
+
+  bdh_want="### \`$bdh_key\`"
+  bdh_count=$(grep -x -F -- "$bdh_want" "$bdh_arch" | grep -c .)
+  if [ "$bdh_count" -ne 1 ]; then
+    printf 'hook-missing'
+    return 0
+  fi
+
+  bdh_block=$(awk -v want="$bdh_want" '
+    $0 == want { inb = 1; next }
+    inb && index($0, "### ") == 1 { exit }
+    inb { print }
+  ' "$bdh_arch")
+  bdh_hook=$(printf '%s\n' "$bdh_block" | sed -n 's/^- \*\*Read when:\*\* //p' | head -n 1)
+
+  if [ -z "$bdh_hook" ]; then
+    printf 'hook-missing'
+    return 0
+  fi
+  case "$bdh_hook" in
+  *'-->'*)
+    printf 'hook-missing'
+    return 0 ;;
+  esac
+
+  bdh_tmp="$(dirname "$bdh_doc")/.$(basename "$bdh_doc").hook.tmp"
+  if { printf '<!-- Read when: %s -->\n' "$bdh_hook"; cat "$bdh_doc"; } >"$bdh_tmp" \
+    && mv "$bdh_tmp" "$bdh_doc"; then
+    printf 'migrated'
+  else
+    rm -f "$bdh_tmp"
+    printf 'hook-missing'
+  fi
+}
+
+# Walks $1/docs exactly as status.sh does: "$docs"/*.md and
+# "$docs"/*/*.md, two levels, architecture.md and any references/ tier
+# (at either level) excluded. Backfills each remaining doc's hook and
+# appends one inventory line per doc to $2.
+backfill_doc_hooks() {
+  bfd_agent="$1"
+  bfd_inventory="$2"
+  bfd_docs="$bfd_agent/docs"
+  bfd_arch="$bfd_docs/architecture.md"
+  [ -d "$bfd_docs" ] || return 0
+  for bfd_doc in "$bfd_docs"/*.md "$bfd_docs"/*/*.md; do
+    [ -e "$bfd_doc" ] || continue
+    bfd_rel=${bfd_doc#"$bfd_docs"/}
+    [ "$bfd_rel" = "architecture.md" ] && continue
+    case "$bfd_rel" in
+    references/* | */references/*) continue ;;
+    esac
+    bfd_disp=$(backfill_doc_hook "$bfd_doc" "$bfd_rel" "$bfd_arch")
+    printf -- '- doc docs/%s -> docs/%s | id=%s | %s\n' "$bfd_rel" "$bfd_rel" "$bfd_rel" "$bfd_disp" >>"$bfd_inventory"
+  done
+}
+
+# Runs once per node: mints a stable identity for every rules/learned.md
+# bullet, writes each as its own record under rules/learned/, backfills
+# every doc's missing "Read when:" hook from architecture.md, and writes
+# the combined disposition inventory to migration-inventory.md. A
+# no-op — nothing minted, written, or touched — whenever rules/learned/
+# already holds any *.md record, which is this pass's own completion
+# marker: there is no separate resume state.
+migrate_learned_and_docs() {
+  mld_agent="$1"
+  mkdir -p "$mld_agent/rules/learned" || return 1
+  for mld_existing in "$mld_agent/rules/learned"/*.md; do
+    [ -e "$mld_existing" ] && return 0
+  done
+  mld_inventory_tmp="$mld_agent/.migration-inventory.tmp"
+  : >"$mld_inventory_tmp"
+  extract_learned_rules "$mld_agent" "$mld_inventory_tmp" || { rm -f "$mld_inventory_tmp"; return 1; }
+  backfill_doc_hooks "$mld_agent" "$mld_inventory_tmp"
+  { printf '# Migration inventory\n\nOne line per original authoritative item: its new location, identity, and disposition.\n\n'
+    cat "$mld_inventory_tmp"
+  } >"$mld_agent/migration-inventory.md"
+  rm -f "$mld_inventory_tmp"
+  return 0
+}
+
 case "$cmd" in
 init)
   preset=""
@@ -747,6 +970,15 @@ EOF
       echo "node.sh: $conffile seeded with the starter (node-owned from here on)"
     fi
   done
+
+  # Generated-mode only: extract rules/learned.md into rules/learned/
+  # records and backfill missing doc hooks. Runs on the node the backup
+  # above already covers. rules/learned.md stays tracked and in place;
+  # nothing here untracks it or checks the aggregate.
+  if [ "$indexes" = generated ]; then
+    migrate_learned_and_docs "$agent" \
+      || { echo "node.sh: learned-rule extraction or doc-hook backfill failed under $agent — aborting" >&2; exit 1; }
+  fi
 
   # No version write here — version stays at $oldversion until finalize
   # stamps it. migration_target (set above, before any mutation) is what
