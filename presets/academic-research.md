@@ -70,6 +70,7 @@ This rubric is the judgement layer on top of the Verification contract above: th
 - Record durable preferences and repeated observed patterns in memory with a trigger or confidence tag. Route user corrections through Self-learning's canonical-source check first.
 - Fix stale memory, outdated docs, and duplication when encountered.
 - Act on GROOM:/REPAIR:/INDEX: flags from the bootstrap status check in the same session. GROOM: work may be delegated to one subagent (a small model is fine) explicitly assigned to write only the flagged files. Wait for that worker to finish before handing back, then re-run status.sh to confirm it cleared. Grooming changes shape, never content: when a fact contradicts the code, correct the false value, keep every other name, value, command, and path (the GROOM: line lists the ones it found), and name in the reply what was dropped as false. A value this session just added is code, not a fact. REPAIR: stays in the main session.
+- On a node running generated indexes, a groom edits the records under `rules/learned/` and `docs/`; pages under `.agent/indexes/` are rebuilt and never edited; the pass closes with `.agent/scripts/index.sh ensure` before the `status.sh` re-run that confirms the flag cleared.
 
 ## Self-learning
 
