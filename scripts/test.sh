@@ -8317,6 +8317,21 @@ f68b=$(status_flags "$c68b")
   && pass "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR:" \
   || fail "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR: ($f68b)"
 
+# (b2) A node whose rules/learned/ holds a non-.md file and no aggregate
+# still draws exactly the record-directory REPAIR:, same as an empty
+# directory.
+c68b2="$WORK/canonical-neither-nonmd"
+mkdir -p "$c68b2"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$c68b2" >/dev/null 2>&1
+finish_bootstrap "$c68b2"
+rm -f "$c68b2/.agent/rules/learned.md"
+mkdir -p "$c68b2/.agent/rules/learned"
+printf -- 'not a record\n' >"$c68b2/.agent/rules/learned/notes.txt"
+f68b2=$(status_flags "$c68b2")
+[ "$f68b2" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] \
+  && pass "canonical source: a rules/learned/ holding only a non-.md file and no aggregate draws exactly the record-directory REPAIR:" \
+  || fail "canonical source: a rules/learned/ holding only a non-.md file and no aggregate draws exactly the record-directory REPAIR: ($f68b2)"
+
 # (c) A record set crossing LEARNED_MAX_RULES draws the rules/learned/
 # GROOM:, at the same count the equivalent aggregate draws its own.
 c68c="$WORK/canonical-threshold-records"
@@ -8474,7 +8489,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1125
+EXPECTED_CHECKS=1126
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
