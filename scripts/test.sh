@@ -2091,8 +2091,8 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
   templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
-  scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/comments.conf \
-  scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
+  scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
+  scripts/comments.conf scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
 printf 'When stuck, ask SomeVendor to run it in Cursor.\n' >"$WORK/leak.md"
@@ -2738,7 +2738,7 @@ grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pa
 # in the field. node.sh names it once for both loops. This is what notices
 # if one of them ever re-inlines a literal.
 missing_u=""
-for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh; do
+for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh; do
   [ -x "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
 done
 for f in comments.conf status.conf log.conf; do
@@ -3272,16 +3272,15 @@ fo_bad=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
 fo_rc=$?
 [ "$fo_rc" -ne 0 ] && [ -z "$fo_bad" ] && pass "comments.sh: a conf regex that will not compile fails closed" || fail "comments.sh: a conf regex that will not compile fails closed (rc=$fo_rc)"
 
-# 40h. Four different help contracts across six scripts: usage on stdout
-# at exit 0 in two, usage on stderr at exit 1 in two, three invented
-# findings in one, and "base ref not found" at exit 2 in the last. The
-# five root-taking scripts now agree. comments.sh takes a base ref rather
-# than a root and is left out on purpose.
+# 40h. comments.sh is excluded because it takes a base ref, not a root.
+# index.sh is excluded because its --help opens with a bare "Usage:" line
+# above a four-invocation block, and its exit-0 contract is already
+# asserted by section 53.
 hp="$WORK/helpcontract"
 mkdir -p "$hp"
 "$NODE" init --preset software-development --mode track-all "$hp" >/dev/null 2>&1
 hp_bad=""
-for hp_s in status log memory docs links; do
+for hp_s in status log memory docs links checkpoint; do
   hp_out=$("$hp/.agent/scripts/$hp_s.sh" --help 2>/dev/null)
   hp_rc=$?
   [ "$hp_rc" -eq 0 ] || hp_bad="$hp_bad $hp_s.sh(exit=$hp_rc)"
