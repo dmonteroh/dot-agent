@@ -11,8 +11,8 @@
 
 After a context compaction or handoff, run step 1 again; re-route step 3 if the work moved.
 
-Before handing back a turn that changed files, run `bash .agent/scripts/finish.sh --tool <tool> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"` — the comment gate (`--base <ref>` for committed work), the status check, then the log entry, written once on the clean run. Fix what it names and run it again. A turn that only answered writes no entry: finish.sh refuses one over an unchanged tree. Your final message is the report itself, never a wrap-up line.
+Before handing back a turn that changed files, run `bash .agent/scripts/checkpoint.sh --tool <tool> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"` — the comment gate (`--base <ref>` for committed work), the status check, then the log entry, written once on the clean run. Fix what it names and run it again. A turn that only answered writes no entry: checkpoint.sh refuses one over an unchanged tree. Your final message is the report itself, never a wrap-up line.
 
-Subagents: flags and `finish.sh` are the orchestrator's; read the rest; edit `.agent/` only when assigned.
+Subagents: flags and `checkpoint.sh` are the orchestrator's; read the rest; edit `.agent/` only when assigned.
 
 Keep every entry-point mirror identical.
