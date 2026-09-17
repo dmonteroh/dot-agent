@@ -27,9 +27,11 @@ set -u
 # anticipates.
 finish_status_stderr=""
 finish_status_stdout=""
+finish_index_stderr=""
 cleanup() {
   [ -n "$finish_status_stderr" ] && rm -f "$finish_status_stderr"
   [ -n "$finish_status_stdout" ] && rm -f "$finish_status_stdout"
+  [ -n "$finish_index_stderr" ] && rm -f "$finish_index_stderr"
 }
 trap cleanup EXIT
 
@@ -162,7 +164,31 @@ if [ -n "$flags" ]; then
 fi
 echo "clean"
 
-# 3. The session-log entry, through log.sh's own checks.
+# 3. The cache refresh, generated mode only, after the node is confirmed
+#    clean so the refresh reflects this session's canonical writes. The
+#    cache is disposable: an absent or failing indexer never blocks the
+#    hand-back, since rules/ and docs/ stay directly readable either way.
+#    Mirrors node.sh's own manifest read (indexes_line=...), guarded for a
+#    root whose purpose.md is not yet readable.
+indexes_line=$(grep -m1 '^  indexes:' "$root/.agent/purpose.md" 2>/dev/null)
+indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
+[ -n "$indexes" ] || indexes=manual
+if [ "$indexes" = generated ]; then
+  echo "== cache refresh"
+  if [ ! -f "$scripts/index.sh" ]; then
+    echo "checkpoint.sh: indexes: generated but .agent/scripts/index.sh is not installed — run node.sh update to obtain it; read .agent/rules/ and .agent/docs/ directly meanwhile." >&2
+  else
+    finish_index_stderr=$(mktemp "${TMPDIR:-/tmp}/finish-index-err.XXXXXX")
+    bash "$scripts/index.sh" ensure --root "$root" >/dev/null 2>"$finish_index_stderr"
+    index_rc=$?
+    if [ "$index_rc" -ne 0 ]; then
+      cat "$finish_index_stderr" >&2
+      echo "checkpoint.sh: index refresh failed — the cache no longer reflects this session's writes; read .agent/rules/ and .agent/docs/ directly until the next successful ensure." >&2
+    fi
+  fi
+fi
+
+# 4. The session-log entry, through log.sh's own checks.
 echo "== session log"
 bash "$scripts/log.sh" "${logargs[@]}" "$root" || exit 1
 exit 0

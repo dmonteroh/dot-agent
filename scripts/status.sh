@@ -133,6 +133,7 @@ log="$agent/session-log.md"
 memory="$agent/memory.md"
 memdir="$agent/memory"
 learned="$agent/rules/learned.md"
+learned_dir="$agent/rules/learned"
 contract="$agent/rules/contract.md"
 qualitybar="$agent/rules/quality-bar.md"
 purpose="$agent/purpose.md"
@@ -162,6 +163,14 @@ body_words() {
   ' "$1" | wc -w | tr -d '[:space:]'
 }
 
+# Mirrors index.sh's own learned_dir_active: rules/learned/ is the
+# canonical source, in place of rules/learned.md, exactly when the
+# directory exists, is not a symlink, and holds at least one *.md record.
+learned_dir_active() {
+  [[ -d "$learned_dir" ]] && [[ ! -L "$learned_dir" ]] || return 1
+  [[ -n "$(find "$learned_dir" -type f -name '*.md' -print -quit 2>/dev/null)" ]]
+}
+
 # Recent session-log entries — printed even when every check passes.
 if [[ -s "$log" ]]; then
   recent=$(grep '^- \[' "$log" | tail -n "$TAIL_LINES")
@@ -178,7 +187,9 @@ fi
 [[ -s "$memory" ]] || echo "REPAIR: memory.md missing/empty"
 [[ -s "$log" ]] || echo "REPAIR: session-log.md missing/empty"
 [[ -s "$contract" ]] || echo "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session"
-[[ -s "$learned" ]] || echo "REPAIR: rules/learned.md missing/empty — restore it, the entry point loads it every session"
+if ! learned_dir_active && [[ ! -s "$learned" ]]; then
+  echo "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session"
+fi
 if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
@@ -330,7 +341,19 @@ fi
 if [[ -e "$memdir/legacy.md" ]]; then
   echo "GROOM: memory/legacy.md exists — split legacy.md into fact files"
 fi
-if [[ -s "$learned" ]]; then
+if learned_dir_active; then
+  learned_rules=0
+  learned_words=0
+  while IFS= read -r learned_rec; do
+    learned_rules=$((learned_rules + $(grep -c '^- ' "$learned_rec")))
+    learned_words=$((learned_words + $(body_words "$learned_rec")))
+  done < <(find "$learned_dir" -type f -name '*.md')
+  if [[ "$learned_rules" -gt "$LEARNED_MAX_RULES" ]]; then
+    echo "GROOM: rules/learned/ > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
+  elif [[ "$learned_words" -gt "$LEARNED_MAX_WORDS" ]]; then
+    echo "GROOM: rules/learned/ > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
+  fi
+elif [[ -s "$learned" ]]; then
   if [[ "$(grep -c '^- ' "$learned")" -gt "$LEARNED_MAX_RULES" ]]; then
     echo "GROOM: learned.md > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
   elif [[ "$(body_words "$learned")" -gt "$LEARNED_MAX_WORDS" ]]; then
