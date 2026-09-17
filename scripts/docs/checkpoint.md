@@ -1,9 +1,9 @@
-# finish.sh — the hand-back call
+# checkpoint.sh — the hand-back call
 
-The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; this one only sequences them and stops at the first refusal.
+The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; this one only sequences them and stops at the first refusal. `finish.sh` is a deprecated alias kept for already-adopted nodes; it forwards to this script unchanged.
 
 ```
-Usage: finish.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
+Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
 ```
 
 `root` defaults to `.` — the project root holding `.agent/`. `--tool`, `--area`, `--verify`, and `--summary` are passed through to `log.sh` unchanged and are held to its checks.
@@ -26,7 +26,7 @@ A stop leaves no log entry behind. That ordering is the point: a log entry is a 
 
 A clean tree with no `--base` is a turn that changed nothing, and the script stops there: no gate to run, no verification to record, no entry written.
 
-The session log holds one entry per turn that changed files, not one per session — a stated design, not an unresolved tension the runtime is merely working around. The entry point scopes bootstrap to the conversation — one conversation is one session — but a hand-back happens on every message, and no stable session or conversation identifier reaches a tool call inside one to key the log on instead. Measured before this rule existed: a three-turn session on Codex ran `finish.sh` three times and wrote three entries, two of them a question answered and nothing else — the evidence for why the boundary is "changed files," not "every hand-back." At a hundred messages without the rule that is a hundred entries, riding the printed tail into every future session.
+The session log holds one entry per turn that changed files, not one per session — a stated design, not an unresolved tension the runtime is merely working around. The entry point scopes bootstrap to the conversation — one conversation is one session — but a hand-back happens on every message, and no stable session or conversation identifier reaches a tool call inside one to key the log on instead. Measured before this rule existed: a three-turn session on Codex ran `checkpoint.sh` three times and wrote three entries, two of them a question answered and nothing else — the evidence for why the boundary is "changed files," not "every hand-back." At a hundred messages without the rule that is a hundred entries, riding the printed tail into every future session.
 
 The agent cannot observe the end of a session. It can observe whether the turn changed anything, so that is the boundary the script reads: a clean tree with no `--base`. That is not "an answering turn never logs" — a turn that only answers but follows uncommitted prior work still finds a dirty tree and still writes an entry. Committed work still logs — `--base <ref>` names its parent. A project that is not a git checkout gives no signal either way, so it keeps the old behavior: the gate is skipped, and the entry is written.
 
@@ -44,4 +44,4 @@ An inspection that did not run is not a clean node: the log entry is a claim tha
 
 ## Subagents
 
-Workers never run it. The orchestrator is the single session-log writer, and flags are the orchestrator's to handle; a worker that ran `finish.sh` would write an entry for work it did not own.
+Workers never run it. The orchestrator is the single session-log writer, and flags are the orchestrator's to handle; a worker that ran `checkpoint.sh` would write an entry for work it did not own.

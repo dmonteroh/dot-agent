@@ -1,6 +1,6 @@
 # index.sh — the generated-mode index cache
 
-Refreshes bounded Markdown indexes under `<root>/.agent/indexes/` before an agent reads them, and reuses a verified prior build when nothing that feeds it has changed. Nothing yet calls `ensure` or `check` automatically — no bootstrap step or `finish.sh` run builds the cache on its own, so a session gets one only by running this script directly. This is the mechanism alone: two operations, a fingerprint, and an atomic publish.
+Refreshes bounded Markdown indexes under `<root>/.agent/indexes/` before an agent reads them, and reuses a verified prior build when nothing that feeds it has changed. Nothing yet calls `ensure` or `check` automatically — no bootstrap step or `checkpoint.sh` run builds the cache on its own, so a session gets one only by running this script directly. This is the mechanism alone: two operations, a fingerprint, and an atomic publish.
 
 ```
 Usage: index.sh ensure [--root <path>] [--budget <bytes>]

@@ -685,7 +685,7 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh index.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
       || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
@@ -991,7 +991,7 @@ EOF
   # overwritten. A missing starter conf is seeded, the one write that
   # cannot clobber node content.
   mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh index.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script"
     chmod +x "$agent/scripts/$script"
   done
@@ -1072,7 +1072,7 @@ EOF
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, finish.sh, and index.sh refreshed from source repo"
+  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, checkpoint.sh, index.sh, and finish.sh (compatibility shim) refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
   exit 0
   ;;

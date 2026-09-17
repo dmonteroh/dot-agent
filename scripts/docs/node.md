@@ -20,7 +20,7 @@ Header contracts in `operating-model.md` remain the format authority: this scrip
 
 ## What init writes
 
-The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the eight shipped scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `finish.sh`, `index.sh`), and the three starter confs.
+The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the nine shipped scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `finish.sh`), and the three starter confs.
 
 The manifest's `indexes` field records `manual` or `generated`, next to `mode`. It defaults to `manual` when `--indexes` is omitted. A manifest with no `indexes` line at all — every node created before this field existed — reads as `manual` too, the same value an absent field already means. Nothing about such a node's behavior changes until it is turned on by hand. `generated` wires nothing into a session by itself. It only decides which lines `init` and `update` add to the gitignore and, at `update`, whether the learned-rules migration below runs. Loading the generated index into a session's own read path is a separate, not-yet-shipped step (`scripts/docs/index.md`).
 
@@ -46,7 +46,7 @@ The generated cache is excluded from git in all six. It's excluded wholly under 
 
 `.agent/scripts/` is excluded from git under both `ignore-all` and `track-shared` (under `ignore-all` nothing at all under `.agent/` is tracked). A fresh clone or a `git worktree add` checkout of a `track-shared` node therefore carries the manifest and `rules/` but no scripts, `index.sh` included, even when that node's `indexes` is `generated`.
 
-The fix is the same command that carries any node forward: run `node.sh update <root>` from the source repo, pointing `<root>` at the clone or worktree. On a node already at this script's current version — the ordinary fresh-clone case — `update` does not re-copy all eight shipped scripts. It copies `index.sh` alone, since that is the one script a version-current node can still be missing, and installs it without touching `rules/`, `docs/`, `memory/`, or anything else the node already holds. A node whose manifest predates the current version instead takes the full migration path below, which refreshes all eight scripts by name as part of that migration.
+The fix is the same command that carries any node forward: run `node.sh update <root>` from the source repo, pointing `<root>` at the clone or worktree. On a node already at this script's current version — the ordinary fresh-clone case — `update` does not re-copy all nine shipped scripts. It copies `index.sh` alone, since that is the one script a version-current node can still be missing, and installs it without touching `rules/`, `docs/`, `memory/`, or anything else the node already holds. A node whose manifest predates the current version instead takes the full migration path below, which refreshes all nine scripts by name as part of that migration.
 
 A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh ensure` and gets a failed build, reads `.agent/rules/` and `.agent/docs/` directly — the same canonical sources `ensure` itself names on stderr when a build fails (`scripts/docs/index.md`). A missing or failing indexer never blocks a session. It only means the generated cache is unavailable until `index.sh` exists and builds one.
 
@@ -54,7 +54,7 @@ A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh
 
 A version migration is two phases: `update` does the mechanical part and leaves the node mid-migration on purpose; `finalize` closes it out once the mechanical part and the agent's own reconciliation are both done. `version` changes at `finalize` only — `update` never writes it.
 
-`update` refreshes the shipped scripts from the source repo **by exactly their eight names** — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `finish.sh`, `index.sh`. Anything else under `scripts/` is the node's own and is never overwritten. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
+`update` refreshes the shipped scripts from the source repo **by exactly their nine names** — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `finish.sh`. Anything else under `scripts/` is the node's own and is never overwritten. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
 
 A manifest with no `indexes` line at all is backfilled as `manual` — the value an absent field already means, so nothing about the node's behavior changes — both here and on a version-current node (below).
 

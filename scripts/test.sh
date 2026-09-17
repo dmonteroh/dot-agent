@@ -199,7 +199,7 @@ for preset in $PRESETS; do
     # The shipped set, stated here independently of node.sh's copy loop —
     # deriving it from the script under test would pass a dropped entry.
     missing=""
-    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh finish.sh index.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh; do
       [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
@@ -985,7 +985,7 @@ head -n 1 "$rehookroot/.agent/docs/deploy.md" | grep -qF -- '<!-- Read when: shi
 rc=$?
 [ "$rc" -ne 0 ] && pass "docs.sh rehook: a doc that does not exist is refused" || fail "docs.sh rehook: a doc that does not exist is refused"
 
-# ---- 8f. finish.sh: gate, status check, then the entry, written once on the clean run ----
+# ---- 8f. checkpoint.sh: gate, status check, then the entry, written once on the clean run ----
 finroot="$WORK/finish"
 mkdir -p "$finroot/src"
 "$NODE" init --preset software-development --mode track-all "$finroot" >/dev/null 2>&1
@@ -996,44 +996,44 @@ git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c us
 # work, and there is none to record. Without this the hand-back fires on
 # every message while the artifact it writes is one entry per turn that
 # changed files.
-out8e=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
+out8e=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'nothing changed' && [ "$n8f" -eq 0 ] && pass "finish.sh: an unchanged tree writes no entry" || fail "finish.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'nothing changed' && [ "$n8f" -eq 0 ] && pass "checkpoint.sh: an unchanged tree writes no entry" || fail "checkpoint.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
 printf '// const old = fetch(url)\nexport const b = 2\n' >>"$finroot/src/a.ts"
-out8f=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" 2>&1)
+out8f=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" 2>&1)
 rc=$?
 n8f2=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 0 ] && pass "finish.sh: a BLOCK finding stops it before the log entry" || fail "finish.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 0 ] && pass "checkpoint.sh: a BLOCK finding stops it before the log entry" || fail "checkpoint.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$finroot/src/a.ts"
-"$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" >/dev/null 2>&1
+"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" >/dev/null 2>&1
 rc=$?
 n8f3=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -eq 0 ] && [ "$n8f3" -eq 1 ] && pass "finish.sh: on the clean run the entry is written once" || fail "finish.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
+[ "$rc" -eq 0 ] && [ "$n8f3" -eq 1 ] && pass "checkpoint.sh: on the clean run the entry is written once" || fail "checkpoint.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
 # Committed work leaves a clean tree and still has to log: --base names the
 # parent, and the refusal above must not swallow it.
 git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m work
-"$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
+"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
 rc=$?
 n8f3b=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -eq 0 ] && [ "$n8f3b" -eq 2 ] && pass "finish.sh: committed work still logs, against --base" || fail "finish.sh: committed work still logs, against --base (rc=$rc entries=$n8f3b)"
+[ "$rc" -eq 0 ] && [ "$n8f3b" -eq 2 ] && pass "checkpoint.sh: committed work still logs, against --base" || fail "checkpoint.sh: committed work still logs, against --base (rc=$rc entries=$n8f3b)"
 i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agent/session-log.md"; i8f=$((i8f + 1)); done
-out8g=$("$finroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "added c" "$finroot" 2>&1)
+out8g=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "added c" "$finroot" 2>&1)
 rc=$?
 n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q '^GROOM:' && [ "$n8f4" -eq 5 ] && pass "finish.sh: a standing flag stops it before the log entry" || fail "finish.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q '^GROOM:' && [ "$n8f4" -eq 5 ] && pass "checkpoint.sh: a standing flag stops it before the log entry" || fail "checkpoint.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
 # A project that is not a git checkout gives no signal either way, so it
 # keeps the old behavior rather than being refused on a guess.
 finroot_nogit="$WORK/finish-nogit"
 mkdir -p "$finroot_nogit"
 "$NODE" init --preset software-development --mode ignore-all "$finroot_nogit" >/dev/null 2>&1
 finish_bootstrap "$finroot_nogit"
-"$finroot_nogit/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "no repo here" "$finroot_nogit" >/dev/null 2>&1
+"$finroot_nogit/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "no repo here" "$finroot_nogit" >/dev/null 2>&1
 rc=$?
 n8h=$(grep -c '^- \[' "$finroot_nogit/.agent/session-log.md")
-[ "$rc" -eq 0 ] && [ "$n8h" -eq 1 ] && pass "finish.sh: a non-git project still writes its entry" || fail "finish.sh: a non-git project still writes its entry (rc=$rc entries=$n8h)"
+[ "$rc" -eq 0 ] && [ "$n8h" -eq 1 ] && pass "checkpoint.sh: a non-git project still writes its entry" || fail "checkpoint.sh: a non-git project still writes its entry (rc=$rc entries=$n8h)"
 
-# ---- 8i. finish.sh: a status check that did not run cleanly blocks completion ----
+# ---- 8i. checkpoint.sh: a status check that did not run cleanly blocks completion ----
 # finroot above ends this section with a standing GROOM: flag (line 423), so
 # it cannot be reused here — case (c)'s re-verification needs a fixture that
 # is genuinely clean once status.sh is restored. A fresh root, same pattern.
@@ -1048,30 +1048,30 @@ cp "$fsroot/.agent/scripts/status.sh" "$WORK/fs-status-clean.sh"
 n8i0=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 
 printf '#!/usr/bin/env bash\nif [ 1 -eq 1 ]\n  echo "missing then"\n' >"$fsroot/.agent/scripts/status.sh"
-out8i=$("$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "syntax break" "$fsroot" 2>&1)
+out8i=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "syntax break" "$fsroot" 2>&1)
 rc=$?
 n8i=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && [ "$n8i" -eq "$n8i0" ] && printf '%s' "$out8i" | grep -q 'finish.sh: status check failed to run cleanly' && pass "finish.sh: invalid status.sh syntax blocks completion" || fail "finish.sh: invalid status.sh syntax blocks completion (rc=$rc entries=$n8i)"
+[ "$rc" -ne 0 ] && [ "$n8i" -eq "$n8i0" ] && printf '%s' "$out8i" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: invalid status.sh syntax blocks completion" || fail "checkpoint.sh: invalid status.sh syntax blocks completion (rc=$rc entries=$n8i)"
 
 printf '#!/usr/bin/env bash\nexit 3\n' >"$fsroot/.agent/scripts/status.sh"
-out8j=$("$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "quiet exit 3" "$fsroot" 2>&1)
+out8j=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "quiet exit 3" "$fsroot" 2>&1)
 rc=$?
 n8j=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && [ "$n8j" -eq "$n8i0" ] && printf '%s' "$out8j" | grep -q 'finish.sh: status check failed to run cleanly' && pass "finish.sh: a status.sh that quietly exits nonzero blocks completion" || fail "finish.sh: a status.sh that quietly exits nonzero blocks completion (rc=$rc entries=$n8j)"
+[ "$rc" -ne 0 ] && [ "$n8j" -eq "$n8i0" ] && printf '%s' "$out8j" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: a status.sh that quietly exits nonzero blocks completion" || fail "checkpoint.sh: a status.sh that quietly exits nonzero blocks completion (rc=$rc entries=$n8j)"
 
 printf '#!/usr/bin/env bash\necho "unexpected noise" >&2\nexit 0\n' >"$fsroot/.agent/scripts/status.sh"
-out8k=$("$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "unexpected stderr" "$fsroot" 2>&1)
+out8k=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "unexpected stderr" "$fsroot" 2>&1)
 rc=$?
 n8k=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && [ "$n8k" -eq "$n8i0" ] && printf '%s' "$out8k" | grep -q 'finish.sh: status check failed to run cleanly' && pass "finish.sh: unexpected status.sh stderr blocks completion" || fail "finish.sh: unexpected status.sh stderr blocks completion (rc=$rc entries=$n8k)"
+[ "$rc" -ne 0 ] && [ "$n8k" -eq "$n8i0" ] && printf '%s' "$out8k" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: unexpected status.sh stderr blocks completion" || fail "checkpoint.sh: unexpected status.sh stderr blocks completion (rc=$rc entries=$n8k)"
 
 cp "$WORK/fs-status-clean.sh" "$fsroot/.agent/scripts/status.sh"
-"$fsroot/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
+"$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
 rc=$?
 n8l=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
-[ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "finish.sh: a clean status check still allows completion" || fail "finish.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
+[ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "checkpoint.sh: a clean status check still allows completion" || fail "checkpoint.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
 
-# ---- 8m. finish.sh: one entry per turn that changed files, across real commits ----
+# ---- 8m. checkpoint.sh: one entry per turn that changed files, across real commits ----
 seqA="$WORK/seq-edit-commit-edit-commit-noedit"
 mkdir -p "$seqA/src"
 "$NODE" init --preset software-development --mode track-all "$seqA" >/dev/null 2>&1
@@ -1080,17 +1080,17 @@ printf 'export const a = 1\n' >"$seqA/src/a.ts"
 git -C "$seqA" init -q && git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 
 printf 'export const b = 2\n' >>"$seqA/src/a.ts"
-"$seqA/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "turn one edit" "$seqA" >/dev/null 2>&1
+"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "turn one edit" "$seqA" >/dev/null 2>&1
 rc_a1=$?
 git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-one
 
 printf 'export const c = 3\n' >>"$seqA/src/a.ts"
-"$seqA/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "turn two edit" "$seqA" >/dev/null 2>&1
+"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "turn two edit" "$seqA" >/dev/null 2>&1
 rc_a2=$?
 git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-two
 n_a2=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
 
-out_a3=$("$seqA/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "turn three no edit" "$seqA" 2>&1)
+out_a3=$("$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "turn three no edit" "$seqA" 2>&1)
 rc_a3=$?
 n_a3=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
 
@@ -1108,7 +1108,7 @@ finish_bootstrap "$seqB"
 printf 'export const a = 1\n' >"$seqB/src/a.ts"
 git -C "$seqB" init -q && git -C "$seqB" add -A && git -C "$seqB" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 
-out_b1=$("$seqB/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
+out_b1=$("$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
 rc_b1=$?
 n_b1=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
 [ "$rc_b1" -ne 0 ] && [ "$n_b1" -eq 0 ] && printf '%s' "$out_b1" | grep -q 'nothing changed' \
@@ -1116,7 +1116,7 @@ n_b1=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
   || fail "sequence: no-edit before any edit exits nonzero and writes nothing (rc=$rc_b1 entries=$n_b1)"
 
 printf 'export const b = 2\n' >>"$seqB/src/a.ts"
-"$seqB/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "second turn edits" "$seqB" >/dev/null 2>&1
+"$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "second turn edits" "$seqB" >/dev/null 2>&1
 rc_b2=$?
 n_b2=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
 [ "$rc_b2" -eq 0 ] && [ "$n_b2" -eq 1 ] \
@@ -1129,7 +1129,7 @@ mkdir -p "$seqC/src"
 finish_bootstrap "$seqC"
 printf 'export const a = 1\n' >"$seqC/src/a.ts"
 git -C "$seqC" init -q && git -C "$seqC" add -A && git -C "$seqC" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-"$seqC/.agent/scripts/finish.sh" --tool claude --area testing --verify n/a --summary "only answered, nothing to record" "$seqC" >/dev/null 2>&1
+"$seqC/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "only answered, nothing to record" "$seqC" >/dev/null 2>&1
 rc_c1=$?
 n_c1=$(grep -c '^- \[' "$seqC/.agent/session-log.md")
 [ "$rc_c1" -ne 0 ] && [ "$n_c1" -eq 0 ] \
@@ -2091,7 +2091,7 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
   templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
-  scripts/links.sh scripts/comments.sh scripts/finish.sh scripts/comments.conf \
+  scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/comments.conf \
   scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
@@ -2856,10 +2856,10 @@ rc34othersx=$?
 [ "$rc34othersx" -eq 2 ] && pass "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2" || fail "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2 (rc=$rc34othersx; $out34othersx)"
 rm -f "$stub34/git"
 
-# finish.sh already maps any non-zero comments.sh exit to a hard stop with
-# no log entry (scripts/finish.sh, unchanged here) — a gate that now fails
-# closed on a broken diff read has to reach that same stop, not a silent
-# pass through it.
+# checkpoint.sh already maps any non-zero comments.sh exit to a hard stop
+# with no log entry (scripts/checkpoint.sh, unchanged here) — a gate that
+# now fails closed on a broken diff read has to reach that same stop, not a
+# silent pass through it.
 cgf34="$WORK/comment-gate-failclosed"
 mkdir -p "$cgf34/src"
 "$NODE" init --preset software-development --mode track-all "$cgf34" >/dev/null 2>&1
@@ -2868,10 +2868,10 @@ printf 'export const a = 1\n' >"$cgf34/src/a.ts"
 git -C "$cgf34" init -q && git -C "$cgf34" add -A && git -C "$cgf34" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf 'export const b = 2\n' >>"$cgf34/src/a.ts"
 n34before=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
-out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agent/scripts/finish.sh" --tool claude --area testing --verify pass --summary "should not log" "$cgf34" 2>&1)
+out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "should not log" "$cgf34" 2>&1)
 rc34fc=$?
 n34after=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
-[ "$rc34fc" -ne 0 ] && [ "$n34before" -eq "$n34after" ] && pass "finish.sh: a failed-closed comment gate appends no log entry" || fail "finish.sh: a failed-closed comment gate appends no log entry (rc=$rc34fc before=$n34before after=$n34after; $out34fc)"
+[ "$rc34fc" -ne 0 ] && [ "$n34before" -eq "$n34after" ] && pass "checkpoint.sh: a failed-closed comment gate appends no log entry" || fail "checkpoint.sh: a failed-closed comment gate appends no log entry (rc=$rc34fc before=$n34before after=$n34after; $out34fc)"
 
 # The one temporary file comments.sh writes — the captured diff — survives
 # no run, clean or failed: a single trap removes it on every exit path.
@@ -3357,7 +3357,7 @@ grep -qF "A new user message does not start a new session." "$tpl41f" || missing
 grep -qF "Do not open this file with a tool when its content is already present in your context." "$tpl41f" || missing41="$missing41 no-reopen-from-disk"
 grep -qF "compaction" "$tpl41f" || missing41="$missing41 compaction-rerun"
 grep -qF "Never restate it here" "$tpl41f" || missing41="$missing41 wiring-only"
-grep -qF "finish.sh" "$tpl41f" || missing41="$missing41 finish-call"
+grep -qF "checkpoint.sh" "$tpl41f" || missing41="$missing41 checkpoint-call"
 [ -z "$missing41" ] && pass "template: the entry point carries its timing and boundary rules" || fail "template: the entry point carries its timing and boundary rules (missing:$missing41)"
 
 # A user turn is not a session boundary, and the gate saying so must precede
@@ -3398,7 +3398,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | finish.sh | index.sh | status.conf | log.conf | comments.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | finish.sh | index.sh | status.conf | log.conf | comments.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
@@ -6120,22 +6120,22 @@ fi
 
 # ---- 46. the completion-time gate is described accurately, not denied ----
 # F10b: README.md used to end its load-path paragraph with "There is no
-# completion-time gate," which was false — finish.sh withholds the
+# completion-time gate," which was false — checkpoint.sh withholds the
 # session-log entry on a standing flag or a status check that failed to run
 # cleanly. These checks pin the mechanism facts and the retired phrase: the
 # anchor check requires status.sh to appear on the SAME README line that
-# names finish.sh (not merely somewhere across the union of all
-# finish.sh-mentioning lines, which a stray "status.sh" on an unrelated line
-# could satisfy on its own), and requires a GROOM:/REPAIR:/INDEX: flag to
-# appear in the part of that line AFTER the finish.sh mention specifically —
-# that line's opening sentences name the flags for an unrelated reason (what
-# the load-time status check prints), so a bare same-line check stays
-# satisfied even after the finish.sh-describing clause's own flag mention is
-# cut; anchoring to text after finish.sh closes that gap. The script check
-# anchors each fail-closed branch to its own distinguishing message text
-# rather than a floating count that unrelated code (the comment-gate
-# branches also say "No log entry written.") could keep satisfied after one
-# branch is deleted.
+# names checkpoint.sh (not merely somewhere across the union of all
+# checkpoint.sh-mentioning lines, which a stray "status.sh" on an unrelated
+# line could satisfy on its own), and requires a GROOM:/REPAIR:/INDEX: flag
+# to appear in the part of that line AFTER the checkpoint.sh mention
+# specifically — that line's opening sentences name the flags for an
+# unrelated reason (what the load-time status check prints), so a bare
+# same-line check stays satisfied even after the checkpoint.sh-describing
+# clause's own flag mention is cut; anchoring to text after checkpoint.sh
+# closes that gap. The script check anchors each fail-closed branch to its
+# own distinguishing message text rather than a floating count that
+# unrelated code (the comment-gate branches also say "No log entry
+# written.") could keep satisfied after one branch is deleted.
 
 # -- the retired claim does not return anywhere it was cut from --
 stale_hits=$(grep -rIn -- "no completion-time gate" \
@@ -6147,35 +6147,36 @@ else
   fail "docs: 'no completion-time gate' does not appear in README.md, operating-model.md, presets/, templates/, or tools/ (found: $(printf '%s' "$stale_hits" | head -n1))"
 fi
 
-# -- a single README line naming finish.sh also names status.sh, and names a
-#    flag prefix in the text that follows the finish.sh mention itself --
-finishsh_anchor_ok=0
+# -- a single README line naming checkpoint.sh also names status.sh, and
+#    names a flag prefix in the text that follows the checkpoint.sh mention
+#    itself --
+checkpointsh_anchor_ok=0
 while IFS= read -r line; do
   case "$line" in
-  *finish.sh*status.sh*) ;;
-  *status.sh*finish.sh*) ;;
+  *checkpoint.sh*status.sh*) ;;
+  *status.sh*checkpoint.sh*) ;;
   *) continue ;;
   esac
-  after_finishsh=${line#*finish.sh}
-  case "$after_finishsh" in
-  *GROOM:* | *REPAIR:* | *INDEX:*) finishsh_anchor_ok=1 ;;
+  after_checkpointsh=${line#*checkpoint.sh}
+  case "$after_checkpointsh" in
+  *GROOM:* | *REPAIR:* | *INDEX:*) checkpointsh_anchor_ok=1 ;;
   esac
-done < <(grep -F "finish.sh" "$reporoot/README.md")
-if [ "$finishsh_anchor_ok" -eq 1 ]; then
-  pass "README.md: a finish.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the finish.sh mention"
+done < <(grep -F "checkpoint.sh" "$reporoot/README.md")
+if [ "$checkpointsh_anchor_ok" -eq 1 ]; then
+  pass "README.md: a checkpoint.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the checkpoint.sh mention"
 else
-  fail "README.md: a finish.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the finish.sh mention"
+  fail "README.md: a checkpoint.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the checkpoint.sh mention"
 fi
 
-# -- finish.sh still implements both fail-closed branches, each by its own message --
+# -- checkpoint.sh still implements both fail-closed branches, each by its own message --
 flagstands_ok=0
-grep -qF "the flags above are this session's to handle" "$reporoot/scripts/finish.sh" && flagstands_ok=1
+grep -qF "the flags above are this session's to handle" "$reporoot/scripts/checkpoint.sh" && flagstands_ok=1
 statusrc_ok=0
-grep -qF "status.sh rc=" "$reporoot/scripts/finish.sh" && statusrc_ok=1
+grep -qF "status.sh rc=" "$reporoot/scripts/checkpoint.sh" && statusrc_ok=1
 if [ "$flagstands_ok" -eq 1 ] && [ "$statusrc_ok" -eq 1 ]; then
-  pass "scripts/finish.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present"
+  pass "scripts/checkpoint.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present"
 else
-  fail "scripts/finish.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present (flagstands_ok=$flagstands_ok statusrc_ok=$statusrc_ok)"
+  fail "scripts/checkpoint.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present (flagstands_ok=$flagstands_ok statusrc_ok=$statusrc_ok)"
 fi
 
 # ---- 47. the manifest version example matches the version node.sh stamps ----
@@ -8018,6 +8019,60 @@ e2e_bad_repairs=$(printf '%s\n' "$e2e_flags_after" \
   && pass "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note" \
   || fail "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note ($e2e_bad_repairs)"
 
+# ---- 66. checkpoint.sh compatibility shim: finish.sh forwards unchanged,
+# plus one deprecation line ----
+# An already-adopted node's entry point still says `finish.sh` until it is
+# edited by hand, so the old name has to keep working. node.sh update ships
+# checkpoint.sh and finish.sh through the same copy loop as init, so it
+# gets its own check here rather than reusing the init-time one above. The
+# forwarding check below runs two structurally identical fixtures — one
+# through checkpoint.sh directly, one through finish.sh — and compares
+# their output after stripping each fixture's own root path (so two
+# differently named directories don't defeat the diff) and, on the
+# finish.sh side, the shim's one added stderr line.
+shimU="$WORK/shim-update"
+make_v6_fixture "$shimU"
+"$NODE" update "$shimU" >/dev/null 2>&1
+[ -x "$shimU/.agent/scripts/checkpoint.sh" ] && [ -x "$shimU/.agent/scripts/finish.sh" ] \
+  && pass "node.sh update: refreshes both checkpoint.sh and finish.sh on an existing node" \
+  || fail "node.sh update: refreshes both checkpoint.sh and finish.sh on an existing node"
+
+shimA="$WORK/shim-direct"
+shimB="$WORK/shim-forward"
+for shimroot in "$shimA" "$shimB"; do
+  mkdir -p "$shimroot/src"
+  "$NODE" init --preset software-development --mode track-all "$shimroot" >/dev/null 2>&1
+  finish_bootstrap "$shimroot"
+  printf 'export const a = 1\n' >"$shimroot/src/a.ts"
+  git -C "$shimroot" init -q && git -C "$shimroot" add -A && git -C "$shimroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+  printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$shimroot/src/a.ts"
+done
+
+"$shimA/.agent/scripts/checkpoint.sh" --tool claude --area shimtest --verify pass --summary "checkpoint shim parity" "$shimA" >"$WORK/shimA.out" 2>"$WORK/shimA.err"
+rcA=$?
+"$shimB/.agent/scripts/finish.sh" --tool claude --area shimtest --verify pass --summary "checkpoint shim parity" "$shimB" >"$WORK/shimB.out" 2>"$WORK/shimB.err"
+rcB=$?
+
+sed "s#$shimA#ROOT#g" "$WORK/shimA.out" >"$WORK/shimA.out.norm"
+sed "s#$shimB#ROOT#g" "$WORK/shimB.out" >"$WORK/shimB.out.norm"
+sed "s#$shimA#ROOT#g" "$WORK/shimA.err" >"$WORK/shimA.err.norm"
+sed "s#$shimB#ROOT#g" "$WORK/shimB.err" >"$WORK/shimB.err.norm"
+
+[ "$rcA" -eq "$rcB" ] && pass "checkpoint.sh shim: finish.sh's exit code matches a direct checkpoint.sh call" || fail "checkpoint.sh shim: finish.sh's exit code matches a direct checkpoint.sh call (checkpoint=$rcA finish=$rcB)"
+
+diff -q "$WORK/shimA.out.norm" "$WORK/shimB.out.norm" >/dev/null 2>&1 \
+  && pass "checkpoint.sh shim: finish.sh's stdout matches a direct checkpoint.sh call" \
+  || fail "checkpoint.sh shim: finish.sh's stdout matches a direct checkpoint.sh call"
+
+head -n 1 "$WORK/shimB.err" | grep -qxF "finish.sh: deprecated — use checkpoint.sh; forwarding unchanged" \
+  && pass "checkpoint.sh shim: finish.sh's stderr opens with exactly the deprecation line" \
+  || fail "checkpoint.sh shim: finish.sh's stderr opens with exactly the deprecation line"
+
+tail -n +2 "$WORK/shimB.err.norm" >"$WORK/shimB.err.rest"
+diff -q "$WORK/shimA.err.norm" "$WORK/shimB.err.rest" >/dev/null 2>&1 \
+  && pass "checkpoint.sh shim: finish.sh's stderr past the deprecation line matches a direct checkpoint.sh call" \
+  || fail "checkpoint.sh shim: finish.sh's stderr past the deprecation line matches a direct checkpoint.sh call"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -8025,7 +8080,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1080
+EXPECTED_CHECKS=1085
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
