@@ -8095,22 +8095,44 @@ grep -qrF -- 'duplicate-body probe sentence' "$dup66/.agent/indexes/$dup66_gen" 
   && fail "read set: the rule's sentence does not also appear in --load output" \
   || pass "read set: the rule's sentence does not also appear in --load output"
 
-# Manual-mode parity: this task's branch touches nothing on the manual
-# path, so the base revision's status.sh (HEAD, before this branch's
-# edits) run against an identical fixture must match the current script's
-# manual-mode --load output byte for byte.
+# Manual-mode parity: manual mode's --load branch stays the fixed
+# learned/contract/purpose/memory sequence this file has always emitted, so
+# its output is asserted directly against that fixed shape rather than
+# against a second copy of status.sh — a copy sourced from any git ref goes
+# stale the moment this branch's own commit becomes that ref's HEAD.
 mp66="$WORK/manual-parity"
 mkdir -p "$mp66"
 "$NODE" init --preset software-development --mode track-all --indexes manual "$mp66" >/dev/null 2>&1
 finish_bootstrap "$mp66"
-base66="$WORK/status-base.sh"
-git -C "$reporoot" show HEAD:scripts/status.sh >"$base66" 2>/dev/null
-chmod +x "$base66"
-"$base66" --load "$mp66" >"$WORK/mp66.base.out" 2>&1
 "$mp66/.agent/scripts/status.sh" --load "$mp66" >"$WORK/mp66.cur.out" 2>&1
-cmp -s "$WORK/mp66.base.out" "$WORK/mp66.cur.out" \
-  && pass "manual mode: --load output matches the base revision byte for byte" \
-  || fail "manual mode: --load output matches the base revision byte for byte"
+
+mp66_order=$(grep -n '^==== ' "$WORK/mp66.cur.out" | cut -d: -f2 | tr '\n' ' ')
+[ "$mp66_order" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
+  && pass "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order" \
+  || fail "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order ($mp66_order)"
+
+grep -qE '^PAYLOAD: --load would write [0-9]+ bytes of a [0-9]+ byte budget \(learned [0-9]+, contract [0-9]+, purpose [0-9]+, memory [0-9]+\)$' "$WORK/mp66.cur.out" \
+  && pass "manual mode: PAYLOAD: line frames all four files, learned first" \
+  || fail "manual mode: PAYLOAD: line frames all four files, learned first"
+
+# The marker segment itself — everything from the blank line before the
+# first marker onward — is rebuilt here from the fixture's own four files
+# and the "\n==== <path> ====\n" + file-body sequence documented above
+# status.sh's --load loop, then compared byte for byte against what --load
+# actually wrote, so any dropped, reordered, duplicated, or reformatted
+# body in that sequence still fails this check.
+mp66_expected="$WORK/mp66.expected-tail.out"
+: >"$mp66_expected"
+for mp66_f in rules/learned.md rules/contract.md purpose.md memory.md; do
+  printf '\n==== .agent/%s ====\n' "$mp66_f" >>"$mp66_expected"
+  cat "$mp66/.agent/$mp66_f" >>"$mp66_expected"
+done
+mp66_marker_line=$(grep -n '^==== ' "$WORK/mp66.cur.out" | head -1 | cut -d: -f1)
+mp66_actual="$WORK/mp66.actual-tail.out"
+tail -n "+$((mp66_marker_line - 1))" "$WORK/mp66.cur.out" >"$mp66_actual"
+cmp -s "$mp66_expected" "$mp66_actual" \
+  && pass "manual mode: --load's marker segment matches the fixture's own files byte for byte" \
+  || fail "manual mode: --load's marker segment matches the fixture's own files byte for byte"
 
 # Template phrases: the same fixed strings written into
 # templates/entry-point-generated.md in this task's rewrite, mirroring the
@@ -8218,7 +8240,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1104
+EXPECTED_CHECKS=1106
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
