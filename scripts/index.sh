@@ -191,6 +191,15 @@ paths() {
         if [ "$p_learned_active" -eq 1 ] && [ "$rel" = .agent/rules/learned.md ]; then
           continue
         fi
+        # rules/quality-bar.md and every references/ record are on-demand
+        # by contract — opened only when a task needs them, never as part
+        # of the always-read set — so rendering either one into a page
+        # would load it every session, the cost each was split out to
+        # avoid. Unconditional: neither tier is ever a rendered source.
+        if [ "$rel" = .agent/rules/quality-bar.md ]; then
+          continue
+        fi
+        case "$rel" in */references/*) continue ;; esac
         printf '%s\n' "$rel"
       done | sort
 }

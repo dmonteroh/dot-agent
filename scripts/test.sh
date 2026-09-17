@@ -6225,7 +6225,7 @@ fi
 # itself: "doc index" must not survive anywhere routing is described, but
 # the bare word "index" is legitimate (memory.md's own index is named two
 # lines below the fixed bullet) and must not trip the check.
-routing_files48="$reporoot/templates/entry-point.md"
+routing_files48="$reporoot/templates/entry-point.md $reporoot/templates/entry-point-generated.md"
 for p48 in "$reporoot"/presets/*.md; do
   grep -qi "routing" "$p48" && routing_files48="$routing_files48 $p48"
 done
@@ -6261,7 +6261,7 @@ done
 [ -z "$missing48" ] && pass "routing guidance: every routing-aware file names architecture.md after its routing marker" || fail "routing guidance: architecture.md not named after the routing marker in:$missing48"
 
 phrase_hits48=""
-for f48 in "$reporoot/templates/entry-point.md" "$reporoot/README.md" "$reporoot/operating-model.md" "$reporoot"/presets/*.md; do
+for f48 in "$reporoot/templates/entry-point.md" "$reporoot/templates/entry-point-generated.md" "$reporoot/README.md" "$reporoot/operating-model.md" "$reporoot"/presets/*.md; do
   [ -f "$f48" ] || continue
   hit48=$(grep -n "doc index" "$f48") && phrase_hits48="$phrase_hits48
 $f48: $hit48"
@@ -7071,13 +7071,22 @@ printf '%s\n' "$m60migflags" | grep -qF 'REPAIR: rules/learned.md missing/empty'
 [ "$m60ctlflags" = "$m60migflags" ] \
   && pass "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration" \
   || fail "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration ($m60migflags)"
-# The only payload difference the migration may introduce is the
-# generated-marker line's own bytes — anything else would mean a rule
-# was dropped, duplicated, or reformatted in the regenerated aggregate.
+# Both fixtures are indexes: generated, so PAYLOAD: prices purpose and
+# memory only — rules/learned.md is a rule page now, not a --load member —
+# and the migration's marker-line addition to it moves no payload byte at
+# all. The two totals must be equal, not off by the marker line's bytes.
 [ -n "$m60ctlpayload" ] && [ -n "$m60migpayload" ] \
-  && [ "$((m60migpayload - m60ctlpayload))" -eq "$m60markerbytes" ] \
-  && pass "migration: status.sh bills the same payload pre- and post-migration, plus exactly the marker line's own bytes" \
-  || fail "migration: status.sh bills the same payload pre- and post-migration, plus exactly the marker line's own bytes (ctl=$m60ctlpayload mig=$m60migpayload marker=$m60markerbytes)"
+  && [ "$m60ctlpayload" -eq "$m60migpayload" ] \
+  && pass "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load" \
+  || fail "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load (ctl=$m60ctlpayload mig=$m60migpayload)"
+
+# The marker line's bytes still have to land somewhere: rules/learned.md
+# itself, which the migrated copy carries and the control's does not.
+m60ctllearnedbytes=$(wc -c <"$m60ctl/.agent/rules/learned.md" | tr -d '[:space:]')
+m60miglearnedbytes=$(wc -c <"$m60mig/.agent/rules/learned.md" | tr -d '[:space:]')
+[ "$((m60miglearnedbytes - m60ctllearnedbytes))" -eq "$m60markerbytes" ] \
+  && pass "migration: the regenerated rules/learned.md exceeds the control by exactly the marker line's own bytes" \
+  || fail "migration: the regenerated rules/learned.md exceeds the control by exactly the marker line's own bytes (ctl=$m60ctllearnedbytes mig=$m60miglearnedbytes marker=$m60markerbytes)"
 
 printf '\n--- status.sh output against the migrated fixture (%s) ---\n' "$m60mig"
 "$m60mig/.agent/scripts/status.sh" "$m60mig"
@@ -8071,6 +8080,211 @@ tail -n +2 "$WORK/shimB.err.norm" >"$WORK/shimB.err.rest"
 diff -q "$WORK/shimA.err.norm" "$WORK/shimB.err.rest" >/dev/null 2>&1 \
   && pass "checkpoint.sh shim: finish.sh's stderr past the deprecation line matches a direct checkpoint.sh call" \
   || fail "checkpoint.sh shim: finish.sh's stderr past the deprecation line matches a direct checkpoint.sh call"
+# ---- 67. generated-mode bootstrap read set: index pages once, --load
+# trimmed to purpose+memory, quality-bar.md and references/ never render ----
+# The generated template used to run index.sh ensure and then status.sh
+# --load, and --load printed the same rule bodies the index pages just
+# built — every rule body loaded twice. Fixtures below build with node.sh
+# init --indexes generated, then run the suite's bootstrap helper,
+# matching every other generated-mode fixture in this file.
+
+# Cold trace: a fresh node's first ensure is a BUILT, printing the entry
+# path; --load then prints the entry-path line, purpose.md and memory.md
+# under markers, and no .agent/rules/ marker at all.
+rs67="$WORK/read-set-cold"
+mkdir -p "$rs67"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$rs67" >/dev/null 2>&1
+finish_bootstrap "$rs67"
+"$IDXSH" ensure --root "$rs67" >"$WORK/rs67.cold.out" 2>"$WORK/rs67.cold.err"
+grep -q '^BUILT$' "$WORK/rs67.cold.err" \
+  && pass "read set: a cold index.sh ensure reports BUILT" \
+  || fail "read set: a cold index.sh ensure reports BUILT"
+[ "$(cat "$WORK/rs67.cold.out")" = "$rs67/.agent/indexes/current.md" ] \
+  && pass "read set: index.sh ensure prints the entry path" \
+  || fail "read set: index.sh ensure prints the entry path"
+
+"$rs67/.agent/scripts/status.sh" --load "$rs67" >"$WORK/rs67.load.out" 2>&1
+grep -qF "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md." "$WORK/rs67.load.out" \
+  && pass "read set: --load names the index entry path in generated mode" \
+  || fail "read set: --load names the index entry path in generated mode"
+grep -qF '==== .agent/purpose.md ====' "$WORK/rs67.load.out" \
+  && pass "read set: --load prints purpose.md under a marker in generated mode" \
+  || fail "read set: --load prints purpose.md under a marker in generated mode"
+grep -qF '==== .agent/memory.md ====' "$WORK/rs67.load.out" \
+  && pass "read set: --load prints memory.md under a marker in generated mode" \
+  || fail "read set: --load prints memory.md under a marker in generated mode"
+grep -q '^==== \.agent/rules/' "$WORK/rs67.load.out" \
+  && fail "read set: --load prints no .agent/rules/ marker in generated mode" \
+  || pass "read set: --load prints no .agent/rules/ marker in generated mode"
+
+# Warm trace: a second ensure is a HIT, prints the same entry path, and
+# publishes no new generation.
+rs67_snap_before=$(idx_snapshot "$rs67/.agent/indexes")
+"$IDXSH" ensure --root "$rs67" >"$WORK/rs67.warm.out" 2>"$WORK/rs67.warm.err"
+grep -q '^HIT$' "$WORK/rs67.warm.err" \
+  && pass "read set: a warm index.sh ensure reports HIT" \
+  || fail "read set: a warm index.sh ensure reports HIT"
+[ "$(cat "$WORK/rs67.warm.out")" = "$(cat "$WORK/rs67.cold.out")" ] \
+  && pass "read set: a warm ensure prints the same entry path" \
+  || fail "read set: a warm ensure prints the same entry path"
+rs67_snap_after=$(idx_snapshot "$rs67/.agent/indexes")
+[ "$rs67_snap_before" = "$rs67_snap_after" ] \
+  && pass "read set: a warm ensure publishes no new generation" \
+  || fail "read set: a warm ensure publishes no new generation"
+
+# Duplicate-body: a rule's own distinctive sentence must appear in the
+# published pages and nowhere in --load's now-trimmed output.
+dup67="$WORK/read-set-dup"
+mkdir -p "$dup67"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$dup67" >/dev/null 2>&1
+finish_bootstrap "$dup67"
+printf '# Custom Rule\n\nThe duplicate-body probe sentence lives only in this rule record.\n' >"$dup67/.agent/rules/custom.md"
+"$IDXSH" ensure --root "$dup67" >/dev/null 2>"$WORK/dup67.err"
+dup67_gen=$(sed -n 2p "$dup67/.agent/indexes/current.md")
+grep -qrF -- 'duplicate-body probe sentence' "$dup67/.agent/indexes/$dup67_gen" \
+  && pass "read set: a rule's distinctive sentence appears in a published page" \
+  || fail "read set: a rule's distinctive sentence appears in a published page"
+"$dup67/.agent/scripts/status.sh" --load "$dup67" 2>/dev/null | grep -qF -- 'duplicate-body probe sentence' \
+  && fail "read set: the rule's sentence does not also appear in --load output" \
+  || pass "read set: the rule's sentence does not also appear in --load output"
+
+# Manual-mode parity: manual mode's --load branch stays the fixed
+# learned/contract/purpose/memory sequence this file has always emitted, so
+# its output is asserted directly against that fixed shape rather than
+# against a second copy of status.sh — a copy sourced from any git ref goes
+# stale the moment this branch's own commit becomes that ref's HEAD.
+mp67="$WORK/manual-parity"
+mkdir -p "$mp67"
+"$NODE" init --preset software-development --mode track-all --indexes manual "$mp67" >/dev/null 2>&1
+finish_bootstrap "$mp67"
+"$mp67/.agent/scripts/status.sh" --load "$mp67" >"$WORK/mp67.cur.out" 2>&1
+
+mp67_order=$(grep -n '^==== ' "$WORK/mp67.cur.out" | cut -d: -f2 | tr '\n' ' ')
+[ "$mp67_order" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
+  && pass "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order" \
+  || fail "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order ($mp67_order)"
+
+grep -qE '^PAYLOAD: --load would write [0-9]+ bytes of a [0-9]+ byte budget \(learned [0-9]+, contract [0-9]+, purpose [0-9]+, memory [0-9]+\)$' "$WORK/mp67.cur.out" \
+  && pass "manual mode: PAYLOAD: line frames all four files, learned first" \
+  || fail "manual mode: PAYLOAD: line frames all four files, learned first"
+
+# The marker segment itself — everything from the blank line before the
+# first marker onward — is rebuilt here from the fixture's own four files
+# and the "\n==== <path> ====\n" + file-body sequence documented above
+# status.sh's --load loop, then compared byte for byte against what --load
+# actually wrote, so any dropped, reordered, duplicated, or reformatted
+# body in that sequence still fails this check.
+mp67_expected="$WORK/mp67.expected-tail.out"
+: >"$mp67_expected"
+for mp67_f in rules/learned.md rules/contract.md purpose.md memory.md; do
+  printf '\n==== .agent/%s ====\n' "$mp67_f" >>"$mp67_expected"
+  cat "$mp67/.agent/$mp67_f" >>"$mp67_expected"
+done
+mp67_marker_line=$(grep -n '^==== ' "$WORK/mp67.cur.out" | head -1 | cut -d: -f1)
+mp67_actual="$WORK/mp67.actual-tail.out"
+tail -n "+$((mp67_marker_line - 1))" "$WORK/mp67.cur.out" >"$mp67_actual"
+cmp -s "$mp67_expected" "$mp67_actual" \
+  && pass "manual mode: --load's marker segment matches the fixture's own files byte for byte" \
+  || fail "manual mode: --load's marker segment matches the fixture's own files byte for byte"
+
+# Template phrases: the same fixed strings written into
+# templates/entry-point-generated.md in this task's rewrite, mirroring the
+# manual template's own timing/boundary phrase check.
+tplgen67="$reporoot/templates/entry-point-generated.md"
+missing67=""
+grep -qF "run once" "$tplgen67" || grep -qF "runs once" "$tplgen67" || missing67="$missing67 once-per-session"
+grep -qF "Do not open this file with a tool when its content is already present in your context." "$tplgen67" || missing67="$missing67 no-reopen-from-disk"
+grep -qF "compaction" "$tplgen67" || missing67="$missing67 compaction-rerun"
+grep -qF "branch switch" "$tplgen67" || missing67="$missing67 branch-switch-rerun"
+grep -qF "opened only to edit it, to check its provenance, or to resolve a concrete uncertainty" "$tplgen67" || missing67="$missing67 rule-source"
+grep -qF "the catalog, read whole" "$tplgen67" || missing67="$missing67 routes-catalog"
+grep -qF "read \`.agent/rules/\` and \`.agent/docs/architecture.md\` directly and carry on" "$tplgen67" || missing67="$missing67 fallback"
+[ -z "$missing67" ] && pass "template: the generated entry point carries its timing, routing, and fallback phrases" || fail "template: the generated entry point carries its timing, routing, and fallback phrases (missing:$missing67)"
+
+# Exclusions: rules/quality-bar.md (split out by the bootstrap helper) and
+# every references/ record, at either docs/ level, must render into no
+# page and route into no line, while an ordinary rule record and an
+# ordinary routed doc both stay reachable.
+ex67="$WORK/read-set-exclusions"
+mkdir -p "$ex67"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$ex67" >/dev/null 2>&1
+finish_bootstrap "$ex67"
+mkdir -p "$ex67/.agent/docs/area/references" "$ex67/.agent/docs/references"
+printf '# Architecture\n\nRouting table placeholder.\n' >"$ex67/.agent/docs/architecture.md"
+printf '# Ordinary Doc\n<!-- Read when: testing exclusions -->\nOrdinary doc body.\n' >"$ex67/.agent/docs/ordinary.md"
+printf '# Area Reference\n<!-- Read when: never routed -->\nArea reference body, never a routes line.\n' >"$ex67/.agent/docs/area/references/one.md"
+printf '# Top Reference\n<!-- Read when: never routed -->\nTop-level reference body, never a routes line.\n' >"$ex67/.agent/docs/references/two.md"
+"$IDXSH" ensure --root "$ex67" >/dev/null 2>"$WORK/ex67.err"
+ex67_gen=$(sed -n 2p "$ex67/.agent/indexes/current.md")
+ex67_dir="$ex67/.agent/indexes/$ex67_gen"
+
+grep -qrF -- 'This rubric loads on demand' "$ex67_dir" \
+  && fail "exclusions: no published page carries rules/quality-bar.md's body" \
+  || pass "exclusions: no published page carries rules/quality-bar.md's body"
+grep -hF -- 'READ:' "$ex67_dir"/routes-*.md 2>/dev/null | grep -qF 'docs/area/references/one.md' \
+  && fail "exclusions: no routes line names the area-level references/ file" \
+  || pass "exclusions: no routes line names the area-level references/ file"
+grep -hF -- 'READ:' "$ex67_dir"/routes-*.md 2>/dev/null | grep -qF 'docs/references/two.md' \
+  && fail "exclusions: no routes line names the top-level references/ file" \
+  || pass "exclusions: no routes line names the top-level references/ file"
+grep -qrF -- 'filled at bootstrap' "$ex67_dir" \
+  && pass "exclusions: an ordinary rule record is still reachable from the entry file" \
+  || fail "exclusions: an ordinary rule record is still reachable from the entry file"
+grep -hF -- 'READ:' "$ex67_dir"/routes-*.md 2>/dev/null | grep -qF 'docs/ordinary.md' \
+  && pass "exclusions: an ordinary routed doc is still reachable from the entry file" \
+  || fail "exclusions: an ordinary routed doc is still reachable from the entry file"
+
+# Branch-switch staleness: a record changed after a commit and a branch
+# makes check report STALE, purely from the content-hash fingerprint — no
+# git-specific mechanism — and the next ensure republishes.
+bs67="$WORK/read-set-branch-stale"
+mkdir -p "$bs67"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$bs67" >/dev/null 2>&1
+finish_bootstrap "$bs67"
+git -C "$bs67" init -q
+git -C "$bs67" config user.name Tester
+git -C "$bs67" config user.email tester@example.invalid
+git -C "$bs67" add -A
+git -C "$bs67" commit -qm bootstrap
+"$IDXSH" ensure --root "$bs67" >/dev/null 2>/dev/null
+bs67_gen1=$(sed -n 2p "$bs67/.agent/indexes/current.md")
+
+git -C "$bs67" checkout -qb bs67-branch
+printf -- '\n- Test: run this every time.\n' >>"$bs67/.agent/rules/contract.md"
+git -C "$bs67" add -A
+git -C "$bs67" commit -qm 'change a rule record'
+
+bs67_check=$("$IDXSH" check --root "$bs67" 2>/dev/null)
+[ "$bs67_check" = "STALE" ] \
+  && pass "branch switch: index.sh check reports STALE after a record changes on a new branch" \
+  || fail "branch switch: index.sh check reports STALE after a record changes on a new branch ($bs67_check)"
+
+"$IDXSH" ensure --root "$bs67" >/dev/null 2>"$WORK/bs67.second.err"
+bs67_gen2=$(sed -n 2p "$bs67/.agent/indexes/current.md")
+grep -q '^BUILT$' "$WORK/bs67.second.err" \
+  && pass "branch switch: the next ensure republishes" \
+  || fail "branch switch: the next ensure republishes"
+[ "$bs67_gen1" != "$bs67_gen2" ] \
+  && pass "branch switch: the republished generation differs from the pre-switch one" \
+  || fail "branch switch: the republished generation differs from the pre-switch one"
+
+# A failed ensure leaves the published entry byte-identical, following the
+# existing failed-ensure fixture's idiom (INDEX_FAIL_AT=before-publish).
+fe67="$WORK/read-set-failed-ensure"
+mkdir -p "$fe67"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$fe67" >/dev/null 2>&1
+finish_bootstrap "$fe67"
+"$IDXSH" ensure --root "$fe67" >/dev/null 2>&1
+fe67_entry_before=$(cat "$fe67/.agent/indexes/current.md")
+printf -- '\n- Test: trigger a rebuild.\n' >>"$fe67/.agent/rules/contract.md"
+INDEX_FAIL_AT=before-publish "$IDXSH" ensure --root "$fe67" >/dev/null 2>"$WORK/fe67.err"
+fe67_rc=$?
+[ "$fe67_rc" -eq 1 ] && grep -q 'FALLBACK:' "$WORK/fe67.err" \
+  && pass "failed ensure: an injected failure before publication is reported and exits 1" \
+  || fail "failed ensure: an injected failure before publication is reported and exits 1"
+[ "$(cat "$fe67/.agent/indexes/current.md")" = "$fe67_entry_before" ] \
+  && pass "failed ensure: the published entry stays byte-identical after a failed ensure" \
+  || fail "failed ensure: the published entry stays byte-identical after a failed ensure"
 
 # ---- summary ----
 ran=$((PASS + FAIL))
@@ -8079,7 +8293,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1085
+EXPECTED_CHECKS=1111
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

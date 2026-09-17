@@ -16,10 +16,14 @@
 #
 # Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agent/
 #
-# --load appends the always-loaded set after the findings — learned rules,
-# contract, purpose, memory index, each under a marker naming its path — so
-# the entry point's bootstrap is one call instead of five. Every call costs
-# a re-read of the whole context; the text is the same either way.
+# --load appends the always-loaded set after the findings, each under a
+# marker naming its path, so the entry point's bootstrap is one call instead
+# of several. In manual mode (indexes: manual, the default) that set is
+# learned rules, contract, purpose, memory index. In generated mode
+# (indexes: generated) it is purpose and memory only — rule bodies and
+# routing arrive as the pages templates/entry-point-generated.md's step 1
+# already opened, not printed here a second time. Every call costs a
+# re-read of the whole context; the text is the same either way.
 
 set -u
 
@@ -56,11 +60,14 @@ file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
 step is missing), INDEX: (a docs/ file and the routing table disagree), plus
 advisory TOOLS: and LOAD: lines. No finding prints on pass.
 
---load then prints the always-loaded set — rules/learned.md, rules/contract.md,
-purpose.md, memory.md — each under a "==== <path> ====" marker, so the
-bootstrap is one call. A PAYLOAD: line reports the exact bytes this set
+--load then prints the always-loaded set, each under a "==== <path> ===="
+marker, so the bootstrap is one call. In manual mode (indexes: manual, the
+default) that set is rules/learned.md, rules/contract.md, purpose.md,
+memory.md. In generated mode (indexes: generated) it is purpose.md and
+memory.md only, preceded by one line pointing at the index pages that carry
+the rule bodies instead. A PAYLOAD: line reports the exact bytes this set
 would write against PAYLOAD_MAX_BYTES; over budget, --load prints one line
-(REPAIR:, naming the four paths) instead, with no marker and no file
+(REPAIR:, naming the mode's paths) instead, with no marker and no file
 content written.
 
 root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
@@ -129,6 +136,12 @@ learned="$agent/rules/learned.md"
 contract="$agent/rules/contract.md"
 qualitybar="$agent/rules/quality-bar.md"
 purpose="$agent/purpose.md"
+# Mirrors node.sh's own manifest read (indexes_line=...). Guarded: a node
+# with no purpose.md yet (bootstrap in progress) still yields the default
+# rather than a stray "No such file" on stderr.
+indexes_line=$(grep -m1 '^  indexes:' "$purpose" 2>/dev/null)
+indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
+[ -n "$indexes" ] || indexes=manual
 docs="$agent/docs"
 arch="$docs/architecture.md"
 
@@ -504,14 +517,17 @@ if [[ "$load_total" -gt 0 ]]; then
   echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
 fi
 
-# PAYLOAD: the exact bytes --load would write to stdout for the four files
-# it actually emits (learned, contract, purpose, memory — not architecture.md
-# and not the entry point, neither of which --load ever prints), each with
-# the "==== path ====" marker overhead that precedes it. Measured with wc -c,
-# never wc -m, because the constraint is bytes and the gate runs under three
-# locales. PAYLOAD_MAX_BYTES is the tool-result cap named where the default
-# is set above. Informational, not a finding: no GROOM:/REPAIR:/INDEX:
-# prefix, and it never touches the exit status.
+# PAYLOAD: the exact bytes --load would write to stdout — not architecture.md
+# and not the entry point, neither of which --load ever prints — each with
+# the "==== path ====" marker overhead that precedes it. Manual mode prices
+# the four files --load emits there: learned, contract, purpose, memory.
+# Generated mode prices the two files --load emits there: purpose, memory —
+# the rule and routing bodies arrive as index pages instead, a cost LOAD:
+# already counts, not this line. Measured with wc -c, never wc -m, because
+# the constraint is bytes and the gate runs under three locales.
+# PAYLOAD_MAX_BYTES is the tool-result cap named where the default is set
+# above. Informational, not a finding: no GROOM:/REPAIR:/INDEX: prefix, and
+# it never touches the exit status.
 payload_total=0
 payload_detail=""
 payload_add() { # $1: label  $2: file path
@@ -522,10 +538,15 @@ payload_add() { # $1: label  $2: file path
   payload_total=$((payload_total + fbytes))
   payload_detail="$payload_detail, $1 $fbytes"
 }
-payload_add learned "$learned"
-payload_add contract "$contract"
-payload_add purpose "$purpose"
-payload_add memory "$memory"
+if [[ "$indexes" == generated ]]; then
+  payload_add purpose "$purpose"
+  payload_add memory "$memory"
+else
+  payload_add learned "$learned"
+  payload_add contract "$contract"
+  payload_add purpose "$purpose"
+  payload_add memory "$memory"
+fi
 if [[ "$payload_total" -gt 0 ]]; then
   echo "PAYLOAD: --load would write $payload_total bytes of a $PAYLOAD_MAX_BYTES byte budget (${payload_detail#, })"
 fi
@@ -537,14 +558,27 @@ fi
 # same harness-truncation failure with a different cause, so the loop either
 # runs in full or not at all.
 if [[ "$load" -eq 1 ]]; then
-  if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
-    echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+  if [[ "$indexes" == generated ]]; then
+    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+      echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
+    else
+      echo "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md."
+      for f in "$purpose" "$memory"; do
+        [[ -s "$f" ]] || continue
+        printf '\n==== %s ====\n' "${f#"$root"/}"
+        cat "$f"
+      done
+    fi
   else
-    for f in "$learned" "$contract" "$purpose" "$memory"; do
-      [[ -s "$f" ]] || continue
-      printf '\n==== %s ====\n' "${f#"$root"/}"
-      cat "$f"
-    done
+    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+      echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+    else
+      for f in "$learned" "$contract" "$purpose" "$memory"; do
+        [[ -s "$f" ]] || continue
+        printf '\n==== %s ====\n' "${f#"$root"/}"
+        cat "$f"
+      done
+    fi
   fi
 fi
 
