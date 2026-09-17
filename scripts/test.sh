@@ -1876,7 +1876,7 @@ mkdir -p "$alcf2"
 finish_bootstrap "$alcf2"
 rm -f "$alcf2/.agent/rules/learned.md"
 f26e=$(status_flags "$alcf2")
-[ "$f26e" = "REPAIR: rules/learned.md missing/empty — restore it, the entry point loads it every session" ] && pass "always-loaded: a missing learned.md draws exactly one REPAIR finding" || fail "always-loaded: a missing learned.md draws exactly one REPAIR finding ($f26e)"
+[ "$f26e" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] && pass "always-loaded: a missing learned.md draws exactly one REPAIR finding" || fail "always-loaded: a missing learned.md draws exactly one REPAIR finding ($f26e)"
 "$alcf2/.agent/scripts/status.sh" "$alcf2" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md missing" || fail "always-loaded: status.sh still exits 0 with learned.md missing"
 
@@ -1887,7 +1887,7 @@ mkdir -p "$alcf3"
 finish_bootstrap "$alcf3"
 : >"$alcf3/.agent/rules/learned.md"
 f26f=$(status_flags "$alcf3")
-[ "$f26f" = "REPAIR: rules/learned.md missing/empty — restore it, the entry point loads it every session" ] && pass "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one" || fail "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one ($f26f)"
+[ "$f26f" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] && pass "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one" || fail "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one ($f26f)"
 "$alcf3/.agent/scripts/status.sh" "$alcf3" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md empty" || fail "always-loaded: status.sh still exits 0 with learned.md empty"
 
@@ -8286,6 +8286,187 @@ fe67_rc=$?
   && pass "failed ensure: the published entry stays byte-identical after a failed ensure" \
   || fail "failed ensure: the published entry stays byte-identical after a failed ensure"
 
+# ---- 68. status.sh: rules/learned/ as the canonical source, cache faults
+# never become findings; checkpoint.sh refreshes the cache in generated
+# mode only ----
+
+# (a) A generated node whose learned rules live only in rules/learned/,
+# with no aggregate published, draws no REPAIR: or GROOM: naming
+# rules/learned.md.
+c68a="$WORK/canonical-records-only"
+mkdir -p "$c68a"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$c68a" >/dev/null 2>&1
+finish_bootstrap "$c68a"
+rm -f "$c68a/.agent/rules/learned.md"
+mkdir -p "$c68a/.agent/rules/learned"
+printf -- '- [2026-01-01] Record one.\n' >"$c68a/.agent/rules/learned/0001.md"
+f68a=$(status_flags "$c68a")
+[ -z "$f68a" ] && pass "canonical source: a record-only node draws no REPAIR: or GROOM: naming rules/learned.md" \
+  || fail "canonical source: a record-only node draws no REPAIR: or GROOM: naming rules/learned.md ($f68a)"
+
+# (b) A node with an empty rules/learned/ directory and no aggregate still
+# draws exactly the record-directory REPAIR:, naming what to restore.
+c68b="$WORK/canonical-neither"
+mkdir -p "$c68b"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$c68b" >/dev/null 2>&1
+finish_bootstrap "$c68b"
+rm -f "$c68b/.agent/rules/learned.md"
+mkdir -p "$c68b/.agent/rules/learned"
+f68b=$(status_flags "$c68b")
+[ "$f68b" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] \
+  && pass "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR:" \
+  || fail "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR: ($f68b)"
+
+# (c) A record set crossing LEARNED_MAX_RULES draws the rules/learned/
+# GROOM:, at the same count the equivalent aggregate draws its own.
+c68c="$WORK/canonical-threshold-records"
+mkdir -p "$c68c"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$c68c" >/dev/null 2>&1
+finish_bootstrap "$c68c"
+rm -f "$c68c/.agent/rules/learned.md"
+mkdir -p "$c68c/.agent/rules/learned"
+i68c=1
+while [ "$i68c" -le 61 ]; do
+  printf -- '- [2026-01-01] Rule %s.\n' "$i68c" >"$c68c/.agent/rules/learned/$(printf '%04d' "$i68c").md"
+  i68c=$((i68c + 1))
+done
+f68c=$(status_flags "$c68c")
+printf '%s\n' "$f68c" | grep -qF 'GROOM: rules/learned/ > 60 rules' \
+  && pass "canonical source: 61 one-bullet records cross LEARNED_MAX_RULES and draw the rules/learned/ GROOM:" \
+  || fail "canonical source: 61 one-bullet records cross LEARNED_MAX_RULES and draw the rules/learned/ GROOM: ($f68c)"
+
+c68d="$WORK/canonical-threshold-aggregate"
+mkdir -p "$c68d"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$c68d" >/dev/null 2>&1
+finish_bootstrap "$c68d"
+i68d=1
+while [ "$i68d" -le 61 ]; do
+  printf -- '- [2026-01-01] Rule %s.\n' "$i68d" >>"$c68d/.agent/rules/learned.md"
+  i68d=$((i68d + 1))
+done
+f68d=$(status_flags "$c68d")
+printf '%s\n' "$f68d" | grep -qF 'GROOM: learned.md > 60 rules' \
+  && pass "canonical source: the equivalent aggregate crosses the same 61-record ceiling and draws its own GROOM:" \
+  || fail "canonical source: the equivalent aggregate crosses the same 61-record ceiling and draws its own GROOM: ($f68d)"
+
+# (d) No status.sh finding ever names a path under .agent/indexes/, whether
+# the cache is absent, empty, or holds a damaged generation.
+d68="$WORK/cache-fault-paths"
+mkdir -p "$d68"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$d68" >/dev/null 2>&1
+finish_bootstrap "$d68"
+f68e1=$(status_flags "$d68")
+printf '%s\n' "$f68e1" | grep -q '\.agent/indexes/' \
+  && fail "cache fault: no finding names .agent/indexes/ with the cache absent" \
+  || pass "cache fault: no finding names .agent/indexes/ with the cache absent"
+
+mkdir -p "$d68/.agent/indexes"
+f68e2=$(status_flags "$d68")
+printf '%s\n' "$f68e2" | grep -q '\.agent/indexes/' \
+  && fail "cache fault: no finding names .agent/indexes/ with an empty cache directory" \
+  || pass "cache fault: no finding names .agent/indexes/ with an empty cache directory"
+
+"$IDXSH" ensure --root "$d68" >/dev/null 2>&1
+d68gen=$(sed -n 2p "$d68/.agent/indexes/current.md")
+printf 'damage\n' >>"$d68/.agent/indexes/$d68gen/rules-1.md"
+f68e3=$(status_flags "$d68")
+printf '%s\n' "$f68e3" | grep -q '\.agent/indexes/' \
+  && fail "cache fault: no finding names .agent/indexes/ with a damaged generation" \
+  || pass "cache fault: no finding names .agent/indexes/ with a damaged generation"
+
+# (e) A generated hand-back refreshes the cache after the clean status
+# check, and the log entry is still appended exactly once.
+e68="$WORK/finish-cache-refresh"
+mkdir -p "$e68/src"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$e68" >/dev/null 2>&1
+finish_bootstrap "$e68"
+printf 'export const a = 1\n' >"$e68/src/a.ts"
+git -C "$e68" init -q && git -C "$e68" add -A && git -C "$e68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+"$IDXSH" ensure --root "$e68" >/dev/null 2>&1
+e68_before=$(idx_mtime "$e68/.agent/indexes/current.md")
+sleep 1
+"$e68/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$e68" >/dev/null 2>&1
+printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$e68/src/a.ts"
+out68e=$("$e68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "generated hand-back" "$e68" 2>&1)
+rc68e=$?
+n68e=$(grep -c '^- \[' "$e68/.agent/session-log.md")
+e68_after=$(idx_mtime "$e68/.agent/indexes/current.md")
+[ "$rc68e" -eq 0 ] && [ "$n68e" -eq 1 ] && printf '%s' "$out68e" | grep -qF '== cache refresh' \
+  && pass "checkpoint.sh: a generated hand-back runs the cache refresh step and logs exactly once" \
+  || fail "checkpoint.sh: a generated hand-back runs the cache refresh step and logs exactly once (rc=$rc68e entries=$n68e)"
+[ "$e68_after" -gt "$e68_before" ] \
+  && pass "checkpoint.sh: the cache refresh leaves current.md newer than the pre-run state" \
+  || fail "checkpoint.sh: the cache refresh leaves current.md newer than the pre-run state (before=$e68_before after=$e68_after)"
+
+# (f) A failing index.sh and an absent index.sh each leave checkpoint.sh's
+# exit status and log entry unchanged, with exactly one checkpoint.sh:
+# warning line naming the canonical directories.
+f68="$WORK/finish-cache-fault"
+mkdir -p "$f68/src"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$f68" >/dev/null 2>&1
+finish_bootstrap "$f68"
+printf 'export const a = 1\n' >"$f68/src/a.ts"
+git -C "$f68" init -q && git -C "$f68" add -A && git -C "$f68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+n68f0=$(grep -c '^- \[' "$f68/.agent/session-log.md")
+
+"$f68/.agent/scripts/docs.sh" new --name frontend --read-when "frontend widgets" "$f68" >/dev/null 2>&1
+printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$f68/src/a.ts"
+INDEX_FAIL_AT=before-publish "$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "injected index failure" "$f68" >/dev/null 2>"$WORK/f68.err"
+rc68f=$?
+n68f1=$(grep -c '^- \[' "$f68/.agent/session-log.md")
+f68_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68.err")
+[ "$rc68f" -eq 0 ] && [ "$n68f1" -eq "$((n68f0 + 1))" ] && [ "$f68_warn" -eq 1 ] \
+  && grep -qF '.agent/rules/' "$WORK/f68.err" && grep -qF '.agent/docs/' "$WORK/f68.err" \
+  && pass "checkpoint.sh: a failing index.sh leaves exit status and log entry unchanged, with one warning line" \
+  || fail "checkpoint.sh: a failing index.sh leaves exit status and log entry unchanged, with one warning line (rc=$rc68f entries=$n68f1 warn=$f68_warn)"
+
+rm -f "$f68/.agent/scripts/index.sh"
+printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const c = 3\n' >"$f68/src/a.ts"
+"$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "absent indexer" "$f68" >/dev/null 2>"$WORK/f68g.err"
+rc68g=$?
+n68g=$(grep -c '^- \[' "$f68/.agent/session-log.md")
+f68g_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68g.err")
+[ "$rc68g" -eq 0 ] && [ "$n68g" -eq "$((n68f0 + 2))" ] && [ "$f68g_warn" -eq 1 ] \
+  && grep -qF '.agent/rules/' "$WORK/f68g.err" && grep -qF '.agent/docs/' "$WORK/f68g.err" \
+  && pass "checkpoint.sh: an absent index.sh leaves exit status and log entry unchanged, with one warning line" \
+  || fail "checkpoint.sh: an absent index.sh leaves exit status and log entry unchanged, with one warning line (rc=$rc68g entries=$n68g warn=$f68g_warn)"
+
+# (g) A manual-mode node runs no refresh: its output matches the fixed
+# pre-change shape exactly, and no .agent/indexes/ directory ever appears.
+g68="$WORK/finish-manual-parity"
+mkdir -p "$g68/src"
+"$NODE" init --preset software-development --mode track-all "$g68" >/dev/null 2>&1
+finish_bootstrap "$g68"
+printf 'export const a = 1\n' >"$g68/src/a.ts"
+git -C "$g68" init -q && git -C "$g68" add -A && git -C "$g68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+printf 'export const a = 1\nexport const b = 2\n' >"$g68/src/a.ts"
+g68_expected=$(printf '== comment gate (comments.sh HEAD)\n== status check\nclean\n== session log\nlog.sh: appended session-log entry for %s' "$(today)")
+g68_actual=$("$g68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "manual mode, no refresh" "$g68" 2>&1)
+rc68g2=$?
+[ "$rc68g2" -eq 0 ] && [ "$g68_actual" = "$g68_expected" ] \
+  && pass "checkpoint.sh: a manual-mode node's output matches its pre-change shape exactly, no cache-refresh step" \
+  || fail "checkpoint.sh: a manual-mode node's output matches its pre-change shape exactly, no cache-refresh step ($g68_actual)"
+[ ! -d "$g68/.agent/indexes" ] \
+  && pass "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory" \
+  || fail "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory"
+
+# (h) The comment gate still excludes Markdown and .agent/, proved by a
+# fixture whose only change is a Markdown file under .agent/.
+h68="$WORK/finish-markdown-exclusion"
+mkdir -p "$h68/src"
+"$NODE" init --preset software-development --mode track-all "$h68" >/dev/null 2>&1
+finish_bootstrap "$h68"
+printf 'export const a = 1\n' >"$h68/src/a.ts"
+git -C "$h68" init -q && git -C "$h68" add -A && git -C "$h68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+printf '\nfor this pass, cache the response for five minutes.\n' >>"$h68/.agent/memory.md"
+n68h0=$(grep -c '^- \[' "$h68/.agent/session-log.md")
+out68h=$("$h68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "markdown-only change under .agent/" "$h68" 2>&1)
+rc68h=$?
+n68h1=$(grep -c '^- \[' "$h68/.agent/session-log.md")
+[ "$rc68h" -eq 0 ] && [ "$n68h1" -eq "$((n68h0 + 1))" ] && ! printf '%s' "$out68h" | grep -q 'BLOCK' \
+  && pass "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry" \
+  || fail "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry (rc=$rc68h entries=$n68h1)"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -8293,7 +8474,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1111
+EXPECTED_CHECKS=1125
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
