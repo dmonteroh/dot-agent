@@ -1151,6 +1151,12 @@ if [ "${1:-}" = "--list-arms" ]; then
   else
     printf '  codex    not ready — %s  (model=%s effort=%s)\n' "$RESOLVED_ERR" "$xmodel" "$xeffort"
   fi
+
+  echo
+  echo "Arm variables an eval's spec entry may set (what each one locks):"
+  echo "  corpus     locks agent and model; varies the corpus revision"
+  echo "  agent      locks the corpus ref; varies the candidate agent"
+  echo "  node-mode  locks agent, model, and corpus ref; varies --index-mode"
   exit 0
 fi
 

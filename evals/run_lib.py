@@ -694,14 +694,28 @@ def cmd_extract_codex_trace(args):
 # bin path, CLI version, model and effort — is immutable once recorded.
 # ---------------------------------------------------------------------------
 
+def _arm_variable_locks(av):
+    """What an arm_variable of `av` holds constant across the two arms.
+
+    `corpus` is the one case that does *not* lock the corpus ref, because the
+    corpus ref is what it varies. Every other value — `agent`, `node-mode`,
+    and anything this function has never heard of, including a typo — locks
+    the corpus ref by default. That default is the fail-closed case: an
+    unrecognized arm_variable still gets a lock and still refuses a run that
+    drifts it, rather than silently comparing two cells that were never held
+    to the same design. `node-mode` additionally locks agent and model: it is
+    a paired control on the node's index mode alone, so all three (agent,
+    model, and corpus ref) have to hold still for the comparison to be
+    attributable to node-mode and nothing else.
+    """
+    lock_agent_model = av in ("corpus", "node-mode")
+    lock_corpus_ref = av != "corpus"
+    return lock_agent_model, lock_corpus_ref
+
+
 def cmd_lock_run_config_create(args):
     av = os.environ["AV"]
-    # node-mode locks all three: it is a paired control on whether the node
-    # was built --indexes generated or manual, so agent, model, AND corpus
-    # ref all have to hold still, unlike corpus (which locks agent+model
-    # only) or agent (which locks the corpus ref only).
-    lock_agent_model = av in ("corpus", "node-mode")
-    lock_corpus_ref = av in ("agent", "node-mode")
+    lock_agent_model, lock_corpus_ref = _arm_variable_locks(av)
     cfg = {
         "treatment_arm": os.environ["TA"],
         "arm_variable": av,
@@ -744,12 +758,13 @@ def cmd_lock_run_config_update(args):
     if int(os.environ["RP"]) != cfg["repeats_per_cell"]:
         errs.append("repeat budget %s != recorded %s" % (os.environ["RP"], cfg["repeats_per_cell"]))
     av = cfg["arm_variable"]
-    if av in ("corpus", "node-mode"):
+    lock_agent_model, lock_corpus_ref = _arm_variable_locks(av)
+    if lock_agent_model:
         if os.environ["AG"] != cfg["locked_agent"]:
             errs.append("agent %r != recorded %r for a %s-variable comparison" % (os.environ["AG"], cfg["locked_agent"], av))
         if os.environ["MD"] != cfg["locked_model"]:
             errs.append("model %r != recorded %r for a %s-variable comparison" % (os.environ["MD"], cfg["locked_model"], av))
-    if av in ("agent", "node-mode"):
+    if lock_corpus_ref:
         if os.environ["CR"] != cfg["locked_corpus_ref"]:
             errs.append("corpus-ref (target revision) %r != recorded %r for a %s-variable comparison" % (os.environ["CR"], cfg["locked_corpus_ref"], av))
     resolved = cfg.setdefault("resolved", {})

@@ -105,7 +105,7 @@ That leaves manual grading for what genuinely needs judgement: whether a constra
 | Piece | State |
 | --- | --- |
 | `spec.json` — 36 evals, 113 assertions; `heldout.json` — the same, reworded | complete |
-| `fixtures.sh` — 9 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
+| `fixtures.sh` — 13 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
 | `fixture_seed.py` — the contract and routing-table edits a fixture needs, and the premise check | complete |
 | `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades; `EVALS_SPEC` selects the prompt set | complete |
 | `grade.py` — executes the check language, writes evidence per assertion | complete |
