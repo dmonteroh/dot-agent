@@ -1441,7 +1441,13 @@ EOF
     n=0
     for t in "${turns[@]}"; do
       n=$((n + 1))
-      echo "------------------------------------------------------------------ turn $n"
+      restart_label=""
+      case "$t" in
+      "$TURN_SESSION_RESTART"*)
+        restart_label=" (starts a new session id — a handoff)"
+        t="${t#"$TURN_SESSION_RESTART"}" ;;
+      esac
+      echo "------------------------------------------------------------------ turn $n$restart_label"
       printf '%s\n' "$t"
     done
     cat <<EOF
