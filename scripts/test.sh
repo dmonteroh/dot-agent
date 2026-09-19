@@ -9177,6 +9177,378 @@ done
   && pass "docs: every script node.sh's update loop refreshes is named in scripts/docs/README.md" \
   || fail "docs: every script node.sh's update loop refreshes is named in scripts/docs/README.md (missing:$xc74_missing)"
 
+# ---- 75. learn.sh pending/resolve: closing the migration's one-time
+# semantic-review backlog ----
+# A separate fixture directory, built from make_v6_fixture the same way
+# r61build is, and never touching r61dir — section 61's later checks
+# compare its files byte for byte. Every semantic call below (which rule
+# pairs with which, what stays, what goes) is made by this test script
+# standing in for the agent; resolve itself only checks preconditions and
+# rewrites one disposition field.
+rec75="$WORK/reconcile-fixture"
+mkdir -p "$rec75"
+make_v6_fixture "$rec75"
+rec75_modeline=$(grep -n '^  mode:' "$rec75/.agent/purpose.md" | head -1 | cut -d: -f1)
+awk -v ln="$rec75_modeline" \
+  'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
+  "$rec75/.agent/purpose.md" >"$rec75/.agent/purpose.md.tmp"
+mv "$rec75/.agent/purpose.md.tmp" "$rec75/.agent/purpose.md"
+
+cat >"$rec75/.agent/rules/learned.md" <<'EOF'
+# Learned rules
+
+Binding rules distilled from operator corrections and failed verifications on this project.
+
+<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
+- [2026-01-01] Flat merge-target rule. Trigger: something.
+- [2026-01-02] Split-candidate rule with a nested sub-bullet. Trigger: x.
+  - qualifier one
+  - qualifier two
+- [2026-01-03] Keep-candidate rule, multi paragraph.
+
+  Continuation paragraph for the keep candidate.
+- [2026-01-04] Merge-source rule, multi paragraph.
+
+  Continuation paragraph for the merge source.
+- [2026-01-05] Retire-candidate rule with a nested sub-bullet.
+  - qualifier
+EOF
+
+mkdir -p "$rec75/.agent/docs"
+cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
+# Architecture
+
+### `dup.md`
+- **Read when:** first dup entry.
+
+### `dup.md`
+- **Read when:** second dup entry.
+
+### `badtable.md`
+Hand-edited row with no bold marker: whatever hook text.
+EOF
+cat >"$rec75/.agent/docs/dup.md" <<'EOF'
+# Dup
+
+Body.
+EOF
+cat >"$rec75/.agent/docs/badtable.md" <<'EOF'
+# Badtable
+
+Body.
+EOF
+cat >"$rec75/.agent/docs/noentry.md" <<'EOF'
+# Noentry
+
+Body.
+EOF
+
+"$NODE" update "$rec75" >"$WORK/rec75-update.out" 2>&1
+rec75_updrc=$?
+[ "$rec75_updrc" -eq 0 ] && pass "reconcile fixture: generated-mode update exits 0" || fail "reconcile fixture: generated-mode update exits 0 (rc=$rec75_updrc)"
+
+REC="$rec75/.agent/scripts/learn.sh"
+RECDOCS="$rec75/.agent/scripts/docs.sh"
+rec75_inv="$rec75/.agent/migration-inventory.md"
+rec75_learned="$rec75/.agent/rules/learned"
+
+rec75_flat=$(grep -lF 'Flat merge-target rule' "$rec75_learned"/*.md)
+rec75_split=$(grep -lF 'Split-candidate rule' "$rec75_learned"/*.md)
+rec75_keep=$(grep -lF 'Keep-candidate rule' "$rec75_learned"/*.md)
+rec75_mergesrc=$(grep -lF 'Merge-source rule' "$rec75_learned"/*.md)
+rec75_retire=$(grep -lF 'Retire-candidate rule' "$rec75_learned"/*.md)
+rec75_flat_id=$(basename "$rec75_flat" .md)
+rec75_split_id=$(basename "$rec75_split" .md)
+rec75_keep_id=$(basename "$rec75_keep" .md)
+rec75_mergesrc_id=$(basename "$rec75_mergesrc" .md)
+rec75_retire_id=$(basename "$rec75_retire" .md)
+
+cp "$rec75_inv" "$WORK/rec75-inventory-before.md"
+
+# ---- pending, first run: every pending rule and hook-missing doc listed,
+# each rule item's version a fresh hash of its own record, each doc
+# item's version the literal "-" ----
+rec75_pending1=$("$REC" pending "$rec75")
+printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_split_id | version=$(git hash-object --no-filters -- "$rec75_split")" \
+  && pass "learn.sh pending: the split-candidate rule is listed with a fresh version hash" \
+  || fail "learn.sh pending: the split-candidate rule is listed with a fresh version hash"
+printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_keep_id | version=$(git hash-object --no-filters -- "$rec75_keep")" \
+  && pass "learn.sh pending: the keep-candidate rule is listed with a fresh version hash" \
+  || fail "learn.sh pending: the keep-candidate rule is listed with a fresh version hash"
+printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_mergesrc_id | version=$(git hash-object --no-filters -- "$rec75_mergesrc")" \
+  && pass "learn.sh pending: the merge-source rule is listed with a fresh version hash" \
+  || fail "learn.sh pending: the merge-source rule is listed with a fresh version hash"
+printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_retire_id | version=$(git hash-object --no-filters -- "$rec75_retire")" \
+  && pass "learn.sh pending: the retire-candidate rule is listed with a fresh version hash" \
+  || fail "learn.sh pending: the retire-candidate rule is listed with a fresh version hash"
+printf '%s\n' "$rec75_pending1" | grep -qF 'hook-missing | dup.md | version=-' \
+  && pass "learn.sh pending: the duplicate-entry doc is listed with version=-" \
+  || fail "learn.sh pending: the duplicate-entry doc is listed with version=-"
+printf '%s\n' "$rec75_pending1" | grep -qF 'hook-missing | badtable.md | version=-' \
+  && pass "learn.sh pending: the hand-edited-table doc is listed" \
+  || fail "learn.sh pending: the hand-edited-table doc is listed"
+printf '%s\n' "$rec75_pending1" | grep -qF 'hook-missing | noentry.md | version=-' \
+  && pass "learn.sh pending: the no-entry doc is listed" \
+  || fail "learn.sh pending: the no-entry doc is listed"
+printf '%s\n' "$rec75_pending1" | grep -qF "$rec75_flat_id" \
+  && fail "learn.sh pending: the already-migrated flat rule is never listed" \
+  || pass "learn.sh pending: the already-migrated flat rule is never listed"
+[ "$(printf '%s\n' "$rec75_pending1" | tail -n1)" = "7 pending" ] \
+  && pass "learn.sh pending: closes with the exact count of pending items" \
+  || fail "learn.sh pending: closes with the exact count of pending items ($(printf '%s\n' "$rec75_pending1" | tail -n1))"
+
+# ---- SPLIT: the nested-sub-bullet rule really names two separate
+# qualifiers — the agent's own judgment, made here and nowhere in the
+# shell. Revise the original down to the first qualifier, create a second
+# record for the other one, then resolve. ----
+rec75_split_v0=$(git hash-object --no-filters -- "$rec75_split")
+printf -- '- [2026-01-02] Split-candidate rule, qualifier one only. Trigger: x.\n' >"$WORK/rec75-split-revise.md"
+"$REC" revise "$rec75_split_id" --file "$WORK/rec75-split-revise.md" --expected "$rec75_split_v0" "$rec75" >"$WORK/rec75-split-revise.out" 2>"$WORK/rec75-split-revise.err"
+rec75_split_rev_rc=$?
+[ "$rec75_split_rev_rc" -eq 0 ] && pass "reconcile split: revising the original to its first qualifier exits 0" || fail "reconcile split: revising the original to its first qualifier exits 0 (rc=$rec75_split_rev_rc)"
+printf -- '- [2026-01-02] Split-candidate rule, qualifier two only. Trigger: x.\n' >"$WORK/rec75-split-new.md"
+rec75_split_new_out=$("$REC" new --file "$WORK/rec75-split-new.md" --distinct "$rec75" 2>"$WORK/rec75-split-new.err")
+rec75_split_new_rc=$?
+[ "$rec75_split_new_rc" -eq 0 ] && pass "reconcile split: creating the second qualifier's record exits 0" || fail "reconcile split: creating the second qualifier's record exits 0 (rc=$rec75_split_new_rc)"
+rec75_split_new_id=$(printf '%s\n' "$rec75_split_new_out" | awk -F'\t' '{print $2}')
+[ -n "$rec75_split_new_id" ] && [ "$rec75_split_new_id" != "$rec75_split_id" ] \
+  && pass "reconcile split: the second record mints a distinct identity" \
+  || fail "reconcile split: the second record mints a distinct identity"
+rec75_split_resolve_out=$("$REC" resolve --id "$rec75_split_id" --disposition "migrated (split into $rec75_split_new_id)" "$rec75" 2>"$WORK/rec75-split-resolve.err")
+rec75_split_resolve_rc=$?
+[ "$rec75_split_resolve_rc" -eq 0 ] && pass "reconcile split: resolve exits 0" || fail "reconcile split: resolve exits 0 (rc=$rec75_split_resolve_rc)"
+printf '%s\n' "$rec75_split_resolve_out" | grep -qF "resolved	$rec75_split_id	migrated (split into $rec75_split_new_id)" \
+  && pass "reconcile split: resolve's result line names the id and the new disposition" \
+  || fail "reconcile split: resolve's result line names the id and the new disposition ($rec75_split_resolve_out)"
+grep -qF "rule 2: \`- [2026-01-02] Split-candidate rule with a nested sub-bullet. Trigger: x\` -> rules/learned/$rec75_split_id.md | id=$rec75_split_id | migrated (split into $rec75_split_new_id)" "$rec75_inv" \
+  && pass "reconcile split: the inventory line now reads migrated (split into ...), nothing else on it changed" \
+  || fail "reconcile split: the inventory line now reads migrated (split into ...), nothing else on it changed"
+[ -f "$rec75_learned/$rec75_split_id.md" ] && [ -f "$rec75_learned/$rec75_split_new_id.md" ] \
+  && pass "reconcile split: both records exist on disk under different identities" \
+  || fail "reconcile split: both records exist on disk under different identities"
+
+# ---- MERGE: the merge-source rule's content belongs with the flat
+# merge-target rule — again the agent's own call. Revise the target to
+# carry both, retire the source's own record, then resolve the source's
+# inventory line. ----
+rec75_flat_v0=$(git hash-object --no-filters -- "$rec75_flat")
+cat >"$WORK/rec75-merge-revise.md" <<'EOF'
+- [2026-01-01] Flat merge-target rule, now folded together with the merge source. Trigger: something.
+EOF
+"$REC" revise "$rec75_flat_id" --file "$WORK/rec75-merge-revise.md" --expected "$rec75_flat_v0" "$rec75" >"$WORK/rec75-merge-revise.out" 2>"$WORK/rec75-merge-revise.err"
+rec75_merge_rev_rc=$?
+[ "$rec75_merge_rev_rc" -eq 0 ] && pass "reconcile merge: revising the target to fold in the source exits 0" || fail "reconcile merge: revising the target to fold in the source exits 0 (rc=$rec75_merge_rev_rc)"
+rec75_mergesrc_v0=$(git hash-object --no-filters -- "$rec75_mergesrc")
+"$REC" retire "$rec75_mergesrc_id" --expected "$rec75_mergesrc_v0" "$rec75" >"$WORK/rec75-merge-retire.out" 2>"$WORK/rec75-merge-retire.err"
+rec75_merge_retire_rc=$?
+[ "$rec75_merge_retire_rc" -eq 0 ] && pass "reconcile merge: retiring the source's own record exits 0" || fail "reconcile merge: retiring the source's own record exits 0 (rc=$rec75_merge_retire_rc)"
+rec75_merge_resolve_out=$("$REC" resolve --id "$rec75_mergesrc_id" --disposition "migrated (merged into $rec75_flat_id)" "$rec75" 2>"$WORK/rec75-merge-resolve.err")
+rec75_merge_resolve_rc=$?
+[ "$rec75_merge_resolve_rc" -eq 0 ] && pass "reconcile merge: resolve exits 0" || fail "reconcile merge: resolve exits 0 (rc=$rec75_merge_resolve_rc)"
+printf '%s\n' "$rec75_merge_resolve_out" | grep -qF "resolved	$rec75_mergesrc_id	migrated (merged into $rec75_flat_id)" \
+  && pass "reconcile merge: resolve's result line names the id and the new disposition" \
+  || fail "reconcile merge: resolve's result line names the id and the new disposition ($rec75_merge_resolve_out)"
+grep -qF "id=$rec75_mergesrc_id | migrated (merged into $rec75_flat_id)" "$rec75_inv" \
+  && pass "reconcile merge: the source's inventory line now reads migrated (merged into ...)" \
+  || fail "reconcile merge: the source's inventory line now reads migrated (merged into ...)"
+grep -qF "id=$rec75_flat_id | migrated" "$rec75_inv" \
+  && pass "reconcile merge: the target's own inventory line is untouched" \
+  || fail "reconcile merge: the target's own inventory line is untouched"
+[ ! -f "$rec75_learned/$rec75_mergesrc_id.md" ] \
+  && pass "reconcile merge: the source's record no longer exists on disk" \
+  || fail "reconcile merge: the source's record no longer exists on disk"
+
+# ---- two refusal classes need a rule item that is still pending, tested
+# here against the keep-candidate before it is actually resolved below,
+# so the refusal itself leaves nothing to disturb. ----
+rec75_inv_snapshot() { git hash-object --no-filters -- "$rec75_inv"; }
+
+rec75_before=$(rec75_inv_snapshot)
+"$REC" resolve --id "$rec75_keep_id" --disposition "migrated (split into deadbeefcafe)" "$rec75" >/dev/null 2>"$WORK/rec75-ref-noid.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: naming an identity with no record file refuses at exit 2" || fail "reconcile refusal: naming an identity with no record file refuses at exit 2"
+grep -qF 'deadbeefcafe' "$WORK/rec75-ref-noid.err" \
+  && pass "reconcile refusal: the no-record refusal names the identity it checked" \
+  || fail "reconcile refusal: the no-record refusal names the identity it checked"
+[ "$(rec75_inv_snapshot)" = "$rec75_before" ] && pass "reconcile refusal: the no-record refusal writes nothing" || fail "reconcile refusal: the no-record refusal writes nothing"
+
+rec75_before=$(rec75_inv_snapshot)
+"$REC" resolve --id "$rec75_keep_id" --disposition retired "$rec75" >/dev/null 2>"$WORK/rec75-ref-existsretire.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: retired on a rule item whose record still exists refuses at exit 2" || fail "reconcile refusal: retired on a rule item whose record still exists refuses at exit 2"
+grep -qF 'still exists' "$WORK/rec75-ref-existsretire.err" \
+  && pass "reconcile refusal: the still-exists refusal names what it checked" \
+  || fail "reconcile refusal: the still-exists refusal names what it checked"
+[ "$(rec75_inv_snapshot)" = "$rec75_before" ] && pass "reconcile refusal: the still-exists refusal writes nothing" || fail "reconcile refusal: the still-exists refusal writes nothing"
+
+# ---- KEEP: the multi-paragraph rule needs no split or merge — the agent
+# closes it as migrated with the record untouched. ----
+cp "$rec75_keep" "$WORK/rec75-keep-before.md"
+rec75_keep_resolve_out=$("$REC" resolve --id "$rec75_keep_id" --disposition migrated "$rec75" 2>"$WORK/rec75-keep-resolve.err")
+rec75_keep_resolve_rc=$?
+[ "$rec75_keep_resolve_rc" -eq 0 ] && pass "reconcile keep: resolve exits 0" || fail "reconcile keep: resolve exits 0 (rc=$rec75_keep_resolve_rc)"
+printf '%s\n' "$rec75_keep_resolve_out" | grep -qF "resolved	$rec75_keep_id	migrated" \
+  && pass "reconcile keep: resolve's result line names the id and migrated" \
+  || fail "reconcile keep: resolve's result line names the id and migrated ($rec75_keep_resolve_out)"
+grep -qF "id=$rec75_keep_id | migrated" "$rec75_inv" \
+  && pass "reconcile keep: the inventory line now reads migrated" \
+  || fail "reconcile keep: the inventory line now reads migrated"
+diff -q "$WORK/rec75-keep-before.md" "$rec75_keep" >/dev/null 2>&1 \
+  && pass "reconcile keep: the record is byte-identical before and after resolve" \
+  || fail "reconcile keep: the record is byte-identical before and after resolve"
+
+# ---- RETIRE: the nested-sub-bullet rule turns out to duplicate a source
+# already covered elsewhere — the agent retires it outright. ----
+rec75_retire_v0=$(git hash-object --no-filters -- "$rec75_retire")
+"$REC" retire "$rec75_retire_id" --expected "$rec75_retire_v0" "$rec75" >"$WORK/rec75-retire.out" 2>"$WORK/rec75-retire.err"
+rec75_retire_rmrc=$?
+[ "$rec75_retire_rmrc" -eq 0 ] && pass "reconcile retire: retiring the record exits 0" || fail "reconcile retire: retiring the record exits 0 (rc=$rec75_retire_rmrc)"
+rec75_retire_resolve_out=$("$REC" resolve --id "$rec75_retire_id" --disposition retired "$rec75" 2>"$WORK/rec75-retire-resolve.err")
+rec75_retire_resolve_rc=$?
+[ "$rec75_retire_resolve_rc" -eq 0 ] && pass "reconcile retire: resolve exits 0" || fail "reconcile retire: resolve exits 0 (rc=$rec75_retire_resolve_rc)"
+printf '%s\n' "$rec75_retire_resolve_out" | grep -qF "resolved	$rec75_retire_id	retired" \
+  && pass "reconcile retire: resolve's result line names the id and retired" \
+  || fail "reconcile retire: resolve's result line names the id and retired ($rec75_retire_resolve_out)"
+grep -qF "id=$rec75_retire_id | retired" "$rec75_inv" \
+  && pass "reconcile retire: the inventory line now reads retired" \
+  || fail "reconcile retire: the inventory line now reads retired"
+
+# ---- doc repair: three hand edits (no headerless-doc writer exists, by
+# design — docs.sh rehook refuses one), then rehook, then resolve. ----
+cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
+# Architecture
+
+### `dup.md`
+- **Read when:** first dup entry.
+
+### `badtable.md`
+- **Read when:** placeholder, to be set by rehook.
+
+### `noentry.md`
+- **Read when:** placeholder, to be set by rehook.
+EOF
+for rec75_doc in dup badtable noentry; do
+  printf '<!-- Read when: placeholder, to be set by rehook. -->\n' >"$WORK/rec75-$rec75_doc.hdr"
+  cat "$WORK/rec75-$rec75_doc.hdr" "$rec75/.agent/docs/$rec75_doc.md" >"$WORK/rec75-$rec75_doc.new"
+  mv "$WORK/rec75-$rec75_doc.new" "$rec75/.agent/docs/$rec75_doc.md"
+done
+"$RECDOCS" rehook --name dup --read-when "reading about the duplicate entry" "$rec75" >"$WORK/rec75-rehook-dup.out" 2>&1
+rec75_rehook_dup_rc=$?
+"$RECDOCS" rehook --name badtable --read-when "reading about the hand-edited table" "$rec75" >"$WORK/rec75-rehook-badtable.out" 2>&1
+rec75_rehook_badtable_rc=$?
+"$RECDOCS" rehook --name noentry --read-when "reading about the doc with no entry" "$rec75" >"$WORK/rec75-rehook-noentry.out" 2>&1
+rec75_rehook_noentry_rc=$?
+[ "$rec75_rehook_dup_rc" -eq 0 ] && [ "$rec75_rehook_badtable_rc" -eq 0 ] && [ "$rec75_rehook_noentry_rc" -eq 0 ] \
+  && pass "reconcile doc repair: docs.sh rehook succeeds on all three repaired docs" \
+  || fail "reconcile doc repair: docs.sh rehook succeeds on all three repaired docs (rc=$rec75_rehook_dup_rc/$rec75_rehook_badtable_rc/$rec75_rehook_noentry_rc)"
+for rec75_doc in dup badtable noentry; do
+  [ "$(sed -n 1p "$rec75/.agent/docs/$rec75_doc.md")" != '<!-- Read when: placeholder, to be set by rehook. -->' ] \
+    && pass "reconcile doc repair: $rec75_doc.md's header now reads the real hook text" \
+    || fail "reconcile doc repair: $rec75_doc.md's header now reads the real hook text"
+  "$REC" resolve --id "$rec75_doc.md" --disposition migrated "$rec75" >"$WORK/rec75-resolve-$rec75_doc.out" 2>"$WORK/rec75-resolve-$rec75_doc.err"
+  rec75_doc_resolve_rc=$?
+  [ "$rec75_doc_resolve_rc" -eq 0 ] \
+    && pass "reconcile doc repair: resolve $rec75_doc.md to migrated exits 0" \
+    || fail "reconcile doc repair: resolve $rec75_doc.md to migrated exits 0 (rc=$rec75_doc_resolve_rc)"
+  grep -qF "id=$rec75_doc.md | migrated" "$rec75_inv" \
+    && pass "reconcile doc repair: $rec75_doc.md's inventory line now reads migrated" \
+    || fail "reconcile doc repair: $rec75_doc.md's inventory line now reads migrated"
+done
+
+# ---- refusal classes, continued: each refuses at exit 2, writes
+# nothing, and names what it checked ----
+rec75_before=$(rec75_inv_snapshot)
+"$REC" resolve --id deadbeef0000 --disposition migrated "$rec75" >/dev/null 2>"$WORK/rec75-ref-absent.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: an id the inventory does not carry refuses at exit 2" || fail "reconcile refusal: an id the inventory does not carry refuses at exit 2"
+grep -qF 'carries no item with id=deadbeef0000' "$WORK/rec75-ref-absent.err" \
+  && pass "reconcile refusal: the absent-id refusal names the id it checked" \
+  || fail "reconcile refusal: the absent-id refusal names the id it checked"
+[ "$(rec75_inv_snapshot)" = "$rec75_before" ] && pass "reconcile refusal: the absent-id refusal writes nothing" || fail "reconcile refusal: the absent-id refusal writes nothing"
+
+"$REC" resolve --id "$rec75_keep_id" --disposition migrated "$rec75" >/dev/null 2>"$WORK/rec75-ref-already.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: an item already resolved refuses at exit 2" || fail "reconcile refusal: an item already resolved refuses at exit 2"
+grep -qF 'is not pending' "$WORK/rec75-ref-already.err" \
+  && pass "reconcile refusal: the already-resolved refusal names the current disposition" \
+  || fail "reconcile refusal: the already-resolved refusal names the current disposition"
+
+# A fresh doc item, still pending, to test the three rule-only forms and
+# the still-missing-hook refusal without reusing an already-resolved id.
+rec75_2="$WORK/reconcile-fixture-2"
+mkdir -p "$rec75_2"
+make_v6_fixture "$rec75_2"
+rec75_2_modeline=$(grep -n '^  mode:' "$rec75_2/.agent/purpose.md" | head -1 | cut -d: -f1)
+awk -v ln="$rec75_2_modeline" \
+  'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
+  "$rec75_2/.agent/purpose.md" >"$rec75_2/.agent/purpose.md.tmp"
+mv "$rec75_2/.agent/purpose.md.tmp" "$rec75_2/.agent/purpose.md"
+mkdir -p "$rec75_2/.agent/docs"
+cat >"$rec75_2/.agent/docs/noentry.md" <<'EOF'
+# Noentry
+
+Body.
+EOF
+"$NODE" update "$rec75_2" >"$WORK/rec75-2-update.out" 2>&1
+REC2="$rec75_2/.agent/scripts/learn.sh"
+rec75_2_inv="$rec75_2/.agent/migration-inventory.md"
+
+"$REC2" resolve --id noentry.md --disposition retired "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docretired.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: retired on a doc item refuses at exit 2" || fail "reconcile refusal: retired on a doc item refuses at exit 2"
+grep -qF 'rule-only' "$WORK/rec75-ref-docretired.err" \
+  && pass "reconcile refusal: the doc-retired refusal names the three forms as rule-only" \
+  || fail "reconcile refusal: the doc-retired refusal names the three forms as rule-only"
+"$REC2" resolve --id noentry.md --disposition "migrated (split into deadbeefcafe)" "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docsplit.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: split on a doc item refuses at exit 2" || fail "reconcile refusal: split on a doc item refuses at exit 2"
+"$REC2" resolve --id noentry.md --disposition "migrated (merged into deadbeefcafe)" "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docmerge.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: merge on a doc item refuses at exit 2" || fail "reconcile refusal: merge on a doc item refuses at exit 2"
+
+rec75_2_before=$(git hash-object --no-filters -- "$rec75_2_inv")
+"$REC2" resolve --id noentry.md --disposition migrated "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-nohook.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: migrated on a doc whose hook is still missing refuses at exit 2" || fail "reconcile refusal: migrated on a doc whose hook is still missing refuses at exit 2"
+grep -qF 'still carries no' "$WORK/rec75-ref-nohook.err" \
+  && pass "reconcile refusal: the still-missing-hook refusal names the predicate it checked" \
+  || fail "reconcile refusal: the still-missing-hook refusal names the predicate it checked"
+[ "$(git hash-object --no-filters -- "$rec75_2_inv")" = "$rec75_2_before" ] \
+  && pass "reconcile refusal: the still-missing-hook refusal writes nothing" \
+  || fail "reconcile refusal: the still-missing-hook refusal writes nothing"
+
+# Duplicate-id refusal: only reachable through a hand-edited inventory —
+# resolve never produces one itself.
+cp "$rec75_2_inv" "$WORK/rec75-2-inv-before.md"
+rec75_dupline=$(grep -F 'id=noentry.md' "$rec75_2_inv")
+{ cat "$rec75_2_inv"; printf '%s\n' "$rec75_dupline"; } >"$WORK/rec75-2-inv-dup.md"
+cp "$WORK/rec75-2-inv-dup.md" "$rec75_2_inv"
+"$REC2" resolve --id noentry.md --disposition migrated "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-dupline.err"
+[ "$?" -eq 2 ] && pass "reconcile refusal: an id on more than one inventory line refuses at exit 2" || fail "reconcile refusal: an id on more than one inventory line refuses at exit 2"
+grep -qF 'more than one line' "$WORK/rec75-ref-dupline.err" \
+  && pass "reconcile refusal: the duplicate-line refusal names what it checked" \
+  || fail "reconcile refusal: the duplicate-line refusal names what it checked"
+cp "$WORK/rec75-2-inv-before.md" "$rec75_2_inv"
+
+# ---- final pending: the backlog is empty ----
+rec75_pending2=$("$REC" pending "$rec75")
+[ -z "$rec75_pending2" ] \
+  && pass "learn.sh pending: a fully reconciled node's second run lists nothing" \
+  || fail "learn.sh pending: a fully reconciled node's second run lists nothing ($rec75_pending2)"
+
+cp "$rec75_inv" "$WORK/rec75-inventory-after.md"
+
+# A second node.sh update over the reconciled node rewrites no record and
+# no inventory line. Scoped to exactly that: rules/learned/*.md and
+# migration-inventory.md, not the whole tree — indexes/ regenerates a
+# fresh gen.XXXXXXXX cache directory on every ensure by design (unrelated
+# to reconciliation), and the derived aggregate rules/learned.md is
+# excluded for the same reason index.sh regenerates it on every ensure.
+rec75_snapshot() {
+  { find "$1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null; printf '%s\n' "$1/.agent/migration-inventory.md"; } \
+    | sort | xargs shasum 2>/dev/null | sort
+}
+rec75_before_update=$(rec75_snapshot "$rec75")
+"$NODE" update "$rec75" >"$WORK/rec75-update2.out" 2>&1
+rec75_update2_rc=$?
+rec75_after_update=$(rec75_snapshot "$rec75")
+[ "$rec75_update2_rc" -eq 0 ] && pass "reconcile: a second node.sh update over the reconciled node exits 0" || fail "reconcile: a second node.sh update over the reconciled node exits 0 (rc=$rec75_update2_rc)"
+[ "$rec75_before_update" = "$rec75_after_update" ] \
+  && pass "reconcile: a second node.sh update rewrites no record and no inventory line, rules/learned.md aside" \
+  || fail "reconcile: a second node.sh update rewrites no record and no inventory line, rules/learned.md aside"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -9184,7 +9556,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1230
+EXPECTED_CHECKS=1295
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
