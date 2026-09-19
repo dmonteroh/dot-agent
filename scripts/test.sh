@@ -8554,8 +8554,8 @@ grep -qF 'A record fold, split, or move runs this same procedure' "$g70skill" \
 
 # ---- 71. groom: a groom-then-regenerate fixture over a migrated generated
 # node — records edited, pages rebuilt, no page hand-edited ----
-# Built on r61build (F15c-i) plus node.sh update (F15's real migration
-# chain), the same base section 61 uses. r61build's docs tree carries three
+# Built on r61build plus node.sh update, the real migration chain, the
+# same base section 61 uses. r61build's docs tree carries three
 # deliberately unbackfillable entries (dup.md, badtable.md, noentry.md) that
 # section 61 needs and this fixture does not, so they are trimmed to a
 # clean architecture.md before update runs — otherwise their pre-existing
@@ -8644,9 +8644,9 @@ g71_after_flags=$(status_flags "$g71")
   && pass "groom fixture: status.sh is clear once the fold, deletion, and move are done" \
   || fail "groom fixture: status.sh is clear once the fold, deletion, and move are done ($g71_after_flags)"
 
-# ---- 72. groom: a regroup on one branch and an independent record edit on
-# another merge with both changes, and the integrated merge/replay fixtures
-# (section 64) re-run unchanged against a groomed node ----
+# ---- 72. groom: a fold-and-delete on one branch and an independent record
+# edit on another merge with both changes, and the integrated merge/replay
+# fixtures (section 64) re-run unchanged against a groomed node ----
 g72="$WORK/mig-groomed-base"
 r61build "$g72"
 g71_trim_docs "$g72"
@@ -8663,21 +8663,47 @@ git -C "$g72" commit -qm "post-migration state"
 "$NODE" finalize "$g72" >/dev/null 2>&1
 git -C "$g72" add -A
 git -C "$g72" commit -qm finalize --allow-empty
+g72pre=$(git -C "$g72" symbolic-ref --short HEAD)
 
 g72r1=$(grep -lF 'First rule, flat' "$g72/.agent/rules/learned"/*.md)
 g72r2=$(grep -lF 'nested sub-bullet' "$g72/.agent/rules/learned"/*.md)
-g72r3=$(grep -lF 'multi paragraph' "$g72/.agent/rules/learned"/*.md)
+g72r4=$(grep -lF 'Fourth rule, flat' "$g72/.agent/rules/learned"/*.md)
+g72r1rel=${g72r1#"$g72"/}
 g72r2rel=${g72r2#"$g72"/}
-g72r3rel=${g72r3#"$g72"/}
-printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g72r1"
+g72r4rel=${g72r4#"$g72"/}
+
+# Regroup: fold the first and second learned rules into the earlier-dated
+# record and delete the other, on one branch; independently edit the
+# fourth, unrelated record, on another.
+git -C "$g72" checkout -qb regroup "$g72pre"
+printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g72/$g72r1rel"
 git -C "$g72" rm -q "$g72r2rel"
-printf '\n## Gotchas\n\n- Third rule, multi paragraph, moved from rules/learned/.\n' >>"$g72/.agent/docs/area/sub.md"
-git -C "$g72" rm -q "$g72r3rel"
-subst "$g72/.agent/docs/architecture.md" '/### `area\/sub.md`/,/^$/ { /Read when/a\
-- **Sections:** Gotchas
-}'
-git -C "$g72" add -A
-git -C "$g72" commit -qm "groom: fold first+second learned rules, move third to area/sub.md gotchas"
+git -C "$g72" commit -qam "groom: fold first and second learned rules into the earlier-dated record"
+
+git -C "$g72" checkout -q "$g72pre"
+git -C "$g72" checkout -qb otheredit "$g72pre"
+printf -- '- [2026-01-04] Fourth rule, flat, independently reworded post-groom.\n' >"$g72/$g72r4rel"
+git -C "$g72" commit -qam "independent edit to the fourth record"
+
+git -C "$g72" checkout -qb merge-regroup "$g72pre"
+git -C "$g72" merge -q --no-edit regroup >"$WORK/g72-merge1.out" 2>&1
+g72mrc1=$?
+git -C "$g72" merge -q --no-edit otheredit >"$WORK/g72-merge2.out" 2>&1
+g72mrc2=$?
+[ "$g72mrc1" -eq 0 ] && [ "$g72mrc2" -eq 0 ] \
+  && pass "groom: a fold on one branch and an independent record edit on another merge with both changes" \
+  || fail "groom: a fold on one branch and an independent record edit on another merge with both changes"
+
+grep -qF 'folded with the nested-sub-bullet rule' "$g72/$g72r1rel" \
+  && pass "groom: the fold's surviving record carries the folded content after the merge" \
+  || fail "groom: the fold's surviving record carries the folded content after the merge"
+[ ! -e "$g72/$g72r2rel" ] \
+  && pass "groom: the record folded away stays deleted after the merge" \
+  || fail "groom: the record folded away stays deleted after the merge"
+grep -qF 'independently reworded post-groom' "$g72/$g72r4rel" \
+  && pass "groom: the independently edited record's edit survives the merge" \
+  || fail "groom: the independently edited record's edit survives the merge"
+
 "$IDXSH" ensure --root "$g72" >/dev/null 2>&1
 git -C "$g72" add -A
 git -C "$g72" commit -qm "index refresh" --allow-empty
@@ -8686,34 +8712,6 @@ g72base=$(git -C "$g72" symbolic-ref --short HEAD)
 [ -z "$(status_flags "$g72")" ] \
   && pass "groomed-node base: status.sh is clear once the groomed base is committed" \
   || fail "groomed-node base: status.sh is clear once the groomed base is committed ($(status_flags "$g72"))"
-
-# Regroup: a second fold on the already-folded record, on one branch; an
-# independent edit to the fourth (untouched) record, on another.
-g72r1now=$(grep -lF 'folded with the nested-sub-bullet' "$g72/.agent/rules/learned"/*.md)
-g72r1nowrel=${g72r1now#"$g72"/}
-g72r4=$(grep -lF 'Fourth rule, flat' "$g72/.agent/rules/learned"/*.md)
-g72r4rel=${g72r4#"$g72"/}
-
-git -C "$g72" checkout -qb regroup "$g72base"
-printf -- '- [2026-01-01] First rule, folded a second time. Trigger: something.\n' >"$g72/$g72r1nowrel"
-git -C "$g72" commit -qam "regroup: fold the already-folded record again"
-
-git -C "$g72" checkout -q "$g72base"
-git -C "$g72" checkout -qb otheredit "$g72base"
-printf -- '- [2026-01-04] Fourth rule, flat, independently reworded post-groom.\n' >"$g72/$g72r4rel"
-git -C "$g72" commit -qam "independent edit to the fourth record post-groom"
-
-git -C "$g72" checkout -qb merge-regroup "$g72base"
-git -C "$g72" merge -q --no-edit regroup >"$WORK/g72-merge1.out" 2>&1
-g72mrc1=$?
-git -C "$g72" merge -q --no-edit otheredit >"$WORK/g72-merge2.out" 2>&1
-g72mrc2=$?
-[ "$g72mrc1" -eq 0 ] && [ "$g72mrc2" -eq 0 ] \
-  && pass "groom: a fold on one branch and an independent record edit on another merge with both changes" \
-  || fail "groom: a fold on one branch and an independent record edit on another merge with both changes"
-grep -qF 'folded a second time' "$g72/$g72r1nowrel" && grep -qF 'independently reworded post-groom' "$g72/$g72r4rel" \
-  && pass "groom: both the regroup and the independent edit are present after the merge" \
-  || fail "groom: both the regroup and the independent edit are present after the merge"
 
 # Re-run section 64's three scenarios against the groomed base rather than
 # the freshly-migrated one.
@@ -8782,7 +8780,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1151
+EXPECTED_CHECKS=1153
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
