@@ -1957,7 +1957,7 @@ for p in "$reporoot"/presets/*.md; do
 done
 [ "$memstale" -eq 0 ] && pass "presets: no preset still writes facts to memory.md" || fail "presets: no preset still writes facts to memory.md"
 
-# ---- 27b. self-learning: admission contract and routing (F17b) ----
+# ---- 27b. self-learning: admission contract and routing ----
 # The Self-learning section states when a discovery becomes a durable record,
 # which of four kinds it is, which surface owns that kind, and which command
 # writes it. Every phrase check below is scoped to the section's own extract
@@ -1999,9 +1999,15 @@ done
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl_extract "$reporoot/presets/$p.md" | grep -qF ".agent/scripts/learn.sh lookup" || sl_bad="$sl_bad $p"
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "On a node running \`indexes: generated\`: run \`.agent/scripts/learn.sh lookup\`" || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: a record is looked up before it is written" || fail "self-learning: a record is looked up before it is written ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "merge near-duplicates by hand in \`.agent/rules/learned.md\`" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: a manual-mode node merges near-duplicates by hand" || fail "self-learning: a manual-mode node merges near-duplicates by hand ($sl_bad)"
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
@@ -9178,7 +9184,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1228
+EXPECTED_CHECKS=1230
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

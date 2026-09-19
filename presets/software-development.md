@@ -118,7 +118,8 @@ This rubric is the judgement layer on top of the Verification contract above: th
   - A behavioral lesson that generalizes past this session: a learned record, written with `.agent/scripts/learn.sh`.
 - A record is admitted on evidence and scope, never on whether its wording passes a human-facing text check or a comment gate.
 - Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet.
-- Run `.agent/scripts/learn.sh lookup` before writing a record; revise the record it names with `.agent/scripts/learn.sh revise` instead of adding a near-duplicate, and pass `--distinct` only after reading the records the refusal names.
+- On a node running `indexes: generated`: run `.agent/scripts/learn.sh lookup` before writing a record; revise the record it names with `.agent/scripts/learn.sh revise` instead of adding a near-duplicate, and pass `--distinct` only after reading the records the refusal names.
+- On a manual-mode node (no `.agent/rules/learned/` directory, `learn.sh` refuses there): merge near-duplicates by hand in `.agent/rules/learned.md` instead of appending — read the file first, and edit the existing entry rather than adding a new one that says the same thing.
 - Route by scope: behavioral rules (scoping, verification, communication, workflow) stay in `rules/learned.md`. Area gotchas (library, API, SQL, CSS mechanics) go to the matching `.agent/docs/` file under `## Gotchas`, same format. Keep at most a one-line pointer here for cross-area hazards. For comment hygiene, write nothing when `comments.sh` already catches the shape. A new project-specific repeatable shape becomes a pattern in `.agent/scripts/comments.conf` (`BLOCK_RE_EXTRA` for a citation shape, `NARRATION_RE_EXTRA` for a phrasing, `CONSTRAINT_RE_EXTRA` when the gate blocked something real), never a prose rule.
 
 ## Git and commits

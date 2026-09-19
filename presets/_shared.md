@@ -151,5 +151,6 @@ The admission grammar: what a discovery becomes, and which surface and writer ow
 
 ```
 - Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet.
-- Run `.agent/scripts/learn.sh lookup` before writing a record; revise the record it names with `.agent/scripts/learn.sh revise` instead of adding a near-duplicate, and pass `--distinct` only after reading the records the refusal names.
+- On a node running `indexes: generated`: run `.agent/scripts/learn.sh lookup` before writing a record; revise the record it names with `.agent/scripts/learn.sh revise` instead of adding a near-duplicate, and pass `--distinct` only after reading the records the refusal names.
+- On a manual-mode node (no `.agent/rules/learned/` directory, `learn.sh` refuses there): merge near-duplicates by hand in `.agent/rules/learned.md` instead of appending — read the file first, and edit the existing entry rather than adding a new one that says the same thing.
 ```
