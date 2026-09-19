@@ -25,7 +25,7 @@ Start by running `.agent/scripts/status.sh`. Read the exact `GROOM:` line: it na
 
 ## Generated-mode nodes
 
-On a node running `indexes: generated`, the flagged content behind every `GROOM:` line below lives in the canonical records under `.agent/rules/` and `.agent/docs/`, `rules/learned/` included. Files under `.agent/indexes/` are rebuilt from those records and never edited: a hand edit there is swept at the next refresh with no warning. Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run that confirms the flag cleared.
+On a node running `indexes: generated`, the `rules/learned.md` and oversized-`docs/`-file `GROOM:` lines below flag content that lives in the canonical records under `.agent/rules/` and `.agent/docs/`, `rules/learned/` included. The other `GROOM:` flags in this file (`session-log.md`, a `memory/*.md` fact, the `memory.md` index, `memory/legacy.md`) name files that are never generated and are unaffected by this mode. Files under `.agent/indexes/` are rebuilt from those records and never edited: a hand edit there is swept at the next refresh with no warning. Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run that confirms the flag cleared.
 
 ## `session-log.md` over threshold
 
