@@ -199,7 +199,7 @@ for preset in $PRESETS; do
     # The shipped set, stated here independently of node.sh's copy loop —
     # deriving it from the script under test would pass a dropped entry.
     missing=""
-    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh learn.sh; do
       [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
@@ -2092,6 +2092,7 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
   scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
+  scripts/learn.sh \
   scripts/comments.conf scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
@@ -2738,7 +2739,7 @@ grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pa
 # in the field. node.sh names it once for both loops. This is what notices
 # if one of them ever re-inlines a literal.
 missing_u=""
-for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh; do
+for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh learn.sh; do
   [ -x "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
 done
 for f in comments.conf status.conf log.conf; do
@@ -3280,7 +3281,7 @@ hp="$WORK/helpcontract"
 mkdir -p "$hp"
 "$NODE" init --preset software-development --mode track-all "$hp" >/dev/null 2>&1
 hp_bad=""
-for hp_s in status log memory docs links checkpoint; do
+for hp_s in status log memory docs links checkpoint learn; do
   hp_out=$("$hp/.agent/scripts/$hp_s.sh" --help 2>/dev/null)
   hp_rc=$?
   [ "$hp_rc" -eq 0 ] || hp_bad="$hp_bad $hp_s.sh(exit=$hp_rc)"
@@ -3397,7 +3398,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | finish.sh | index.sh | status.conf | log.conf | comments.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | finish.sh | index.sh | learn.sh | status.conf | log.conf | comments.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
@@ -8773,6 +8774,316 @@ grep -qF 'Linear commit one, groomed base.' "$g72/.agent/rules/learned.md" \
   && pass "groomed node: both sequential commits' records still survive a linear replay" \
   || fail "groomed node: both sequential commits' records still survive a linear replay"
 
+# ---- 73. learn.sh: the learned-record lookup and upsert helper ----
+# Built on r61build plus node.sh update — a generated-mode node with a
+# populated rules/learned/ directory, the same base sections 61-65 use.
+lrn73="$WORK/learn-fixture"
+r61build "$lrn73"
+"$NODE" update "$lrn73" >/dev/null 2>&1
+LRN="$lrn73/.agent/scripts/learn.sh"
+
+lrn73_memdir_snapshot() { find "$1/.agent/memory" -type f | sort | xargs shasum 2>/dev/null | sort; }
+lrn73_mem_before=$(lrn73_memdir_snapshot "$lrn73")
+cp "$lrn73/.agent/memory.md" "$WORK/lrn73-memory-md-before.md"
+
+lrn73_before_ids=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | sort)
+lrn73_pick=$(printf '%s\n' "$lrn73_before_ids" | head -n1)
+
+# lookup: a byte-identical candidate reports duplicate, an overlapping one
+# reports overlap, and lookup exits 0 either way.
+lrn73_dup_out=$("$LRN" lookup --file "$lrn73_pick" "$lrn73" 2>"$WORK/lrn73-lookup.err")
+lrn73_dup_rc=$?
+[ "$lrn73_dup_rc" -eq 0 ] && pass "learn.sh: lookup exits 0" || fail "learn.sh: lookup exits 0 (rc=$lrn73_dup_rc)"
+printf '%s\n' "$lrn73_dup_out" | grep -qF "duplicate	$lrn73_pick	" \
+  && pass "learn.sh: lookup reports a byte-identical record as duplicate" \
+  || fail "learn.sh: lookup reports a byte-identical record as duplicate ($lrn73_dup_out)"
+
+printf -- '- [2026-01-09] First rule, flat, reworded slightly. Trigger: something.\n' >"$WORK/lrn73-overlap-cand.md"
+lrn73_ov_out=$("$LRN" lookup --file "$WORK/lrn73-overlap-cand.md" "$lrn73" 2>/dev/null)
+printf '%s\n' "$lrn73_ov_out" | grep -qF "overlap	$lrn73_pick	" \
+  && pass "learn.sh: lookup reports a shared-term record as overlap" \
+  || fail "learn.sh: lookup reports a shared-term record as overlap ($lrn73_ov_out)"
+
+# new: writes a well-formed, non-overlapping candidate under a minted
+# identity, verbatim.
+printf -- '- [2026-01-10] Cache the compiled template before every render. Trigger: repeated recompilation.\n' >"$WORK/lrn73-new-cand.md"
+lrn73_new_out=$("$LRN" new --file "$WORK/lrn73-new-cand.md" "$lrn73" 2>"$WORK/lrn73-new.err")
+lrn73_new_rc=$?
+[ "$lrn73_new_rc" -eq 0 ] && pass "learn.sh: new exits 0 on a well-formed, non-overlapping candidate" || fail "learn.sh: new exits 0 on a well-formed, non-overlapping candidate (rc=$lrn73_new_rc)"
+lrn73_new_id=$(printf '%s\n' "$lrn73_new_out" | awk -F'\t' '{print $2}')
+[ -f "$lrn73/.agent/rules/learned/$lrn73_new_id.md" ] && pass "learn.sh: new writes the record under its printed id" || fail "learn.sh: new writes the record under its printed id"
+diff -q "$WORK/lrn73-new-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+  && pass "learn.sh: the written record is byte-identical to the candidate" \
+  || fail "learn.sh: the written record is byte-identical to the candidate"
+
+case "$lrn73_new_id" in
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+  pass "learn.sh: new mints a 12-character lowercase-hex identity" ;;
+*)
+  fail "learn.sh: new mints a 12-character lowercase-hex identity ($lrn73_new_id)" ;;
+esac
+
+# new: exact-duplicate refusal (exit 5), naming the record, writing nothing.
+"$LRN" new --file "$WORK/lrn73-new-cand.md" "$lrn73" >"$WORK/lrn73-dup.out" 2>"$WORK/lrn73-dup.err"
+lrn73_dupnew_rc=$?
+[ "$lrn73_dupnew_rc" -eq 5 ] && pass "learn.sh: new refuses an exact duplicate at exit 5" || fail "learn.sh: new refuses an exact duplicate at exit 5 (rc=$lrn73_dupnew_rc)"
+grep -qF "$lrn73_new_id.md" "$WORK/lrn73-dup.err" \
+  && pass "learn.sh: the duplicate refusal names the record that already holds it" \
+  || fail "learn.sh: the duplicate refusal names the record that already holds it"
+
+# new: shared-term overlap refuses at exit 4 without --distinct, naming the
+# overlap; --distinct admits it.
+"$LRN" new --file "$WORK/lrn73-overlap-cand.md" "$lrn73" >"$WORK/lrn73-ov.out" 2>"$WORK/lrn73-ov.err"
+lrn73_ovnew_rc=$?
+[ "$lrn73_ovnew_rc" -eq 4 ] && pass "learn.sh: new refuses a shared-term overlap without --distinct at exit 4" || fail "learn.sh: new refuses a shared-term overlap without --distinct at exit 4 (rc=$lrn73_ovnew_rc)"
+grep -qF "$lrn73_pick" "$WORK/lrn73-ov.err" \
+  && pass "learn.sh: the overlap refusal names the overlapping record" \
+  || fail "learn.sh: the overlap refusal names the overlapping record"
+lrn73_distinct_out=$("$LRN" new --file "$WORK/lrn73-overlap-cand.md" --distinct "$lrn73" 2>"$WORK/lrn73-distinct.err")
+lrn73_distinct_rc=$?
+[ "$lrn73_distinct_rc" -eq 0 ] && pass "learn.sh: --distinct admits an overlapping candidate anyway" || fail "learn.sh: --distinct admits an overlapping candidate anyway (rc=$lrn73_distinct_rc)"
+printf '%s\n' "$lrn73_distinct_out" | grep -qE '^written	' \
+  && pass "learn.sh: a --distinct write's result line starts with written" \
+  || fail "learn.sh: a --distinct write's result line starts with written ($lrn73_distinct_out)"
+
+# The C/C++ pair shares every other nontrivial term, so the second create
+# needs --distinct — the overlap scan working as intended, not a defect —
+# and both still mint distinct identities that neither overwrites.
+printf -- '- [2026-02-01] Use C for the embedded firmware module because of strict size constraints.\n' >"$WORK/lrn73-c.md"
+printf -- '- [2026-02-02] Use C++ for the embedded firmware module because of strict size constraints.\n' >"$WORK/lrn73-cpp.md"
+lrn73_c_out=$("$LRN" new --file "$WORK/lrn73-c.md" "$lrn73" 2>/dev/null)
+lrn73_c_id=$(printf '%s\n' "$lrn73_c_out" | awk -F'\t' '{print $2}')
+"$LRN" new --file "$WORK/lrn73-cpp.md" "$lrn73" >/dev/null 2>"$WORK/lrn73-cpp-noflag.err"
+lrn73_cpp_noflag_rc=$?
+[ "$lrn73_cpp_noflag_rc" -eq 4 ] \
+  && pass "learn.sh: C and C++ overlap on every other term, so the second create needs --distinct" \
+  || fail "learn.sh: C and C++ overlap on every other term, so the second create needs --distinct (rc=$lrn73_cpp_noflag_rc)"
+lrn73_cpp_out=$("$LRN" new --file "$WORK/lrn73-cpp.md" --distinct "$lrn73" 2>/dev/null)
+lrn73_cpp_id=$(printf '%s\n' "$lrn73_cpp_out" | awk -F'\t' '{print $2}')
+[ -n "$lrn73_c_id" ] && [ -n "$lrn73_cpp_id" ] && [ "$lrn73_c_id" != "$lrn73_cpp_id" ] \
+  && pass "learn.sh: C and C++ mint two distinct identities, neither overwriting the other" \
+  || fail "learn.sh: C and C++ mint two distinct identities, neither overwriting the other (c=$lrn73_c_id cpp=$lrn73_cpp_id)"
+[ -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] && [ -f "$lrn73/.agent/rules/learned/$lrn73_cpp_id.md" ] \
+  && pass "learn.sh: both the C and C++ records exist on disk" \
+  || fail "learn.sh: both the C and C++ records exist on disk"
+
+# revise: rewords the imperative and the Trigger clause but keeps the
+# filename — its identity.
+lrn73_v0=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_new_id.md")
+printf -- '- [2026-01-11] A brand-new rule, reworded. Trigger: a completely different cause.\n' >"$WORK/lrn73-revise-cand.md"
+lrn73_rev_out=$("$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-revise-cand.md" --expected "$lrn73_v0" "$lrn73" 2>"$WORK/lrn73-rev.err")
+lrn73_rev_rc=$?
+[ "$lrn73_rev_rc" -eq 0 ] && pass "learn.sh: revise exits 0 against a fresh --expected" || fail "learn.sh: revise exits 0 against a fresh --expected (rc=$lrn73_rev_rc)"
+printf '%s\n' "$lrn73_rev_out" | grep -qF "revised	$lrn73_new_id	" \
+  && pass "learn.sh: revise's result line names the same id" \
+  || fail "learn.sh: revise's result line names the same id ($lrn73_rev_out)"
+[ -f "$lrn73/.agent/rules/learned/$lrn73_new_id.md" ] \
+  && pass "learn.sh: revise keeps the record's filename — its identity" \
+  || fail "learn.sh: revise keeps the record's filename — its identity"
+diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+  && pass "learn.sh: revise's record holds the new wording and Trigger clause" \
+  || fail "learn.sh: revise's record holds the new wording and Trigger clause"
+lrn73_v1=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_new_id.md")
+
+# stale revise: refuses at exit 3 and prints the current version; the
+# record is untouched. A distinct candidate body, so the refusal is
+# actually the version check and not the duplicate check tripping first on
+# a candidate that happens to match what the first revise already wrote.
+printf -- '- [2026-01-13] A stale racer with its own distinct wording. Trigger: an old version.\n' >"$WORK/lrn73-stale-cand.md"
+"$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-stale-cand.md" --expected "$lrn73_v0" "$lrn73" >"$WORK/lrn73-stale.out" 2>"$WORK/lrn73-stale.err"
+lrn73_stale_rc=$?
+[ "$lrn73_stale_rc" -eq 3 ] && pass "learn.sh: revise against a stale --expected refuses at exit 3" || fail "learn.sh: revise against a stale --expected refuses at exit 3 (rc=$lrn73_stale_rc)"
+grep -qF "$lrn73_v1" "$WORK/lrn73-stale.err" \
+  && pass "learn.sh: the stale refusal prints the current version" \
+  || fail "learn.sh: the stale refusal prints the current version ($(cat "$WORK/lrn73-stale.err"))"
+diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+  && pass "learn.sh: a stale revise leaves the record byte-identical to the first revise's bytes" \
+  || fail "learn.sh: a stale revise leaves the record byte-identical to the first revise's bytes"
+
+# The lost-update pair: two sequential calls carrying the same captured
+# version, not backgrounded processes — a single-threaded suite run under
+# three locales cannot assert on a real race, and the precondition check
+# is what this is actually about.
+printf -- '- [2026-01-12] A second racer, also carrying the old version. Trigger: a lost update.\n' >"$WORK/lrn73-lost-cand.md"
+"$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-lost-cand.md" --expected "$lrn73_v0" "$lrn73" >/dev/null 2>"$WORK/lrn73-lost.err"
+lrn73_lost_rc=$?
+[ "$lrn73_lost_rc" -eq 3 ] \
+  && pass "learn.sh: a second revise carrying the version the first one consumed also loses" \
+  || fail "learn.sh: a second revise carrying the version the first one consumed also loses (rc=$lrn73_lost_rc)"
+diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+  && pass "learn.sh: the record still holds the first revise's bytes after the lost update" \
+  || fail "learn.sh: the record still holds the first revise's bytes after the lost update"
+
+# revise whose body equals the record it targets is the same duplicate
+# refusal as new, not a no-op success.
+"$LRN" revise "$lrn73_new_id" --file "$lrn73/.agent/rules/learned/$lrn73_new_id.md" --expected "$lrn73_v1" "$lrn73" >/dev/null 2>"$WORK/lrn73-revdup.err"
+lrn73_revdup_rc=$?
+[ "$lrn73_revdup_rc" -eq 5 ] \
+  && pass "learn.sh: a revise whose body equals the record it targets refuses at exit 5" \
+  || fail "learn.sh: a revise whose body equals the record it targets refuses at exit 5 (rc=$lrn73_revdup_rc)"
+
+# malformed candidates: refused at exit 6, writing nothing.
+lrn73_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+printf -- 'No date stamp at all.\n' >"$WORK/lrn73-bad-nodate.md"
+"$LRN" new --file "$WORK/lrn73-bad-nodate.md" "$lrn73" >/dev/null 2>&1
+[ "$?" -eq 6 ] && pass "learn.sh: a candidate with no date stamp refuses at exit 6" || fail "learn.sh: a candidate with no date stamp refuses at exit 6"
+printf -- '- [2026-01-13] One.\n- [2026-01-14] Two.\n' >"$WORK/lrn73-bad-twobullet.md"
+"$LRN" new --file "$WORK/lrn73-bad-twobullet.md" "$lrn73" >/dev/null 2>&1
+[ "$?" -eq 6 ] && pass "learn.sh: a candidate with a second top-level bullet refuses at exit 6" || fail "learn.sh: a candidate with a second top-level bullet refuses at exit 6"
+printf -- '---\ndate: 2026-01-01\n---\nbody\n' >"$WORK/lrn73-bad-frontmatter.md"
+"$LRN" new --file "$WORK/lrn73-bad-frontmatter.md" "$lrn73" >/dev/null 2>&1
+[ "$?" -eq 6 ] && pass "learn.sh: a candidate carrying a frontmatter block refuses at exit 6" || fail "learn.sh: a candidate carrying a frontmatter block refuses at exit 6"
+printf -- '- [2026-01-15] A rule.\n# A heading\n' >"$WORK/lrn73-bad-heading.md"
+"$LRN" new --file "$WORK/lrn73-bad-heading.md" "$lrn73" >/dev/null 2>&1
+[ "$?" -eq 6 ] && pass "learn.sh: a candidate carrying a heading refuses at exit 6" || fail "learn.sh: a candidate carrying a heading refuses at exit 6"
+lrn73_after_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+[ "$lrn73_before_count" -eq "$lrn73_after_count" ] \
+  && pass "learn.sh: every malformed candidate above wrote nothing" \
+  || fail "learn.sh: every malformed candidate above wrote nothing (before=$lrn73_before_count after=$lrn73_after_count)"
+
+# over-length imperative: warns on stderr, still writes.
+lrn73_long=$(awk 'BEGIN { for (i = 1; i <= 45; i++) printf "word "; print "." }')
+printf -- '- [2026-01-16] %s\n' "$lrn73_long" >"$WORK/lrn73-long.md"
+"$LRN" new --file "$WORK/lrn73-long.md" "$lrn73" >"$WORK/lrn73-long.out" 2>"$WORK/lrn73-long.err"
+lrn73_long_rc=$?
+[ "$lrn73_long_rc" -eq 0 ] && pass "learn.sh: an over-length imperative still writes" || fail "learn.sh: an over-length imperative still writes (rc=$lrn73_long_rc)"
+grep -qi '40-word' "$WORK/lrn73-long.err" && pass "learn.sh: an over-length imperative warns on stderr" || fail "learn.sh: an over-length imperative warns on stderr"
+
+# surface refusal: exit 7, naming the owning writer.
+printf -- '- [2026-01-17] Some other-surface candidate.\n' >"$WORK/lrn73-surf.md"
+"$LRN" new --file "$WORK/lrn73-surf.md" --surface memory "$lrn73" >/dev/null 2>"$WORK/lrn73-surf-mem.err"
+lrn73_surfmem_rc=$?
+[ "$lrn73_surfmem_rc" -eq 7 ] && pass "learn.sh: --surface memory refuses at exit 7" || fail "learn.sh: --surface memory refuses at exit 7 (rc=$lrn73_surfmem_rc)"
+grep -qF 'memory.sh' "$WORK/lrn73-surf-mem.err" \
+  && pass "learn.sh: the memory-surface refusal names memory.sh" \
+  || fail "learn.sh: the memory-surface refusal names memory.sh"
+"$LRN" new --file "$WORK/lrn73-surf.md" --surface docs "$lrn73" >/dev/null 2>"$WORK/lrn73-surf-docs.err"
+lrn73_surfdocs_rc=$?
+[ "$lrn73_surfdocs_rc" -eq 7 ] && pass "learn.sh: --surface docs refuses at exit 7" || fail "learn.sh: --surface docs refuses at exit 7 (rc=$lrn73_surfdocs_rc)"
+grep -qF 'docs.sh' "$WORK/lrn73-surf-docs.err" \
+  && pass "learn.sh: the docs-surface refusal names docs.sh" \
+  || fail "learn.sh: the docs-surface refusal names docs.sh"
+"$LRN" new --file "$WORK/lrn73-surf.md" --surface gotchas "$lrn73" >/dev/null 2>"$WORK/lrn73-surf-gotchas.err"
+lrn73_surfgotchas_rc=$?
+[ "$lrn73_surfgotchas_rc" -eq 7 ] && pass "learn.sh: --surface gotchas refuses at exit 7" || fail "learn.sh: --surface gotchas refuses at exit 7 (rc=$lrn73_surfgotchas_rc)"
+
+# retire: removes the record; a stale --expected refuses at exit 3 first.
+lrn73_retire_v=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_c_id.md")
+"$LRN" retire "$lrn73_c_id" --expected old-and-wrong "$lrn73" >/dev/null 2>"$WORK/lrn73-retire-stale.err"
+lrn73_retirestale_rc=$?
+[ "$lrn73_retirestale_rc" -eq 3 ] && pass "learn.sh: retire against a stale --expected refuses at exit 3" || fail "learn.sh: retire against a stale --expected refuses at exit 3 (rc=$lrn73_retirestale_rc)"
+[ -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] \
+  && pass "learn.sh: a stale retire leaves the record in place" \
+  || fail "learn.sh: a stale retire leaves the record in place"
+lrn73_retire_out=$("$LRN" retire "$lrn73_c_id" --expected "$lrn73_retire_v" "$lrn73" 2>"$WORK/lrn73-retire.err")
+lrn73_retire_rc=$?
+[ "$lrn73_retire_rc" -eq 0 ] && pass "learn.sh: retire exits 0 against a fresh --expected" || fail "learn.sh: retire exits 0 against a fresh --expected (rc=$lrn73_retire_rc)"
+printf '%s\n' "$lrn73_retire_out" | grep -qF "retired	$lrn73_c_id" \
+  && pass "learn.sh: retire prints retired with the id" \
+  || fail "learn.sh: retire prints retired with the id ($lrn73_retire_out)"
+[ ! -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] && pass "learn.sh: retire removes the record from disk" || fail "learn.sh: retire removes the record from disk"
+
+# Write confinement: nothing above ever touched memory.md or memory/.
+lrn73_mem_after=$(lrn73_memdir_snapshot "$lrn73")
+[ "$lrn73_mem_before" = "$lrn73_mem_after" ] \
+  && pass "learn.sh: memory/ is byte-identical before and after every fixture command above" \
+  || fail "learn.sh: memory/ is byte-identical before and after every fixture command above"
+diff -q "$WORK/lrn73-memory-md-before.md" "$lrn73/.agent/memory.md" >/dev/null 2>&1 \
+  && pass "learn.sh: memory.md is byte-identical before and after every fixture command above" \
+  || fail "learn.sh: memory.md is byte-identical before and after every fixture command above"
+
+# A manual-mode node (no indexes: generated, so no rules/learned/ directory
+# at all) refuses every write command, naming rules/learned.md as the
+# node's surface, and leaves it untouched. lookup is not a write and still
+# exits 0 with nothing to compare against.
+lrn73_manual="$WORK/learn-manual"
+mkdir -p "$lrn73_manual"
+"$NODE" init --preset software-development --mode ignore-all "$lrn73_manual" >/dev/null 2>&1
+LRNM="$lrn73_manual/.agent/scripts/learn.sh"
+printf -- '- [2026-01-01] A manual-mode candidate.\n' >"$WORK/lrn73-manual-cand.md"
+cp "$lrn73_manual/.agent/rules/learned.md" "$WORK/lrn73-manual-learned-before.md"
+
+"$LRNM" lookup --file "$WORK/lrn73-manual-cand.md" "$lrn73_manual" >/dev/null 2>&1
+[ "$?" -eq 0 ] \
+  && pass "learn.sh: lookup on a manual-mode node still exits 0 with nothing to compare against" \
+  || fail "learn.sh: lookup on a manual-mode node still exits 0 with nothing to compare against"
+
+"$LRNM" new --file "$WORK/lrn73-manual-cand.md" "$lrn73_manual" >/dev/null 2>"$WORK/lrn73-manual-new.err"
+lrn73_manualnew_rc=$?
+[ "$lrn73_manualnew_rc" -eq 7 ] \
+  && pass "learn.sh: new on a manual-mode node with no rules/learned/ refuses at exit 7" \
+  || fail "learn.sh: new on a manual-mode node with no rules/learned/ refuses at exit 7 (rc=$lrn73_manualnew_rc)"
+grep -qF 'rules/learned.md' "$WORK/lrn73-manual-new.err" \
+  && pass "learn.sh: the manual-mode refusal names rules/learned.md as the node's surface" \
+  || fail "learn.sh: the manual-mode refusal names rules/learned.md as the node's surface"
+
+"$LRNM" revise deadbeefcafe --file "$WORK/lrn73-manual-cand.md" --expected absent "$lrn73_manual" >/dev/null 2>&1
+[ "$?" -eq 7 ] \
+  && pass "learn.sh: revise on a manual-mode node with no rules/learned/ refuses at exit 7" \
+  || fail "learn.sh: revise on a manual-mode node with no rules/learned/ refuses at exit 7"
+"$LRNM" retire deadbeefcafe --expected absent "$lrn73_manual" >/dev/null 2>&1
+[ "$?" -eq 7 ] \
+  && pass "learn.sh: retire on a manual-mode node with no rules/learned/ refuses at exit 7" \
+  || fail "learn.sh: retire on a manual-mode node with no rules/learned/ refuses at exit 7"
+
+diff -q "$WORK/lrn73-manual-learned-before.md" "$lrn73_manual/.agent/rules/learned.md" >/dev/null 2>&1 \
+  && pass "learn.sh: rules/learned.md is byte-identical after every refused write on a manual-mode node" \
+  || fail "learn.sh: rules/learned.md is byte-identical after every refused write on a manual-mode node"
+[ ! -e "$lrn73_manual/.agent/rules/learned" ] \
+  && pass "learn.sh: a manual-mode node still has no rules/learned/ directory after these refusals" \
+  || fail "learn.sh: a manual-mode node still has no rules/learned/ directory after these refusals"
+
+# Bootstrap absence: nothing on the mechanical load path invokes it.
+lrn73_boot_hits=$(grep -l 'learn\.sh' \
+  "$reporoot/templates/entry-point.md" "$reporoot/templates/entry-point-generated.md" \
+  "$reporoot/scripts/status.sh" "$reporoot/scripts/checkpoint.sh" 2>/dev/null)
+[ -z "$lrn73_boot_hits" ] \
+  && pass "learn.sh: no entry-point template, status.sh, or checkpoint.sh path invokes it" \
+  || fail "learn.sh: no entry-point template, status.sh, or checkpoint.sh path invokes it ($lrn73_boot_hits)"
+
+# Install wiring: both init and update ship it executable, and update's
+# refreshed-scripts line names it.
+lrn73_wire_init="$WORK/learn-wire-init"
+mkdir -p "$lrn73_wire_init"
+"$NODE" init --preset software-development --mode ignore-all "$lrn73_wire_init" >/dev/null 2>&1
+[ -x "$lrn73_wire_init/.agent/scripts/learn.sh" ] && pass "learn.sh: init installs it executable" || fail "learn.sh: init installs it executable"
+
+lrn73_wire_update="$WORK/learn-wire-update"
+mkdir -p "$lrn73_wire_update"
+make_v6_fixture "$lrn73_wire_update"
+"$NODE" update "$lrn73_wire_update" >"$WORK/lrn73-wire-update.out" 2>&1
+[ -x "$lrn73_wire_update/.agent/scripts/learn.sh" ] \
+  && pass "learn.sh: update installs it executable into an existing node" \
+  || fail "learn.sh: update installs it executable into an existing node"
+grep -qF 'learn.sh' "$WORK/lrn73-wire-update.out" \
+  && pass "learn.sh: update's refreshed-scripts line names it" \
+  || fail "learn.sh: update's refreshed-scripts line names it"
+
+# ---- 74. cross-check: every script node.sh's update loop refreshes is
+# named in scripts/docs/README.md's script table ----
+# Reads the update loop's own word list rather than restating it, so a
+# name added to one and not the other fails this check instead of passing
+# it twice. The update loop specifically (not init's, which precedes it in
+# the file): the one under the "Refresh the shipped scripts from the
+# source repo" comment.
+xc74_loop_line=$(awk '
+  /Refresh the shipped scripts from the source repo/ { f = 1 }
+  f && /^  for script in / { print; exit }
+' "$reporoot/scripts/node.sh")
+xc74_names=$(printf '%s\n' "$xc74_loop_line" | sed -E 's/^[[:space:]]*for script in (.*); do$/\1/')
+xc74_missing=""
+for xc74_s in $xc74_names; do
+  # finish.sh is the checkpoint.sh compatibility alias, documented in
+  # node.md and checkpoint.md — it never gets its own README.md row.
+  case "$xc74_s" in
+  finish.sh) continue ;;
+  esac
+  grep -qF "\`$xc74_s\`" "$reporoot/scripts/docs/README.md" || xc74_missing="$xc74_missing $xc74_s"
+done
+[ -z "$xc74_missing" ] \
+  && pass "docs: every script node.sh's update loop refreshes is named in scripts/docs/README.md" \
+  || fail "docs: every script node.sh's update loop refreshes is named in scripts/docs/README.md (missing:$xc74_missing)"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -8780,7 +9091,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1153
+EXPECTED_CHECKS=1210
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
