@@ -9263,8 +9263,6 @@ rec75_keep_id=$(basename "$rec75_keep" .md)
 rec75_mergesrc_id=$(basename "$rec75_mergesrc" .md)
 rec75_retire_id=$(basename "$rec75_retire" .md)
 
-cp "$rec75_inv" "$WORK/rec75-inventory-before.md"
-
 # ---- pending, first run: every pending rule and hook-missing doc listed,
 # each rule item's version a fresh hash of its own record, each doc
 # item's version the literal "-" ----
@@ -9380,8 +9378,17 @@ grep -qF 'still exists' "$WORK/rec75-ref-existsretire.err" \
 [ "$(rec75_inv_snapshot)" = "$rec75_before" ] && pass "reconcile refusal: the still-exists refusal writes nothing" || fail "reconcile refusal: the still-exists refusal writes nothing"
 
 # ---- KEEP: the multi-paragraph rule needs no split or merge — the agent
-# closes it as migrated with the record untouched. ----
+# closes it as migrated with the record untouched. This is also the one
+# successful resolve the whole-fixture invariants below are proved
+# against: exactly one inventory line changes, and every record and every
+# doc in the fixture stays byte-identical. ----
+rec75_records_snapshot() { find "$1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
+rec75_docs_snapshot() { find "$1/.agent/docs" -type f 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
+
 cp "$rec75_keep" "$WORK/rec75-keep-before.md"
+cp "$rec75_inv" "$WORK/rec75-inventory-before.md"
+rec75_records_before=$(rec75_records_snapshot "$rec75")
+rec75_docs_before=$(rec75_docs_snapshot "$rec75")
 rec75_keep_resolve_out=$("$REC" resolve --id "$rec75_keep_id" --disposition migrated "$rec75" 2>"$WORK/rec75-keep-resolve.err")
 rec75_keep_resolve_rc=$?
 [ "$rec75_keep_resolve_rc" -eq 0 ] && pass "reconcile keep: resolve exits 0" || fail "reconcile keep: resolve exits 0 (rc=$rec75_keep_resolve_rc)"
@@ -9394,6 +9401,34 @@ grep -qF "id=$rec75_keep_id | migrated" "$rec75_inv" \
 diff -q "$WORK/rec75-keep-before.md" "$rec75_keep" >/dev/null 2>&1 \
   && pass "reconcile keep: the record is byte-identical before and after resolve" \
   || fail "reconcile keep: the record is byte-identical before and after resolve"
+
+# Acceptance box 2: a resolve changes only the named item's disposition
+# field, nothing else on its line and no other line in the file.
+cp "$rec75_inv" "$WORK/rec75-inventory-after.md"
+rec75_inv_before_line=$(grep -F "id=$rec75_keep_id " "$WORK/rec75-inventory-before.md")
+rec75_inv_after_line=$(grep -F "id=$rec75_keep_id " "$WORK/rec75-inventory-after.md")
+[ "${rec75_inv_before_line% | *}" = "${rec75_inv_after_line% | *}" ] \
+  && pass "reconcile keep: the resolved line's label, location, and id fields are unchanged" \
+  || fail "reconcile keep: the resolved line's label, location, and id fields are unchanged"
+[ "${rec75_inv_before_line##* | }" != "${rec75_inv_after_line##* | }" ] \
+  && pass "reconcile keep: only the text after the resolved line's last field changed" \
+  || fail "reconcile keep: only the text after the resolved line's last field changed"
+grep -vF "id=$rec75_keep_id " "$WORK/rec75-inventory-before.md" >"$WORK/rec75-inv-before-rest.md"
+grep -vF "id=$rec75_keep_id " "$WORK/rec75-inventory-after.md" >"$WORK/rec75-inv-after-rest.md"
+diff -q "$WORK/rec75-inv-before-rest.md" "$WORK/rec75-inv-after-rest.md" >/dev/null 2>&1 \
+  && pass "reconcile keep: every other inventory line is byte-identical across the resolve" \
+  || fail "reconcile keep: every other inventory line is byte-identical across the resolve"
+
+# Acceptance box 6: resolve creates, edits, splits, merges, and deletes no
+# record and no doc anywhere in the fixture — not just the item resolved.
+rec75_records_after=$(rec75_records_snapshot "$rec75")
+rec75_docs_after=$(rec75_docs_snapshot "$rec75")
+[ "$rec75_records_before" = "$rec75_records_after" ] \
+  && pass "reconcile keep: every record under rules/learned/ is byte-identical across the resolve" \
+  || fail "reconcile keep: every record under rules/learned/ is byte-identical across the resolve"
+[ "$rec75_docs_before" = "$rec75_docs_after" ] \
+  && pass "reconcile keep: every doc under docs/ is byte-identical across the resolve" \
+  || fail "reconcile keep: every doc under docs/ is byte-identical across the resolve"
 
 # ---- RETIRE: the nested-sub-bullet rule turns out to duplicate a source
 # already covered elsewhere — the agent retires it outright. ----
@@ -9522,13 +9557,34 @@ grep -qF 'more than one line' "$WORK/rec75-ref-dupline.err" \
   || fail "reconcile refusal: the duplicate-line refusal names what it checked"
 cp "$WORK/rec75-2-inv-before.md" "$rec75_2_inv"
 
+# ---- Acceptance box 2's other half: pending on a node that carries no
+# migration-inventory.md at all — a plain generated-mode node that never
+# migrated, not a missing root. ----
+rec75_noinv="$WORK/reconcile-no-inventory"
+mkdir -p "$rec75_noinv"
+"$NODE" init --preset software-development --mode ignore-all --indexes generated "$rec75_noinv" >/dev/null 2>&1
+[ ! -f "$rec75_noinv/.agent/migration-inventory.md" ] \
+  && pass "learn.sh pending: the no-inventory fixture genuinely carries no migration-inventory.md" \
+  || fail "learn.sh pending: the no-inventory fixture genuinely carries no migration-inventory.md"
+RECNOINV="$rec75_noinv/.agent/scripts/learn.sh"
+rec75_noinv_pending_out=$("$RECNOINV" pending "$rec75_noinv" 2>"$WORK/rec75-noinv-pending.err")
+rec75_noinv_pending_rc=$?
+[ "$rec75_noinv_pending_rc" -eq 0 ] \
+  && pass "learn.sh pending: a node with no migration-inventory.md exits 0" \
+  || fail "learn.sh pending: a node with no migration-inventory.md exits 0 (rc=$rec75_noinv_pending_rc)"
+[ -z "$rec75_noinv_pending_out" ] \
+  && pass "learn.sh pending: a node with no migration-inventory.md prints nothing" \
+  || fail "learn.sh pending: a node with no migration-inventory.md prints nothing ($rec75_noinv_pending_out)"
+
 # ---- final pending: the backlog is empty ----
 rec75_pending2=$("$REC" pending "$rec75")
+rec75_pending2_rc=$?
+[ "$rec75_pending2_rc" -eq 0 ] \
+  && pass "learn.sh pending: a fully reconciled node's second run exits 0" \
+  || fail "learn.sh pending: a fully reconciled node's second run exits 0 (rc=$rec75_pending2_rc)"
 [ -z "$rec75_pending2" ] \
   && pass "learn.sh pending: a fully reconciled node's second run lists nothing" \
   || fail "learn.sh pending: a fully reconciled node's second run lists nothing ($rec75_pending2)"
-
-cp "$rec75_inv" "$WORK/rec75-inventory-after.md"
 
 # A second node.sh update over the reconciled node rewrites no record and
 # no inventory line. Scoped to exactly that: rules/learned/*.md and
@@ -9556,7 +9612,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1295
+EXPECTED_CHECKS=1304
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
