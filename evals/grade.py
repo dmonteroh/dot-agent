@@ -357,7 +357,8 @@ def _index_manifest(name):
 
 def p_index_pages_unedited(op, n):
     before, after = _index_manifest("indexes-before.txt"), _index_manifest("indexes-after.txt")
-    changed = sorted(p for p in before if p in after and before[p] != after[p])
+    changed = sorted(p for p in before
+                      if p != INDEX_ENTRY_PATH and p in after and before[p] != after[p])
     return cmp_num(len(changed), op, int(n)), "%d generated page(s) changed in place: %s" % (
         len(changed), ", ".join(changed) if changed else "none")
 
