@@ -173,9 +173,11 @@ lrn_overlap_scan() {
 }
 
 # The literal string "absent" when $1 does not exist, else its
-# git hash-object --no-filters version — so a revise or retire naming an
-# id with no record on disk fails the ordinary stale check instead of
-# needing a second code for the same shape of mistake.
+# git hash-object --no-filters version. Passing --expected absent against
+# a missing record clears this ordinary stale check, since both sides
+# read "absent" — revise and retire each then run their own dedicated
+# absent-record check and refuse at exit 2, rather than letting a create
+# or a no-op through silently.
 lrn_current_version() {
   if [ -f "$1" ]; then
     git hash-object --no-filters -- "$1"
