@@ -1,6 +1,6 @@
 # checkpoint.sh — the hand-back call
 
-The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; this one only sequences them and stops at the first refusal. `finish.sh` is a deprecated alias kept for already-adopted nodes; it forwards to this script unchanged.
+The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; on a node running generated indexes (`indexes: generated`) it also refreshes the index cache between the status check and the log entry. This one only sequences them and stops at the first refusal that blocks a hand-back — the cache refresh never does. `finish.sh` is a deprecated alias kept for already-adopted nodes; it forwards to this script unchanged.
 
 ```
 Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
@@ -14,9 +14,12 @@ Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summ
 |---|---|---|
 | 1 | `comments.sh <base>` from the project root | exit 1 (a `BLOCK:` finding) or exit 2 (could not run) |
 | 2 | `status.sh`, printing only its `GROOM:` / `REPAIR:` / `INDEX:` lines | any flag line stands, or the check could not be run cleanly |
-| 3 | `log.sh --tool … --area … --verify … --summary …` | `log.sh` refuses the entry |
+| 3 | on a node running generated indexes only: `index.sh ensure`, refreshing `.agent/indexes/` from this session's canonical writes | never |
+| 4 | `log.sh --tool … --area … --verify … --summary …` | `log.sh` refuses the entry |
 
 A stop leaves no log entry behind. That ordering is the point: a log entry is a claim that the session finished, and it is not written over a diff the gate refused or a node still flagged. The session fixes what was named and runs the command again; the entry is appended once, on the clean run, so a second run never duplicates the first.
+
+A manual-mode node (`indexes: manual`, the default) runs no refresh step at all — step 3 exists only when the manifest reads `indexes: generated`. The cache is disposable: a missing `.agent/scripts/index.sh` or a failing `ensure` prints a warning to stderr naming the canonical `.agent/rules/` and `.agent/docs/` directories to read directly meanwhile, and changes neither the exit status below nor whether the log entry is written — the next successful `ensure` catches the cache back up.
 
 ## The base ref
 
@@ -41,6 +44,8 @@ A session's cost scales with its tool calls, not its words: every call re-reads 
 | gate clean or skipped, no flag standing, entry written | the gate blocked or could not run, a flag stands, the status check itself failed to run cleanly (nonzero exit or unexpected stderr from `status.sh`), `log.sh` refused, or the tree was clean with no `--base` — read the line above the refusal; nothing was written |
 
 An inspection that did not run is not a clean node: the log entry is a claim that the node's state was actually read, and a `status.sh` that crashed, exited nonzero, or wrote to stderr never made that claim true.
+
+The generated-mode cache refresh (step 3) sits outside this table: whatever it prints and however `index.sh` exits, the codes above are unaffected — only `comments.sh`, `status.sh`, and `log.sh` decide them.
 
 ## Subagents
 
