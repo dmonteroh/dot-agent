@@ -8482,6 +8482,297 @@ n68h1=$(grep -c '^- \[' "$h68/.agent/session-log.md")
   && pass "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry" \
   || fail "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry (rc=$rc68h entries=$n68h1)"
 
+# ---- 69. skills: the mechanical half of the authoring bar over every
+# tools/skills/*/SKILL.md description ----
+# The judged half (does "what" and "when" actually hold) stays a human
+# read. What a script can check: a when-to-use clause is present, a
+# colon-bearing value is quoted, no second person, and the byte budget.
+g69_usewhen=""
+g69_quoted=""
+g69_2ndperson=""
+g69_budget=""
+g69_desc_of() { sed -n 's/^description: //p' "$1" | head -n 1; }
+for g69_file in "$reporoot"/tools/skills/*/SKILL.md; do
+  [ -e "$g69_file" ] || continue
+  g69_rel=${g69_file#"$reporoot"/}
+  g69_desc=$(g69_desc_of "$g69_file")
+  printf '%s' "$g69_desc" | grep -qE 'Use (when|after|before|for|during|whenever) ' \
+    || g69_usewhen="$g69_usewhen $g69_rel"
+  case "$g69_desc" in
+  *:*)
+    case "$g69_desc" in
+    \"*) ;;
+    *) g69_quoted="$g69_quoted $g69_rel" ;;
+    esac
+    ;;
+  esac
+  printf '%s' "$g69_desc" | grep -qiE '\byou\b|\byour\b' && g69_2ndperson="$g69_2ndperson $g69_rel"
+  g69_bytes=$(printf '%s' "$g69_desc" | LC_ALL=C wc -c | tr -d '[:space:]')
+  [ "$g69_bytes" -gt 440 ] && g69_budget="$g69_budget $g69_rel($g69_bytes)"
+done
+[ -z "$g69_usewhen" ] && pass "skills: every SKILL.md description carries a when-to-use clause" \
+  || fail "skills: every SKILL.md description carries a when-to-use clause ($g69_usewhen)"
+[ -z "$g69_quoted" ] && pass "skills: a description holding a colon is a quoted YAML value" \
+  || fail "skills: a description holding a colon is a quoted YAML value ($g69_quoted)"
+[ -z "$g69_2ndperson" ] && pass "skills: no SKILL.md description addresses the reader in the second person" \
+  || fail "skills: no SKILL.md description addresses the reader in the second person ($g69_2ndperson)"
+[ -z "$g69_budget" ] && pass "skills: every SKILL.md description stays inside the description budget" \
+  || fail "skills: every SKILL.md description stays inside the description budget ($g69_budget)"
+
+# The checks above must be able to fail, or a description that violates
+# every rule at once reads as clean.
+g69_bad="$WORK/g69-bad-skill/SKILL.md"
+mkdir -p "$(dirname "$g69_bad")"
+g69_longtail=$(words_n 200)
+printf 'description: Your favorite: %s\n' "$g69_longtail" >"$g69_bad"
+g69_baddesc=$(g69_desc_of "$g69_bad")
+g69_badhits=0
+printf '%s' "$g69_baddesc" | grep -qE 'Use (when|after|before|for|during|whenever) ' || g69_badhits=$((g69_badhits + 1))
+case "$g69_baddesc" in
+*:*) case "$g69_baddesc" in \"*) ;; *) g69_badhits=$((g69_badhits + 1)) ;; esac ;;
+esac
+printf '%s' "$g69_baddesc" | grep -qiE '\byou\b|\byour\b' && g69_badhits=$((g69_badhits + 1))
+g69_badbytes=$(printf '%s' "$g69_baddesc" | LC_ALL=C wc -c | tr -d '[:space:]')
+[ "$g69_badbytes" -gt 440 ] && g69_badhits=$((g69_badhits + 1))
+[ "$g69_badhits" -eq 4 ] && pass "skills: the description-bar checks catch a description that violates every rule at once" \
+  || fail "skills: the description-bar checks catch a description that violates every rule at once (caught $g69_badhits/4)"
+
+# ---- 70. groom skill: the generated-mode grooming procedure is documented ----
+g70skill="$reporoot/tools/skills/groom/SKILL.md"
+grep -qF 'Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run' "$g70skill" \
+  && grep -qF 'rebuilt from those records and never edited' "$g70skill" \
+  && pass "groom skill: a generated-mode pass edits records and closes with index.sh ensure" \
+  || fail "groom skill: a generated-mode pass edits records and closes with index.sh ensure"
+grep -qF 'A fold rewrites the record whose entry carries the earlier date and deletes the other record' "$g70skill" \
+  && grep -qF 'lower-sorting filename surviving a tie on the same date' "$g70skill" \
+  && pass "groom skill: a fold keeps the earlier-dated record and deletes the other" \
+  || fail "groom skill: a fold keeps the earlier-dated record and deletes the other"
+grep -qF 'A record fold, split, or move runs this same procedure' "$g70skill" \
+  && grep -qF 'A dropped fact, qualifier, or source reference fails the pass' "$g70skill" \
+  && pass "groom skill: a record fold, split, or move runs the anchor check" \
+  || fail "groom skill: a record fold, split, or move runs the anchor check"
+
+# ---- 71. groom: a groom-then-regenerate fixture over a migrated generated
+# node — records edited, pages rebuilt, no page hand-edited ----
+# Built on r61build plus node.sh update, the real migration chain, the
+# same base section 61 uses. r61build's docs tree carries three
+# deliberately unbackfillable entries (dup.md, badtable.md, noentry.md) that
+# section 61 needs and this fixture does not, so they are trimmed to a
+# clean architecture.md before update runs — otherwise their pre-existing
+# INDEX: noise would survive every assertion below and mask what grooming
+# actually changed.
+g71_trim_docs() {
+  g71td_dir="$1"
+  rm -f "$g71td_dir/.agent/docs/dup.md" "$g71td_dir/.agent/docs/badtable.md" "$g71td_dir/.agent/docs/noentry.md"
+  cat >"$g71td_dir/.agent/docs/architecture.md" <<'EOF'
+# Architecture
+
+### `hooked.md`
+- **Read when:** already hooked, never touched.
+
+### `unhooked.md`
+- **Read when:** doing unhooked work.
+
+### `area/sub.md`
+- **Read when:** doing area sub work.
+EOF
+}
+
+g71="$WORK/groom-then-regenerate"
+r61build "$g71"
+g71_trim_docs "$g71"
+"$NODE" update "$g71" >"$WORK/g71-update.out" 2>&1
+g71rc=$?
+"$NODE" finalize "$g71" >"$WORK/g71-finalize.out" 2>&1
+[ "$g71rc" -eq 0 ] && [ -z "$(status_flags "$g71")" ] \
+  && pass "groom fixture: the trimmed, finalized migrated node starts status-clean" \
+  || fail "groom fixture: the trimmed, finalized migrated node starts status-clean ($(status_flags "$g71"))"
+
+printf 'LEARNED_MAX_RULES=2\n' >>"$g71/.agent/scripts/status.conf"
+g71_flagged=$(status_flags "$g71")
+printf '%s\n' "$g71_flagged" | grep -q '^GROOM: rules/learned/ > 2 rules' \
+  && pass "groom fixture: lowering LEARNED_MAX_RULES draws the learned-rules GROOM line" \
+  || fail "groom fixture: lowering LEARNED_MAX_RULES draws the learned-rules GROOM line ($g71_flagged)"
+
+g71r1=$(grep -lF 'First rule, flat' "$g71/.agent/rules/learned"/*.md)
+g71r2=$(grep -lF 'nested sub-bullet' "$g71/.agent/rules/learned"/*.md)
+g71r3=$(grep -lF 'multi paragraph' "$g71/.agent/rules/learned"/*.md)
+g71r4=$(grep -lF 'Fourth rule, flat' "$g71/.agent/rules/learned"/*.md)
+
+g71_idx_before=$(idx_snapshot "$g71/.agent/indexes")
+
+[ "$(cat "$g71r4")" = '- [2026-01-04] Fourth rule, flat, last one.' ] \
+  && pass "groom fixture: the record the pass does not touch is unchanged before grooming" \
+  || fail "groom fixture: the record the pass does not touch is unchanged before grooming"
+
+# Fold r1+r2 into r1 (earlier date), deleting r2. Move r3, an
+# area-specific mechanic, to docs/area/sub.md under Gotchas, deleting r3.
+printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g71r1"
+rm -f "$g71r2"
+printf '\n## Gotchas\n\n- Third rule, multi paragraph, moved from rules/learned/.\n' >>"$g71/.agent/docs/area/sub.md"
+rm -f "$g71r3"
+subst "$g71/.agent/docs/architecture.md" '/### `area\/sub.md`/,/^$/ { /Read when/a\
+- **Sections:** Gotchas
+}'
+
+g71_idx_after=$(idx_snapshot "$g71/.agent/indexes")
+[ "$g71_idx_before" = "$g71_idx_after" ] \
+  && pass "groom: a groomed record set republishes with no hand edit under .agent/indexes/" \
+  || fail "groom: a groomed record set republishes with no hand edit under .agent/indexes/"
+
+"$IDXSH" ensure --root "$g71" >"$WORK/g71-ensure.out" 2>&1
+g71ensurerc=$?
+[ "$g71ensurerc" -eq 0 ] && pass "groom fixture: index.sh ensure republishes after the record edits" \
+  || fail "groom fixture: index.sh ensure republishes after the record edits (rc=$g71ensurerc)"
+g71gen=$(sed -n 2p "$g71/.agent/indexes/current.md")
+g71gendir="$g71/.agent/indexes/$g71gen"
+
+grep -qF 'folded with the nested-sub-bullet rule' "$g71gendir"/rules-*.md \
+  && ! grep -qF 'Second rule with a nested sub-bullet' "$g71gendir"/rules-*.md \
+  && ! grep -qF 'Third rule, multi paragraph' "$g71gendir"/rules-*.md \
+  && grep -qF 'Fourth rule, flat, last one.' "$g71gendir"/rules-*.md \
+  && pass "groom fixture: the regenerated rules page carries the folded rule, not the deleted records' text" \
+  || fail "groom fixture: the regenerated rules page carries the folded rule, not the deleted records' text"
+
+g71_docs_target=$(grep -F 'area/sub.md' "$g71gendir"/routes-*.md | sed -n 's/.*READ: //p' | head -n1)
+[ -n "$g71_docs_target" ] && [ -f "$g71_docs_target" ] && grep -qF 'Third rule, multi paragraph, moved from rules/learned/.' "$g71_docs_target" \
+  && pass "groom fixture: the docs page's routing entry resolves to the doc carrying the moved rule" \
+  || fail "groom fixture: the docs page's routing entry resolves to the doc carrying the moved rule"
+
+g71_after_flags=$(status_flags "$g71")
+[ -z "$g71_after_flags" ] \
+  && pass "groom fixture: status.sh is clear once the fold, deletion, and move are done" \
+  || fail "groom fixture: status.sh is clear once the fold, deletion, and move are done ($g71_after_flags)"
+
+# ---- 72. groom: a fold-and-delete on one branch and an independent record
+# edit on another merge with both changes, and the integrated merge/replay
+# fixtures (section 64) re-run unchanged against a groomed node ----
+g72="$WORK/mig-groomed-base"
+r61build "$g72"
+g71_trim_docs "$g72"
+sed "s/^  mode: ignore-all/  mode: track-shared/" "$g72/.agent/purpose.md" >"$g72/.agent/purpose.md.tmp"
+mv "$g72/.agent/purpose.md.tmp" "$g72/.agent/purpose.md"
+git -C "$g72" init -q
+git -C "$g72" config user.name Tester
+git -C "$g72" config user.email tester@example.invalid
+git -C "$g72" add .agent
+git -C "$g72" commit -qm initial
+"$NODE" update "$g72" >/dev/null 2>&1
+git -C "$g72" add -A
+git -C "$g72" commit -qm "post-migration state"
+"$NODE" finalize "$g72" >/dev/null 2>&1
+git -C "$g72" add -A
+git -C "$g72" commit -qm finalize --allow-empty
+g72pre=$(git -C "$g72" symbolic-ref --short HEAD)
+
+g72r1=$(grep -lF 'First rule, flat' "$g72/.agent/rules/learned"/*.md)
+g72r2=$(grep -lF 'nested sub-bullet' "$g72/.agent/rules/learned"/*.md)
+g72r4=$(grep -lF 'Fourth rule, flat' "$g72/.agent/rules/learned"/*.md)
+g72r1rel=${g72r1#"$g72"/}
+g72r2rel=${g72r2#"$g72"/}
+g72r4rel=${g72r4#"$g72"/}
+
+# Regroup: fold the first and second learned rules into the earlier-dated
+# record and delete the other, on one branch; independently edit the
+# fourth, unrelated record, on another.
+git -C "$g72" checkout -qb regroup "$g72pre"
+printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g72/$g72r1rel"
+git -C "$g72" rm -q "$g72r2rel"
+git -C "$g72" commit -qam "groom: fold first and second learned rules into the earlier-dated record"
+
+git -C "$g72" checkout -q "$g72pre"
+git -C "$g72" checkout -qb otheredit "$g72pre"
+printf -- '- [2026-01-04] Fourth rule, flat, independently reworded post-groom.\n' >"$g72/$g72r4rel"
+git -C "$g72" commit -qam "independent edit to the fourth record"
+
+git -C "$g72" checkout -qb merge-regroup "$g72pre"
+git -C "$g72" merge -q --no-edit regroup >"$WORK/g72-merge1.out" 2>&1
+g72mrc1=$?
+git -C "$g72" merge -q --no-edit otheredit >"$WORK/g72-merge2.out" 2>&1
+g72mrc2=$?
+[ "$g72mrc1" -eq 0 ] && [ "$g72mrc2" -eq 0 ] \
+  && pass "groom: a fold on one branch and an independent record edit on another merge with both changes" \
+  || fail "groom: a fold on one branch and an independent record edit on another merge with both changes"
+
+grep -qF 'folded with the nested-sub-bullet rule' "$g72/$g72r1rel" \
+  && pass "groom: the fold's surviving record carries the folded content after the merge" \
+  || fail "groom: the fold's surviving record carries the folded content after the merge"
+[ ! -e "$g72/$g72r2rel" ] \
+  && pass "groom: the record folded away stays deleted after the merge" \
+  || fail "groom: the record folded away stays deleted after the merge"
+grep -qF 'independently reworded post-groom' "$g72/$g72r4rel" \
+  && pass "groom: the independently edited record's edit survives the merge" \
+  || fail "groom: the independently edited record's edit survives the merge"
+
+"$IDXSH" ensure --root "$g72" >/dev/null 2>&1
+git -C "$g72" add -A
+git -C "$g72" commit -qm "index refresh" --allow-empty
+g72base=$(git -C "$g72" symbolic-ref --short HEAD)
+
+[ -z "$(status_flags "$g72")" ] \
+  && pass "groomed-node base: status.sh is clear once the groomed base is committed" \
+  || fail "groomed-node base: status.sh is clear once the groomed base is committed ($(status_flags "$g72"))"
+
+# Re-run section 64's three scenarios against the groomed base rather than
+# the freshly-migrated one.
+git -C "$g72" checkout -qb grecA "$g72base"
+printf -- '- [2026-03-01] Branch A record, groomed base.\n' >"$g72/.agent/rules/learned/g72-branch-a.md"
+git -C "$g72" add .agent/rules/learned/g72-branch-a.md
+git -C "$g72" commit -qm "branch A record, groomed base"
+git -C "$g72" checkout -q "$g72base"
+git -C "$g72" checkout -qb grecB "$g72base"
+printf -- '- [2026-03-02] Branch B record, groomed base.\n' >"$g72/.agent/rules/learned/g72-branch-b.md"
+git -C "$g72" add .agent/rules/learned/g72-branch-b.md
+git -C "$g72" commit -qm "branch B record, groomed base"
+git -C "$g72" checkout -qb merge-ab "$g72base"
+git -C "$g72" merge -q --no-edit grecA >/dev/null 2>&1
+g72mrc3=$?
+git -C "$g72" merge -q --no-edit grecB >/dev/null 2>&1
+g72mrc4=$?
+[ "$g72mrc3" -eq 0 ] && [ "$g72mrc4" -eq 0 ] \
+  && pass "groomed node: two disjoint new records still merge clean" \
+  || fail "groomed node: two disjoint new records still merge clean"
+"$g72/.agent/scripts/index.sh" ensure --root "$g72" >/dev/null 2>&1
+grep -qF 'Branch A record, groomed base.' "$g72/.agent/rules/learned.md" \
+  && grep -qF 'Branch B record, groomed base.' "$g72/.agent/rules/learned.md" \
+  && pass "groomed node: both merged records reach the regenerated aggregate" \
+  || fail "groomed node: both merged records reach the regenerated aggregate"
+
+git -C "$g72" checkout -q "$g72base"
+g72cd_file=$(grep -lF 'Fourth rule, flat' "$g72/.agent/rules/learned"/*.md | head -n1)
+g72cd_rel=${g72cd_file#"$g72"/}
+git -C "$g72" checkout -qb geditC "$g72base"
+printf -- '- [2026-01-04] Fourth rule, flat -- edited by C, groomed base.\n' >"$g72/$g72cd_rel"
+git -C "$g72" commit -qam "branch C edit, groomed base"
+git -C "$g72" checkout -qb geditD "$g72base"
+printf -- '- [2026-01-04] Fourth rule, flat -- edited by D, groomed base.\n' >"$g72/$g72cd_rel"
+git -C "$g72" commit -qam "branch D edit, groomed base"
+git -C "$g72" checkout -qb merge-cd "$g72base"
+git -C "$g72" merge -q --no-edit geditC >/dev/null 2>&1
+g72mrc5=$?
+git -C "$g72" merge -q --no-edit geditD >/dev/null 2>&1
+g72mrc6=$?
+[ "$g72mrc5" -eq 0 ] \
+  && pass "groomed node: the first same-record edit still applies clean" \
+  || fail "groomed node: the first same-record edit still applies clean"
+[ "$g72mrc6" -ne 0 ] \
+  && pass "groomed node: a second edit to the same record still conflicts rather than silently choosing a winner" \
+  || fail "groomed node: a second edit to the same record still conflicts rather than silently choosing a winner"
+git -C "$g72" merge --abort >/dev/null 2>&1
+
+git -C "$g72" checkout -qb linear "$g72base"
+printf -- '- [2026-03-03] Linear commit one, groomed base.\n' >"$g72/.agent/rules/learned/g72-linear-one.md"
+git -C "$g72" add .agent/rules/learned/g72-linear-one.md
+git -C "$g72" commit -qm "linear commit one, groomed base"
+printf -- '- [2026-03-04] Linear commit two, groomed base.\n' >"$g72/.agent/rules/learned/g72-linear-two.md"
+git -C "$g72" add .agent/rules/learned/g72-linear-two.md
+git -C "$g72" commit -qm "linear commit two, groomed base"
+"$g72/.agent/scripts/index.sh" ensure --root "$g72" >/dev/null 2>&1
+grep -qF 'Linear commit one, groomed base.' "$g72/.agent/rules/learned.md" \
+  && grep -qF 'Linear commit two, groomed base.' "$g72/.agent/rules/learned.md" \
+  && pass "groomed node: both sequential commits' records still survive a linear replay" \
+  || fail "groomed node: both sequential commits' records still survive a linear replay"
+
 # ---- summary ----
 ran=$((PASS + FAIL))
 
@@ -8489,7 +8780,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1126
+EXPECTED_CHECKS=1153
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

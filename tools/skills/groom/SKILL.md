@@ -1,6 +1,6 @@
 ---
 name: groom
-description: "Clears the GROOM: flags .agent/scripts/status.sh prints — one procedure per flagged file (session-log.md, a memory/*.md fact, the memory.md index, rules/learned.md, an oversized docs/ file, memory/legacy.md) — and runs the on-demand orphan/broken-link audit. Use when a status check prints a GROOM: line, or when auditing a node's links."
+description: "Clears the GROOM: flags .agent/scripts/status.sh prints — one procedure per flagged file (session-log.md, a memory/*.md fact, the memory.md index, rules/learned.md or a rules/learned/ record, an oversized docs/ file, memory/legacy.md) — and runs the on-demand orphan/broken-link audit. Use when a status check prints a GROOM: line, or when auditing a node's links."
 ---
 
 # Grooming `.agent/`
@@ -22,6 +22,10 @@ This skill is an optional walkthrough of *how* to clear each flag. It adds no ob
 This skill also works as a subagent brief. Per the contract's subagent rule, a session may delegate its `GROOM:` flags to one dispatched worker. Assign that worker explicitly to write only the flagged files. A small model such as Haiku is fine. The scripts do the exacting parts. Pass the worker the `GROOM:` lines and this file. Then re-run `status.sh` yourself. The cleared flag is the confirmation, not the worker's report.
 
 Start by running `.agent/scripts/status.sh`. Read the exact `GROOM:` line: it names the file and the threshold it crossed. Handle each flag below. Then re-run `status.sh` to confirm it's clear.
+
+## Generated-mode nodes
+
+On a node running `indexes: generated`, the `rules/learned.md` and oversized-`docs/`-file `GROOM:` lines below flag content that lives in the canonical records under `.agent/rules/` and `.agent/docs/`, `rules/learned/` included. The other `GROOM:` flags in this file (`session-log.md`, a `memory/*.md` fact, the `memory.md` index, `memory/legacy.md`) name files that are never generated and are unaffected by this mode. Files under `.agent/indexes/` are rebuilt from those records and never edited: a hand edit there is swept at the next refresh with no warning. Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run that confirms the flag cleared.
 
 ## `session-log.md` over threshold
 
@@ -51,6 +55,8 @@ Where two lines describe the same underlying fact, consolidate into one `memory/
 
 The file's own header comment is the curation law. Read it before editing. Look for near-duplicate rules and fold them into one entry instead of keeping both. Grep for shared trigger words or subject matter across entries as a starting point.
 
+On a node running generated indexes, `rules/learned/` holds one record per rule and `rules/learned.md` is generated output, never the file edited. A fold rewrites the record whose entry carries the earlier date and deletes the other record, with the lower-sorting filename surviving a tie on the same date. A rule moved to an area doc deletes its record. The header contract above still governs what a rule may say, record or single file alike.
+
 Then check whether the contract, routed docs, code, or tooling now owns each rule's behavior. Drop a rule whose failure mode is mechanically prevented, and fix the canonical source instead of retaining a local restatement. Version control keeps the history. A rule such as "run this script against the correct ref" expires when the script resolves that ref itself.
 
 Some entries are really an area-specific mechanic: a library, API, SQL, or CSS gotcha rather than a behavioral rule. Move each of those to the matching `.agent/docs/<area>.md` file, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer behind if it's a cross-area hazard.
@@ -75,6 +81,8 @@ Either move changes the doc's headings. So finish by refreshing its `architectur
 A word count falling is not evidence the pass was lossless — it is equally consistent with having deleted content. Prove it instead of asserting it.
 
 Before editing, copy the doc aside with `cp` to a scratch path outside the node. List its anchors: every identifier, numeric value, command, config key, path, route, and code fence in it. Grep the rewritten file for each anchor and confirm it survives. A `## Gotchas` bullet that vanished is a failure, not a saving. Report the before/after body-word counts *and* the anchor check together. The counts show the gain, and the anchor check is what makes the gain safe. Delete the scratch copy once the check passes.
+
+A record fold, split, or move runs this same procedure: collect the anchors from every record the pass touches before editing, then grep the surviving record and the target area doc for each. A dropped fact, qualifier, or source reference fails the pass.
 
 When this flag is delegated, the worker owes the orchestrator both numbers and the anchor result. The orchestrator then re-runs `status.sh`. A doc whose facts genuinely no longer fit under the threshold splits (move 2). It does not get trimmed to fit.
 
