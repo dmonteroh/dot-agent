@@ -1957,6 +1957,80 @@ for p in "$reporoot"/presets/*.md; do
 done
 [ "$memstale" -eq 0 ] && pass "presets: no preset still writes facts to memory.md" || fail "presets: no preset still writes facts to memory.md"
 
+# ---- 27b. self-learning: admission contract and routing ----
+# The Self-learning section states when a discovery becomes a durable record,
+# which of four kinds it is, which surface owns that kind, and which command
+# writes it. Every phrase check below is scoped to the section's own extract
+# — reusing finish_bootstrap's awk idiom — so a phrase landing in the wrong
+# section fails rather than passing.
+sl_extract() {
+  awk '/^## Self-learning/ { inq = 1 } inq && /^## / && !/^## Self-learning/ { inq = 0 } inq' "$1"
+}
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "successful work" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: successful work is a retro trigger" || fail "self-learning: successful work is a retro trigger ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "neither necessary nor sufficient" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: a correction alone neither requires nor justifies a record" || fail "self-learning: a correction alone neither requires nor justifies a record ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl27=$(sl_extract "$reporoot/presets/$p.md")
+  ok27=1
+  printf '%s\n' "$sl27" | grep -qF "no durable record" || ok27=0
+  printf '%s\n' "$sl27" | grep -qF ".agent/scripts/memory.sh new" || ok27=0
+  printf '%s\n' "$sl27" | grep -qF ".agent/scripts/memory.sh supersede --slug" || ok27=0
+  printf '%s\n' "$sl27" | grep -qF ".agent/scripts/learn.sh" || ok27=0
+  [ "$ok27" -eq 1 ] || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: each of the four kinds names its surface and its writer" || fail "self-learning: each of the four kinds names its surface and its writer ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "never becomes a project-wide rule" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: a task-scoped constraint stays at its stated scope" || fail "self-learning: a task-scoped constraint stays at its stated scope ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "On a node running \`indexes: generated\`: run \`.agent/scripts/learn.sh lookup\`" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: a record is looked up before it is written" || fail "self-learning: a record is looked up before it is written ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "merge near-duplicates by hand in \`.agent/rules/learned.md\`" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: a manual-mode node merges near-duplicates by hand" || fail "self-learning: a manual-mode node merges near-duplicates by hand ($sl_bad)"
+
+sl_bad=""
+for p in software-development academic-research domain-knowledge; do
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "human-facing text check or a comment gate" || sl_bad="$sl_bad $p"
+done
+[ -z "$sl_bad" ] && pass "self-learning: no prose scan or comment gate admits a record" || fail "self-learning: no prose scan or comment gate admits a record ($sl_bad)"
+
+sl_handgrep=$(grep -rnF 'grep' \
+  "$reporoot/presets/software-development.md" "$reporoot/presets/academic-research.md" \
+  "$reporoot/presets/domain-knowledge.md" "$reporoot/tools/skills/retro/SKILL.md" 2>/dev/null)
+[ -z "$sl_handgrep" ] && pass "self-learning: no preset or skill text instructs a hand grep over learned.md" || fail "self-learning: no preset or skill text instructs a hand grep over learned.md ($sl_handgrep)"
+
+retro_skill="$reporoot/tools/skills/retro/SKILL.md"
+retro_merge=$(awk '/^## Merge, don.t append/ { inq = 1 } inq && /^## / && !/^## Merge, don.t append/ { inq = 0 } inq' "$retro_skill")
+printf '%s\n' "$retro_merge" | grep -qF "learn.sh" && pass "retro skill: the merge walkthrough calls learn.sh" || fail "retro skill: the merge walkthrough calls learn.sh"
+
+retro_route=$(awk '/^## Route by scope/ { inq = 1 } inq && /^## / && !/^## Route by scope/ { inq = 0 } inq' "$retro_skill")
+rt_ok=1
+for rt_kind in "no durable record" ".agent/scripts/memory.sh new" ".agent/scripts/memory.sh supersede" ".agent/scripts/learn.sh"; do
+  printf '%s\n' "$retro_route" | grep -qF "$rt_kind" || rt_ok=0
+done
+[ "$rt_ok" -eq 1 ] && pass "retro skill: the routing section names the four kinds and their writers" || fail "retro skill: the routing section names the four kinds and their writers"
+
 # ---- 28. links.sh: the orphan and broken-link audit ----
 # The reference tier's stated weakness is that an uncited reference is
 # unreachable and nothing on the load path can see it. This is the thing
@@ -9110,7 +9184,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1212
+EXPECTED_CHECKS=1230
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

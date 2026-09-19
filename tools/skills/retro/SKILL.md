@@ -49,9 +49,13 @@ Draft the rule clause first. Add the trigger clause only if a future session wou
 
 ## Merge, don't append
 
-Before adding a new entry, search `learned.md` for existing entries on the same subject or trigger. A quick `grep` on a keyword from the draft rule is enough. If a near-duplicate exists, edit it in place: broaden the imperative, or fold in the new trigger. Then drop the old line, rather than leaving both for the grooming threshold to reconcile later.
+On a node running `indexes: generated`, run `.agent/scripts/learn.sh lookup` against the draft rule before adding a new entry. If it names a duplicate or an overlapping record, revise the record it names with `.agent/scripts/learn.sh revise` — broaden the imperative, or fold in the new trigger — rather than leaving both for the grooming threshold to reconcile later. Pass `--distinct` only after reading the records the refusal names and confirming the draft is genuinely a separate rule.
+
+On a manual-mode node, `rules/learned/` does not exist and `learn.sh` refuses there, so merge near-duplicates by hand in `rules/learned.md` instead: read the file first, and edit the existing entry rather than adding a new one that says the same thing.
 
 ## Route by scope
+
+What you found becomes one of four kinds, each owned by one surface and one writer: a task requirement stays in the task's own artifacts and the session log, at its stated scope, with no durable record; a project fact goes to `.agent/scripts/memory.sh new`, or the owning doc when it is stable knowledge about how the system works; a durable preference the user states in their own turn updates the existing canonical record with `.agent/scripts/memory.sh supersede --slug <slug>`; a behavioral lesson that generalizes past this session is a learned record, written with `.agent/scripts/learn.sh`.
 
 Behavioral rules stay in `learned.md`. Some rules are really an area-specific mechanic: a library quirk, an API gotcha, a SQL or CSS behavior. Those belong in the matching `.agent/docs/<area>.md` file instead, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer in `learned.md` for cross-area hazards.
 
