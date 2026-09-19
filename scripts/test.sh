@@ -8922,6 +8922,25 @@ lrn73_revdup_rc=$?
   && pass "learn.sh: a revise whose body equals the record it targets refuses at exit 5" \
   || fail "learn.sh: a revise whose body equals the record it targets refuses at exit 5 (rc=$lrn73_revdup_rc)"
 
+# revise against an id nothing has written yet, with --expected absent:
+# refuses at exit 2 rather than minting a new record at the caller-chosen
+# id — a create must go through new's own overlap gate, not sneak in
+# through revise. A candidate distinct from every existing record, so the
+# refusal is actually the absent-id check and not the duplicate check
+# tripping first.
+lrn73_absent_id="deadbeefcafe"
+printf -- '- [2026-01-18] A candidate for an id nothing has written yet. Trigger: an absent target.\n' >"$WORK/lrn73-absent-cand.md"
+lrn73_absent_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+"$LRN" revise "$lrn73_absent_id" --file "$WORK/lrn73-absent-cand.md" --expected absent "$lrn73" >/dev/null 2>"$WORK/lrn73-revabsent.err"
+lrn73_revabsent_rc=$?
+[ "$lrn73_revabsent_rc" -eq 2 ] \
+  && pass "learn.sh: revise against a nonexistent id with --expected absent refuses at exit 2" \
+  || fail "learn.sh: revise against a nonexistent id with --expected absent refuses at exit 2 (rc=$lrn73_revabsent_rc)"
+lrn73_absent_after_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+[ ! -f "$lrn73/.agent/rules/learned/$lrn73_absent_id.md" ] && [ "$lrn73_absent_before_count" -eq "$lrn73_absent_after_count" ] \
+  && pass "learn.sh: the absent-id revise writes no new record file under rules/learned/" \
+  || fail "learn.sh: the absent-id revise writes no new record file under rules/learned/ (before=$lrn73_absent_before_count after=$lrn73_absent_after_count)"
+
 # malformed candidates: refused at exit 6, writing nothing.
 lrn73_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
 printf -- 'No date stamp at all.\n' >"$WORK/lrn73-bad-nodate.md"
@@ -9091,7 +9110,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1210
+EXPECTED_CHECKS=1212
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

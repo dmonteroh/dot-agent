@@ -11,7 +11,7 @@ Usage: learn.sh lookup  --file <path|-> [root]
 
 `root` defaults to `.` — the project root holding `.agent/`. A record lives at `<root>/.agent/rules/learned/<id>.md`; `<id>` is its filename without `.md`, a minted 12-character lowercase-hex identity — the same scheme `node.sh` mints during migration, so a record's identity never depends on where its text came from. `--file -` reads the candidate body from stdin, so a multi-line record never has to survive shell quoting as an argument string; omitting `--file` where a body is required is a usage error rather than a run that blocks on a terminal.
 
-`<version>` is `git hash-object --no-filters -- <record>` of the record file — the same content digest `index.sh` already uses for every canonical source. Read it directly with `git hash-object --no-filters -- <root>/.agent/rules/learned/<id>.md`, or take it off a prior `lookup`, `new`, or `revise` result line. A record with no file on disk reads as the literal version `absent`, so `revise` or `retire` against an `<id>` nothing has written yet fails the ordinary stale check rather than needing a separate "no such record" error.
+`<version>` is `git hash-object --no-filters -- <record>` of the record file — the same content digest `index.sh` already uses for every canonical source. Read it directly with `git hash-object --no-filters -- <root>/.agent/rules/learned/<id>.md`, or take it off a prior `lookup`, `new`, or `revise` result line. A record with no file on disk reads as the literal version `absent`. Passing `--expected absent` against an `<id>` nothing has written yet clears the ordinary stale check, since the current version is also the literal string `absent` — but `revise` and `retire` each then run a dedicated absent-record check and refuse at exit 2 rather than letting a create or a no-op through silently.
 
 ## Commands
 
@@ -42,7 +42,7 @@ A record file holds its bullet span verbatim and nothing else: no `id:` line, no
 
 ## Duplicate and overlap
 
-Two candidates are compared byte for byte for the duplicate check, and by shared nontrivial terms for the overlap check: lowercase, strip everything but letters and digits, keep words over two characters that are not on a short stopword list, and look for any term both texts share. The leading `- [YYYY-MM-DD] ` date is stripped before that scan runs, since every record carries one and it is provenance, not retrieval text. A word this scan cannot find because it never made it into the rule's own wording is why the curation guidance asks for retrieval terms to be written into the imperative itself, not left implicit.
+Two candidates are compared byte for byte for the duplicate check, and by shared nontrivial terms for the overlap check: lowercase, strip everything but letters and digits, keep words over two characters that are not on a short stopword list — `trigger` among them, since the record format's own `Trigger:` label would otherwise overlap almost every pair regardless of subject, at the cost that a rule genuinely about a database trigger loses that word as a retrieval term too — and look for any term both texts share. The leading `- [YYYY-MM-DD] ` date is stripped before that scan runs, since every record carries one and it is provenance, not retrieval text. A word this scan cannot find because it never made it into the rule's own wording is why the curation guidance asks for retrieval terms to be written into the imperative itself, not left implicit.
 
 ## What it deliberately does not decide
 

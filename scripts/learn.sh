@@ -454,6 +454,10 @@ revise)
     echo "learn.sh: stale --expected for $id — current version: $rv_actual" >&2
     exit 3
   fi
+  if [ "$rv_actual" = absent ]; then
+    echo "learn.sh: $target does not exist — nothing to revise" >&2
+    exit 2
+  fi
 
   lrn_publish_replace "$candidate_tmp" "$target" || exit 2
   rv_version=$(git hash-object --no-filters -- "$target")
