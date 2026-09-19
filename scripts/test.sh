@@ -9263,31 +9263,48 @@ rec75_keep_id=$(basename "$rec75_keep" .md)
 rec75_mergesrc_id=$(basename "$rec75_mergesrc" .md)
 rec75_retire_id=$(basename "$rec75_retire" .md)
 
-# ---- pending, first run: every pending rule and hook-missing doc listed,
-# each rule item's version a fresh hash of its own record, each doc
-# item's version the literal "-" ----
+# Reads the raw inventory item line naming id $2 in file $1 and prints its
+# label field alone — everything before the id field — split from the
+# right the same way lrn_split_item does, so a rule preview that happens
+# to contain the literal " | " cannot shift the boundary.
+rec75_label_for_id() {
+  rli_line=$(grep -F "id=$2 | " "$1")
+  rli_rest="${rli_line% | *}"
+  printf '%s' "${rli_rest% | *}"
+}
+
+# ---- pending, first run: every pending rule and hook-missing doc listed
+# with its own label, each rule item's version a fresh hash of its own
+# record, each doc item's version the literal "-" ----
 rec75_pending1=$("$REC" pending "$rec75")
-printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_split_id | version=$(git hash-object --no-filters -- "$rec75_split")" \
-  && pass "learn.sh pending: the split-candidate rule is listed with a fresh version hash" \
-  || fail "learn.sh pending: the split-candidate rule is listed with a fresh version hash"
-printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_keep_id | version=$(git hash-object --no-filters -- "$rec75_keep")" \
-  && pass "learn.sh pending: the keep-candidate rule is listed with a fresh version hash" \
-  || fail "learn.sh pending: the keep-candidate rule is listed with a fresh version hash"
-printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_mergesrc_id | version=$(git hash-object --no-filters -- "$rec75_mergesrc")" \
-  && pass "learn.sh pending: the merge-source rule is listed with a fresh version hash" \
-  || fail "learn.sh pending: the merge-source rule is listed with a fresh version hash"
-printf '%s\n' "$rec75_pending1" | grep -qF "semantic-review-pending | $rec75_retire_id | version=$(git hash-object --no-filters -- "$rec75_retire")" \
-  && pass "learn.sh pending: the retire-candidate rule is listed with a fresh version hash" \
-  || fail "learn.sh pending: the retire-candidate rule is listed with a fresh version hash"
-printf '%s\n' "$rec75_pending1" | grep -qF 'hook-missing | dup.md | version=-' \
-  && pass "learn.sh pending: the duplicate-entry doc is listed with version=-" \
-  || fail "learn.sh pending: the duplicate-entry doc is listed with version=-"
-printf '%s\n' "$rec75_pending1" | grep -qF 'hook-missing | badtable.md | version=-' \
-  && pass "learn.sh pending: the hand-edited-table doc is listed" \
-  || fail "learn.sh pending: the hand-edited-table doc is listed"
-printf '%s\n' "$rec75_pending1" | grep -qF 'hook-missing | noentry.md | version=-' \
-  && pass "learn.sh pending: the no-entry doc is listed" \
-  || fail "learn.sh pending: the no-entry doc is listed"
+rec75_split_label=$(rec75_label_for_id "$rec75_inv" "$rec75_split_id")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_split_label | semantic-review-pending | $rec75_split_id | version=$(git hash-object --no-filters -- "$rec75_split")" \
+  && pass "learn.sh pending: the split-candidate rule is listed with its label and a fresh version hash" \
+  || fail "learn.sh pending: the split-candidate rule is listed with its label and a fresh version hash"
+rec75_keep_label=$(rec75_label_for_id "$rec75_inv" "$rec75_keep_id")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_keep_label | semantic-review-pending | $rec75_keep_id | version=$(git hash-object --no-filters -- "$rec75_keep")" \
+  && pass "learn.sh pending: the keep-candidate rule is listed with its label and a fresh version hash" \
+  || fail "learn.sh pending: the keep-candidate rule is listed with its label and a fresh version hash"
+rec75_mergesrc_label=$(rec75_label_for_id "$rec75_inv" "$rec75_mergesrc_id")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_mergesrc_label | semantic-review-pending | $rec75_mergesrc_id | version=$(git hash-object --no-filters -- "$rec75_mergesrc")" \
+  && pass "learn.sh pending: the merge-source rule is listed with its label and a fresh version hash" \
+  || fail "learn.sh pending: the merge-source rule is listed with its label and a fresh version hash"
+rec75_retire_label=$(rec75_label_for_id "$rec75_inv" "$rec75_retire_id")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_retire_label | semantic-review-pending | $rec75_retire_id | version=$(git hash-object --no-filters -- "$rec75_retire")" \
+  && pass "learn.sh pending: the retire-candidate rule is listed with its label and a fresh version hash" \
+  || fail "learn.sh pending: the retire-candidate rule is listed with its label and a fresh version hash"
+rec75_dup_label=$(rec75_label_for_id "$rec75_inv" "dup.md")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_dup_label | hook-missing | dup.md | version=-" \
+  && pass "learn.sh pending: the duplicate-entry doc is listed with its label and version=-" \
+  || fail "learn.sh pending: the duplicate-entry doc is listed with its label and version=-"
+rec75_badtable_label=$(rec75_label_for_id "$rec75_inv" "badtable.md")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_badtable_label | hook-missing | badtable.md | version=-" \
+  && pass "learn.sh pending: the hand-edited-table doc is listed with its label" \
+  || fail "learn.sh pending: the hand-edited-table doc is listed with its label"
+rec75_noentry_label=$(rec75_label_for_id "$rec75_inv" "noentry.md")
+printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_noentry_label | hook-missing | noentry.md | version=-" \
+  && pass "learn.sh pending: the no-entry doc is listed with its label" \
+  || fail "learn.sh pending: the no-entry doc is listed with its label"
 printf '%s\n' "$rec75_pending1" | grep -qF "$rec75_flat_id" \
   && fail "learn.sh pending: the already-migrated flat rule is never listed" \
   || pass "learn.sh pending: the already-migrated flat rule is never listed"
@@ -9524,15 +9541,29 @@ EOF
 REC2="$rec75_2/.agent/scripts/learn.sh"
 rec75_2_inv="$rec75_2/.agent/migration-inventory.md"
 
+rec75_2_before=$(git hash-object --no-filters -- "$rec75_2_inv")
 "$REC2" resolve --id noentry.md --disposition retired "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docretired.err"
 [ "$?" -eq 2 ] && pass "reconcile refusal: retired on a doc item refuses at exit 2" || fail "reconcile refusal: retired on a doc item refuses at exit 2"
 grep -qF 'rule-only' "$WORK/rec75-ref-docretired.err" \
   && pass "reconcile refusal: the doc-retired refusal names the three forms as rule-only" \
   || fail "reconcile refusal: the doc-retired refusal names the three forms as rule-only"
+[ "$(git hash-object --no-filters -- "$rec75_2_inv")" = "$rec75_2_before" ] \
+  && pass "reconcile refusal: the doc-retired refusal writes nothing" \
+  || fail "reconcile refusal: the doc-retired refusal writes nothing"
+
+rec75_2_before=$(git hash-object --no-filters -- "$rec75_2_inv")
 "$REC2" resolve --id noentry.md --disposition "migrated (split into deadbeefcafe)" "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docsplit.err"
 [ "$?" -eq 2 ] && pass "reconcile refusal: split on a doc item refuses at exit 2" || fail "reconcile refusal: split on a doc item refuses at exit 2"
+[ "$(git hash-object --no-filters -- "$rec75_2_inv")" = "$rec75_2_before" ] \
+  && pass "reconcile refusal: the doc-split refusal writes nothing" \
+  || fail "reconcile refusal: the doc-split refusal writes nothing"
+
+rec75_2_before=$(git hash-object --no-filters -- "$rec75_2_inv")
 "$REC2" resolve --id noentry.md --disposition "migrated (merged into deadbeefcafe)" "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docmerge.err"
 [ "$?" -eq 2 ] && pass "reconcile refusal: merge on a doc item refuses at exit 2" || fail "reconcile refusal: merge on a doc item refuses at exit 2"
+[ "$(git hash-object --no-filters -- "$rec75_2_inv")" = "$rec75_2_before" ] \
+  && pass "reconcile refusal: the doc-merge refusal writes nothing" \
+  || fail "reconcile refusal: the doc-merge refusal writes nothing"
 
 rec75_2_before=$(git hash-object --no-filters -- "$rec75_2_inv")
 "$REC2" resolve --id noentry.md --disposition migrated "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-nohook.err"
@@ -9550,11 +9581,15 @@ cp "$rec75_2_inv" "$WORK/rec75-2-inv-before.md"
 rec75_dupline=$(grep -F 'id=noentry.md' "$rec75_2_inv")
 { cat "$rec75_2_inv"; printf '%s\n' "$rec75_dupline"; } >"$WORK/rec75-2-inv-dup.md"
 cp "$WORK/rec75-2-inv-dup.md" "$rec75_2_inv"
+rec75_dupline_before=$(git hash-object --no-filters -- "$rec75_2_inv")
 "$REC2" resolve --id noentry.md --disposition migrated "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-dupline.err"
 [ "$?" -eq 2 ] && pass "reconcile refusal: an id on more than one inventory line refuses at exit 2" || fail "reconcile refusal: an id on more than one inventory line refuses at exit 2"
 grep -qF 'more than one line' "$WORK/rec75-ref-dupline.err" \
   && pass "reconcile refusal: the duplicate-line refusal names what it checked" \
   || fail "reconcile refusal: the duplicate-line refusal names what it checked"
+[ "$(git hash-object --no-filters -- "$rec75_2_inv")" = "$rec75_dupline_before" ] \
+  && pass "reconcile refusal: the duplicate-line refusal writes nothing" \
+  || fail "reconcile refusal: the duplicate-line refusal writes nothing"
 cp "$WORK/rec75-2-inv-before.md" "$rec75_2_inv"
 
 # ---- Acceptance box 2's other half: pending on a node that carries no
@@ -9612,7 +9647,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1304
+EXPECTED_CHECKS=1308
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
