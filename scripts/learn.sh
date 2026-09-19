@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # learn.sh — finds the records under rules/learned/ that already cover a
 # discovery, writes a new one under a minted identity, and revises or
-# retires an existing one only against the version it was read at.
+# retires an existing one only against the version it was read at. Also
+# lists and closes the migration's one-time semantic-review backlog.
 #
 # Full documentation: scripts/docs/learn.md in the dot-agent repo.
 #
 # Usage:
-#   learn.sh lookup  --file <path|-> [root]
-#   learn.sh new     --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
-#   learn.sh revise  <id> --file <path|-> --expected <version> [root]
-#   learn.sh retire  <id> --expected <version> [root]
+#   learn.sh lookup   --file <path|-> [root]
+#   learn.sh new      --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
+#   learn.sh revise   <id> --file <path|-> --expected <version> [root]
+#   learn.sh retire   <id> --expected <version> [root]
+#   learn.sh pending  [root]
+#   learn.sh resolve  --id <id> --disposition <value> [root]
 #   learn.sh --help
 #
 # root defaults to . — the project root holding .agent/. A record lives at
@@ -24,16 +27,23 @@ unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
 
 usage() {
   cat <<'EOF'
-Usage: learn.sh lookup  --file <path|-> [root]
-       learn.sh new     --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
-       learn.sh revise  <id> --file <path|-> --expected <version> [root]
-       learn.sh retire  <id> --expected <version> [root]
+Usage: learn.sh lookup   --file <path|-> [root]
+       learn.sh new      --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
+       learn.sh revise   <id> --file <path|-> --expected <version> [root]
+       learn.sh retire   <id> --expected <version> [root]
+       learn.sh pending  [root]
+       learn.sh resolve  --id <id> --disposition <value> [root]
 
 root defaults to . — the project root holding .agent/. A record lives at
 <root>/.agent/rules/learned/<id>.md; <id> is its filename without .md, a
 minted 12-character lowercase-hex identity. <version> is
 git hash-object --no-filters -- of that record file. --file - reads the
-candidate body from stdin. Full documentation: scripts/docs/learn.md.
+candidate body from stdin. pending lists the migration's open
+semantic-review-pending and hook-missing items from
+<root>/.agent/migration-inventory.md; resolve closes one, --disposition
+one of migrated, "migrated (split into <id>[, <id>]...)",
+"migrated (merged into <id>)", or retired. Full documentation:
+scripts/docs/learn.md.
 EOF
 }
 
@@ -43,7 +53,7 @@ EOF
 # guards against.
 need_value() {
   case "${2-}" in
-  --file | --surface | --expected | --distinct)
+  --file | --surface | --expected | --distinct | --id | --disposition)
     echo "learn.sh: $1 needs a value, got the flag $2" >&2
     usage >&2
     exit 2 ;;
@@ -56,7 +66,11 @@ need_value() {
 }
 
 candidate_tmp=""
-cleanup() { [ -n "$candidate_tmp" ] && rm -f "$candidate_tmp"; }
+resolve_tmp=""
+cleanup() {
+  [ -n "$candidate_tmp" ] && rm -f "$candidate_tmp"
+  [ -n "$resolve_tmp" ] && rm -f "$resolve_tmp"
+}
 trap cleanup EXIT
 
 # True when $1 is a real, non-symlink directory — the same test
@@ -273,6 +287,21 @@ lrn_id_ok() {
   $hx$hx$hx$hx$hx$hx$hx$hx$hx$hx$hx$hx) return 0 ;;
   *) return 1 ;;
   esac
+}
+
+# Splits one migration-inventory.md item line ($1) — "<label> | id=<id> |
+# <disposition>" — from the right, so a rule preview that happens to
+# contain the literal " | " cannot shift which text is the id field or the
+# disposition: node.sh's migration writer never puts one in an id or a
+# disposition, but a rule preview is 72 bytes of otherwise arbitrary text.
+# Sets $lrn_item_label (everything before the id field, unchanged),
+# $lrn_item_idfield (the "id=<id>" field, unchanged), and $lrn_item_disp
+# (the disposition, the text after the line's last " | ").
+lrn_split_item() {
+  si_rest="${1% | *}"
+  lrn_item_disp="${1##* | }"
+  lrn_item_idfield="${si_rest##* | }"
+  lrn_item_label="${si_rest% | *}"
 }
 
 cmd="${1:-}"
@@ -515,6 +544,207 @@ retire)
   fi
   echo "learn.sh: could not remove $target" >&2
   exit 2
+  ;;
+
+pending)
+  root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    -h | --help)
+      usage; exit 0 ;;
+    --*)
+      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+    *)
+      root="$1"; shift ;;
+    esac
+  done
+
+  agent="$root/.agent"
+  learned_dir="$agent/rules/learned"
+  inventory="$agent/migration-inventory.md"
+  [ -f "$inventory" ] || exit 0
+
+  pnd_n=0
+  while IFS= read -r pnd_line || [ -n "$pnd_line" ]; do
+    case "$pnd_line" in
+    '- rule '* | '- doc '*) ;;
+    *) continue ;;
+    esac
+    lrn_split_item "$pnd_line"
+    case "$lrn_item_disp" in
+    semantic-review-pending | hook-missing) ;;
+    *) continue ;;
+    esac
+    pnd_id="${lrn_item_idfield#id=}"
+    case "$pnd_line" in
+    '- rule '*)
+      pnd_record="$learned_dir/$pnd_id.md"
+      if [ -f "$pnd_record" ]; then
+        pnd_version=$(git hash-object --no-filters -- "$pnd_record")
+      else
+        pnd_version="absent"
+      fi ;;
+    *)
+      pnd_version="-" ;;
+    esac
+    printf '%s | %s | %s | version=%s\n' "$lrn_item_label" "$lrn_item_disp" "$pnd_id" "$pnd_version"
+    pnd_n=$((pnd_n + 1))
+  done <"$inventory"
+
+  [ "$pnd_n" -gt 0 ] && printf '%d pending\n' "$pnd_n"
+  exit 0
+  ;;
+
+resolve)
+  id=""
+  disp=""
+  root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --id)
+      need_value "$@"
+      id="$2"; shift 2 ;;
+    --disposition)
+      need_value "$@"
+      disp="$2"; shift 2 ;;
+    -h | --help)
+      usage; exit 0 ;;
+    --*)
+      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+    *)
+      root="$1"; shift ;;
+    esac
+  done
+  [ -n "$id" ] || { echo "learn.sh: resolve requires --id <id>" >&2; usage >&2; exit 2; }
+  [ -n "$disp" ] || { echo "learn.sh: resolve requires --disposition <value>" >&2; usage >&2; exit 2; }
+
+  agent="$root/.agent"
+  learned_dir="$agent/rules/learned"
+  docs_dir="$agent/docs"
+  inventory="$agent/migration-inventory.md"
+  [ -f "$inventory" ] || { echo "learn.sh: $inventory does not exist — nothing to resolve" >&2; exit 2; }
+
+  # Find the one line naming this id. Zero and more than one both refuse:
+  # resolve never guesses which line an ambiguous inventory meant.
+  rsv_matches=0
+  rsv_kind=""
+  rsv_disp=""
+  while IFS= read -r rsv_line || [ -n "$rsv_line" ]; do
+    case "$rsv_line" in
+    '- rule '*) rsv_this_kind=rule ;;
+    '- doc '*) rsv_this_kind=doc ;;
+    *) continue ;;
+    esac
+    lrn_split_item "$rsv_line"
+    if [ "${lrn_item_idfield#id=}" = "$id" ]; then
+      rsv_matches=$((rsv_matches + 1))
+      rsv_kind="$rsv_this_kind"
+      rsv_disp="$lrn_item_disp"
+    fi
+  done <"$inventory"
+
+  if [ "$rsv_matches" -eq 0 ]; then
+    echo "learn.sh: $inventory carries no item with id=$id" >&2
+    exit 2
+  fi
+  if [ "$rsv_matches" -gt 1 ]; then
+    echo "learn.sh: $inventory carries id=$id on more than one line — hand-edit it to a single match first" >&2
+    exit 2
+  fi
+
+  case "$rsv_disp" in
+  semantic-review-pending | hook-missing) ;;
+  *)
+    echo "learn.sh: id=$id is not pending — its disposition is already: $rsv_disp" >&2
+    exit 2 ;;
+  esac
+
+  # Accept the disposition value and pull out the identity or identities it
+  # names. A plain migrated names the item's own id — the only identity a
+  # bare "migrated" can be talking about.
+  case "$disp" in
+  migrated)
+    rsv_form="migrated"
+    rsv_check_ids="$id" ;;
+  retired)
+    rsv_form="retired"
+    rsv_check_ids="$id" ;;
+  'migrated (split into '*')')
+    rsv_form="split"
+    rsv_targets="${disp#*split into }"
+    rsv_targets="${rsv_targets%)}"
+    rsv_check_ids=$(printf '%s' "$rsv_targets" | tr ',' '\n' | sed 's/^ *//; s/ *$//') ;;
+  'migrated (merged into '*')')
+    rsv_form="merged"
+    rsv_target="${disp#*merged into }"
+    rsv_check_ids="${rsv_target%)}" ;;
+  *)
+    echo "learn.sh: --disposition must be migrated, retired, 'migrated (split into <id>[, <id>]...)', or 'migrated (merged into <id>)' (got '$disp')" >&2
+    exit 2 ;;
+  esac
+
+  if [ "$rsv_kind" = doc ]; then
+    case "$rsv_form" in
+    split | merged | retired)
+      echo "learn.sh: split, merge, and retired are rule-only dispositions — id=$id is a doc item, which accepts migrated only" >&2
+      exit 2 ;;
+    esac
+  fi
+
+  if [ "$rsv_form" = split ] || [ "$rsv_form" = merged ]; then
+    for rsv_t in $rsv_check_ids; do
+      lrn_id_ok "$rsv_t" || {
+        echo "learn.sh: --disposition names '$rsv_t', not a 12-lowercase-hex identity" >&2
+        exit 2
+      }
+    done
+  fi
+
+  if [ "$rsv_kind" = rule ]; then
+    case "$rsv_form" in
+    migrated | split | merged)
+      for rsv_t in $rsv_check_ids; do
+        [ -f "$learned_dir/$rsv_t.md" ] || {
+          echo "learn.sh: --disposition names $rsv_t, which has no $learned_dir/$rsv_t.md" >&2
+          exit 2
+        }
+      done ;;
+    retired)
+      if [ -f "$learned_dir/$id.md" ]; then
+        echo "learn.sh: id=$id is given retired but $learned_dir/$id.md still exists — retire the record first" >&2
+        exit 2
+      fi ;;
+    esac
+  else
+    rsv_doc="$docs_dir/$id"
+    if ! head -n 5 "$rsv_doc" 2>/dev/null | grep -q '^<!-- Read when: .* -->$'; then
+      echo "learn.sh: $rsv_doc still carries no \"<!-- Read when: ... -->\" header in its first five lines — repair the hook and the architecture.md entry by hand, run docs.sh rehook, then resolve" >&2
+      exit 2
+    fi
+  fi
+
+  resolve_tmp=$(mktemp "${TMPDIR:-/tmp}/learn-resolve.XXXXXX") || {
+    echo "learn.sh: could not create a temporary file to rewrite $inventory" >&2
+    exit 2
+  }
+  : >"$resolve_tmp"
+  while IFS= read -r rsv_line2 || [ -n "$rsv_line2" ]; do
+    case "$rsv_line2" in
+    '- rule '* | '- doc '*)
+      lrn_split_item "$rsv_line2"
+      if [ "${lrn_item_idfield#id=}" = "$id" ]; then
+        printf '%s | %s\n' "${rsv_line2% | *}" "$disp" >>"$resolve_tmp"
+        continue
+      fi ;;
+    esac
+    printf '%s\n' "$rsv_line2" >>"$resolve_tmp"
+  done <"$inventory"
+
+  lrn_publish_replace "$resolve_tmp" "$inventory" || exit 2
+  rm -f "$resolve_tmp"
+  resolve_tmp=""
+  printf 'resolved\t%s\t%s\n' "$id" "$disp"
+  exit 0
   ;;
 
 "")
