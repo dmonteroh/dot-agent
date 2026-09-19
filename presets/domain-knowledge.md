@@ -76,13 +76,20 @@ This rubric is the judgement layer on top of the Verification contract above: th
 
 ## Self-learning
 
-- After a user correction, a failed verification that needed a non-obvious fix, or a mid-task deviation from an agreed plan, run the canonical-source check before deciding whether to record a lesson:
+- After a user correction, a failed verification that needed a non-obvious fix, a mid-task deviation from an agreed plan, or successful work — a first-try discovery of a project boundary, generation step, or constraint that no source states — run the canonical-source check before deciding whether to record a lesson. A correction alone is neither necessary nor sufficient: it starts this check like any other trigger, and produces a record only when the check survives it. Format a surviving lesson as:
 
   `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, only if it adds information>.`
 
 - Identify the failing source first. If the contract, docs, a doc's `Read when:` hook or routing row, code, or tooling owns the behavior, fix it there and write no compensating rule. A routed doc that was not reached is a routing defect: fix the hook or the row (`.agent/scripts/docs.sh rehook --name <doc> --read-when "…"` rewrites both together), and write no rule to search harder. Remove an existing rule when that source becomes enforceable.
 - Ask what check or behavior would have prevented it. Record only an answer that generalizes beyond the source fix. A one-off outcome belongs in the session log.
-- Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet. Merge near-duplicates instead of appending.
+- What you found becomes one of four kinds, each owned by one surface and one writer:
+  - A task requirement, including a stated constraint for the current task: no durable record — it lives in the task's own artifacts and the session log, at its stated scope, and never becomes a project-wide rule or a compensating general rule.
+  - A project fact: `.agent/scripts/memory.sh new`, or the owning doc when it is stable knowledge about how the system works.
+  - A durable preference the user states in their own turn: the existing canonical record at the scope asked for, updated with `.agent/scripts/memory.sh supersede --slug <slug>`, never a second record and never a wider scope than asked.
+  - A behavioral lesson that generalizes past this session: a learned record, written with `.agent/scripts/learn.sh`.
+- A record is admitted on evidence and scope, never on whether its wording passes a human-facing text check or a comment gate.
+- Write the rule, not the story: imperative, ≤40 words, no incident retelling. If it needs its history to make sense, it is not distilled yet.
+- Run `.agent/scripts/learn.sh lookup` before writing a record; revise the record it names with `.agent/scripts/learn.sh revise` instead of adding a near-duplicate, and pass `--distinct` only after reading the records the refusal names.
 - Route by scope: behavioral rules (scoping, verification, communication, workflow) stay in `rules/learned.md`. Source or format mechanics go to the matching `.agent/docs/` file under `## Gotchas`, same format. Keep at most a one-line pointer here for cross-area hazards.
 
 ## Git and commits
