@@ -23,6 +23,7 @@
 # Usage: run.sh --eval <id> --arm <name> --agent <claude|codex>
 #                --corpus-ref <ref> --workspace <dir> [--iteration <n>]
 #                [--treatment-arm <name>] [--no-harness | --generic-claude]
+#                [--index-mode <manual|generated>]
 #        run.sh --dry-run ...        # build and print every turn, drive nothing
 #        run.sh --list-arms          # resolved executables and versions, no model call
 #        run.sh --probe-agent <claude|codex>   # one live readiness call
@@ -38,6 +39,16 @@
 # arm's run-config.json entry, so a mixed arm is refused rather than
 # averaged. Run them only over evals whose assertions never read
 # node-diff.patch, node-tree.txt or status-after.txt.
+#
+# --index-mode manual|generated (default manual) selects fixtures.sh's own
+# --indexes flag: whether the fixture's node was bootstrapped to route
+# through the current file-based .agent/ tree or through a generated
+# .agent/indexes/ cache. Recorded in the arm's run-config.json entry
+# alongside harness, under the same drift check. The node-mode arm variable
+# (spec.json's arms block) is this flag varied with agent, model, and corpus
+# ref all held constant — the only paired control the generated-index and
+# learn.sh mechanisms have, since neither pinned control revision ships
+# index.sh or learn.sh.
 
 set -u
 
@@ -47,15 +58,29 @@ set -u
 # neither adapter's subprocess can silently fall back to API-key or
 # cloud-passthrough billing instead of the operator's own claude.ai / ChatGPT
 # login. Unsetting them here means nothing downstream ever sees one.
-for _provider_var in \
-  ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_CUSTOM_HEADERS \
-  CLAUDE_API_KEY CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX \
-  ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION GOOGLE_APPLICATION_CREDENTIALS \
-  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK \
-  OPENAI_API_KEY OPENAI_ORG_ID OPENAI_PROJECT_ID CODEX_API_KEY; do
+#
+# The same list is quoted verbatim into each run's isolation block
+# (run-meta.json) as the "stripped_vars" a reader can check without reading
+# this script — one list, read twice, rather than kept in sync by hand.
+PROVIDER_STRIPPED_VARS="ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_CUSTOM_HEADERS \
+CLAUDE_API_KEY CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX \
+ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION GOOGLE_APPLICATION_CREDENTIALS \
+AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK \
+OPENAI_API_KEY OPENAI_ORG_ID OPENAI_PROJECT_ID CODEX_API_KEY"
+for _provider_var in $PROVIDER_STRIPPED_VARS; do
   unset "$_provider_var"
 done
 unset _provider_var
+
+# A fixed name list for the isolation scan: trace.jsonl text is checked
+# against exactly these markers, never a discovered name, so grading never
+# has to guess at a new personal skill's name. Path fragments catch a
+# personal skill/plugin/hook/command directory reached despite --safe-mode
+# or --ignore-user-config; "writing-style" is the one personal skill an
+# earlier feasibility pass actually observed loading under Codex despite
+# --ignore-user-config.
+ISOLATION_MARKERS="/.claude/skills/ /.claude/plugins/ /.claude/commands/ \
+/.codex/skills/ /.codex/prompts/ writing-style"
 
 selfdir=$(cd "$(dirname "$0")" && pwd)
 conf="${EVALS_AGENTS_CONF:-$selfdir/agents.conf}"
@@ -85,6 +110,16 @@ DEFAULT_CLAUDE_EFFORT="medium"
 DEFAULT_CODEX_MODEL="gpt-5.6-terra"
 DEFAULT_CODEX_EFFORT="medium"
 DEFAULT_CODEX_APP_BIN="/Applications/ChatGPT.app/Contents/Resources/codex"
+
+# A turn whose text carries this one-byte prefix (stripped before it ever
+# reaches an adapter) starts a fresh session instead of resuming the one in
+# progress — a real session discontinuity over one unchanged working tree,
+# for modeling a handoff. run_lib.py's split-turns writes the same byte for
+# the same reason: a provider-side context compaction cannot be forced from
+# either CLI, so what is actually exercised is a session restart, reported
+# as a handoff and never as a compaction. The existing " || " turn
+# separator is unchanged and keeps resuming the one session as before.
+TURN_SESSION_RESTART=$'\x1e'
 
 # ---------------------------------------------------------------------------
 # small utilities
@@ -294,6 +329,10 @@ CLAUDE_TEMP_PREFIX="${TMPDIR:-/tmp}/dot-agent-claude-home."
 VERIFIER_TEMP_PREFIX="${TMPDIR:-/tmp}/dot-agent-eval-verifiers."
 CODEX_ACTIVE_HOME=""
 CLAUDE_ACTIVE_HOME=""
+# Snapshots CLAUDE_ACTIVE_HOME/CODEX_ACTIVE_HOME the instant claude_run/
+# codex_run picks one up, since cleanup blanks those two before the main
+# flow reaches the isolation-block write — this is the one that survives.
+RUN_ISOLATION_CONFIG_DIR=""
 VERIFIER_ACTIVE_DIR=""
 VERIFIER_STATUS_HASH=""
 VERIFIER_COMMENTS_HASH=""
@@ -720,6 +759,34 @@ release_iter_lock() {
 }
 
 # ---------------------------------------------------------------------------
+# generated-index manifests — one "<path> <digest>" line per file under
+# .agent/indexes/, taken right after the fixture build (indexes-before.txt,
+# already warm on a generated fixture) and again at capture time
+# (indexes-after.txt). The pair is the only way to see a hand-edit of a
+# generated page at all: node-diff.patch is staged, and .gitignore hides the
+# whole tree from it on a generated node. A manual-mode fixture has no
+# .agent/indexes/ at all, so both manifests are simply empty — never an
+# error, since a manual-mode run legitimately has nothing to report here.
+# ---------------------------------------------------------------------------
+
+capture_index_manifest() {
+  local dir="$1" out="$2" listfile p h
+  listfile=$(mktemp "${TMPDIR:-/tmp}/dot-agent-eval-idxmanifest.XXXXXX") || return 1
+  if [ -d "$dir/.agent/indexes" ]; then
+    ( cd "$dir" && find .agent/indexes -type f -print0 2>/dev/null ) >"$listfile"
+  else
+    : >"$listfile"
+  fi
+  : >"$out"
+  while IFS= read -r -d '' p; do
+    h=$(git -C "$dir" hash-object --no-filters -- "$p" 2>/dev/null)
+    printf '%s %s\n' "$p" "$h" >>"$out"
+  done <"$listfile"
+  rm -f "$listfile"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Claude adapter — turn one starts a session under a --session-id this runner
 # generates; every later turn resumes that same id, so the whole eval is one
 # session and each process closes exactly the turn it was given. The earlier
@@ -747,7 +814,7 @@ release_iter_lock() {
 claude_run() {
   local fixdir outdir model effort bin stdout stderr claude_args sysfile inputfile
   local claude_home session_id start_ts overall_rc turnindex turntext now remaining
-  local turnout rc counts terminals successes invalid injected
+  local turnout rc counts terminals successes invalid injected session_start
   fixdir="$1"; outdir="$2"; model="$3"; effort="$4"; bin="$5"
 
   stdout="$outdir/agent-stdout.txt"; stderr="$outdir/agent-stderr.txt"
@@ -763,9 +830,9 @@ claude_run() {
     return 88
   fi
   claude_home="$CLAUDE_ACTIVE_HOME"
+  RUN_ISOLATION_CONFIG_DIR="$claude_home"
 
-  session_id=$("$selfdir/run_lib.py" new-session-id) || {
-    claude_home_cleanup; return 1; }
+  session_id=""
   sysfile="$fixdir/CLAUDE.md"
   start_ts=$(date +%s)
   overall_rc=0
@@ -773,6 +840,12 @@ claude_run() {
 
   for turntext in "${turns[@]}"; do
     turnindex=$((turnindex + 1))
+    session_start=0
+    case "$turntext" in
+    "$TURN_SESSION_RESTART"*)
+      session_start=1
+      turntext="${turntext#"$TURN_SESSION_RESTART"}" ;;
+    esac
     now=$(date +%s)
     remaining=$((TIMEOUT - (now - start_ts)))
     if [ "$remaining" -le 0 ]; then
@@ -785,7 +858,9 @@ claude_run() {
                  --allowedTools "Read,Write,Edit,Bash" --permission-mode acceptEdits
                  --safe-mode --no-chrome)
     [ -n "$effort" ] && claude_args+=(--effort "$effort")
-    if [ "$turnindex" -eq 1 ]; then
+    if [ "$turnindex" -eq 1 ] || [ "$session_start" -eq 1 ]; then
+      session_id=$("$selfdir/run_lib.py" new-session-id) || {
+        overall_rc=1; break; }
       claude_args+=(--session-id "$session_id")
     else
       claude_args+=(--resume "$session_id")
@@ -861,6 +936,7 @@ EOF
 codex_run() {
   local fixdir outdir model effort bin stdout stderr thread_id start_ts codex_home
   local overall_rc turnindex turntext now remaining args turnout rc promptfile terminal_counts
+  local session_start
   fixdir="$1"; outdir="$2"; model="$3"; effort="$4"; bin="$5"
 
   stdout="$outdir/agent-stdout.txt"; stderr="$outdir/agent-stderr.txt"
@@ -875,6 +951,7 @@ codex_run() {
     return 88
   fi
   codex_home="$CODEX_ACTIVE_HOME"
+  RUN_ISOLATION_CONFIG_DIR="$codex_home"
 
   thread_id=""
   start_ts=$(date +%s)
@@ -883,6 +960,12 @@ codex_run() {
 
   for turntext in "${turns[@]}"; do
     turnindex=$((turnindex + 1))
+    session_start=0
+    case "$turntext" in
+    "$TURN_SESSION_RESTART"*)
+      session_start=1
+      turntext="${turntext#"$TURN_SESSION_RESTART"}" ;;
+    esac
     now=$(date +%s)
     remaining=$((TIMEOUT - (now - start_ts)))
     if [ "$remaining" -le 0 ]; then
@@ -890,7 +973,7 @@ codex_run() {
       overall_rc=124; break
     fi
 
-    if [ "$turnindex" -eq 1 ]; then
+    if [ "$turnindex" -eq 1 ] || [ "$session_start" -eq 1 ]; then
       args=(--ask-for-approval never -C "$fixdir" --sandbox workspace-write)
       [ -n "$effort" ] && args+=(-c "model_reasoning_effort=\"$effort\"")
       args+=(exec --json --ignore-user-config --model "$model")
@@ -953,16 +1036,19 @@ codex_run() {
     # events; the shape is required on the one trace extraction reads —
     # item.started for a command, item.completed for a file change.
     terminal_counts=$(TURNINDEX="$turnindex" EXPECTED_THREAD="$thread_id" \
-      "$selfdir/run_lib.py" codex-terminal-counts "$turnout")
+      SESSION_START="$session_start" "$selfdir/run_lib.py" codex-terminal-counts "$turnout")
+    # Read the thread id from this turn's own file, before it is removed —
+    # not from the accumulated stdout, which after a restart would still
+    # hand back the very first thread.started event in the file rather than
+    # the new one this turn just opened.
+    if [ "$turnindex" -eq 1 ] || [ "$session_start" -eq 1 ]; then
+      thread_id=$("$selfdir/run_lib.py" codex-thread-id "$turnout")
+    fi
     rm -f "$turnout"
     if [ "$terminal_counts" != "1 0 0 0" ]; then
       echo "run.sh: codex turn $turnindex completed/failed/error/malformed counts were $terminal_counts; expected 1 0 0 0" >&2
       overall_rc=1
       break
-    fi
-
-    if [ "$turnindex" -eq 1 ]; then
-      thread_id=$("$selfdir/run_lib.py" codex-thread-id "$stdout")
     fi
   done
   codex_home_cleanup
@@ -1007,10 +1093,10 @@ extract_codex_trace() {
 
 lock_run_config() {
   local iterdir arm_variable treatment agent arm model corpus_ref repeats bin ver effort cfgfile
-  local bin_real bin_hash ver_output harness
+  local bin_real bin_hash ver_output harness index_mode
   iterdir="$1"; arm_variable="$2"; treatment="$3"; agent="$4"; arm="$5"; model="$6"
   corpus_ref="$7"; repeats="$8"; bin="$9"; ver="${10}"; effort="${11}"
-  bin_real="${12}"; bin_hash="${13}"; ver_output="${14}"; harness="${15}"
+  bin_real="${12}"; bin_hash="${13}"; ver_output="${14}"; harness="${15}"; index_mode="${16}"
   cfgfile="$iterdir/run-config.json"
 
   if [ ! -f "$cfgfile" ]; then
@@ -1027,14 +1113,14 @@ lock_run_config() {
     # guessed one.
     IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
       CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-      AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" \
+      AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" \
       "$selfdir/run_lib.py" lock-run-config-create || return 2
     return 0
   fi
 
   IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
     CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-    AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" \
+    AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" \
     "$selfdir/run_lib.py" lock-run-config-update
   return $?
 }
@@ -1150,6 +1236,7 @@ case "${1:-}" in -h | --help | "") usage; exit 0 ;; esac
 
 evalid=""; arm=""; agent=""; corpus_ref=""; workspace=""; iteration=""; dry=0; treatment=""
 harness_mode="node"
+index_mode="manual"
 while [ $# -gt 0 ]; do
   case "$1" in
   --eval) evalid="${2:-}"; shift 2 ;;
@@ -1167,6 +1254,12 @@ while [ $# -gt 0 ]; do
     [ "$harness_mode" = node ] || {
       echo "run.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
     harness_mode="generic"; shift ;;
+  --index-mode)
+    case "${2:-}" in
+    manual | generated) ;;
+    *) echo "run.sh: --index-mode must be manual or generated (got '${2:-}')" >&2; exit 2 ;;
+    esac
+    index_mode="$2"; shift 2 ;;
   --dry-run) dry=1; shift ;;
   *) echo "run.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -1258,7 +1351,7 @@ mkdir -p "$iterdir" || exit 1
 acquire_iter_lock "$iterdir/.metadata.lock" || exit 2
 lock_run_config "$iterdir" "$arm_variable" "$treatment" "$agent" "$arm" "$agent_model" \
   "$corpus_ref" "$REPEATS" "$agent_bin" "$agent_ver" "$agent_effort" \
-  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode"
+  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode" "$index_mode"
 lock_run_config_rc=$?
 release_iter_lock
 [ "$lock_run_config_rc" -eq 0 ] || exit 2
@@ -1300,7 +1393,7 @@ while [ "$rep" -le "$repeats_eff" ]; do
   # corpus ref still leaves a diagnostic run rather than an unshaped directory.
   ACTIVE_RUN_DIR="$rundir"
   fixdir="$rundir/fixture"
-  fixture_args=("$fixture" "$fixdir" --corpus-ref "$corpus_ref")
+  fixture_args=("$fixture" "$fixdir" --corpus-ref "$corpus_ref" --indexes "$index_mode")
   case "$harness_mode" in
   none) fixture_args+=(--no-harness) ;;
   generic) fixture_args+=(--generic-claude) ;;
@@ -1327,6 +1420,12 @@ while [ "$rep" -le "$repeats_eff" ]; do
       "could not create outputs directory" 1
     any_void=1; rep=$((rep + 1)); continue
   }
+
+  # Right after the fixture build, so a generated fixture's already-warm
+  # cache (fixtures.sh ran index.sh ensure while seeding it) is the "before"
+  # state — present for a dry run too, since it costs nothing and a dry run
+  # is meant to be inspectable on its own.
+  capture_index_manifest "$fixdir" "$rundir/outputs/indexes-before.txt"
 
   if [ "$dry" -eq 1 ]; then
     cat <<EOF
@@ -1367,6 +1466,7 @@ EOF
   # grading, so cancellation can void metadata and discard partial artifacts.
   AGENT_FAILURE_STATUS=""
   AGENT_FAILURE_REASON=""
+  RUN_ISOLATION_CONFIG_DIR=""
   case "$agent" in
   claude) claude_run "$fixdir" "$rundir/outputs" "$agent_model" "$agent_effort" "$agent_bin" ;;
   codex) codex_run "$fixdir" "$rundir/outputs" "$agent_model" "$agent_effort" "$agent_bin" ;;
@@ -1456,6 +1556,8 @@ EOF
     any_void=1; rep=$((rep + 1)); continue
   fi
 
+  capture_index_manifest "$fixdir" "$rundir/outputs/indexes-after.txt"
+
   "$selfdir/run_lib.py" agent-usage "$rundir/outputs/agent-stdout.txt" "$trace_format" \
     >"$rundir/outputs/usage.json"
   stage_rc=$?
@@ -1529,6 +1631,16 @@ EOF
       "trace extraction failed for $agent (exit $stage_rc)" "$stage_rc"
     any_void=1; rep=$((rep + 1)); continue
   fi
+
+  # The isolation block: the disposable config directory this cell actually
+  # used, the provider variables stripped from this process before either
+  # adapter launched, and every name from the fixed ISOLATION_MARKERS list
+  # that turns up in this cell's own trace — evidence a reader can check
+  # from the run directory alone, months later, rather than trust in a flag.
+  META_PATH="$rundir/run-meta.json" TRACE_PATH="$rundir/outputs/trace.jsonl" \
+    ISOLATION_CONFIG_DIR="$RUN_ISOLATION_CONFIG_DIR" STRIPPED_VARS="$PROVIDER_STRIPPED_VARS" \
+    ISOLATION_MARKERS="$ISOLATION_MARKERS" \
+    "$selfdir/run_lib.py" run-meta-set-isolation
 
   "$selfdir/grade.py" "$rundir" "$evaldir/eval-snapshot.json"
   stage_rc=$?

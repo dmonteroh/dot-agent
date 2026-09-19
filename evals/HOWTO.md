@@ -61,6 +61,8 @@ done
 
 `bootstrap-once` needs the agent, not the corpus, as its variable — its reported failure was never seen on Claude Code, so a corpus-only comparison on Claude Code measures nothing for it. Run it a second time with `--agent codex` at the same treatment `$REF`. See `README.md`'s "The eval set" for why.
 
+The sixteen generated-index, learning-admission, migration, comments, stress, and handoff evals carry their own `arm_variable` in `spec.json`: `node-mode`, generated against manual, so `run.sh` resolves it from the eval entry rather than from a flag. What a flag does select is which mode each arm's fixture builds in: pass `--index-mode generated` or `--index-mode manual` to `run.sh` and `run-arm.sh` — it threads into `fixtures.sh`'s own `--indexes` flag, mirroring `--harness` exactly — and name the two arms for what they are (`generated`, `manual`) so a rollup reads as behavior rather than as a coin flip. `node-mode` locks agent, model, *and* corpus ref together, rather than just two of them the way `corpus` and `agent` each do. See `README.md`'s "The method" for why neither pinned control revision (`2f779b7`, `5001189`) can serve as a corpus-arm control for these: neither ships `index.sh` or `learn.sh`. Four of the sixteen (a corrupted cache, a missing indexer, a branch-switched cache, the migration backlog) have no manual-mode counterpart at all and run generated-only, reported as feasibility evidence rather than a delta.
+
 ## 4. Roll it up
 
 ```

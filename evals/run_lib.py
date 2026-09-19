@@ -47,12 +47,12 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
   new-session-id                         -> a fresh UUID
   claude-turn-json                       env: TXT
   claude-count-results <stdout-path>     -> "<terminals> <successes> <invalid> <injected>"
-  codex-terminal-counts <turnout-path>   env: TURNINDEX, EXPECTED_THREAD
+  codex-terminal-counts <turnout-path>   env: TURNINDEX, EXPECTED_THREAD, SESSION_START
   codex-thread-id <stdout-path>
   extract-claude-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
   extract-codex-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
-  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM
-  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM
+  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM
+  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM
   eval-lookup                            env: EVALID, SPEC
   fixture-name                           stdin: eval entry JSON
   arm-variable                           env: SPEC   stdin: eval entry JSON
@@ -68,6 +68,8 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
                                              -> stdout: JSON usage totals (null fields, not 0,
                                                 for anything the stream never reported)
   run-meta-set-usage                     env: META_PATH   stdin: JSON from agent-usage
+  run-meta-set-isolation                 env: META_PATH, TRACE_PATH, ISOLATION_CONFIG_DIR,
+                                               STRIPPED_VARS, ISOLATION_MARKERS
   run-meta-finalize                      env: META_PATH RC ENDED DURATION STATUS REASON
 """
 
@@ -388,6 +390,10 @@ def cmd_codex_terminal_counts(args):
     completed = failed = errors = invalid = 0
     turnindex = int(os.environ["TURNINDEX"])
     expected_thread = os.environ.get("EXPECTED_THREAD", "")
+    # A handoff turn opens a new thread exactly as turn 1 does, even though
+    # its own turnindex is not 1 — SESSION_START is run.sh's flag for that,
+    # set whenever this turn followed a |HANDOFF| separator.
+    session_start = os.environ.get("SESSION_START") == "1"
     thread_started_ids = []
     for line in open(args[0], encoding="utf-8", errors="replace"):
         if not line.strip():
@@ -438,7 +444,7 @@ def cmd_codex_terminal_counts(args):
             failed += 1
         elif etype == "error":
             errors += 1
-    if turnindex == 1:
+    if turnindex == 1 or session_start:
         if len(thread_started_ids) != 1:
             invalid += 1
     else:
@@ -690,17 +696,24 @@ def cmd_extract_codex_trace(args):
 
 def cmd_lock_run_config_create(args):
     av = os.environ["AV"]
+    # node-mode locks all three: it is a paired control on whether the node
+    # was built --indexes generated or manual, so agent, model, AND corpus
+    # ref all have to hold still, unlike corpus (which locks agent+model
+    # only) or agent (which locks the corpus ref only).
+    lock_agent_model = av in ("corpus", "node-mode")
+    lock_corpus_ref = av in ("agent", "node-mode")
     cfg = {
         "treatment_arm": os.environ["TA"],
         "arm_variable": av,
-        "locked_agent": os.environ["AG"] if av == "corpus" else None,
-        "locked_model": os.environ["MD"] if av == "corpus" else None,
-        "locked_corpus_ref": os.environ["CR"] if av == "agent" else None,
+        "locked_agent": os.environ["AG"] if lock_agent_model else None,
+        "locked_model": os.environ["MD"] if lock_agent_model else None,
+        "locked_corpus_ref": os.environ["CR"] if lock_corpus_ref else None,
         "repeats_per_cell": int(os.environ["RP"]),
         "arms": {
             os.environ["AM"]: {"agent": os.environ["AG"], "corpus_ref": os.environ["CR"],
                                 "model": os.environ["MD"], "effort": os.environ["AE"] or None,
-                                "harness": os.environ.get("HM") or "node"}
+                                "harness": os.environ.get("HM") or "node",
+                                "index_mode": os.environ.get("IM") or "manual"}
         },
         "resolved": {
             os.environ["AG"]: {"bin": os.environ["AB"] or None,
@@ -730,21 +743,23 @@ def cmd_lock_run_config_update(args):
         errs.append("arm variable %r != recorded %r" % (os.environ["AV"], cfg["arm_variable"]))
     if int(os.environ["RP"]) != cfg["repeats_per_cell"]:
         errs.append("repeat budget %s != recorded %s" % (os.environ["RP"], cfg["repeats_per_cell"]))
-    if cfg["arm_variable"] == "corpus":
+    av = cfg["arm_variable"]
+    if av in ("corpus", "node-mode"):
         if os.environ["AG"] != cfg["locked_agent"]:
-            errs.append("agent %r != recorded %r for a corpus-variable comparison" % (os.environ["AG"], cfg["locked_agent"]))
+            errs.append("agent %r != recorded %r for a %s-variable comparison" % (os.environ["AG"], cfg["locked_agent"], av))
         if os.environ["MD"] != cfg["locked_model"]:
-            errs.append("model %r != recorded %r for a corpus-variable comparison" % (os.environ["MD"], cfg["locked_model"]))
-    else:
+            errs.append("model %r != recorded %r for a %s-variable comparison" % (os.environ["MD"], cfg["locked_model"], av))
+    if av in ("agent", "node-mode"):
         if os.environ["CR"] != cfg["locked_corpus_ref"]:
-            errs.append("corpus-ref (target revision) %r != recorded %r for an agent-variable comparison" % (os.environ["CR"], cfg["locked_corpus_ref"]))
+            errs.append("corpus-ref (target revision) %r != recorded %r for a %s-variable comparison" % (os.environ["CR"], cfg["locked_corpus_ref"], av))
     resolved = cfg.setdefault("resolved", {})
     ag = os.environ["AG"]
     arms = cfg.setdefault("arms", {})
     arm = os.environ["AM"]
     arm_entry = {"agent": ag, "corpus_ref": os.environ["CR"],
                  "model": os.environ["MD"], "effort": os.environ["AE"] or None,
-                 "harness": os.environ.get("HM") or "node"}
+                 "harness": os.environ.get("HM") or "node",
+                 "index_mode": os.environ.get("IM") or "manual"}
     prior_arm = arms.get(arm)
     if prior_arm is not None and prior_arm != arm_entry:
         errs.append("arm %r configuration drifted: %r != recorded %r" % (arm, arm_entry, prior_arm))
@@ -796,14 +811,35 @@ def cmd_arm_variable(args):
     return 0
 
 
+# A turn preceded by " |HANDOFF| " instead of " || " starts a fresh session
+# instead of resuming the one in progress — run.sh's claude_run/codex_run
+# strip this exact byte before the turn ever reaches an adapter. One byte,
+# not a word, so it can never collide with genuine prompt text and never
+# needs escaping on either side of the pipe this crosses.
+TURN_SESSION_RESTART = "\x1e"
+SPLIT_SEP = re.compile(r" \|\| | \|HANDOFF\| ")
+
+
 def cmd_split_turns(args):
     e = json.load(sys.stdin)
     turns = e.get("turns")
     if not turns:
         prompt = e.get("prompt", "")
-        if " || " in prompt:
-            parts = [p.strip() for p in prompt.split(" || ")]
-            turns = [re.sub(r"^TURN\s+\d+:\s*", "", p) for p in parts]
+        if SPLIT_SEP.search(prompt):
+            pieces = []
+            restart_before = []
+            pos = 0
+            for m in SPLIT_SEP.finditer(prompt):
+                pieces.append(prompt[pos:m.start()])
+                restart_before.append(m.group(0).strip() == "|HANDOFF|")
+                pos = m.end()
+            pieces.append(prompt[pos:])
+            turns = []
+            for i, piece in enumerate(pieces):
+                text = re.sub(r"^TURN\s+\d+:\s*", "", piece.strip())
+                if i > 0 and restart_before[i - 1]:
+                    text = TURN_SESSION_RESTART + text
+                turns.append(text)
         else:
             turns = [prompt]
     sys.stdout.buffer.write(("\0".join(turns) + "\0").encode("utf-8"))
@@ -922,6 +958,34 @@ def cmd_run_meta_set_usage(args):
     return 0
 
 
+def cmd_run_meta_set_isolation(args):
+    """Writes the isolation block: the disposable config directory this cell
+    actually used, the provider variables run.sh stripped from its own
+    process before either adapter launched (quoted here rather than kept in
+    sync by hand), and every name from the fixed ISOLATION_MARKERS list that
+    turns up in this cell's own trace.jsonl. The scan is a fixed list, never
+    a discovered name, so grading a new personal skill never depends on
+    someone having already named it here.
+    """
+    path = os.environ["META_PATH"]
+    m = json.load(open(path, encoding="utf-8"))
+    trace_path = os.environ.get("TRACE_PATH", "")
+    text = ""
+    if trace_path and os.path.isfile(trace_path):
+        with open(trace_path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    markers = [w for w in os.environ.get("ISOLATION_MARKERS", "").split() if w]
+    found = sorted(set(w for w in markers if w in text))
+    m["isolation"] = {
+        "config_dir": os.environ.get("ISOLATION_CONFIG_DIR") or None,
+        "stripped_vars": sorted(os.environ.get("STRIPPED_VARS", "").split()),
+        "unshipped_names_found": found,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(m, f, indent=2, sort_keys=True)
+    return 0
+
+
 def cmd_run_meta_finalize(args):
     path = os.environ["META_PATH"]
     m = json.load(open(path, encoding="utf-8"))
@@ -967,6 +1031,7 @@ COMMANDS = {
     "run-meta-set-fixture-base": cmd_run_meta_set_fixture_base,
     "agent-usage": cmd_agent_usage,
     "run-meta-set-usage": cmd_run_meta_set_usage,
+    "run-meta-set-isolation": cmd_run_meta_set_isolation,
     "run-meta-finalize": cmd_run_meta_finalize,
 }
 
