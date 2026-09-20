@@ -1,24 +1,7 @@
 #!/usr/bin/env bash
-# .agent/ node bootstrap and update — the mechanical parts only. Judgement
-# (exploring the project, filling Project guardrails, reconciling content
-# during an update) stays with the agent. This script never does either.
-#
-# Full documentation: scripts/docs/node.md.
-#
-# Usage:
-#   node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [root]
-#   node.sh update [root]
-#   node.sh finalize [root]
-#
-#   <name> matches a file in the source repo's presets/ (currently
-#   software-development, academic-research, domain-knowledge).
-#   <mode> is one of: ignore-all | track-shared | track-all.
-#   --indexes defaults to manual; generated wires up the local Markdown
-#   index cache (scripts/docs/index.md).
-#   root defaults to . — the script reads/writes <root>/.agent.
 
 set -u
-unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
+unset CDPATH
 
 TARGET_VERSION="6.2"
 SOURCE_URL="https://github.com/dmonteroh/dot-agent"
@@ -41,9 +24,6 @@ EOF
 cmd="${1:-}"
 [ $# -ge 1 ] && shift
 
-# The fact-file header contract lives in memory.md's header, so a fact file
-# holds its frontmatter and the fact and nothing else. A current version may
-# still carry an earlier pre-release header: version-current is not shape-current.
 memory_index_header_stale() {
   mih_memory="$1"
   [ -f "$mih_memory" ] || return 1
@@ -52,23 +32,6 @@ memory_index_header_stale() {
   return 1
 }
 
-# Writes migration_target into the manifest frontmatter, using the same
-# read/write mechanism as version: rewrite the existing line in place, or
-# insert one right after `version:` if none exists yet. Idempotent —
-# writing the value it already holds is a no-op edit — so callers never
-# need to special-case a resumed update.
-#
-# Returns nonzero, and leaves $wmt_purpose byte-identical, if the write
-# cannot be proven complete: the transform command itself failing, the
-# scratch file ending up empty or the wrong line count (a partial or
-# truncated write), or the target line missing the value once written all
-# count as failure, never a silent partial replacement. Replacement of the
-# manifest is write-then-rename within the same directory, so it is atomic:
-# either the caller sees the fully-written new content, or the original file
-# is untouched. On failure the scratch file is removed only if this call
-# created it as a plain file — a pre-existing non-file collision at that
-# path (e.g. a directory) is left exactly as found, since it was not this
-# invocation's to clean up.
 write_migration_target() {
   wmt_purpose="$1"
   wmt_value="$2"
@@ -97,13 +60,6 @@ write_migration_target() {
   mv "$wmt_new" "$wmt_purpose"
 }
 
-# Writes indexes into the manifest frontmatter, beside mode, using the same
-# read/write mechanism as write_migration_target: rewrite the existing line
-# in place, or insert one right after `mode:` if none exists yet — the
-# only path a manifest predating the indexes field takes, since init
-# always writes the line. Same failure contract: nonzero return and an
-# untouched $wi_purpose unless the scratch file is proven to hold a
-# complete, correct rewrite before the atomic rename.
 write_indexes() {
   wi_purpose="$1"
   wi_value="$2"
@@ -132,12 +88,6 @@ write_indexes() {
   mv "$wi_new" "$wi_purpose"
 }
 
-# Stamps version to the given value using the same read/write mechanism as
-# write_migration_target: rewrite the existing line in place. version always
-# exists (init writes it), so unlike write_migration_target there is no
-# insert branch. Same failure contract as write_migration_target: nonzero
-# return and an untouched $wv_purpose unless the scratch file is proven to
-# hold a complete, correct rewrite before the atomic rename.
 write_version() {
   wv_purpose="$1"
   wv_value="$2"
@@ -156,12 +106,6 @@ write_version() {
   mv "$wv_new" "$wv_purpose"
 }
 
-# Removes the migration_target line entirely. Called only after write_version
-# has already stamped version — never the reverse, so a crash between the
-# two calls leaves a node that still reads as mid-migration rather than one
-# that falsely reads as finished. Same failure contract as the writers above:
-# nonzero return and an untouched $rmt_purpose unless the scratch file is
-# proven to hold exactly the original minus the one line removed.
 remove_migration_target() {
   rmt_purpose="$1"
   rmt_new="$(dirname "$rmt_purpose")/.purpose.md.new"
@@ -178,10 +122,6 @@ remove_migration_target() {
   mv "$rmt_new" "$rmt_purpose"
 }
 
-# session-log.md's title plus header comment. node.sh writes it down two
-# paths: init and the migration (both the version-migration path and the
-# same-version shape-refresh branch). One writer keeps a node created today
-# and a node updated today on the same contract.
 write_session_log_header() {
   cat >"$1" <<'EOF'
 # Session log
@@ -199,11 +139,6 @@ memory_headers_stale() {
   return 1
 }
 
-# The memory.md index header. node.sh writes memory.md down four paths:
-# init, the pre-6.1 header migration, and both branches of update. One
-# writer keeps them identical, so a node created today and a node updated
-# today carry the same contract. The operating model quotes this text and
-# test.sh section 39 checks that quote.
 write_memory_header() {
   cat >"$1" <<'EOF'
 # Memory
@@ -211,9 +146,6 @@ write_memory_header() {
 EOF
 }
 
-# Both edits are exact-string: the header comment is deleted whole and the
-# fact below it is never read. memory.md keeps every index line under a
-# replaced header. Sets migrate_note.
 migrate_memory_headers() {
   mg_agent="$1"
   mg_memory="$mg_agent/memory.md"
@@ -254,28 +186,18 @@ migrate_memory_headers() {
   return 0
 }
 
-# The docs shape contract moved out of every area doc and into the preset
-# and docs.sh's output: docs/ is the N-file tier, so a header there is paid
-# by every session that only reads the doc. A 6.1 node carries a copy in
-# each doc, sub-docs under docs/<area>/ included.
 doc_headers_stale() {
   dh_docs="$1/docs"
   [ -d "$dh_docs" ] || return 1
-  # Non-empty output, not find's exit status: with -exec … + that status is
-  # the last grep's, which is 1 on the common case of a clean tail file.
   [ -n "$(find "$dh_docs" -name '*.md' -type f \
     -exec grep -lF '<!-- Agent-facing reference, not a human narrative' {} + 2>/dev/null)" ]
 }
 
-# Exact-string, like the memory strip: the comment is deleted whole and the
-# doc below it is never read. Sets migrate_doc_note.
 migrate_doc_headers() {
   dm_docs="$1/docs"
   dm_stripped=0
   migrate_doc_note="doc headers already current"
   [ -d "$dm_docs" ] || return 0
-  # The match list goes through a file, not a pipeline: `while read` on the
-  # right of a pipe runs in a subshell, where dm_stripped would not survive.
   dm_list="$1/.doc-headers.tmp"
   find "$dm_docs" -name '*.md' -type f \
     -exec grep -lF '<!-- Agent-facing reference, not a human narrative' {} + \
@@ -295,10 +217,6 @@ migrate_doc_headers() {
   return 0
 }
 
-# session-log.md's header comment. A node may carry any earlier wording —
-# the 6.2 "one entry per session" phrasing or something older still — so
-# this is negative-on-the-new-sentinel, not a check for the exact old
-# string, the same shape as memory_index_header_stale.
 session_log_header_stale() {
   slh_log="$1"
   [ -f "$slh_log" ] || return 1
@@ -306,11 +224,6 @@ session_log_header_stale() {
   return 1
 }
 
-# Exact-string, like migrate_memory_headers: the header comment is located
-# by its closing --> and everything below it (the actual log entries) is
-# preserved byte-identical, in order. A file with no header comment at all
-# in its first five lines is left completely untouched — restoring a header
-# a node deliberately deleted is a different decision. Sets migrate_log_note.
 migrate_session_log_header() {
   msl_agent="$1"
   msl_log="$msl_agent/session-log.md"
@@ -333,15 +246,6 @@ migrate_session_log_header() {
   return 0
 }
 
-# Mints a 12-lowercase-hex-char identity unused as a filename in $1 and not
-# yet minted this run (one id per line in $2), then claims it by creating
-# the empty record file with `set -C` — a lost create race is one more
-# rejection, never an overwrite. Every $RANDOM read happens directly in
-# this shell, never inside a `$(...)` fork: forking to capture output
-# perturbs bash's generator on each fork, which would make every mint
-# after the first re-walk and collide with all earlier ids instead of
-# advancing past them. Sets $mint_id_result on success. Returns nonzero
-# after 100 consecutive rejections, having minted and written nothing.
 mint_learned_id() {
   mli_dir="$1"
   mli_minted="$2"
@@ -368,10 +272,6 @@ mint_learned_id() {
   done
 }
 
-# A rule span (verbatim lines in file $1, first line included) is
-# semantic-review-pending when it carries an indented sub-bullet, or a
-# second paragraph after a blank line — the two shapes a mechanical split
-# cannot tell apart from one rule that reads as two subjects.
 classify_rule_span() {
   crs_span="$1"
   if tail -n +2 "$crs_span" | grep -qE '^[[:space:]]+[-*][[:space:]]'; then
@@ -389,11 +289,6 @@ classify_rule_span() {
   printf 'migrated'
 }
 
-# One bullet span, lines $3..$4 inclusive of $2 (rules/learned.md), mints
-# an identity, writes the span verbatim to $5/<id>.md, classifies it, and
-# appends its inventory line to $8. $9 numbers the bullet for the
-# inventory's item label only — never the identity, which is minted, not
-# derived from position.
 extract_one_rule_span() {
   eor_learned="$1"; eor_start="$2"; eor_end="$3"
   eor_dir="$4"; eor_minted="$5"; eor_span="$6"; eor_inventory="$7"; eor_n="$8"
@@ -408,15 +303,6 @@ extract_one_rule_span() {
     "$eor_n" "$eor_preview" "$eor_id" "$eor_id" "$eor_disp" >>"$eor_inventory"
 }
 
-# Splits $1/rules/learned.md into one record per top-level "^- " bullet,
-# written under output directory $3. The span starts at that line and
-# runs to the line before the next "^- " line, or to end of file —
-# indented sub-bullets, blank lines, and continuation paragraphs inside
-# that span belong to the record that opened it. The header above the
-# first bullet (title, prose, and the "<!-- Format: … -->" comment, whose
-# own "- [" is never at line start) is never read. No-op when
-# $1/rules/learned.md does not exist or holds no bullet. Appends one
-# inventory line per bullet to $2.
 extract_learned_rules() {
   elr_agent="$1"
   elr_inventory="$2"
@@ -453,15 +339,6 @@ extract_learned_rules() {
   return "$elr_rc"
 }
 
-# Backfills a doc's missing "Read when:" hook from its architecture.md
-# entry. The lookup is copied from status.sh's own doc_hook/entry_block
-# (read-only there) rather than sourced, since this runs during a
-# migration status.sh has not walked yet. Leaves the doc byte-identical
-# whenever the lookup cannot be trusted: no architecture.md, no entry line
-# for $2, more than one entry line for $2, an entry block with no
-# "- **Read when:**" line, or an extracted hook that is empty or contains
-# "-->". Only ever inserts the hook as the doc's new first line; nothing
-# else in the file changes. Prints "migrated" or "hook-missing".
 backfill_doc_hook() {
   bdh_doc="$1"
   bdh_key="$2"
@@ -511,10 +388,6 @@ backfill_doc_hook() {
   fi
 }
 
-# Walks $1/docs exactly as status.sh does: "$docs"/*.md and
-# "$docs"/*/*.md, two levels, architecture.md and any references/ tier
-# (at either level) excluded. Backfills each remaining doc's hook and
-# appends one inventory line per doc to $2.
 backfill_doc_hooks() {
   bfd_agent="$1"
   bfd_inventory="$2"
@@ -533,25 +406,6 @@ backfill_doc_hooks() {
   done
 }
 
-# Runs once per node: mints a stable identity for every rules/learned.md
-# bullet, writes each as its own record under rules/learned/, backfills
-# every doc's missing "Read when:" hook from architecture.md, and writes
-# the combined disposition inventory to migration-inventory.md. A
-# no-op — nothing minted, written, or touched — whenever rules/learned/
-# already holds any *.md record, which is this pass's own completion
-# marker: there is no separate resume state.
-#
-# Records are extracted into a staging directory directly under .agent/
-# (never under .agent/rules/, which index.sh walks for canonical sources)
-# and moved into rules/learned/ with one rename — the single point this
-# pass commits new identities. A crash before that rename leaves
-# rules/learned/ absent, so the completion marker above stays literally
-# true and a retry discards the staging directory outright rather than
-# resuming inside it: a partially populated rules/learned/ would already
-# read as complete to index.sh's own aggregate trigger. The pre-rename
-# bullet set is snapshotted to .agent/.learned-bullets-before, since once
-# the caller regenerates rules/learned.md from the new records that file
-# can no longer serve as its own pre-migration reference.
 migrate_learned_and_docs() {
   mld_agent="$1"
   mld_dir="$mld_agent/rules/learned"
@@ -613,10 +467,6 @@ init)
     esac
   done
 
-  # A filename that starts with "_" marks a maintainer file in presets/
-  # (_shared.md is the index of text that must stay identical across
-  # presets). It is not a preset and must never land in a node as
-  # rules/contract.md.
   case "$preset" in
   _*)
     echo "node.sh: '$preset' is a maintainer file in presets/, not a preset" >&2
@@ -685,28 +535,17 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh learn.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
       || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
     chmod +x "$agent/scripts/$script"
   done
-  # Starter confs — the comment gate's vocabulary and the status check's
-  # tunables. Configs, so the node edits or deletes them freely from here
-  # on. Without the files on disk the knobs are undiscoverable, since
-  # agents execute these scripts rather than read them.
   for conffile in comments.conf status.conf log.conf; do
     cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile" \
       || { echo "node.sh: $conffile copy failed" >&2; exit 1; }
   done
 
-  # A gitignore at $HOME is commonly git's global core.excludesFile. A
-  # `.agent/` pattern there would ignore every project node in every repo.
   if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
-    # track-all with indexes: manual writes no gitignore either way, so
-    # staying silent there matches today. Every other combination — every
-    # non-track-all mode, and track-all with indexes: generated, which
-    # would otherwise add .agent/indexes/ and .agent/rules/learned.md —
-    # writes something at $HOME and must warn instead of silently skipping it.
     { [ "$mode" = "track-all" ] && [ "$indexes" != generated ]; } \
       || echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
   else
@@ -714,7 +553,6 @@ EOF
   ignore-all)
     gitignore="$root/.gitignore"
     if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/" "$gitignore"; then
-      # A missing final newline would splice ".agent/" onto the last pattern.
       [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
       printf '.agent/\n' >>"$gitignore"
     fi
@@ -804,44 +642,25 @@ EOF
 
   lowest=$(printf '%s\n%s\n' "$oldversion" "$TARGET_VERSION" | sort -V | head -n1)
   if [ "$lowest" != "$oldversion" ]; then
-    # Newer than this script: never touched, not even to migrate a shape
-    # this version happens to know about. Its memory.md is a later format's
-    # to define.
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
 
   if [ "$oldversion" = "$TARGET_VERSION" ]; then
-    # A manifest with no indexes line at all is backfilled as manual, the
-    # same value an absent field already reads as, so nothing about the
-    # node's behavior changes. Skipped for a node newer than this script
-    # (the branch above): that path never touches the node at all.
     if [ -z "$indexes_line" ]; then
       write_indexes "$purpose" manual \
         || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
       echo "node.sh: indexes: manual backfilled into $purpose"
     fi
 
-    # index.sh ships on every update, version-current nodes included:
-    # track-shared gitignores .agent/scripts/, so a fresh clone or worktree
-    # of an otherwise-current node has none of it, and this branch — which
-    # otherwise has nothing to migrate — is the only refresh path such a
-    # checkout ever reaches.
     mkdir -p "$agent/scripts" \
       || { echo "node.sh: could not create $agent/scripts" >&2; exit 1; }
     cp "$srcroot/scripts/index.sh" "$agent/scripts/index.sh" \
       || { echo "node.sh: index.sh copy failed" >&2; exit 1; }
     chmod +x "$agent/scripts/index.sh"
 
-    # Version-current is not shape-current: the fact-file header moved into
-    # memory.md after 6.1 shipped, so a node already on 6.1 needs the same
-    # migration and would never reach the block below. Only when there is
-    # something to migrate, and behind the same backup, since memory/ is
-    # untracked in every mode but track-all.
     if memory_headers_stale "$agent" || doc_headers_stale "$agent" || session_log_header_stale "$agent/session-log.md"; then
       if [ "$mode" != "track-all" ]; then
-        # Same-version pre-release refreshes must not collide with the backup
-        # created by an earlier version migration or shape refresh.
         backup="$root/.agent.backup-v$oldversion-shape"
         if [ -e "$backup" ]; then
           echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
@@ -862,15 +681,6 @@ EOF
     exit 0
   fi
 
-  # memory.md and memory/ are untracked in every mode except track-all, so
-  # git holds no copy of what the migration below rewrites: back up first,
-  # and never proceed on a failed backup. A collision is normally an
-  # unexplained file and aborts — except when migration_target already
-  # names this run's TARGET_VERSION, which means an earlier update reached
-  # this exact backup and was interrupted before finishing: that backup
-  # still holds the pre-migration node, so the retry reuses it rather than
-  # re-copying over it (which would replace the pre-migration snapshot with
-  # a half-migrated one).
   if [ "$mode" != "track-all" ]; then
     backup="$root/.agent.backup-v$oldversion"
     if [ -e "$backup" ]; then
@@ -887,50 +697,15 @@ EOF
     fi
   fi
 
-  # Record the pending migration before any node content is mutated, so an
-  # interruption anywhere below is detectable from the manifest alone.
-  # version itself is untouched here — it stays at $oldversion until
-  # finalize stamps it. A failed write must abort here, before any content
-  # mutation below, or a crash would be undetectable from the manifest —
-  # the exact defect this record-first ordering exists to prevent.
   write_migration_target "$purpose" "$TARGET_VERSION" \
     || { echo "node.sh: failed to record migration_target in $purpose — aborting before touching node content" >&2; exit 1; }
 
-  # A manifest with no indexes line at all is backfilled as manual, the
-  # same value an absent field already reads as, so nothing about the
-  # node's behavior changes. After migration_target above, not before: a
-  # blocked write here must never mask a genuine migration_target failure
-  # behind a different error.
   if [ -z "$indexes_line" ]; then
     write_indexes "$purpose" manual \
       || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
     echo "node.sh: indexes: manual backfilled into $purpose"
   fi
 
-  # Memory split baseline. memdir's mere existence cannot gate this: it
-  # cannot distinguish "never split" from "split, interrupted mid-write"
-  # from "already fully split into real fact files" — all three leave
-  # memdir present, and each needs different treatment. The outer gate
-  # below instead reads two independent signals:
-  #   - memdir already holding any *.md file (legacy.md or a real fact
-  #     file) means some split — this migration's or an earlier one's —
-  #     already produced content there, so a stale header alone (a
-  #     genuinely pre-split node due for migrate_memory_headers below, not
-  #     this block) must never trigger a re-extraction that would read the
-  #     current index as if it were an unsplit body and discard it into a
-  #     fresh legacy.md.
-  #   - a dedicated in-progress marker, written before the first content
-  #     write below and removed only after the last one succeeds, so a
-  #     crash between those two points is distinguishable from both a
-  #     fresh node and a genuinely already-split one, and a retry resumes
-  #     rather than silently skipping.
-  # Inside the gate, step 1 (extraction) and step 2 (the index link) are
-  # each independently idempotent: step 1 is gated on memory.md's own
-  # header contract (memory_index_header_stale, the same check
-  # migrate_memory_headers uses below) so a crash after step 1 already
-  # rewrote memory.md is never mistaken for an unsplit body; step 2 is
-  # gated on legacy.md existing with no index line yet, so a crash between
-  # the two writes resumes by finishing step 2 alone, without redoing step 1.
   memdir="$agent/memory"
   memory="$agent/memory.md"
   split_marker="$memdir/.split-in-progress"
@@ -948,9 +723,6 @@ EOF
     if [ ! -f "$memory" ] || memory_index_header_stale "$memory"; then
       body_tmp="$agent/.memory-body.tmp"
       if [ -f "$memory" ]; then
-        # Honor a closing --> only when a header comment actually opens near
-        # the top. Keying on the first --> alone would silently drop every
-        # fact above an arrow token in the body of a header-less file.
         header_end=""
         if head -n 5 "$memory" | grep -qF '<!--'; then
           header_end=$(grep -n -- '-->' "$memory" | head -n1 | cut -d: -f1)
@@ -986,12 +758,8 @@ EOF
   migrate_session_log_header "$agent"
   header_note="$migrate_note; $migrate_doc_note; $migrate_log_note"
 
-  # Refresh the shipped scripts from the source repo — by exactly these
-  # names. Anything else under scripts/ is the node's own and is never
-  # overwritten. A missing starter conf is seeded, the one write that
-  # cannot clobber node content.
   mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh learn.sh; do
+  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
     cp "$srcroot/scripts/$script" "$agent/scripts/$script"
     chmod +x "$agent/scripts/$script"
   done
@@ -1002,12 +770,6 @@ EOF
     fi
   done
 
-  # Generated-mode only: extract rules/learned.md into rules/learned/
-  # records and backfill missing doc hooks. Runs on the node the backup
-  # above already covers. The tail below then ignores, regenerates, checks,
-  # and only on success untracks rules/learned.md — never in the other
-  # order, since an ignore rule with no verified aggregate behind it would
-  # be the silent re-tracking risk this task exists to close.
   if [ "$indexes" = generated ]; then
     migrate_learned_and_docs "$agent" \
       || { echo "node.sh: learned-rule extraction or doc-hook backfill failed under $agent — aborting" >&2; exit 1; }
@@ -1066,13 +828,10 @@ EOF
     fi
   fi
 
-  # No version write here — version stays at $oldversion until finalize
-  # stamps it. migration_target (set above, before any mutation) is what
-  # records that this migration ran.
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, checkpoint.sh, index.sh, finish.sh (compatibility shim), and learn.sh refreshed from source repo"
+  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, checkpoint.sh, index.sh, and learn.sh refreshed from source repo"
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
   exit 0
   ;;
@@ -1106,22 +865,12 @@ EOF
     exit 0
   fi
 
-  # The node's own status.sh, not this repo's copy: update already
-  # refreshed it into the node, so it is current by the time a node can be
-  # pending.
   statussh="$agent/scripts/status.sh"
   if [ ! -x "$statussh" ]; then
     echo "node.sh: $statussh missing or not executable — cannot verify the node before finalize (refusing)" >&2
     exit 1
   fi
 
-  # stdout and stderr are captured separately (never folded together with
-  # 2>&1) so a crash cannot be mistaken for findings: status.sh does not
-  # exit non-zero for its own REPAIR/GROOM findings, so those come from
-  # stdout's content below, but a nonzero exit or any stderr output means
-  # the inspection itself did not complete and is refused before the
-  # findings are even read. An empty stdout is refused the same way — it
-  # is never a pass, no matter how it came about.
   status_stderr_file=$(mktemp "${TMPDIR:-/tmp}/node-finalize-status.XXXXXX")
   status_out=$("$statussh" "$root" 2>"$status_stderr_file")
   status_rc=$?
@@ -1132,11 +881,6 @@ EOF
     [ -n "$status_err" ] && printf '%s\n' "$status_err" >&2
     exit 1
   fi
-  # Every REPAIR: line gates finalize except status.sh's own pending-
-  # migration line: that line exists to warn a reader who calls status.sh
-  # directly, and is true by definition for as long as migration_target is
-  # set — including the run that is about to clear it. Counting it here
-  # would make finalize refuse every pending node unconditionally.
   repairs=$(printf '%s\n' "$status_out" | grep '^REPAIR:' | grep -v '^REPAIR: purpose\.md has migration_target ')
   if [ -n "$repairs" ]; then
     echo "node.sh: finalize refused — $agent has outstanding REPAIR findings; reconcile these, then re-run finalize:" >&2
@@ -1144,12 +888,6 @@ EOF
     exit 1
   fi
 
-  # Stamp then clear, never the reverse: a crash between the two calls must
-  # leave the node looking un-migrated (migration_target still present),
-  # not falsely finished. A failed version write aborts before the marker
-  # is touched at all; a failed marker removal still returns failure so the
-  # node keeps reading as pending (detectable, retryable) rather than
-  # silently finished with a stale marker.
   write_version "$purpose" "$migration_target" \
     || { echo "node.sh: failed to write version $migration_target to $purpose — aborting before removing the pending marker" >&2; exit 1; }
   remove_migration_target "$purpose" \

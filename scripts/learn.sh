@@ -1,29 +1,8 @@
 #!/usr/bin/env bash
-# learn.sh — finds the records under rules/learned/ that already cover a
-# discovery, writes a new one under a minted identity, and revises or
-# retires an existing one only against the version it was read at. Also
-# lists and closes the migration's one-time semantic-review backlog.
-#
-# Full documentation: scripts/docs/learn.md in the dot-agent repo.
-#
-# Usage:
-#   learn.sh lookup   --file <path|-> [root]
-#   learn.sh new      --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
-#   learn.sh revise   <id> --file <path|-> --expected <version> [root]
-#   learn.sh retire   <id> --expected <version> [root]
-#   learn.sh pending  [root]
-#   learn.sh resolve  --id <id> --disposition <value> [root]
-#   learn.sh --help
-#
-# root defaults to . — the project root holding .agent/. A record lives at
-# <root>/.agent/rules/learned/<id>.md, its filename a minted 12-character
-# lowercase-hex identity. <version> is git hash-object --no-filters -- of
-# that record file. Every check runs before any write, and a create or a
-# replacement is never left half-written.
 
 set -u
 export LC_ALL=C
-unset CDPATH   # an exported CDPATH corrupts $(cd … && pwd) for relative paths
+unset CDPATH
 
 usage() {
   cat <<'EOF'
@@ -47,10 +26,6 @@ scripts/docs/learn.md.
 EOF
 }
 
-# A token beginning with -- is the next flag, not this flag's value. Call
-# as `need_value "$@"` from inside the parse loop, where $1 is the flag and
-# $2 is its candidate value — the same shape scripts/memory.sh's need_value
-# guards against.
 need_value() {
   case "${2-}" in
   --file | --surface | --expected | --distinct | --id | --disposition)
@@ -73,15 +48,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# True when $1 is a real, non-symlink directory — the same test
-# index.sh's learned_dir_active opens with, applied here to the directory
-# itself rather than its record count.
 lrn_dir_is_real() {
   [ -d "$1" ] && [ ! -L "$1" ]
 }
 
-# Reads the candidate body named by $1 (a path, or - for stdin) into a
-# fresh temporary file and sets $candidate_tmp to it.
 read_candidate() {
   candidate_tmp=$(mktemp "${TMPDIR:-/tmp}/learn-candidate.XXXXXX") || {
     echo "learn.sh: could not create a temporary file for the candidate" >&2
@@ -98,14 +68,6 @@ read_candidate() {
   fi
 }
 
-# A well-formed candidate is exactly one top-level "- [YYYY-MM-DD] " bullet
-# with its continuation lines: no second top-level bullet, no frontmatter
-# block (which would already fail the first-line check below), and no
-# Markdown heading anywhere in the body. Digits are spelled out one by one
-# rather than written as a [0-9] range: outside the C locale a bracket
-# range is a collation range, not an ASCII range — this script forces
-# LC_ALL=C above, but the class is spelled out anyway, the way
-# scripts/memory.sh does, so the check reads the same regardless.
 lrn_grammar_ok() {
   gcd_digit='[0123456789]'
   gcd_pat="^- \\[${gcd_digit}${gcd_digit}${gcd_digit}${gcd_digit}-${gcd_digit}${gcd_digit}-${gcd_digit}${gcd_digit}\\] "
@@ -115,9 +77,6 @@ lrn_grammar_ok() {
   return 0
 }
 
-# The preset's "imperative, ≤40 words" line is a curation rule, not a
-# parser rule (see scripts/docs/learn.md): this warns on stderr and never
-# refuses.
 lrn_warn_word_ceiling() {
   wwc_first=$(head -n 1 "$1")
   wwc_clause=$(printf '%s\n' "$wwc_first" | sed -E 's/^- \[[^]]*\] //')
@@ -127,12 +86,6 @@ lrn_warn_word_ceiling() {
   fi
 }
 
-# The shared-term overlap scan: lowercase, strip to letters and digits,
-# keep words over two characters that are not on the stopword list below,
-# then test whether the two sets intersect. A record carries no separate
-# subject/alias fields to scan — this reads the whole body of each file,
-# so a retrieval word only ever has to be written into the rule's own
-# imperative to be found by it.
 lrn_related() {
   awk '
     function words(s, a,   n, i, t) {
@@ -143,11 +96,6 @@ lrn_related() {
         if (length(t[i]) > 2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/)
           a[t[i]] = 1
     }
-    # The leading "- [YYYY-MM-DD] " on line 1 is provenance, not retrieval
-    # text — every record carries one, so leaving it in would make every
-    # candidate overlap every record on its year alone. "trigger" is
-    # filtered as a stopword for the same reason: it is the format label
-    # itself, present in most records regardless of subject.
     FNR == 1 { sub(/^- \[[^]]*\] /, "") }
     FNR == NR { words($0, a); next }
     { words($0, b) }
@@ -158,9 +106,6 @@ lrn_related() {
   ' "$1" "$2"
 }
 
-# Prints the path of an existing record under $2 whose bytes are identical
-# to $1, if any, and returns 0 — the exact-duplicate refusal, checked
-# before overlap because an exact duplicate trivially overlaps too.
 lrn_find_duplicate() {
   for fd_f in "$2"/*.md; do
     [ -e "$fd_f" ] || continue
@@ -172,8 +117,6 @@ lrn_find_duplicate() {
   return 1
 }
 
-# Prints one path per record under $2 that shares nontrivial terms with
-# $1, and returns 0 if at least one was found.
 lrn_overlap_scan() {
   os_found=1
   for os_f in "$2"/*.md; do
@@ -186,12 +129,6 @@ lrn_overlap_scan() {
   return "$os_found"
 }
 
-# The literal string "absent" when $1 does not exist, else its
-# git hash-object --no-filters version. Passing --expected absent against
-# a missing record clears this ordinary stale check, since both sides
-# read "absent" — revise and retire each then run their own dedicated
-# absent-record check and refuse at exit 2, rather than letting a create
-# or a no-op through silently.
 lrn_current_version() {
   if [ -f "$1" ]; then
     git hash-object --no-filters -- "$1"
@@ -200,13 +137,6 @@ lrn_current_version() {
   fi
 }
 
-# Mints a 12-lowercase-hex-char identity exactly as node.sh's
-# mint_learned_id does — printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM,
-# read directly into shell variables rather than inside a $(...) fork —
-# and claims it by writing the candidate under `set -C` in the same step,
-# so a lost create race is one more rejection, never an overwrite. Sets
-# $lrn_new_id on success. Returns nonzero after 100 consecutive
-# rejections, having written nothing.
 lrn_mint_and_write() {
   lmw_tries=0
   lrn_new_id=""
@@ -230,9 +160,6 @@ lrn_mint_and_write() {
   done
 }
 
-# Writes $1 to a temporary file beside $2 and publishes it with a
-# same-directory mv — the scripts/memory.sh supersede shape. A write that
-# fails leaves $2 exactly as it was.
 lrn_publish_replace() {
   pr_tmp="$2.tmp.$$"
   if cat "$1" >"$pr_tmp"; then
@@ -250,8 +177,6 @@ lrn_publish_replace() {
   return 1
 }
 
-# node.sh reads the manifest's indexes: field with this same grep -m1 plus
-# sed -E pair; an absent field reads as manual, same as node.sh.
 lrn_indexes_mode() {
   im_purpose="$1/.agent/purpose.md"
   [ -f "$im_purpose" ] || { printf 'manual'; return; }
@@ -261,10 +186,6 @@ lrn_indexes_mode() {
   printf '%s' "$im_val"
 }
 
-# After a successful write, when the node runs generated indexes, refresh
-# its own cache. An absent or failing indexer warns and never changes this
-# script's exit status — a cache fault is not a defect, and a clone whose
-# .agent/scripts/ is gitignored has no indexer yet by design.
 lrn_refresh_index() {
   [ "$(lrn_indexes_mode "$1")" = generated ] || return 0
   ri_idx="$1/.agent/scripts/index.sh"
@@ -276,12 +197,8 @@ lrn_refresh_index() {
   fi
 }
 
-# id must be 12 lowercase hex characters — spelled out rather than written
-# as [0-9a-f], for the same reason lrn_grammar_ok spells its digit class.
 lrn_id_ok() {
   hx='[0123456789abcdef]'
-  # Unquoted on purpose: $hx must stay a glob bracket expression here, not
-  # become a literal string once it reaches the case pattern.
   # shellcheck disable=SC2254
   case "$1" in
   $hx$hx$hx$hx$hx$hx$hx$hx$hx$hx$hx$hx) return 0 ;;
@@ -289,14 +206,6 @@ lrn_id_ok() {
   esac
 }
 
-# Splits one migration-inventory.md item line ($1) — "<label> | id=<id> |
-# <disposition>" — from the right, so a rule preview that happens to
-# contain the literal " | " cannot shift which text is the id field or the
-# disposition: node.sh's migration writer never puts one in an id or a
-# disposition, but a rule preview is 72 bytes of otherwise arbitrary text.
-# Sets $lrn_item_label (everything before the id field, unchanged),
-# $lrn_item_idfield (the "id=<id>" field, unchanged), and $lrn_item_disp
-# (the disposition, the text after the line's last " | ").
 lrn_split_item() {
   si_rest="${1% | *}"
   lrn_item_disp="${1##* | }"
@@ -384,14 +293,6 @@ new)
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
-    # A node that runs generated indexes but has never held a record — a
-    # fresh init, since only the migration creates the directory — has
-    # rules/learned.md gitignored and nowhere tracked for its first rule.
-    # Refusing here sent sessions to hand-edit the ignored aggregate, where
-    # the rule survived until the next index rebuild and never reached git.
-    # The first record creates the directory; index.sh then treats it as
-    # canonical and regenerates the aggregate from it. A manual-mode node
-    # still refuses: there rules/learned.md is the hand-kept source.
     if [ "$(lrn_indexes_mode "$root")" = generated ] && [ ! -e "$learned_dir" ]; then
       mkdir -p "$learned_dir" || { echo "learn.sh: could not create $learned_dir" >&2; exit 1; }
     else
@@ -636,8 +537,6 @@ resolve)
   inventory="$agent/migration-inventory.md"
   [ -f "$inventory" ] || { echo "learn.sh: $inventory does not exist — nothing to resolve" >&2; exit 2; }
 
-  # Find the one line naming this id. Zero and more than one both refuse:
-  # resolve never guesses which line an ambiguous inventory meant.
   rsv_matches=0
   rsv_kind=""
   rsv_disp=""
@@ -671,9 +570,6 @@ resolve)
     exit 2 ;;
   esac
 
-  # Accept the disposition value and pull out the identity or identities it
-  # names. A plain migrated names the item's own id — the only identity a
-  # bare "migrated" can be talking about.
   case "$disp" in
   migrated)
     rsv_form="migrated"

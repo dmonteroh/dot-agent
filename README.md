@@ -48,7 +48,6 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 ├── archive/        # Groomed history — archived log entries, retired facts
 ├── scripts/        # status.sh (--load prints the always-loaded set) + the typed
 │                   # writers (log.sh, memory.sh, docs.sh) + checkpoint.sh, the hand-back call
-│                   # (finish.sh is a compatibility shim that forwards to it)
 │                   # + links.sh, the on-demand orphan/broken-link audit
 │                   # + comments.sh, the diff comment gate (node vocabulary
 │                   # in comments.conf, never refreshed by update)

@@ -1,21 +1,7 @@
 #!/usr/bin/env bash
-# log.sh — appends one session-log entry per session-log.md's header
-# contract, stamping the date and enforcing the summary word ceiling so
-# neither is something an agent can get wrong by hand.
-#
-# Tunables: log.conf beside this script, which lists every key.
-# Full documentation: scripts/docs/log.md in the dot-agent repo.
-#
-# Usage: log.sh --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
-#
-# root defaults to . — appends to <root>/.agent/session-log.md. Refuses to
-# run if that file does not already exist (an uninitialized node).
 
 set -u
 
-# Tune in the node's log.conf, never here: node.sh update refreshes this
-# script and discards edits to it. 25 words is the session-log header
-# contract's entry format. log.conf states it beside the key.
 SUMMARY_MAX_WORDS=25
 LOG_INCLUDE_BRANCH=false
 
@@ -33,14 +19,7 @@ verify=""
 summary=""
 root="."
 
-# A flag's value must exist and must not itself be a flag: a dropped value
-# otherwise swallows the next flag silently, and `--summary --area <root>`
-# logs the entry with `--area` as its summary. Called as `need_value "$@"`,
-# so $1 is the flag and $2 is whatever followed it.
 need_value() {
-  # Reject only a value that is one of this script's own flags: that is
-  # the real mistake, a flag whose value was left out. A free-text value
-  # may legitimately begin with -- , so shape alone is not the test.
   case "${2-}" in
   --tool|--area|--verify|--summary)
     echo "log.sh: $1 needs a value, got the flag $2" >&2
@@ -90,17 +69,6 @@ pass | fail | n/a) ;;
   exit 1 ;;
 esac
 
-# The entry carries exactly one verify tag, written from --verify at the end
-# of the line. A summary that also contains `verify:` puts a second one in
-# the middle, where a reader and status.sh's entry parsing both take the
-# wrong one as the entry's result. The verification outcome belongs in the
-# tag; a baseline failure that predates the change belongs in the summary's
-# own words, without the tag spelling.
-#
-# The alphabet is spelled out rather than written as A-Z: inside tr a range
-# is a collation range, not an ASCII range, in every locale but C. Listing
-# the characters means the same thing everywhere and leaves date's and
-# grep's locale alone — the same reason memory.sh spells out its slug class.
 summary_lc=$(printf '%s' "$summary" \
   | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')
 case "$summary_lc" in
@@ -109,12 +77,6 @@ case "$summary_lc" in
   exit 1 ;;
 esac
 
-# The header contract's "no file lists, SHAs" is enforced here, not asked
-# for: a summary token that ends in a source extension, carries a slash and
-# an extension, or is a 7–40 character hex run with both letters and digits
-# is refused with the token named. The entry records task, area, and
-# outcome; a path or a SHA in it is narrative that git already holds, and a
-# session reading the log later cannot open either from the line.
 bad_token=$(printf '%s' "$summary" | awk '
   {
     for (i = 1; i <= NF; i++) {
@@ -131,16 +93,7 @@ if [ -n "$bad_token" ]; then
   exit 1
 fi
 
-# Per-node overrides: <root>/.agent/scripts/log.conf, plain KEY=value,
-# parsed and never executed. Each value is checked before it is used:
-# `SUMMARY_MAX_WORDS=25 words` reaching the `-gt` below stops the ceiling
-# from being enforced at all, and enforcing that ceiling is why this script
-# exists instead of a hand-written append. A value this script cannot use is
-# refused, the way every other bad input here is refused — a config that
-# quietly disables the check is worse than one that will not run.
 conf="$root/.agent/scripts/log.conf"
-# The trailing-space strip forgives a stray space or a CR from an editor on
-# another platform; nothing else about the value is repaired.
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
 if [ -f "$conf" ]; then
   v=$(conf_get SUMMARY_MAX_WORDS)
@@ -163,9 +116,6 @@ if [ -f "$conf" ]; then
   fi
 fi
 
-# The entry is one line: `- [date] (tool) summary (area). verify: …` —
-# newlines would forge extra entries, and parentheses in the tags would
-# corrupt the (tool)/(area) delimiters.
 nl='
 '
 case "$tool$area$summary" in
@@ -185,12 +135,6 @@ case "$summary" in
   exit 1 ;;
 esac
 
-# Count words, not punctuation: a free-standing separator (an em dash,
-# a lone hyphen) does not spend the ceiling. Separators are matched as
-# literal bytes rather than by asking the locale what counts as a letter.
-# Where the locale's alnum table covers 0xE2 — the em dash's leading byte,
-# "â" in Latin-1 — [[:alnum:]] reads that byte as a letter and the dash
-# spends a word. LC_ALL=C is the one locale here that does not.
 summary_words=$(printf '%s' "$summary" \
   | awk '{
       n = 0
@@ -216,8 +160,6 @@ if [ ! -f "$log" ]; then
 fi
 
 date_stamp=$(date +%Y-%m-%d)
-# symbolic-ref, not rev-parse: it names the branch even before its first
-# commit, and stays empty (stamp omitted) when detached or outside git.
 branch=""
 if [ "$LOG_INCLUDE_BRANCH" = "true" ]; then
   branch=$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)

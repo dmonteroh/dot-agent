@@ -1,40 +1,4 @@
 #!/usr/bin/env bash
-# scripts/index.sh — generated-mode Markdown index cache.
-#
-# Refreshes bounded Markdown indexes under <root>/.agent/indexes/ before an
-# agent reads them, and reuses a verified prior build when nothing that
-# feeds it has changed. Full documentation: scripts/docs/index.md.
-#
-# Usage:
-#   index.sh ensure [--root <path>] [--budget <bytes>]
-#   index.sh check  [--root <path>] [--budget <bytes>]
-#   index.sh --help
-#   index.sh --version
-#
-# ensure validates the existing entry against a fresh fingerprint of the
-# canonical sources (<root>/.agent/rules/**/*.md and
-# <root>/.agent/docs/**/*.md), reusing it on a match or rendering and
-# publishing a new immutable generation otherwise. It prints one absolute
-# path — <root>/.agent/indexes/current.md — to stdout on success. check
-# performs the same validation without ever writing the cache and prints
-# only FRESH or STALE to stdout. Both put HIT/BUILT/FRESH/STALE and every
-# diagnostic on stderr; stdout never carries rule bodies or routing tables,
-# only the bounded status documented above.
-#
-# Exit status: 0 success (ensure: HIT or BUILT; check: FRESH). 1 the
-# answer is "not fresh" — ensure falls back to canonical sources named on
-# stderr; check reports STALE. 2 a usage error: bad flags, a budget out of
-# range, or a root with no <root>/.agent directory to index.
-#
-# bash 3.2 / BSD portable: no associative arrays, no GNU-only flags.
-# No -E (errtrace): the ERR trap below is a top-level safety net for a
-# command left unguarded in the main flow. Every helper function instead
-# fails through its own explicit `|| return 1` / `|| fallback`, called
-# only from if-conditions or the left of `||` — the contexts errexit
-# already treats as "the caller decides". Without -E a subshell spawned
-# while evaluating one of those (a command substitution, a `( ... )`
-# pipeline stage) never re-fires this trap on its own account, so one
-# real failure never prints more than one ERROR/FALLBACK pair.
 set -euo pipefail
 export LC_ALL=C
 
@@ -56,11 +20,6 @@ EOF
 self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 self="$self_dir/${BASH_SOURCE[0]##*/}"
 
-# Generations older than this, and not the newly published or immediately
-# prior one, are reclaimed after a successful publish. Wide enough that no
-# realistically concurrent build (seconds, per the benchmark) is ever a
-# candidate; a crash-abandoned generation is reclaimed on the next publish
-# that happens to run at least this long afterward.
 CLEANUP_AGE_SECONDS=${INDEX_CLEANUP_AGE_SECONDS:-300}
 MAX_BUILD_ATTEMPTS=5
 
@@ -103,9 +62,6 @@ cache="$root/.agent/indexes"
 entry="$cache/current.md"
 learned_agg="$root/.agent/rules/learned.md"
 
-# Carried verbatim from the header node.sh init writes at rules/learned.md,
-# so status.sh's non-empty check and its rule/word counts hold even with
-# zero rules/learned/ records.
 learned_header=$(cat <<'HEADER_EOF'
 # Learned rules
 
@@ -140,24 +96,12 @@ trap 'exit 143' TERM
 
 generator=$(git hash-object --no-filters -- "$self")
 
-# True whenever <root>/.agent/rules/learned/ exists and holds at least one
-# *.md record — the single switch that decides whether rules/learned.md is
-# a canonical source (directory absent or empty: an ordinary rule record,
-# untouched) or the generated aggregate paths() excludes below.
 learned_dir_active() {
   lda_dir="$1/.agent/rules/learned"
   [ -d "$lda_dir" ] && [ ! -L "$lda_dir" ] || return 1
   [ -n "$(find "$lda_dir" -type f -name '*.md' -print -quit 2>/dev/null)" ]
 }
 
-# Byte-for-byte reproducible from the header above plus every
-# rules/learned/*.md record's body, path-sorted, directly concatenated
-# after one blank line — no separator between records, so a flat list of
-# "- [date] rule" lines split one-per-file reaggregates into the same flat
-# list byte-for-byte. A record missing its own trailing newline still gets
-# one before the next record starts, so two records can never merge into
-# a single line. No timestamps, hostnames, or counts, so an unrelated
-# rebuild never churns this file when the record set itself hasn't changed.
 learned_aggregate_content() {
   la_root="$1"
   printf '%s\n\n' "$learned_header"
@@ -168,12 +112,6 @@ learned_aggregate_content() {
       done
 }
 
-# Restricted relative names make line-oriented batch hashing unambiguous
-# and rule out path characters that would break the entry file's grammar.
-# rules/learned.md is excluded from this same list — the one both the
-# fingerprint and the render loop consume — whenever learned_dir_active,
-# so the derived aggregate never feeds its own rebuild decision and its
-# rule bodies never render a second time as an ordinary source record.
 paths() {
   proot="$1"
   ( [ -d "$proot/.agent/rules" ] && find "$proot/.agent/rules" -type l -print
@@ -191,11 +129,6 @@ paths() {
         if [ "$p_learned_active" -eq 1 ] && [ "$rel" = .agent/rules/learned.md ]; then
           continue
         fi
-        # rules/quality-bar.md and every references/ record are on-demand
-        # by contract — opened only when a task needs them, never as part
-        # of the always-read set — so rendering either one into a page
-        # would load it every session, the cost each was split out to
-        # avoid. Unconditional: neither tier is ever a rendered source.
         if [ "$rel" = .agent/rules/quality-bar.md ]; then
           continue
         fi
@@ -209,11 +142,6 @@ absolute_paths() {
   while IFS= read -r file; do printf '%s/%s\n' "$aproot" "$file"; done
 }
 
-# Fingerprint binds generator bytes, render configuration (schema and
-# budget), the project path, every canonical source's relative path, and
-# its content bytes (via git hash-object, so an edit that preserves mtime
-# still changes the hash). Git never writes an object for this — hashing
-# is a pure content digest, not a repository write.
 snapshot() {
   sn_list=$(paths "$root") || return 1
   [ -n "$sn_list" ] || return 1
@@ -221,8 +149,6 @@ snapshot() {
   printf '%s\n%s\n%s\n%s\n' "$schema_version/$budget/$generator" "$root" "$sn_list" "$sn_hashes" | git hash-object --stdin
 }
 
-# The tree digest binds every published page's name to its content, so
-# damage to one page, a missing page, or an extra stray file all change it.
 tree_digest() {
   td_dir="$1"
   [ -d "$td_dir" ] && [ ! -L "$td_dir" ] || return 1
@@ -233,18 +159,9 @@ tree_digest() {
 }
 
 mtime_epoch() {
-  # GNU-first: GNU's `-f` means "filesystem status", not a BSD format
-  # flag, so `stat -f '%m' file` succeeds on Linux without erroring and
-  # prints an unrelated filesystem report instead of the mtime — the
-  # reverse order can never detect that failure. `-c` is GNU-only and
-  # BSD stat rejects it outright, so trying `-c` first is safe on both.
   stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"
 }
 
-# Builds the exact byte content a valid, matching entry file must have for
-# generation $1 (fingerprint/generation/tree header, then one direct READ
-# line per page — no intermediate index file to open first). Used both to
-# publish a new entry and to verify a candidate cache hit.
 expected_entry() {
   ee_fp="$1" ee_gen="$2" ee_dir="$3"
   {
@@ -254,10 +171,6 @@ expected_entry() {
   }
 }
 
-# Sets HIT_ENTRY only on a fully verified hit: fingerprint match, a
-# readable generation whose tree digest matches the recorded one, AND the
-# entry's own bytes matching what that generation would produce today —
-# catches direct tampering with current.md itself, not just its pages.
 HIT_ENTRY=''
 valid_hit() {
   vh_fp="$1"
@@ -278,21 +191,6 @@ valid_hit() {
   return 0
 }
 
-# One awk process renders every record. .agent/rules/**/*.md become
-# complete "rules" pages, each record's full body behind a "Source:"
-# pointer — verbatim except that a relative Markdown link
-# ([text](relative/path), not an absolute path, a #-only anchor, or a
-# URL with a scheme) is rewritten to an absolute path so it still
-# resolves once the body is copied into a generation directory elsewhere
-# under .agent/indexes/ (see rewrite_links below). Everything else under
-# .agent/docs/ becomes one "routes" line per file: its first "# "
-# heading as title, the first "<!-- Read when: ... -->" comment's
-# payload as hook (or "(no hook)"), and a direct READ pointer at the
-# canonical source — the grammar this task defines and F15 adapts
-# existing records to. Each page and the route index share one hard byte
-# budget; a record too large to fit its own page, or an index line too
-# large to fit the running index, fails rendering rather than truncating
-# anything.
 render() {
   rd_gen="$1"
   shift
@@ -305,8 +203,6 @@ render() {
       print text > path
       size[kind] += n
     }
-    # A link target is relative when it has no URL scheme (http:,
-    # mailto:, ...), is not rooted at "/", and is not a #-only anchor.
     function is_relative_link(url) {
       if (url == "") return 0
       if (url ~ /^[A-Za-z][A-Za-z0-9+.-]*:/) return 0
@@ -314,8 +210,6 @@ render() {
       if (url ~ /^#/) return 0
       return 1
     }
-    # Collapses "." and ".." segments in a "/"-joined path (no leading
-    # slash assumed or produced) the same way a filesystem would.
     function normalize_path(path,    n, parts, i, seg, outn, joined) {
       n = split(path, parts, "/")
       outn = 0
@@ -330,11 +224,6 @@ render() {
       for (i = 1; i <= outn; i++) joined = joined (i > 1 ? "/" : "") parts[i]
       return joined
     }
-    # Rewrites every [text](relative/target) link in one line so the
-    # target is an absolute path back to its original location under
-    # dir (the source record own directory, project-relative).
-    # Absolute paths, #-only anchors, and scheme URLs pass through
-    # unchanged; a #fragment on a relative target is preserved.
     function rewrite_links(line, dir,    res, pos, s, mlen, full, sep, label, url, frag, base, resolved, fi, title, ti) {
       res = ""
       pos = 1
@@ -346,9 +235,6 @@ render() {
         sep = index(full, "](")
         label = substr(full, 1, sep + 1)
         url = substr(full, sep + 2, length(full) - sep - 2)
-        # A link may carry an optional ` "title"` or ` 'title'` suffix
-        # after the URL. Strip it before treating the remainder as the
-        # path to rewrite, then reattach it unmodified afterward.
         title = ""
         ti = match(url, /[ \t]+["'\''][^"'\'']*["'\'']$/)
         if (ti > 0) {
@@ -402,7 +288,6 @@ render() {
   ' "$@"
 }
 
-# --- resolve the current fingerprint and try a cache hit first ----------
 fingerprint=$(snapshot) || fallback 'cannot fingerprint canonical source paths and bytes'
 
 if valid_hit "$fingerprint"; then
@@ -422,7 +307,6 @@ if [ "$op" = check ]; then
   exit 1
 fi
 
-# --- ensure: render, recheck sources, publish -----------------------------
 mkdir -p "$cache"
 
 prev_gen=''
@@ -456,9 +340,6 @@ expected_entry "$fingerprint" "$gen" "$gen" >"$entry_tmp"
 entry_bytes=$(wc -c <"$entry_tmp")
 [ "$entry_bytes" -le "$budget" ] || fallback 'entry exceeds page budget'
 
-# Prepared before either rename below, so a failure here (an unreadable
-# record, a full disk) falls back through the same ERR trap with neither
-# the entry nor the aggregate touched, same as any other failed ensure.
 agg_tmp=''
 if learned_dir_active "$root"; then
   agg_want=$(learned_aggregate_content "$root")
@@ -475,12 +356,6 @@ fi
 
 [ "${INDEX_FAIL_AT:-}" != before-publish ] || fallback 'injected failure before publication'
 
-# Immutable generations avoid mixed reads: this generation is never
-# mutated again, and readers who already opened a prior entry keep a
-# generation that publication below does not touch. keep is set only
-# once the rename actually lands — a failed mv leaves keep=0, so the ERR
-# trap's cleanup() reclaims this now-orphaned generation instead of
-# leaking it.
 mv -f "$entry_tmp" "$entry" && keep=1
 entry_tmp=''
 if [ -n "$agg_tmp" ]; then
@@ -490,15 +365,6 @@ fi
 new_gen="$gen"
 gen=''
 
-# Bounded cleanup: reclaim generations that are neither the one just
-# published nor the one it replaced, and only once they are old enough
-# that no build racing this one could still be relying on them (see
-# CLEANUP_AGE_SECONDS above). The two most recent generations are always
-# exempt regardless of age. On top of that, current.md's generation line
-# is re-read immediately before each removal — not just trusted from the
-# publish above — so a generation some other writer has since published
-# over current.md is never removed here even if it is neither new_gen nor
-# prev_gen and has aged past the bound.
 now=$(date +%s)
 for d in "$cache"/gen.*; do
   [ -d "$d" ] || continue

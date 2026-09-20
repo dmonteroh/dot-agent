@@ -1,6 +1,6 @@
 # checkpoint.sh — the hand-back call
 
-The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; on a node running generated indexes (`indexes: generated`) it also refreshes the index cache between the status check and the log entry. This one only sequences them and stops at the first refusal that blocks a hand-back — the cache refresh never does. `finish.sh` is a deprecated alias kept for already-adopted nodes; it forwards to this script unchanged.
+The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; on a node running generated indexes (`indexes: generated`) it also refreshes the index cache between the status check and the log entry. This one only sequences them and stops at the first refusal that blocks a hand-back — the cache refresh never does.
 
 ```
 Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]

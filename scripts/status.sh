@@ -1,36 +1,7 @@
 #!/usr/bin/env bash
-# .agent/ status check — run as the entry point's first step. Prints the
-# recent session-log entries, then one line per finding: GROOM (a file
-# crossed a grooming threshold), REPAIR (a canonical file or bootstrap step
-# is missing), INDEX (a docs/ file and the routing table disagree), plus
-# advisory TOOLS and LOAD lines. No finding prints on pass.
-#
-# Exits 0 on every node it can check: information on the load path, not a
-# completion gate. The binding instruction ("handle flags as part of this
-# session") lives in the entry point. The one non-zero exit is a usage
-# error — a root that holds no .agent/ — which is not a finding about a
-# node and must never be reported as one.
-#
-# Tunables: status.conf beside this script, which lists every key.
-# Full documentation: scripts/docs/status.md in the dot-agent repo.
-#
-# Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agent/
-#
-# --load appends the always-loaded set after the findings, each under a
-# marker naming its path, so the entry point's bootstrap is one call instead
-# of several. In manual mode (indexes: manual, the default) that set is
-# learned rules, contract, purpose, memory index. In generated mode
-# (indexes: generated) it is purpose and memory only — rule bodies and
-# routing arrive as the pages templates/entry-point-generated.md's step 1
-# already opened, not printed here a second time. Every call costs a
-# re-read of the whole context; the text is the same either way.
 
 set -u
 
-# Review triggers, not caps: nothing refuses a write for size. Tune in the
-# node's status.conf, never here — node.sh update refreshes this script and
-# discards edits to it. Each default and where its number comes from:
-# status.conf beside this script, and scripts/docs/status.md upstream.
 LOG_MAX_ENTRIES=120
 LOG_MAX_WORDS=5000
 LOG_ENTRY_MAX_WORDS=50
@@ -42,9 +13,6 @@ DOCS_MAX_WORDS=2000
 ENTRYPOINT_MAX_WORDS=600
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
-# Not a chosen headroom figure: the documented harness tool-result cap
-# (operating-model.md's bootstrap paragraph, scripts/docs/status.md's
-# `--load` section — both say "about 30 KB, measured"), made executable.
 PAYLOAD_MAX_BYTES=30000
 
 root="."
@@ -80,29 +48,13 @@ EOF
 done
 
 agent="$root/.agent"
-# A root with no .agent/ is a usage error, not a node with three missing
-# files: printing findings for it would send an agent off to repair a node
-# that was never addressed. links.sh refuses the same way.
 if [ ! -d "$agent" ]; then
   echo "status.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
   exit 1
 fi
 
-# Per-node overrides for any variable above: plain KEY=value, parsed and
-# never executed — a config read on the load path cannot be allowed to run
-# code. Every numeric key is checked against ^[0-9]+$ before it reaches a
-# variable, because "parsed, never executed" is not what the shell does
-# next: `[[ x -gt $v ]]` and `$(( ))` evaluate their operands as arithmetic,
-# and arithmetic evaluation performs command substitution inside an array
-# subscript. An unvalidated value here would run whatever it named.
 conf="$agent/scripts/status.conf"
-# The trailing-space strip forgives a stray space or a CR from an editor on
-# another platform; nothing else about the value is repaired.
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
-# A value that is not a whole number keeps the shipped default and adds a
-# REPAIR line naming the key. No finding this script makes reaches its exit
-# status, so a quiet fallback would leave a broken config indistinguishable
-# from a clean node — the caller reads the findings, not the exit status.
 conf_repairs=""
 conf_num() { # $1: key name — the current value is its shipped default
   local v
@@ -137,19 +89,9 @@ learned_dir="$agent/rules/learned"
 contract="$agent/rules/contract.md"
 qualitybar="$agent/rules/quality-bar.md"
 purpose="$agent/purpose.md"
-# Mirrors node.sh's own manifest read (indexes_line=...). Guarded: a node
-# with no purpose.md yet (bootstrap in progress) still yields the default
-# rather than a stray "No such file" on stderr.
 indexes_line=$(grep -m1 '^  indexes:' "$purpose" 2>/dev/null)
 indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
 [ -n "$indexes" ] || indexes=manual
-# A generated node whose indexer is gone cannot rebuild or verify its cache,
-# so the always-loaded set falls back to the canonical files, printed inline
-# exactly as on a manual node. The session then holds the rule text without
-# having to remember a fallback instruction, and a stale cache left on disk
-# is never the only thing it is pointed at. Advisory, not a finding:
-# checkpoint.sh already warns on the missing indexer without failing, and a
-# REPAIR here would turn that warning into a blocker.
 indexer="$agent/scripts/index.sh"
 load_mode="$indexes"
 if [[ "$indexes" == generated ]] && [[ ! -f "$indexer" ]]; then
@@ -160,10 +102,6 @@ arch="$docs/architecture.md"
 
 words() { wc -w <"$1" | tr -d '[:space:]'; }
 
-# Body words: YAML frontmatter and <!-- --> header comments excluded, so
-# fixed per-file overhead never eats the fact budget. With two comments on
-# one line the greedy strip also drops the words between them — an
-# undercount, the safe direction for a review trigger.
 body_words() {
   awk '
     NR == 1 && $0 == "---" { infm = 1; next }
@@ -175,15 +113,11 @@ body_words() {
   ' "$1" | wc -w | tr -d '[:space:]'
 }
 
-# Mirrors index.sh's own learned_dir_active: rules/learned/ is the
-# canonical source, in place of rules/learned.md, exactly when the
-# directory exists, is not a symlink, and holds at least one *.md record.
 learned_dir_active() {
   [[ -d "$learned_dir" ]] && [[ ! -L "$learned_dir" ]] || return 1
   [[ -n "$(find "$learned_dir" -type f -name '*.md' -print -quit 2>/dev/null)" ]]
 }
 
-# Recent session-log entries — printed even when every check passes.
 if [[ -s "$log" ]]; then
   recent=$(grep '^- \[' "$log" | tail -n "$TAIL_LINES")
   if [[ -n "$recent" ]]; then
@@ -191,11 +125,8 @@ if [[ -s "$log" ]]; then
   fi
 fi
 
-# REPAIR: conf values that could not be used, held from the parse above so
-# they print with the other findings rather than ahead of the log tail.
 [[ -n "$conf_repairs" ]] && printf '%s' "$conf_repairs"
 
-# REPAIR: canonical files present and stamped.
 [[ -s "$memory" ]] || echo "REPAIR: memory.md missing/empty"
 [[ -s "$log" ]] || echo "REPAIR: session-log.md missing/empty"
 [[ -s "$contract" ]] || echo "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session"
@@ -206,26 +137,16 @@ if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
 
-# REPAIR: a pending migration. version stays at the pre-migration value
-# until finalize stamps it, so a node holding migration_target is mid-
-# migration no matter how clean everything else checks — never present it
-# as finished. Named target and command so the finding is actionable
-# without opening the manifest.
 migration_target_line=$(grep -m1 '^  migration_target:' "$purpose" 2>/dev/null)
 if [[ -n "$migration_target_line" ]]; then
   migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
   echo "REPAIR: purpose.md has migration_target \"$migration_target\" pending — run node.sh finalize to stamp version $migration_target and clear migration_target"
 fi
 
-# REPAIR: the two bootstrap steps done by judgement, which nothing else can
-# tell apart from a finished node.
 if [[ -s "$contract" ]]; then
   guardrails=$(awk '/^## Project guardrails/ { inb = 1; next }
                     inb && /^## / { exit }
                     inb { print }' "$contract")
-  # A placeholder spans several words (`<exact command(s)>`). A filled-in
-  # line's own angle brackets are single-token (`--grep <name>`), so the
-  # required space is what keeps a real command from reading as a stub.
   if printf '%s\n' "$guardrails" | grep -qE '^- .*<[^>]* [^>]*>'; then
     echo "REPAIR: contract.md Project guardrails still holds template placeholders — fill them with this project's exact commands"
   fi
@@ -236,9 +157,6 @@ if [[ -s "$contract" ]]; then
   fi
 fi
 
-# REPAIR: entry points drifted. Only files that are actually dot-agent
-# entry points are compared, so a hand-written AGENTS.md of team
-# instructions is left alone.
 entrypoints=()
 for candidate in "$root/CLAUDE.md" "$root/AGENTS.md" "$root/.cursorrules" \
   "$root/.github/copilot-instructions.md" "$root/.claude/CLAUDE.md"; do
@@ -255,23 +173,6 @@ if [[ "${#entrypoints[@]}" -gt 1 ]]; then
   done
 fi
 
-# GROOM: an entry point that grew past wiring. The template's body is ~265
-# words and a filled copy lands near 275, so the threshold is that with 2×
-# grace — the same grace the log entry format gets. What crosses it is never
-# more load path: it is project scope, constraints, or architecture restated
-# from purpose.md and docs/, which step 1 prints anyway. Paid on every
-# message by every tool that keeps this file resident, and stale in one of
-# the two copies.
-#
-# The word count measures bloat, not the boundary. A 32-word deploy command
-# appended under a new `## Operations` heading is a whole convention that
-# never reached the node, and it costs a tenth of the threshold. Measured:
-# one tool wrote that section in 3 runs of 3, directly below the line saying
-# everything else lives in .agent/, and mirrored it, so the drift check
-# stayed quiet. So the shape is checked too. The template is one title and a
-# load path — no second heading anywhere — and a heading is what a session
-# writes when it is adding a section rather than wiring, so the first one
-# found is named and the file's own count still prints if it also grew.
 first_extra_heading() {
   awk '
     /^```/ { fence = 1 - fence; next }
@@ -291,14 +192,11 @@ for ep in "${entrypoints[@]-}"; do
   fi
 done
 
-# GROOM: grooming thresholds.
 if [[ -s "$log" ]]; then
   entries=$(grep -c '^- \[' "$log")
   if [[ "$entries" -gt "$LOG_MAX_ENTRIES" || "$(words "$log")" -gt "$LOG_MAX_WORDS" ]]; then
     echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))"
   fi
-  # Entry shape, not just file size: an entry is everything from its `- [`
-  # marker to the next one, so a hand-wrapped narrative is counted whole.
   oversized=$(awk -v max="$LOG_ENTRY_MAX_WORDS" '
     /^- \[/ { if (inentry && cnt > max) { n++; if (cnt > big) big = cnt }
               inentry = 1; cnt = 0 }
@@ -311,12 +209,6 @@ if [[ -s "$log" ]]; then
     echo "GROOM: session-log.md entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh"
   fi
 fi
-# The tokens a restructuring pass must carry over: ticket ids, constants,
-# paths, hosts, commands, dates, numbers with units, and anything in
-# backticks. Listed on the GROOM: line so "shape, never content" is a
-# checklist the session can tick rather than a rule it has to remember.
-# Extraction is a word-shape heuristic, never a judgement about meaning:
-# an undercount leaves a fact unlisted, an overcount lists a plain word.
 keep_tokens() {
   {
     grep -oE '`[^`]+`' "$1" 2>/dev/null
@@ -377,8 +269,6 @@ if [[ -d "$docs" ]]; then
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: opened only by
-    # explicit path, so neither check applies.
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
       echo "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
@@ -386,11 +276,6 @@ if [[ -d "$docs" ]]; then
   done
 fi
 
-# INDEX: every area doc carries a routing hint and the routing table agrees
-# with it. Walks one sublevel, since an area that outgrew one file splits
-# into docs/<area>/ sub-docs still routed from the single architecture.md.
-# The section check is one-directional: an entry may say more than the
-# heading, never less.
 doc_hook() { # the doc's own routing hook, from its opening lines
   head -n 5 "$1" | sed -n 's/^<!-- Read when: \(.*\) -->$/\1/p' | head -n 1
 }
@@ -406,8 +291,6 @@ if [[ -d "$docs" ]]; then
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: opened only by
-    # explicit path, so neither check applies.
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if ! head -n 5 "$doc" | grep -qF "Read when:"; then
       echo "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
@@ -436,36 +319,17 @@ if [[ -d "$docs" ]]; then
   done
 fi
 
-# REPAIR: docs/ holds a routed document but architecture.md itself is
-# missing or empty. The three INDEX: checks above are all guarded on
-# `[[ -s "$arch" ]]` — correctly, since each compares a doc against its
-# entry in a table that has to exist first — but that guard also means a
-# node with routed docs and no table draws no finding at all from them.
-# docs.sh creates architecture.md automatically the first time a doc is
-# scaffolded, so this state only reaches a hand-edited or partially copied
-# node, which is exactly what this check exists to catch. This is REPAIR:,
-# not INDEX:, because a missing table is an absent canonical file, not a
-# disagreement between a doc and a table that exists.
-#
-# Own walk, independent of the loop above (own variable names, no shared
-# state), so the two blocks can be edited separately later. One line for
-# the whole node, never one per doc: stop at the first routed document.
 if [[ -d "$docs" && ! -s "$arch" ]]; then
   for routing_candidate in "$docs"/*.md "$docs"/*/*.md; do
     [[ -e "$routing_candidate" ]] || continue
     routing_candidate_rel=${routing_candidate#"$docs"/}
     [[ "$routing_candidate_rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: opened only by
-    # explicit path, so it has nothing to route and stays quiet.
     [[ "$routing_candidate_rel" == references/* || "$routing_candidate_rel" == */references/* ]] && continue
     echo "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents - recreate the table with scripts/docs.sh new --name <placeholder> --read-when \"...\" using a name NOT already used in docs/ (it refuses to overwrite an existing doc; delete the placeholder's doc file and its table entry afterward), then add an entry for each existing routed doc"
     break
   done
 fi
 
-# REPAIR: memory.md index and memory/ fact files agree. Both directions
-# parse only the index line's own link — the first `[title](memory/…)` —
-# so a hook mentioning another memory path is never counted.
 if [[ -s "$memory" ]]; then
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
@@ -485,21 +349,12 @@ if [[ -d "$memdir" ]]; then
   done
 fi
 
-# This check reads three files textually — $root/.claude/settings.json,
-# $root/.claude/settings.local.json, and $HOME/.claude/settings.json — for
-# one setting, autoMemoryEnabled. It does not read the tool's managed or
-# enterprise settings, command-line setting overrides, or environment
-# overrides, so a clean result here means only that these three files
-# request the tool's own store off, not that it is off. Checked textually
-# so the check needs no JSON parser.
 for settings in "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
   [[ -s "$settings" ]] || continue
   if grep -q '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*true' "$settings"; then
     echo "REPAIR: ${settings#"$root"/} sets autoMemoryEnabled true — set it false and harvest any silo (see retro)"
   fi
 done
-# Settings merge user-level over node-level, so a node inherits a setting it
-# does not carry: only a node that sets it nowhere is unconfigured.
 if [[ -d "$root/.claude" ]] \
   && ! grep -qs '"autoMemoryEnabled"' \
     "$root/.claude/settings.json" "$root/.claude/settings.local.json" \
@@ -507,11 +362,7 @@ if [[ -d "$root/.claude" ]] \
   echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false to .claude/settings.json so it requests the tool's own store off"
 fi
 
-# TOOLS: availability facts for the environment this session runs in.
 missing=""
-# The list is split on spaces on purpose; globbing is off across the split
-# so a `*` in the conf value stays one literal name to probe instead of
-# expanding into whatever files sit in the working directory.
 set -f
 for tool in $PROBE_TOOLS; do
   command -v "$tool" >/dev/null 2>&1 || missing="$missing, $tool"
@@ -529,9 +380,6 @@ if ! sed --version >/dev/null 2>&1; then
   echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
 fi
 
-# LOAD: the always-loaded set, measured. Advisory on purpose — no threshold
-# until this line has measured enough nodes to source one. The tail term
-# prices what this check itself printed above.
 load_total=0
 load_detail=""
 load_add() {
@@ -552,17 +400,6 @@ if [[ "$load_total" -gt 0 ]]; then
   echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
 fi
 
-# PAYLOAD: the exact bytes --load would write to stdout — not architecture.md
-# and not the entry point, neither of which --load ever prints — each with
-# the "==== path ====" marker overhead that precedes it. Manual mode prices
-# the four files --load emits there: learned, contract, purpose, memory.
-# Generated mode prices the two files --load emits there: purpose, memory —
-# the rule and routing bodies arrive as index pages instead, a cost LOAD:
-# already counts, not this line. Measured with wc -c, never wc -m, because
-# the constraint is bytes and the gate runs under three locales.
-# PAYLOAD_MAX_BYTES is the tool-result cap named where the default is set
-# above. Informational, not a finding: no GROOM:/REPAIR:/INDEX: prefix, and
-# it never touches the exit status.
 payload_total=0
 payload_detail=""
 payload_add() { # $1: label  $2: file path
@@ -586,12 +423,6 @@ if [[ "$payload_total" -gt 0 ]]; then
   echo "PAYLOAD: --load would write $payload_total bytes of a $PAYLOAD_MAX_BYTES byte budget (${payload_detail#, })"
 fi
 
-# --load: the always-loaded set, in the entry point's order, after the
-# findings. The marker names the path so nothing has to be re-opened to know
-# where a sentence came from. The total above is computed before this loop
-# runs so overflow can suppress the whole payload — a partial dump is the
-# same harness-truncation failure with a different cause, so the loop either
-# runs in full or not at all.
 if [[ "$load" -eq 1 ]]; then
   if [[ "$load_mode" == generated ]]; then
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then

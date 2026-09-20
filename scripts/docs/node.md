@@ -20,7 +20,7 @@ Header contracts in `operating-model.md` remain the format authority: this scrip
 
 ## What init writes
 
-The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the ten shipped scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `finish.sh`, `learn.sh`), and the three starter confs.
+The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the nine shipped scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`), and the three starter confs.
 
 The manifest's `indexes` field records `manual` or `generated`, next to `mode`. It defaults to `manual` when `--indexes` is omitted. A manifest with no `indexes` line at all — every node created before this field existed — reads as `manual` too, the same value an absent field already means. Nothing about such a node's behavior changes until it is turned on by hand. `generated` decides which lines `init` and `update` add to the gitignore and, at `update`, whether the learned-rules migration below runs. It also changes what a session reads: `status.sh` and `checkpoint.sh` read the manifest's `indexes` field themselves (each greps `purpose.md` for the `indexes:` line) and switch their own behavior on it, and `learn.sh` reads it to decide whether a write should also refresh the generated cache. The read-path wiring an agent installs is `templates/entry-point-generated.md`, the generated-mode counterpart to `templates/entry-point.md` (`scripts/docs/index.md`).
 
@@ -56,7 +56,7 @@ A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh
 
 A version migration is two phases: `update` does the mechanical part and leaves the node mid-migration on purpose; `finalize` closes it out once the mechanical part and the agent's own reconciliation are both done. `version` changes at `finalize` only — `update` never writes it.
 
-`update` refreshes the shipped scripts from the source repo **by exactly their ten names** — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `finish.sh`, `learn.sh`. Anything else under `scripts/` is the node's own and is never overwritten. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
+`update` refreshes the shipped scripts from the source repo **by exactly their nine names** — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`. Anything else under `scripts/` is the node's own and is never overwritten. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
 
 A manifest with no `indexes` line at all is backfilled as `manual` — the value an absent field already means, so nothing about the node's behavior changes — both here and on a version-current node (below).
 

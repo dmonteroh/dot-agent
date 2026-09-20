@@ -53,7 +53,6 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 #### Hand-back and the log writer
 
 - `checkpoint.sh` is the one hand-back call: the comment gate against the change's true parent (`--base <ref>`, or `HEAD` over uncommitted work), then the status check's flag lines, then `log.sh` with the same arguments. It stops before the log entry when the gate blocks or a flag stands. A clean tree with no `--base` is a turn that changed nothing, and it stops there too. A project that is not a git checkout keeps the old behavior.
-- `finish.sh` forwards its arguments unchanged to `checkpoint.sh` as a compatibility shim.
 - `docs.sh rehook` rewrites a doc's `Read when:` header and its routing row together. The Self-learning rule names it.
 - `log.sh` refuses a summary naming a file or a SHA, with the token named.
 - `log.sh` reads a seeded `log.conf`. `LOG_INCLUDE_BRANCH=true`, off by default, stamps each scripted entry with the checked-out branch as `branch: <name>.` before the verify tag, read via `git symbolic-ref` at write time and omitted outside a git checkout or on a detached HEAD. The stamp spends no summary budget. The 25-word summary ceiling tunes from the same conf, and the session-log header contract names the optional segment.
@@ -92,7 +91,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 #### Mechanics
 
 - `node.sh` targets `"6.2"`. The 6.1 to 6.2 update is script refresh plus version bump, with preset changes landing through the normal reconcile step.
-- The shipped node scripts are `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`, and the `finish.sh` shim. An update refreshes those names and touches nothing else under `scripts/`.
+- The shipped node scripts are `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. An update refreshes those names and touches nothing else under `scripts/`.
 - A mode change on a node already at the current version is not adopted by the update path.
 
 ### Migrating a V6.1 node

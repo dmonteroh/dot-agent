@@ -1,30 +1,7 @@
 #!/usr/bin/env bash
-# checkpoint.sh — the end-of-session call, in one command: the comment gate
-# against the change's true parent, the session-log entry, and a re-run of
-# the status check so a flag this session left behind is seen before the
-# hand-back. Three calls became one because every call re-reads the whole
-# context; the work each does is unchanged and lives in the scripts it
-# calls (comments.sh, log.sh, status.sh).
-#
-# The gate and the status check run first and stop the script on a BLOCK or
-# a standing flag: a log entry is a claim the session finished, and it is
-# not written over a diff the gate refused or a node still flagged. Fix,
-# run checkpoint.sh again; the entry is appended once, on the clean run.
-#
-# Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
-#
-# --base names the change's true parent for the gate — the branch base when
-# the work is committed. Without it, uncommitted work is gated against HEAD.
-# A clean tree with no --base is a turn that changed nothing: there is
-# nothing to gate and nothing to log, and the script says so and stops.
-# root defaults to . — the node's project root.
 
 set -u
 
-# The status check's stdout and stderr are both captured to files (step 2)
-# so a status.sh that dies mid-run cannot be mistaken for a clean one; the
-# files are removed on every exit path, not just the ones this script
-# anticipates.
 finish_status_stderr=""
 finish_status_stdout=""
 finish_index_stderr=""
@@ -82,8 +59,6 @@ for s in comments.sh log.sh status.sh; do
   [ -f "$scripts/$s" ] || { echo "checkpoint.sh: $scripts/$s is missing — not an initialized node" >&2; exit 1; }
 done
 
-# 1. The comment gate. comments.sh reads the diff relative to the caller's
-#    working directory, so it runs from the project root.
 gate_rc=0
 unchanged=0
 if [ -z "$base" ]; then
@@ -96,18 +71,6 @@ if [ -z "$base" ]; then
   fi
 fi
 
-# A turn that changed nothing writes no entry — the design is one entry per
-# turn that changed files, not one per session. The entry point's bootstrap
-# is scoped to the conversation but the hand-back is not — handing back
-# happens on every message — so without this gate an unqualified checkpoint.sh
-# would run on every turn regardless: one measured three-turn session wrote
-# three log entries, two of them just a question answered. At a hundred
-# messages that is a hundred entries riding the printed tail into every
-# future session. The clean tree is the observable the agent lacks: no diff
-# to gate, nothing verified, nothing to record. Committed work still logs —
-# it names its parent with --base — and a project that is not a git
-# checkout has no signal here, so it keeps the old behavior rather than
-# being refused on a guess.
 if [ "$unchanged" -eq 1 ]; then
   echo "checkpoint.sh: nothing changed — the working tree is clean and no --base was given, so there is no diff to gate and no work to record. A turn that only answered writes no entry. Pass --base <ref> if this session's work is already committed." >&2
   exit 1
@@ -130,24 +93,9 @@ else
   echo "== comment gate: skipped — not a git checkout, so no diff can be read (pass --base <ref> to gate a committed branch)"
 fi
 
-# 2. The status check, flags only, before the log entry: a flag still
-#    standing — one this session inherited and did not handle, or one its
-#    own edit introduced (a doc without its routing row) — is this session's
-#    to fix, and the log entry is written once, after the node is clean, so
-#    a second checkpoint.sh run never appends a duplicate. status.sh's exit
-#    code and stderr are both captured rather than piped straight through
-#    grep: a `2>/dev/null | grep ... || true` pipeline hides a status.sh
-#    crash (nonzero exit, a syntax error's parse message) behind grep's own
-#    exit 1 and reports a node clean when its state was never read. An
-#    inspection that did not run is not a clean node, so it fails the same
-#    way a standing flag does.
 echo "== status check"
 finish_status_stderr=$(mktemp "${TMPDIR:-/tmp}/finish-status-err.XXXXXX")
 finish_status_stdout=$(mktemp "${TMPDIR:-/tmp}/finish-status-out.XXXXXX")
-# PIPESTATUS must be read from the same shell that ran the pipe: wrapping
-# this in `flags=$(... | ...)` would run the pipe inside the command
-# substitution's own subshell and lose the exit code here, so the pipe runs
-# directly and its matched lines are read back from a file instead.
 bash "$scripts/status.sh" "$root" 2>"$finish_status_stderr" | grep -E '^(GROOM|REPAIR|INDEX):' >"$finish_status_stdout"
 status_rc=${PIPESTATUS[0]}
 flags=$(cat "$finish_status_stdout")
@@ -164,12 +112,6 @@ if [ -n "$flags" ]; then
 fi
 echo "clean"
 
-# 3. The cache refresh, generated mode only, after the node is confirmed
-#    clean so the refresh reflects this session's canonical writes. The
-#    cache is disposable: an absent or failing indexer never blocks the
-#    hand-back, since rules/ and docs/ stay directly readable either way.
-#    Mirrors node.sh's own manifest read (indexes_line=...), guarded for a
-#    root whose purpose.md is not yet readable.
 indexes_line=$(grep -m1 '^  indexes:' "$root/.agent/purpose.md" 2>/dev/null)
 indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
 [ -n "$indexes" ] || indexes=manual
@@ -188,7 +130,6 @@ if [ "$indexes" = generated ]; then
   fi
 fi
 
-# 4. The session-log entry, through log.sh's own checks.
 echo "== session log"
 bash "$scripts/log.sh" "${logargs[@]}" "$root" || exit 1
 exit 0

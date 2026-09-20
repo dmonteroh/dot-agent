@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# links.sh — on-demand link audit for a node. Reports ORPHAN (a file
-# nothing cites) and BROKEN (a cited path that does not exist). Findings
-# are review triggers, not errors, and never reach the exit status: the
-# report is the product. The one non-zero exit is a usage error — a root
-# that holds no .agent/ — which is not a finding about a node.
-#
-# Full documentation: scripts/docs/links.md in the dot-agent repo.
-#
-# Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
 
 set -u
 
@@ -31,9 +22,6 @@ if [ ! -d "$agent" ]; then
   exit 1
 fi
 
-# Files exempt from the orphan check — each is reached by a route the link
-# graph cannot see, or is placed outside the model. Per-entry reasons:
-# scripts/docs/links.md.
 is_exempt() {
   case "$1" in
   purpose.md | memory.md | session-log.md) return 0 ;;
@@ -44,20 +32,11 @@ is_exempt() {
   return 1
 }
 
-# Arrays and newline-delimited reads throughout: a node under a path with a
-# space in it ("~/My Projects/app") word-split every list here into garbage
-# and silently bypassed the exemptions.
 nodefiles=()
 while IFS= read -r f; do
   [ -n "$f" ] && nodefiles+=("$f")
 done < <(find "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
 
-# Every markdown basename in the project, newline-delimited and newline-
-# bounded so a lookup is one `case` against a string rather than a loop or a
-# subprocess per candidate. Built once. The walk below consults it for every
-# cited name that the node itself cannot resolve. The heavy vendored trees
-# are pruned because they hold thousands of files and none of them is what a
-# node doc means by a bare name.
 projbasenames=$'\n'
 while IFS= read -r f; do
   [ -n "$f" ] && projbasenames="$projbasenames${f##*/}"$'\n'
@@ -65,10 +44,6 @@ done < <(find "$root" \( -name .git -o -name node_modules -o -name vendor \
   -o -name .venv -o -name dist -o -name build -o -name target \) -prune -o \
   -type f -name '*.md' -print 2>/dev/null)
 
-# A file's body with <!-- --> comments stripped. Header contracts live in
-# comments and state formats by example — memory.md's says
-# `- [Title](memory/slug.md) — hook` — so a comment is a spec, not a
-# citation, and reading one as a link invents a broken path on every node.
 strip_comments() {
   awk '
     incm { if (/-->/) { incm = 0; sub(/.*-->/, "") } else next }
@@ -78,11 +53,6 @@ strip_comments() {
   ' "$1"
 }
 
-# Every markdown file in the node that is not retired or out of model, plus
-# the tool entry points at the project root, which reference into .agent/
-# from outside it.
-# An empty array expands to an unbound variable under `set -u` in bash 3.2,
-# which is what macOS ships, so the emptiness check comes before any use.
 if [ "${#nodefiles[@]}" -eq 0 ]; then
   echo "links.sh: no markdown files to audit under $agent"
   exit 0
@@ -109,15 +79,6 @@ fi
 findings=0
 audited=0
 
-# ---- ORPHAN: files nothing cites ------------------------------------
-#
-# Matched on node-relative path or bare basename, because docs cite each
-# other both ways. Two files sharing a basename can mask one another: the
-# one case where this check knowingly under-reports, and the quiet
-# direction to fail in.
-# One `grep -l` over the whole corpus per candidate, never one per
-# (candidate, file) pair — the pairwise form is quadratic in processes and
-# unusable on a large node for the same answer.
 for f in "${nodefiles[@]}"; do
   rel=${f#"$agent"/}
   is_exempt "$rel" && continue
@@ -142,12 +103,6 @@ for f in "${nodefiles[@]}"; do
   fi
 done
 
-# ---- BROKEN: cited node paths that do not exist ----------------------
-#
-# Candidates come from markdown link targets and backticked .md paths.
-# session-log.md, archive/ and rules/ are excluded: they name files as
-# record or as instruction, not as citation, so a name they carry is not a
-# claim the path resolves. Why each: scripts/docs/links.md.
 for c in "${corpus[@]}"; do
   case "${c#"$agent"/}" in
   session-log.md | archive/* | rules/*) continue ;;
@@ -162,12 +117,6 @@ for c in "${corpus[@]}"; do
     esac
     case "$target" in *.md) ;; *) continue ;; esac
 
-    # In scope only if the target addresses the node: an .agent/-prefixed
-    # path, a path under one of the node's own directories, or a bare
-    # basename. Anything else is a project path. skills/ and its siblings are
-    # not on that list even though they sit under .agent/ — the operating
-    # model places them outside itself, never loaded and never audited, so a
-    # cited skills/testing/SKILL.md is the project's file to keep alive.
     stripped=${target#./}
     inagent=${stripped#.agent/}
     case "$inagent" in
@@ -176,8 +125,6 @@ for c in "${corpus[@]}"; do
     *) ;;
     esac
 
-    # A bare or loosely-written basename resolves if the node holds a file
-    # by that name anywhere: `learned.md` is how docs cite `rules/learned.md`.
     tbase=${inagent##*/}
     if [ -e "$dir/$stripped" ] || [ -e "$agent/$inagent" ] || [ -e "$root/$stripped" ]; then
       continue
@@ -187,9 +134,6 @@ for c in "${corpus[@]}"; do
       case "$nf" in */"$tbase") resolved=1; break ;; esac
     done
     [ "$resolved" -eq 1 ] && continue
-    # Not the node's, but the project holds a file by that name: a memory
-    # fact naming `SKILL.md` or `implementer-prompt.md` is describing the
-    # project, and the project's files are not the node's to audit.
     case "$projbasenames" in *$'\n'"$tbase"$'\n'*) continue ;; esac
     case " $reported " in *" $target "*) continue ;; esac
     reported="$reported $target"

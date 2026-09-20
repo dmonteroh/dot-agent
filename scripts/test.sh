@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# scripts/test.sh — self-contained smoke tests for every script this repo
-# ships. The gate: it must pass before a change ships.
-#
-# Full documentation: scripts/docs/test.md.
-#
-# Usage: scripts/test.sh    (run from anywhere — it resolves the repo from $0)
-# Builds every fixture under a fresh mktemp -d, never writes inside this
-# repo, removes it on exit. Exits 0 only if every check passed.
-#
-# bash 3.2 / BSD portable: no associative arrays, no GNU-only flags.
 
 set -u
 
@@ -19,10 +9,6 @@ LOGSH="$reporoot/scripts/log.sh"
 IDXSH="$reporoot/scripts/index.sh"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/dot-agent-test.XXXXXX")
-# node.sh and index.sh resolve a root with `pwd -P`, so every path they
-# print back is symlink-free. macOS's default TMPDIR lives under
-# /var/folders, itself a symlink into /private, so a fixture path built
-# from an unresolved mktemp -d never equals the path those scripts print.
 WORK=$(cd "$WORK" && pwd -P)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -32,13 +18,7 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); printf 'ok   %s\n' "$1"; }
 fail() { FAIL=$((FAIL + 1)); printf 'FAIL %s\n' "$1"; }
 
-# ---- helpers ---------------------------------------------------------
 
-# root -> GROOM:/REPAIR:/INDEX: lines from the node's own copy of status.sh
-# Findings only. stderr used to be folded into stdout and then filtered
-# out, so a status.sh that died produced an empty result and every
-# `[ -z "$(status_flags ...)" ] && pass` assertion passed over the corpse.
-# A crash now emits STATUSFAIL, which no test expects and every test sees.
 status_flags() {
   "$1/.agent/scripts/status.sh" "$1" 2>"$WORK/.status-stderr" | grep -E '^(GROOM|REPAIR|INDEX):'
   sf_rc=${PIPESTATUS[0]}
@@ -47,13 +27,10 @@ status_flags() {
   fi
 }
 
-# file, sed-expr -> apply the expression in place. Avoids `sed -i`, whose
-# backup-suffix argument differs between BSD and GNU.
 subst() {
   sed "$2" "$1" >"$1.tmp" && mv "$1.tmp" "$1"
 }
 
-# n -> "w1 w2 ... wn" (n space-separated words)
 words_n() {
   n="$1"; i=1; out=""
   while [ "$i" -le "$n" ]; do out="$out w$i"; i=$((i + 1)); done
@@ -62,12 +39,6 @@ words_n() {
 
 today() { date +%Y-%m-%d; }
 
-# root -> complete the judgement half of bootstrap that node.sh cannot do:
-# split `## Quality bar` out of contract.md and fill Project guardrails with
-# real commands. `node.sh init` deliberately leaves both undone, and
-# status.sh REPAIR-flags a node in that state, so every test that expects a
-# quiet node runs this first — the same two steps the bootstrap prompt asks
-# an agent to perform.
 finish_bootstrap() {
   fb_contract="$1/.agent/rules/contract.md"
   awk '/^## Quality bar/ { inq = 1 } inq && /^## / && !/^## Quality bar/ { inq = 0 } !inq' \
@@ -78,9 +49,6 @@ finish_bootstrap() {
   subst "$fb_contract" 's/^\(- [A-Za-z][^:]*:\) <.*>$/\1 filled at bootstrap/'
 }
 
-# V6-style fixture: manifest version 6 (unquoted), mode ignore-all unless
-# a second argument overrides it, old-style memory.md with a prose body
-# under the header comment.
 make_v6_fixture() {
   fx="$1"
   fxmode="${2:-ignore-all}"
@@ -114,11 +82,6 @@ EOF
 
 - [2026-01-01] (claude) fixture bootstrap for smoke tests (testing). verify: pass.
 EOF
-  # rules/contract.md and rules/learned.md are always-loaded canonical
-  # files on a real V6 node — status.sh flags either one missing — so the
-  # fixture ships both, plus rules/quality-bar.md, to stay a realistic
-  # bootstrap-complete node rather than one the bootstrap-completion check
-  # (further down in status.sh, untouched by this task) also flags.
   cat >"$fx/.agent/rules/contract.md" <<'EOF'
 # Contract
 
@@ -143,11 +106,6 @@ EOF
   fi
 }
 
-# root -> a minimal .agent/rules + .agent/docs tree for index.sh: one rule
-# record and one route record, both real enough that render produces one
-# page of each kind. index.sh's own fixtures are built here rather than as
-# checked-in files, the same way make_v6_fixture is — disposable, built
-# fresh per test under $WORK, never touching this repo.
 make_index_fixture() {
   ifx="$1"
   mkdir -p "$ifx/.agent/rules" "$ifx/.agent/docs"
@@ -165,25 +123,16 @@ Body text describing the alpha area.
 EOF
 }
 
-# path -> epoch mtime, BSD or GNU stat. GNU-first: GNU's `-f` means
-# "filesystem status", not a BSD format flag, so `stat -f '%m'` succeeds
-# on Linux without erroring and prints an unrelated filesystem report
-# instead of the mtime — trying it first can never detect that failure.
-# `-c` is GNU-only and BSD stat rejects it outright, so trying `-c`
-# first is safe on both.
 idx_mtime() {
   stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"
 }
 
-# path -> a snapshot of every file's relative path, byte count, and mtime
-# under it, sorted — used to prove a warm run touches nothing at all.
 idx_snapshot() {
   find "$1" -type f -exec sh -c 'for f; do
     sz=$(wc -c <"$f"); mt=$(stat -c "%Y" "$f" 2>/dev/null || stat -f "%m" "$f"); printf "%s %s %s\n" "$f" "$sz" "$mt"
   done' sh {} + | sort
 }
 
-# ---- 1. init x 3 presets x 3 modes ----
 PRESETS="software-development academic-research domain-knowledge"
 MODES="ignore-all track-shared track-all"
 
@@ -195,9 +144,6 @@ for preset in $PRESETS; do
     rc=$?
     [ "$rc" -eq 0 ] && pass "init $preset/$mode exits 0" || fail "init $preset/$mode exits 0 (rc=$rc)"
 
-    # node.sh does the mechanical half of bootstrap. The judgement half
-    # (guardrails, quality-bar split) is the agent's, and a node with it
-    # still undone is not a finished node — status.sh says so.
     flags=$(status_flags "$root")
     printf '%s\n' "$flags" | grep -qF 'Project guardrails still holds template placeholders' && pass "init $preset/$mode: unfilled guardrails draw a REPAIR flag" || fail "init $preset/$mode: unfilled guardrails draw a REPAIR flag ($flags)"
     printf '%s\n' "$flags" | grep -qF 'still contains ## Quality bar' && pass "init $preset/$mode: unsplit quality bar draws a REPAIR flag" || fail "init $preset/$mode: unsplit quality bar draws a REPAIR flag ($flags)"
@@ -206,29 +152,22 @@ for preset in $PRESETS; do
     flags=$(status_flags "$root")
     [ -z "$flags" ] && pass "init $preset/$mode: status.sh clean once bootstrap completes" || fail "init $preset/$mode: status.sh clean once bootstrap completes ($flags)"
 
-    # The shipped set, stated here independently of node.sh's copy loop —
-    # deriving it from the script under test would pass a dropped entry.
     missing=""
-    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh learn.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
       [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
       [ -f "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     [ -z "$missing" ] && pass "init $preset/$mode: every shipped script and starter conf is in place" || fail "init $preset/$mode: every shipped script and starter conf is in place (missing:$missing)"
-    # A node receives executables and their confs. This repo's design notes
-    # under scripts/docs/ are not a node's to carry.
     [ ! -e "$root/.agent/scripts/docs" ] && pass "init $preset/$mode: scripts/docs is not shipped into the node" || fail "init $preset/$mode: scripts/docs is not shipped into the node"
 
-    # --indexes defaults to manual when the flag is omitted, so an
-    # unmodified `init` call is unaffected by the new field.
     grep -qxF '  indexes: manual        # manual | generated' "$root/.agent/purpose.md" \
       && pass "init $preset/$mode: manifest defaults to indexes: manual" \
       || fail "init $preset/$mode: manifest defaults to indexes: manual"
   done
 done
 
-# ---- 2. gitignore per mode ----
 gi_ignore="$WORK/init-software-development-ignore-all/.gitignore"
 [ "$(cat "$gi_ignore" 2>/dev/null)" = ".agent/" ] && pass "ignore-all: gitignore is exactly '.agent/'" || fail "ignore-all: gitignore is exactly '.agent/'"
 
@@ -239,7 +178,6 @@ expected_shared=$(printf '.agent/*\n!.agent/purpose.md\n!.agent/rules/\n!.agent/
 gi_all="$WORK/init-software-development-track-all/.gitignore"
 [ ! -e "$gi_all" ] && pass "track-all: no gitignore created" || fail "track-all: no gitignore created"
 
-# pre-existing gitignore is preserved (ignore-all)
 root2="$WORK/gitignore-preserve-ignore"
 mkdir -p "$root2"
 printf 'custom-content\n' >"$root2/.gitignore"
@@ -247,7 +185,6 @@ printf 'custom-content\n' >"$root2/.gitignore"
 expected2=$(printf 'custom-content\n.agent/')
 [ "$(cat "$root2/.gitignore" 2>/dev/null)" = "$expected2" ] && pass "ignore-all: pre-existing gitignore content preserved" || fail "ignore-all: pre-existing gitignore content preserved"
 
-# pre-existing gitignore is preserved (track-shared, blank-line separator)
 root3="$WORK/gitignore-preserve-shared"
 mkdir -p "$root3"
 printf 'foo\n' >"$root3/.gitignore"
@@ -255,7 +192,6 @@ printf 'foo\n' >"$root3/.gitignore"
 expected3=$(printf 'foo\n\n.agent/*\n!.agent/purpose.md\n!.agent/rules/\n!.agent/docs/')
 [ "$(cat "$root3/.gitignore" 2>/dev/null)" = "$expected3" ] && pass "track-shared: pre-existing gitignore content preserved" || fail "track-shared: pre-existing gitignore content preserved"
 
-# a fresh, unrelated root is unaffected by another root's init
 root4="$WORK/gitignore-fresh-ignore"
 mkdir -p "$root4"
 "$NODE" init --preset software-development --mode ignore-all "$root4" >/dev/null 2>&1
@@ -265,7 +201,6 @@ else
   fail "re-init into another root does not cross-contaminate gitignores"
 fi
 
-# ---- 3. init refusals: existing .agent, unknown --preset, unknown --mode ----
 existing="$WORK/existing-agent"
 mkdir -p "$existing/.agent"
 touch "$existing/.agent/marker"
@@ -316,7 +251,6 @@ grep -qxF '  indexes: generated        # manual | generated' "$idxgen/.agent/pur
   && pass "init --indexes generated: index.sh is installed" \
   || fail "init --indexes generated: index.sh is installed"
 
-# ---- 4. update: V6 fixture reaches the mechanical baseline ----
 v6root="$WORK/update-v6"
 mkdir -p "$v6root"
 make_v6_fixture "$v6root"
@@ -342,9 +276,6 @@ grep -q '^  migration_target: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && 
 [ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.2"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
 grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names the pending finalize step" || fail "update: closing message names the pending finalize step"
 
-# make_v6_fixture's manifest carries no indexes line at all; update
-# backfills it as manual — the same value an absent field already reads
-# as — beside mode.
 grep -qxF '  indexes: manual        # manual | generated' "$v6root/.agent/purpose.md" \
   && pass "update: a manifest with no indexes line is backfilled with indexes: manual" \
   || fail "update: a manifest with no indexes line is backfilled with indexes: manual"
@@ -358,12 +289,6 @@ grep -qF "indexes: manual backfilled" "$WORK/update.out" \
   && pass "update: index.sh is installed alongside the existing seven scripts" \
   || fail "update: index.sh is installed alongside the existing seven scripts"
 
-# ---- 4b. update leaves an already-present indexes line untouched ----
-# node.sh:555-564 (version-current) and node.sh:640-649 (older-version,
-# mid-migration) both gate the backfill write on the indexes line being
-# absent. This proves the gate holds — no duplicate line, no reset to
-# manual, no backfill message — when a line is already present, in
-# either value, on both branches.
 idxpresent_older() {
   io_dir="$1" io_value="$2"
   mkdir -p "$io_dir"
@@ -409,18 +334,11 @@ idxpresent_current "$idxman" manual
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
-# migration_target is now pending (version stays unbumped until finalize),
-# so status.sh's own pending-migration REPAIR is expected here — that is
-# the only REPAIR a freshly-updated node should carry.
 flags4_repairs=$(printf '%s\n' "$flags4" | grep '^REPAIR:')
 [ "$flags4_repairs" = 'REPAIR: purpose.md has migration_target "6.2" pending — run node.sh finalize to stamp version 6.2 and clear migration_target' ] \
   && pass "update: status.sh shows only the pending-migration REPAIR" \
   || fail "update: status.sh shows only the pending-migration REPAIR ($flags4_repairs)"
 
-# ---- 5. update idempotency (second run on v6root, migration_target still pending) ----
-# version was never bumped in step 4 — the node still reads oldversion=6
-# with migration_target="6.2" pending, so this run must resume, not report
-# "current", and must reuse (not re-copy) the existing backup.
 cp -R "$v6root/.agent" "$WORK/v6root-agent-snapshot"
 "$NODE" update "$v6root" >"$WORK/update2.out" 2>&1
 rc=$?
@@ -429,10 +347,6 @@ grep -qF "node is current" "$WORK/update2.out" && fail "update re-run with a pen
 grep -qF "resuming" "$WORK/update2.out" && pass "update re-run reports resuming the interrupted update" || fail "update re-run reports resuming the interrupted update"
 diff -r "$WORK/v6root-agent-snapshot" "$v6root/.agent" >/dev/null 2>&1 && pass "update re-run with a pending migration_target is a content no-op (diff -r clean)" || fail "update re-run with a pending migration_target is a content no-op (diff -r clean)"
 
-# ---- 5b. update interrupted after the backup, before content mutation: retry resumes ----
-# Model the exact interruption point: the backup was made from the
-# pre-migration node, migration_target was then written to the live
-# manifest, and the process died before any content mutation ran.
 interrupt="$WORK/update-interrupted"
 mkdir -p "$interrupt"
 make_v6_fixture "$interrupt"
@@ -453,14 +367,6 @@ legacy_count=$(grep -cF "[Legacy memory](memory/legacy.md)" "$interrupt/.agent/m
 [ "$legacy_count" -eq 1 ] && pass "update: retry does not duplicate the legacy memory index line" || fail "update: retry does not duplicate the legacy memory index line (count=$legacy_count)"
 grep -q '^  version: 6$' "$interrupt/.agent/purpose.md" 2>/dev/null && pass "update: retry still leaves version unbumped" || fail "update: retry still leaves version unbumped"
 
-# ---- 5d. memory split interrupted after memory/ is created, before legacy.md is written ----
-# Model the crash window inside the split step itself: memory/ exists
-# (mkdir succeeded) but nothing has been written into it yet, and
-# memory.md still holds its original pre-split prose body untouched.
-# FU05 (F4a follow-up): a memdir-existence gate cannot tell this apart
-# from a completed split, so it would skip the split forever, stranding
-# the prose body outside any legacy.md and never linking it from the
-# index.
 splitA="$WORK/update-split-interrupted-a"
 mkdir -p "$splitA/.agent/memory"
 make_v6_fixture "$splitA"
@@ -476,12 +382,6 @@ splitA_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitA/.agent/memo
 [ "$splitA_links" -eq 1 ] && pass "update: resume after an empty memory/ adds exactly one index link" || fail "update: resume after an empty memory/ adds exactly one index link (count=$splitA_links)"
 grep -q "custom auth flow" "$splitA/.agent/memory.md" 2>/dev/null && fail "update: resume after an empty memory/ does not leave the body behind in memory.md" || pass "update: resume after an empty memory/ does not leave the body behind in memory.md"
 
-# ---- 5e. memory split interrupted after legacy.md is written, before memory.md is rewritten ----
-# Model the crash window between the two writes: legacy.md already holds
-# the moved body, but memory.md is still the untouched pre-split original
-# (the crash landed before write_memory_header ran). A memdir-existence
-# gate would see memory/ present and skip, leaving the fact duplicated —
-# once in legacy.md, once still as memory.md's own unconverted body.
 splitB="$WORK/update-split-interrupted-b"
 mkdir -p "$splitB/.agent/memory"
 make_v6_fixture "$splitB"
@@ -502,13 +402,6 @@ splitB_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitB/.agent/memo
 [ "$splitB_links" -eq 1 ] && pass "update: resume after legacy.md written adds exactly one index link" || fail "update: resume after legacy.md written adds exactly one index link (count=$splitB_links)"
 [ ! -e "$splitB/.agent/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
 
-# ---- 5f. memory split interrupted after memory.md is rewritten, before the index link is appended ----
-# Model the crash window after write_memory_header ran: memory.md already
-# reads as a fresh index (legacy.md exists with the moved fact), but the
-# index line pointing at legacy.md was never appended — the fact would be
-# orphaned (unreachable from memory.md, un-flagged by the GROOM check
-# that keys off the index line) if a retry re-derived from memory.md's
-# current content instead of finishing the append.
 splitC="$WORK/update-split-interrupted-c"
 mkdir -p "$splitC/.agent/memory"
 make_v6_fixture "$splitC"
@@ -532,7 +425,6 @@ splitC_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitC/.agent/memo
 [ "$splitC_links" -eq 1 ] && pass "update: resume finishes the orphaned legacy.md by appending its missing index link" || fail "update: resume finishes the orphaned legacy.md by appending its missing index link (count=$splitC_links)"
 [ ! -e "$splitC/.agent/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
 
-# ---- 5c. a backup collision WITHOUT a matching migration_target still aborts ----
 unexplained="$WORK/update-unexplained-backup"
 mkdir -p "$unexplained"
 make_v6_fixture "$unexplained"
@@ -546,7 +438,6 @@ grep -qF "backup path already exists" "$WORK/update-unexplained.err" && pass "up
 diff -r "$WORK/unexplained-snapshot" "$unexplained/.agent" >/dev/null 2>&1 && pass "update: unexplained backup collision leaves the node untouched" || fail "update: unexplained backup collision leaves the node untouched"
 [ -f "$unexplained/.agent.backup-v6/marker" ] && pass "update: unexplained backup collision leaves the pre-existing backup untouched" || fail "update: unexplained backup collision leaves the pre-existing backup untouched"
 
-# ---- 6. update on a node with no manifest ----
 nomanifest="$WORK/update-no-manifest"
 mkdir -p "$nomanifest/.agent"
 touch "$nomanifest/.agent/placeholder"
@@ -556,7 +447,6 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "update with no manifest exits nonzero" || fail "update with no manifest exits nonzero"
 diff -r "$WORK/nomanifest-snapshot" "$nomanifest/.agent" >/dev/null 2>&1 && pass "update with no manifest leaves the node untouched" || fail "update with no manifest leaves the node untouched"
 
-# ---- 7. update on an already-current (6.1) node ----
 current_root="$WORK/init-software-development-track-all"
 cp -R "$current_root/.agent" "$WORK/current-snapshot"
 "$NODE" update "$current_root" >"$WORK/update4.out" 2>&1
@@ -565,9 +455,6 @@ rc=$?
 grep -q "current" "$WORK/update4.out" && pass "update on a current node prints 'current'" || fail "update on a current node prints 'current'"
 diff -r "$WORK/current-snapshot" "$current_root/.agent" >/dev/null 2>&1 && pass "update on a current node is a no-op" || fail "update on a current node is a no-op"
 
-# A pre-release 6.2 node can be version-current while its memory header still
-# predates the canonical-source admission test. Update refreshes the contract
-# without dropping facts or waiting for another version bump.
 stale62="$WORK/current-stale-memory-header"
 cp -R "$current_root" "$stale62"
 "$stale62/.agent/scripts/memory.sh" new --slug keep --title Keep --hook "keep this hook" --fact "Keep this fact body." "$stale62" >/dev/null 2>&1
@@ -587,24 +474,16 @@ else
   fail "update: same-version shape backup does not collide with an earlier backup"
 fi
 
-# ---- 7b. finalize ----
 finroot="$WORK/finalize-node"
 mkdir -p "$finroot"
 make_v6_fixture "$finroot"
 "$NODE" update "$finroot" >/dev/null 2>&1
 cp "$finroot/.agent/purpose.md" "$WORK/fin-purpose-pending.md"
 
-# status.sh: the pending migration_target itself draws a REPAIR finding,
-# naming the target and finalize, before anything else is touched.
 flags_pending=$(status_flags "$finroot")
 printf '%s\n' "$flags_pending" | grep -qF 'REPAIR: purpose.md has migration_target "6.2" pending' && pass "status.sh: a pending migration_target draws a REPAIR finding naming the target" || fail "status.sh: a pending migration_target draws a REPAIR finding naming the target ($flags_pending)"
 printf '%s\n' "$flags_pending" | grep -q 'REPAIR: purpose.md has migration_target.*finalize' && pass "status.sh: the pending-migration REPAIR finding names the finalize command" || fail "status.sh: the pending-migration REPAIR finding names the finalize command ($flags_pending)"
 
-# Deliberately break the node with a real defect status.sh already checks
-# for — dropping memory.md's index line for memory/legacy.md while leaving
-# the fact file itself in place. This is not a malformed fixture: it is the
-# exact shape status.sh's own memory-index REPAIR check exists to catch, so
-# a refused finalize below fails for the right reason.
 grep -vF '[Legacy memory](memory/legacy.md)' "$finroot/.agent/memory.md" >"$finroot/.agent/memory.md.tmp"
 mv "$finroot/.agent/memory.md.tmp" "$finroot/.agent/memory.md"
 flags_broken=$(status_flags "$finroot")
@@ -616,9 +495,6 @@ rc=$?
 grep -qF 'REPAIR: memory/legacy.md has no index line in memory.md' "$WORK/finalize1.err" && pass "finalize: refusal prints the offending REPAIR finding" || fail "finalize: refusal prints the offending REPAIR finding"
 diff -q "$WORK/fin-purpose-pending.md" "$finroot/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a refused finalize leaves version and migration_target unchanged" || fail "finalize: a refused finalize leaves version and migration_target unchanged"
 
-# Reconcile: restore the dropped index line. The only REPAIR finding left
-# is the pending-migration one, which does not count against finalize
-# itself (it is true by definition until finalize runs).
 printf '\n%s\n' '- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag' >>"$finroot/.agent/memory.md"
 flags_reconciled=$(status_flags "$finroot" | grep '^REPAIR:' | grep -v '^REPAIR: purpose\.md has migration_target ')
 [ -z "$flags_reconciled" ] && pass "finalize fixture: reconciling the break clears every REPAIR finding but the pending-migration one" || fail "finalize fixture: reconciling the break clears every REPAIR finding but the pending-migration one ($flags_reconciled)"
@@ -642,7 +518,6 @@ rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: update after a successful finalize exits 0" || fail "finalize: update after a successful finalize exits 0 (rc=$rc)"
 grep -qF "node is current" "$WORK/finupdate.out" && pass "finalize: update after a successful finalize reports the node current" || fail "finalize: update after a successful finalize reports the node current"
 
-# finalize on an unknown/un-adopted path fails the same shape as update
 finunadopted="$WORK/finalize-unadopted"
 mkdir -p "$finunadopted"
 "$NODE" finalize "$finunadopted" >/dev/null 2>"$WORK/finalize-unadopted.err"
@@ -658,12 +533,6 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: an unknown (no-manifest) node exits nonzero" || fail "finalize: an unknown (no-manifest) node exits nonzero"
 grep -qF "no dot-agent manifest found at" "$WORK/finalize-nomanifest.err" && pass "finalize: an unknown (no-manifest) node prints the same refusal shape as update" || fail "finalize: an unknown (no-manifest) node prints the same refusal shape as update"
 
-# ---- 7c. finalize refuses when status inspection itself fails ----
-# A broken status.sh must refuse finalize before its findings are even
-# read — nonzero exit, stderr output, or empty stdout are each, on their
-# own, a reason to refuse. The node's own status.sh is swapped out for a
-# fake one that exercises each shape in turn; the manifest must stay
-# byte-identical across every refusal.
 finstatusfail="$WORK/finalize-status-fail"
 mkdir -p "$finstatusfail"
 make_v6_fixture "$finstatusfail"
@@ -672,7 +541,6 @@ cp "$finstatusfail/.agent/purpose.md" "$WORK/fin-statusfail-purpose.md"
 realstatussh="$finstatusfail/.agent/scripts/status.sh"
 cp "$realstatussh" "$WORK/fin-statusfail-status.sh.orig"
 
-# Case 1: nonzero exit, with both stdout and stderr output.
 cat >"$realstatussh" <<'EOF'
 #!/usr/bin/env bash
 echo "INDEX: fake finding"
@@ -685,7 +553,6 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits nonzero with stdout and stderr" || fail "finalize: refuses when status.sh exits nonzero with stdout and stderr (rc=$rc)"
 diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a nonzero-exit refusal leaves the manifest byte-identical" || fail "finalize: a nonzero-exit refusal leaves the manifest byte-identical"
 
-# Case 2: zero exit, but stderr output present alongside otherwise-clean findings.
 cat >"$realstatussh" <<'EOF'
 #!/usr/bin/env bash
 echo "INDEX: fake finding"
@@ -698,7 +565,6 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits zero but writes to stderr" || fail "finalize: refuses when status.sh exits zero but writes to stderr (rc=$rc)"
 diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a stderr-output refusal leaves the manifest byte-identical" || fail "finalize: a stderr-output refusal leaves the manifest byte-identical"
 
-# Case 3: zero exit, empty stdout, no stderr.
 cat >"$realstatussh" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -709,25 +575,13 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits zero with empty stdout" || fail "finalize: refuses when status.sh exits zero with empty stdout (rc=$rc)"
 diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: an empty-stdout refusal leaves the manifest byte-identical" || fail "finalize: an empty-stdout refusal leaves the manifest byte-identical"
 
-# Restoring the real status.sh and finalizing again proves the new gate
-# does not interfere with the ordinary clean path.
 cp "$WORK/fin-statusfail-status.sh.orig" "$realstatussh"
 chmod +x "$realstatussh"
 "$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail4.out" 2>"$WORK/finalize-statusfail4.err"
 rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: succeeds once the real status.sh runs cleanly again" || fail "finalize: succeeds once the real status.sh runs cleanly again (rc=$rc, err=$(cat "$WORK/finalize-statusfail4.err"))"
 
-# ---- 7d. migration manifest writes: abort before dependent mutations on
-# write failure ----
-# The three manifest helpers (write_migration_target, write_version,
-# remove_migration_target) share one scratch path per rewrite:
-# <dir>/.purpose.md.new, written then renamed. Pre-occupying that path with
-# a directory blocks the write at the shell-redirection level — the same
-# failure the 2026-09-14 review reproduced against .agent/.purpose.md.new —
-# without needing a fake command for the first two cases.
 
-# Case 1: a blocked pending-marker write must abort update before any
-# content mutation, leaving the manifest and the rest of .agent untouched.
 pmwfail="$WORK/update-pmw-fail"
 mkdir -p "$pmwfail"
 make_v6_fixture "$pmwfail"
@@ -740,8 +594,6 @@ grep -qF "failed to record migration_target" "$WORK/pmw.err" && pass "update: a 
 grep -qiF "migrated" "$WORK/pmw.out" && fail "update: a blocked pending-marker write prints no success message" || pass "update: a blocked pending-marker write prints no success message"
 diff -r "$WORK/pmw-snapshot" "$pmwfail/.agent" >/dev/null 2>&1 && pass "update: a blocked pending-marker write leaves node content and the manifest unchanged" || fail "update: a blocked pending-marker write leaves node content and the manifest unchanged"
 
-# Case 2: a blocked version write must abort finalize before the pending
-# marker is touched, preserving both the marker and the original version.
 vwfail="$WORK/finalize-vw-fail"
 mkdir -p "$vwfail"
 make_v6_fixture "$vwfail"
@@ -757,14 +609,6 @@ grep -qF "failed to write version" "$WORK/vwf.err" && grep -qF "aborting before 
 grep -qiF "finalized" "$WORK/vwf.out" && fail "finalize: a blocked version write prints no success message" || pass "finalize: a blocked version write prints no success message"
 diff -q "$WORK/vwf-purpose-pending.md" "$vwfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a blocked version write preserves the pending marker and original version" || fail "finalize: a blocked version write preserves the pending marker and original version"
 
-# Case 3: a failed marker removal — version already stamped, migration_target
-# still present — must return nonzero and leave the node reading as pending,
-# never as silently finished. Directory-blocking the shared scratch path
-# would also block write_version (case 2's failure), so isolating the
-# removal alone needs a fake mv that fails only on the *second* rewrite of
-# purpose.md within this invocation (write_version's rename is the first,
-# remove_migration_target's is the second). Disposable fixture only — never
-# used against a real or adopted node.
 rmfail="$WORK/finalize-rm-fail"
 mkdir -p "$rmfail"
 make_v6_fixture "$rmfail"
@@ -794,21 +638,11 @@ grep -qiF "finalized" "$WORK/rmf.out" && fail "finalize: a failed marker removal
 grep -q '^  version: "6.2"$' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal still leaves version stamped (removal runs after the stamp)" || fail "finalize: a failed marker removal still leaves version stamped"
 grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal retains a detectable pending migration" || fail "finalize: a failed marker removal retains a detectable pending migration"
 
-# Retrying with the real mv (no injected failure) must complete cleanly —
-# the failure above is recoverable, not a wedge.
 "$NODE" finalize "$rmfail" >"$WORK/rmf-retry.out" 2>"$WORK/rmf-retry.err"
 rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: retrying after a failed marker removal succeeds" || fail "finalize: retrying after a failed marker removal succeeds (rc=$rc, err=$(cat "$WORK/rmf-retry.err"))"
 grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && fail "finalize: the retry actually removes the marker" || pass "finalize: the retry actually removes the marker"
 
-# Case 4: a transform that exits 0 but writes corrupted output (wrong line
-# count, value missing) is a different failure mode than the OS-level mv
-# failures above — the transform itself never errors, so only the helper's
-# own line-count-delta and content-grep checks can catch it. A fake awk
-# that intercepts only the migration_target insert (matched by the literal
-# "migration_target:" text in its script argument) and otherwise defers to
-# the real awk exercises exactly that path without disturbing the other awk
-# calls update makes (memory split, etc).
 wmtcfail="$WORK/update-wmt-corrupt"
 mkdir -p "$wmtcfail"
 make_v6_fixture "$wmtcfail"
@@ -834,11 +668,6 @@ rc=$?
 grep -qF "failed to record migration_target" "$WORK/wmtc.err" && pass "update: a corrupted migration_target write prints the same actionable error as an OS-level failure" || fail "update: a corrupted migration_target write prints the same actionable error as an OS-level failure"
 diff -r "$WORK/wmtc-snapshot" "$wmtcfail/.agent" >/dev/null 2>&1 && pass "update: a corrupted migration_target write leaves node content and the manifest unchanged" || fail "update: a corrupted migration_target write leaves node content and the manifest unchanged"
 
-# Case 5: same discriminating coverage for write_version. The fake sed
-# intercepts only the version-stamp rewrite (matched by the literal
-# "(  version:)" text unique to that sed program, as opposed to the
-# version-extraction sed calls elsewhere which use a different pattern) and
-# otherwise defers to the real sed.
 wvcfail="$WORK/finalize-wv-corrupt"
 mkdir -p "$wvcfail"
 make_v6_fixture "$wvcfail"
@@ -865,11 +694,6 @@ rc=$?
 grep -qF "failed to write version" "$WORK/wvc.err" && pass "finalize: a corrupted version write prints the same actionable error as an OS-level failure" || fail "finalize: a corrupted version write prints the same actionable error as an OS-level failure"
 diff -q "$WORK/wvc-purpose-pending.md" "$wvcfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a corrupted version write preserves the pending marker and original version" || fail "finalize: a corrupted version write preserves the pending marker and original version"
 
-# Case 6: same discriminating coverage for remove_migration_target. The fake
-# grep intercepts only the marker-removal call (matched by the combination
-# of -v and the migration_target pattern, as opposed to the -q/-n lookups
-# elsewhere that use the same pattern without -v) and otherwise defers to
-# the real grep.
 rmcfail="$WORK/finalize-rm-corrupt"
 mkdir -p "$rmcfail"
 make_v6_fixture "$rmcfail"
@@ -900,7 +724,6 @@ grep -qF "failed to remove the pending migration_target marker" "$WORK/rmc.err" 
 grep -q '^  version: "6.2"$' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write still leaves version stamped" || fail "finalize: a corrupted marker-removal write still leaves version stamped"
 grep -q '^  migration_target:' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write retains a detectable pending migration" || fail "finalize: a corrupted marker-removal write retains a detectable pending migration"
 
-# ---- 8. log.sh ----
 logroot="$WORK/log-tests"
 mkdir -p "$logroot"
 "$NODE" init --preset software-development --mode track-all "$logroot" >/dev/null 2>&1
@@ -913,7 +736,6 @@ rc=$?
 expected_line="- [$(today)] (claude) smoke test entry for the log script (testing). verify: pass."
 grep -qxF -- "$expected_line" "$sessionlog" && pass "log.sh: appended entry matches the expected line exactly" || fail "log.sh: appended entry matches the expected line exactly"
 
-# status.sh's recent-entries block shows entries only, never the header comment
 recent=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
 if printf '%s\n' "$recent" | grep -qF -- "$expected_line" && ! printf '%s\n' "$recent" | grep -qF "<!--"; then
   pass "status.sh: recent entries exclude the header comment"
@@ -942,7 +764,6 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "log.sh: missing session-log.md rejected" || fail "log.sh: missing session-log.md rejected"
 [ ! -e "$nolog/.agent/session-log.md" ] && pass "log.sh: missing session-log.md creates nothing" || fail "log.sh: missing session-log.md creates nothing"
 
-# ---- 8b. log.sh: file names and SHAs are refused, with the token named ----
 before8c=$(cat "$sessionlog")
 out8c=$("$logcopy" --tool claude --area testing --verify pass --summary "Added backoff to submitPayment in src/client.ts" "$logroot" 2>&1)
 rc=$?
@@ -956,7 +777,6 @@ rc=$?
 rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: a ticket id and a version number are not read as a file or a SHA" || fail "log.sh: a ticket id and a version number are not read as a file or a SHA"
 
-# ---- 8c. status.sh --load prints the always-loaded set, in the entry point's order ----
 load8=$("$logroot/.agent/scripts/status.sh" --load "$logroot" 2>&1)
 order8=$(printf '%s\n' "$load8" | grep -n '^==== ' | cut -d: -f2 | tr '\n' ' ')
 [ "$order8" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
@@ -966,7 +786,6 @@ printf '%s\n' "$load8" | grep -q '^## Kernel' && pass "status.sh --load: the con
 plain8=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
 ! printf '%s\n' "$plain8" | grep -q '^==== ' && pass "status.sh: without --load no file is printed" || fail "status.sh: without --load no file is printed"
 
-# ---- 8d. the memory GROOM: line names the tokens a groom must keep ----
 groomroot="$WORK/groom-tokens"
 mkdir -p "$groomroot"
 "$NODE" init --preset software-development --mode track-all "$groomroot" >/dev/null 2>&1
@@ -979,7 +798,6 @@ for tok in PAY-318 sandbox.vendor.example:8443 "npm run test:integration -- --gr
 done
 [ -n "$groom8" ] && [ -z "${groom8_missing:-}" ] && pass "status.sh: the memory GROOM: line lists ticket, host, command, env var, and date" || fail "status.sh: the memory GROOM: line lists ticket, host, command, env var, and date (missing:${groom8_missing:-} line:${groom8:-none})"
 
-# ---- 8e. docs.sh rehook rewrites the hook in both places, or neither ----
 rehookroot="$WORK/rehook"
 mkdir -p "$rehookroot"
 "$NODE" init --preset software-development --mode track-all "$rehookroot" >/dev/null 2>&1
@@ -995,17 +813,12 @@ head -n 1 "$rehookroot/.agent/docs/deploy.md" | grep -qF -- '<!-- Read when: shi
 rc=$?
 [ "$rc" -ne 0 ] && pass "docs.sh rehook: a doc that does not exist is refused" || fail "docs.sh rehook: a doc that does not exist is refused"
 
-# ---- 8f. checkpoint.sh: gate, status check, then the entry, written once on the clean run ----
 finroot="$WORK/finish"
 mkdir -p "$finroot/src"
 "$NODE" init --preset software-development --mode track-all "$finroot" >/dev/null 2>&1
 finish_bootstrap "$finroot"
 printf 'export const a = 1\n' >"$finroot/src/a.ts"
 git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-# A turn that changed nothing is not a turn that finished: the log records
-# work, and there is none to record. Without this the hand-back fires on
-# every message while the artifact it writes is one entry per turn that
-# changed files.
 out8e=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
@@ -1020,8 +833,6 @@ printf '// Vendor caps retries at three by contract; a fourth attempt is rejecte
 rc=$?
 n8f3=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8f3" -eq 1 ] && pass "checkpoint.sh: on the clean run the entry is written once" || fail "checkpoint.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
-# Committed work leaves a clean tree and still has to log: --base names the
-# parent, and the refusal above must not swallow it.
 git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m work
 "$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
 rc=$?
@@ -1032,8 +843,6 @@ out8g=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --v
 rc=$?
 n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q '^GROOM:' && [ "$n8f4" -eq 5 ] && pass "checkpoint.sh: a standing flag stops it before the log entry" || fail "checkpoint.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
-# A project that is not a git checkout gives no signal either way, so it
-# keeps the old behavior rather than being refused on a guess.
 finroot_nogit="$WORK/finish-nogit"
 mkdir -p "$finroot_nogit"
 "$NODE" init --preset software-development --mode ignore-all "$finroot_nogit" >/dev/null 2>&1
@@ -1043,10 +852,6 @@ rc=$?
 n8h=$(grep -c '^- \[' "$finroot_nogit/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8h" -eq 1 ] && pass "checkpoint.sh: a non-git project still writes its entry" || fail "checkpoint.sh: a non-git project still writes its entry (rc=$rc entries=$n8h)"
 
-# ---- 8i. checkpoint.sh: a status check that did not run cleanly blocks completion ----
-# finroot above ends this section with a standing GROOM: flag (line 423), so
-# it cannot be reused here — case (c)'s re-verification needs a fixture that
-# is genuinely clean once status.sh is restored. A fresh root, same pattern.
 fsroot="$WORK/finish-statuscheck"
 mkdir -p "$fsroot/src"
 "$NODE" init --preset software-development --mode track-all "$fsroot" >/dev/null 2>&1
@@ -1081,7 +886,6 @@ rc=$?
 n8l=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "checkpoint.sh: a clean status check still allows completion" || fail "checkpoint.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
 
-# ---- 8m. checkpoint.sh: one entry per turn that changed files, across real commits ----
 seqA="$WORK/seq-edit-commit-edit-commit-noedit"
 mkdir -p "$seqA/src"
 "$NODE" init --preset software-development --mode track-all "$seqA" >/dev/null 2>&1
@@ -1146,7 +950,6 @@ n_c1=$(grep -c '^- \[' "$seqC/.agent/session-log.md")
   && pass "sequence: a no-edit-only turn over a committed baseline writes zero entries" \
   || fail "sequence: a no-edit-only turn over a committed baseline writes zero entries (rc=$rc_c1 entries=$n_c1)"
 
-# ---- 8n. node.sh update: session-log.md header migration, below-target version ----
 migBelow="$WORK/migrate-session-log-below-target"
 mkdir -p "$migBelow"
 make_v6_fixture "$migBelow"
@@ -1166,7 +969,6 @@ after_mb2=$(grep '^- \[' "$migBelow/.agent/session-log.md")
   && pass "migrate (below-target): a second run reports the header already current, no further rewrite" \
   || fail "migrate (below-target): a second run reports the header already current, no further rewrite ($out_mb2)"
 
-# ---- 8o. node.sh update: session-log.md header migration, already at target version ----
 migSame="$WORK/migrate-session-log-same-version"
 mkdir -p "$migSame"
 "$NODE" init --preset software-development --mode track-shared "$migSame" >/dev/null 2>&1
@@ -1202,7 +1004,6 @@ after_mn=$(cat "$migNew/.agent/session-log.md")
   && pass "migrate: update on a node already carrying the new header rewrites nothing and reports current" \
   || fail "migrate: update on a node already carrying the new header rewrites nothing and reports current"
 
-# ---- 8p. node.sh update: a session-log.md with no header comment is left alone ----
 noHeaderRoot="$WORK/session-log-no-header"
 mkdir -p "$noHeaderRoot"
 "$NODE" init --preset software-development --mode ignore-all "$noHeaderRoot" >/dev/null 2>&1
@@ -1219,7 +1020,6 @@ printf '%s' "$out_nh" | grep -qF 'no header comment' \
   && pass "update: a headerless session-log.md draws a report, not an error" \
   || fail "update: a headerless session-log.md draws a report, not an error ($out_nh)"
 
-# ---- 9. memory.sh new ----
 memroot="$WORK/memory-tests"
 mkdir -p "$memroot"
 "$NODE" init --preset domain-knowledge --mode track-all "$memroot" >/dev/null 2>&1
@@ -1234,9 +1034,6 @@ factfile="$memroot/.agent/memory/test-fact.md"
 grep -q '^date: ' "$factfile" 2>/dev/null && grep -q '^scope: project' "$factfile" 2>/dev/null && pass "memory.sh new: fact file has date and scope frontmatter" || fail "memory.sh new: fact file has date and scope frontmatter"
 grep -qxF -- "- [Test Fact](memory/test-fact.md) — why it matters for tests" "$memroot/.agent/memory.md" && pass "memory.sh new: index line appended" || fail "memory.sh new: index line appended"
 
-# memory/ is the one tier that carries no header contract: it lives once in
-# memory.md's header, and memory.sh says it out loud to the session that is
-# writing.
 grep -q '<!--' "$factfile" && fail "memory.sh new: the fact file carries no header contract" || pass "memory.sh new: the fact file carries no header contract"
 printf '%s\n' "$out9" | grep -qF 'supersede in place' && pass "memory.sh new: the write reminds the writer of the contract" || fail "memory.sh new: the write reminds the writer of the contract ($out9)"
 grep -qF 'fact files carry no header of their' "$memroot/.agent/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"
@@ -1259,8 +1056,6 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: invalid slug rejected" || fail "memory.sh new: invalid slug rejected"
 [ ! -e "$memroot/.agent/memory/Bad_Slug.md" ] && pass "memory.sh new: invalid slug creates no file" || fail "memory.sh new: invalid slug creates no file"
 
-# title/hook flow into the one-line index entry. Brackets and newlines
-# there would corrupt its format
 "$memcopy" new --slug bad-title --title "Bad [Title]" --hook "ok" --fact "bracketed title attempt" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: bracketed title rejected" || fail "memory.sh new: bracketed title rejected"
@@ -1272,28 +1067,18 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: multiline hook rejected" || fail "memory.sh new: multiline hook rejected"
 [ ! -e "$memroot/.agent/memory/bad-hook.md" ] && pass "memory.sh new: multiline hook creates no file" || fail "memory.sh new: multiline hook creates no file"
 
-# A fact well inside one fact's natural size: accepted, and GROOM-clean on
-# the load path — status.sh counts body words only, and its threshold sits
-# above a single fact, not below it.
 "$memcopy" new --slug field-size --title "Field Size" --hook "field regression case" --fact "$(words_n 130)" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "memory.sh new: field-size fact (130 words) accepted" || fail "memory.sh new: field-size fact (130 words) accepted"
 flags9b=$(status_flags "$memroot")
 [ -z "$flags9b" ] && pass "memory.sh new: field-size fact stays GROOM-clean" || fail "memory.sh new: field-size fact stays GROOM-clean ($flags9b)"
 
-# outlier fact (well past the review threshold): the write still succeeds
-# — no size gate on writes — and status.sh flags it for grooming.
 "$memcopy" new --slug outlier --title "Outlier" --hook "outlier alarm case" --fact "$(words_n 320)" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "memory.sh new: outlier fact (320 words) still writes" || fail "memory.sh new: outlier fact (320 words) still writes"
 flags9c=$(status_flags "$memroot")
 printf '%s\n' "$flags9c" | grep -q '^GROOM: memory/outlier\.md' && pass "memory.sh new: outlier fact draws a GROOM flag" || fail "memory.sh new: outlier fact draws a GROOM flag ($flags9c)"
 
-# memory.sh supersede — the fact contract says rewrite the fact and the
-# date and keep the filename. Until this subcommand existed the only path
-# was by hand, and the date was the half that got forgotten every time.
-# The fixture is hand-written with a stale date so the restamp is visible:
-# a fact written by `new` already carries today's.
 printf -- '---\ndate: 2020-01-01\nscope: package\ntype: reference\n---\n\nthe superseded body, stale\n' >"$memroot/.agent/memory/vendor-rate-limit.md"
 printf -- '- [Vendor Rate Limit](memory/vendor-rate-limit.md) — calling the vendor API\n' >>"$memroot/.agent/memory.md"
 supfile="$memroot/.agent/memory/vendor-rate-limit.md"
@@ -1311,7 +1096,6 @@ grep -q '<!--' "$supfile" && fail "memory.sh supersede: the rewritten fact carri
 flags9s=$(status_flags "$memroot" | grep '^REPAIR:')
 [ -z "$flags9s" ] && pass "memory.sh supersede: the node draws no REPAIR afterward" || fail "memory.sh supersede: the node draws no REPAIR afterward ($flags9s)"
 
-# An override still validates the way new's does.
 "$memcopy" supersede --slug vendor-rate-limit --fact "narrowed to one project" --scope project --type fact "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && grep -qxF -- "scope: project" "$supfile" && grep -qxF -- "type: fact" "$supfile" && pass "memory.sh supersede: --scope and --type override the carried values" || fail "memory.sh supersede: --scope and --type override the carried values"
@@ -1319,7 +1103,6 @@ rc=$?
 rc=$?
 [ "$rc" -ne 0 ] && grep -qF 'narrowed to one project' "$supfile" && pass "memory.sh supersede: an unknown --scope is rejected, the fact unchanged" || fail "memory.sh supersede: an unknown --scope is rejected, the fact unchanged"
 
-# Every refusal leaves the fact and the index exactly as they were.
 "$memcopy" supersede --slug never-written --fact "no such fact" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$memroot/.agent/memory/never-written.md" ] && pass "memory.sh supersede: a missing fact file is rejected, nothing created" || fail "memory.sh supersede: a missing fact file is rejected, nothing created"
@@ -1343,12 +1126,9 @@ rc=$?
 rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh supersede: --title is not a supersede flag" || fail "memory.sh supersede: --title is not a supersede flag"
 
-# new's refusal now names the subcommand rather than sending the writer to
-# do it by hand.
 out9t=$("$memcopy" new --slug vendor-rate-limit --title "Dup" --hook "dup" --fact "duplicate attempt" "$memroot" 2>&1)
 printf '%s\n' "$out9t" | grep -qF 'memory.sh supersede --slug vendor-rate-limit' && pass "memory.sh new: the overwrite refusal points at supersede" || fail "memory.sh new: the overwrite refusal points at supersede ($out9t)"
 
-# ---- 10. docs.sh new ----
 docroot="$WORK/docs-tests"
 mkdir -p "$docroot"
 "$NODE" init --preset academic-research --mode track-all "$docroot" >/dev/null 2>&1
@@ -1363,11 +1143,6 @@ docfile="$docroot/.agent/docs/auth-flow.md"
 firstline=$(head -n1 "$docfile" 2>/dev/null)
 [ "$firstline" = "<!-- Read when: working on authentication -->" ] && pass "docs.sh new: doc opens with the Read when: line" || fail "docs.sh new: doc opens with the Read when: line"
 
-# No shape contract in the doc. docs/ is an N-file tier — a doc per area,
-# per split, per reference — so a header there is paid by every session
-# that only reads one of them, and the preset loaded in all of them
-# already states the same rules. The contract reaches the session doing
-# the writing through this script's output instead.
 grep -qF "Agent-facing reference, not a human narrative" "$docfile" && fail "docs.sh new: the doc carries no shape header" || pass "docs.sh new: the doc carries no shape header"
 [ "$(wc -l <"$docfile")" -eq 2 ] && pass "docs.sh new: the doc is its hook and its title, nothing else" || fail "docs.sh new: the doc is its hook and its title, nothing else"
 docout=$("$doccopy" new --name payments --read-when "touching billing" "$docroot" 2>&1)
@@ -1388,7 +1163,6 @@ after10=$(cat "$archfile")
 [ "$rc" -ne 0 ] && pass "docs.sh new: duplicate doc rejected" || fail "docs.sh new: duplicate doc rejected"
 [ "$before10" = "$after10" ] && pass "docs.sh new: duplicate doc leaves architecture.md unchanged" || fail "docs.sh new: duplicate doc leaves architecture.md unchanged"
 
-# ---- 11. init: a gitignore without a trailing newline is not spliced ----
 nlroot="$WORK/gitignore-no-newline"
 mkdir -p "$nlroot"
 printf 'node_modules' >"$nlroot/.gitignore"
@@ -1396,7 +1170,6 @@ printf 'node_modules' >"$nlroot/.gitignore"
 expected_nl=$(printf 'node_modules\n.agent/')
 [ "$(cat "$nlroot/.gitignore" 2>/dev/null)" = "$expected_nl" ] && pass "init: no-trailing-newline gitignore keeps its pattern and gains .agent/ on its own line" || fail "init: no-trailing-newline gitignore keeps its pattern and gains .agent/ on its own line"
 
-# ---- 12. init at \$HOME writes no gitignore ----
 fakehome="$WORK/fake-home"
 mkdir -p "$fakehome"
 HOME="$fakehome" "$NODE" init --preset software-development --mode ignore-all "$fakehome" >/dev/null 2>&1
@@ -1404,14 +1177,12 @@ rc=$?
 [ "$rc" -eq 0 ] && [ -d "$fakehome/.agent" ] && pass "init at \$HOME exits 0 and creates the node" || fail "init at \$HOME exits 0 and creates the node"
 [ ! -e "$fakehome/.gitignore" ] && pass "init at \$HOME skips the gitignore" || fail "init at \$HOME skips the gitignore"
 
-# same guard through mismatched symlink forms of the same directory
 realhome="$WORK/real-home"
 mkdir -p "$realhome"
 ln -s "$realhome" "$WORK/link-home"
 HOME="$WORK/link-home" "$NODE" init --preset software-development --mode ignore-all "$realhome" >/dev/null 2>&1
 [ ! -e "$realhome/.gitignore" ] && pass "init at \$HOME skips the gitignore through a symlinked HOME" || fail "init at \$HOME skips the gitignore through a symlinked HOME"
 
-# ---- 13. update: track-shared nodes are backed up too ----
 tsroot="$WORK/update-v6-track-shared"
 mkdir -p "$tsroot"
 make_v6_fixture "$tsroot" track-shared
@@ -1420,7 +1191,6 @@ rc=$?
 [ "$rc" -eq 0 ] && pass "update on a track-shared V6 fixture exits 0" || fail "update on a track-shared V6 fixture exits 0 (rc=$rc)"
 [ -d "$tsroot/.agent.backup-v6" ] && grep -q "custom auth flow" "$tsroot/.agent.backup-v6/memory.md" 2>/dev/null && pass "update: track-shared node backed up before the migration" || fail "update: track-shared node backed up before the migration"
 
-# ---- 14. update: header-less memory.md with --> in the body loses nothing ----
 arrowroot="$WORK/update-arrow-body"
 mkdir -p "$arrowroot"
 make_v6_fixture "$arrowroot"
@@ -1439,7 +1209,6 @@ else
 fi
 grep -q '^# Memory' "$legacy_arrow" 2>/dev/null && fail "update: legacy.md does not inherit the # Memory heading" || pass "update: legacy.md does not inherit the # Memory heading"
 
-# a custom heading is content, not scaffolding — it must survive the split
 headroot="$WORK/update-custom-heading"
 mkdir -p "$headroot"
 make_v6_fixture "$headroot"
@@ -1451,10 +1220,6 @@ EOF
 "$NODE" update "$headroot" >/dev/null 2>&1
 grep -q '^# Deploy facts' "$headroot/.agent/memory/legacy.md" 2>/dev/null && pass "update: a custom first-line heading survives into legacy.md" || fail "update: a custom first-line heading survives into legacy.md"
 
-# A node that already split its memory carries the old shape: a 97-word
-# header in every fact file and a memory.md header covering only the index.
-# The split step skips it — memory/ is present — so without this the whole
-# change would reach new nodes only.
 hdrroot="$WORK/update-fact-headers"
 mkdir -p "$hdrroot/.agent/memory"
 make_v6_fixture "$hdrroot"
@@ -1504,7 +1269,6 @@ grep -qF 'This contract covers memory/ too' "$hdrroot/.agent/memory.md" 2>/dev/n
 grep -qxF -- "- [Auth flow](memory/auth-flow.md) — touching login" "$hdrroot/.agent/memory.md" && pass "update: rewriting the header keeps the index lines" || fail "update: rewriting the header keeps the index lines"
 [ ! -e "$hdrroot/.agent/memory/legacy.md" ] && pass "update: an already-split node grows no legacy.md" || fail "update: an already-split node grows no legacy.md"
 
-# ---- 15. update: a failed backup aborts before touching the node ----
 if [ "$(id -u)" -eq 0 ]; then
   pass "update: failed backup exits nonzero (skipped: running as root)"
   pass "update: failed backup leaves memory.md untouched (skipped: running as root)"
@@ -1521,7 +1285,6 @@ else
   [ "$(cat "$roroot/.agent/memory.md")" = "$before_ro" ] && pass "update: failed backup leaves memory.md untouched" || fail "update: failed backup leaves memory.md untouched"
 fi
 
-# ---- 16. update: version guardrails ----
 malroot="$WORK/update-bad-version"
 mkdir -p "$malroot"
 make_v6_fixture "$malroot"
@@ -1544,7 +1307,6 @@ rc=$?
 [ "$rc" -eq 0 ] && grep -q "current" "$WORK/update-fut.out" && pass "update: newer node (6.10 vs 6.1) is a 'current' no-op" || fail "update: newer node (6.10 vs 6.1) is a 'current' no-op"
 diff -r "$WORK/futroot-snapshot" "$futroot/.agent" >/dev/null 2>&1 && pass "update: newer node left untouched" || fail "update: newer node left untouched"
 
-# ---- 17. writers: one-line format guards ----
 before17=$(cat "$sessionlog")
 "$logcopy" --tool claude --area testing --verify pass --summary "line one
 line two" "$logroot" >/dev/null 2>&1
@@ -1563,8 +1325,6 @@ rc=$?
 rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: free-standing em dash does not spend the word ceiling" || fail "log.sh: free-standing em dash does not spend the word ceiling"
 
-# A summary carrying its own `verify:` puts a second tag in the middle of an
-# entry that already ends in one. Both eval arms produced this line shape.
 before17v=$(cat "$sessionlog")
 "$logcopy" --tool claude --area testing --verify fail --summary "baseline was red before this change verify: fail" "$logroot" >/dev/null 2>&1
 rc=$?
@@ -1574,7 +1334,6 @@ rc=$?
 rc=$?
 [ "$rc" -ne 0 ] && pass "log.sh: the verify: guard is case-insensitive" || fail "log.sh: the verify: guard is case-insensitive"
 
-# The guard must be narrow: it takes the tag spelling, not the word.
 "$logcopy" --tool claude --area testing --verify pass --summary "verified the parser against the fixture suite" "$logroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: the word verified without a colon still logs" || fail "log.sh: the word verified without a colon still logs"
@@ -1588,7 +1347,6 @@ rc=$?
 rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$docroot/.agent/docs/arrow-doc.md" ] && pass "docs.sh: --> in --read-when rejected" || fail "docs.sh: --> in --read-when rejected"
 
-# ---- 18. memory index parsing is anchored to the line's own link ----
 "$memcopy" new --slug pointer-fact --title "Pointer" --hook "detail lives in (memory/expanded-detail.md)" --fact "pointer fact for the anchor regression" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "memory.sh: hook naming another memory path accepted" || fail "memory.sh: hook naming another memory path accepted"
@@ -1600,13 +1358,11 @@ rc=$?
 flags18b=$(status_flags "$memroot" | grep '^REPAIR:')
 [ -z "$flags18b" ] && pass "status.sh: index and fact files agree after the anchor regression" || fail "status.sh: index and fact files agree after the anchor regression ($flags18b)"
 
-# hand-written fact file whose name carries a regex metacharacter
 printf -- '---\ndate: 2026-01-01\nscope: project\n---\n\ncpp notes fact body\n' >"$memroot/.agent/memory/c++notes.md"
 printf -- '- [Cpp notes](memory/c++notes.md) — cpp gotchas\n' >>"$memroot/.agent/memory.md"
 flags18c=$(status_flags "$memroot" | grep '^REPAIR:')
 [ -z "$flags18c" ] && pass "status.sh: regex metacharacters in a fact filename draw no phantom REPAIR" || fail "status.sh: regex metacharacters in a fact filename draw no phantom REPAIR ($flags18c)"
 
-# ---- 19. docs: sub-docs and the size trigger ----
 subroot="$WORK/docs-subdocs"
 mkdir -p "$subroot"
 "$NODE" init --preset software-development --mode track-all "$subroot" >/dev/null 2>&1
@@ -1636,21 +1392,14 @@ printf '%s\n' "$(words_n 2100)" >>"$subroot/.agent/docs/huge.md"
 flags19c=$(status_flags "$subroot")
 printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/huge\.md' && pass "status.sh: oversized area doc draws a GROOM flag" || fail "status.sh: oversized area doc draws a GROOM flag ($flags19c)"
 printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/frontend/grids\.md' && fail "status.sh: small sub-doc stays GROOM-clean" || pass "status.sh: small sub-doc stays GROOM-clean"
-# The flag is the only guidance a node with no skills installed gets, so it
-# carries the invariant the header contract states.
 printf '%s\n' "$flags19c" | grep -qF 'restructure without dropping facts' && pass "status.sh: docs GROOM flag names the no-fact-loss invariant" || fail "status.sh: docs GROOM flag names the no-fact-loss invariant"
 
-# The header contract is an HTML comment, so it must not eat into the
-# DOCS_MAX_WORDS budget: 1900 body words stays clean under a 2000 ceiling.
 "$subdocs" new --name budget --read-when "docs budget fixture" "$subroot" >/dev/null 2>&1
 printf '%s\n' "$(words_n 1900)" >>"$subroot/.agent/docs/budget.md"
 flags19d=$(status_flags "$subroot")
 printf '%s\n' "$flags19d" | grep -q '^GROOM: docs/budget\.md' && fail "status.sh: header contract costs no body words" || pass "status.sh: header contract costs no body words"
 rm -f "$subroot/.agent/docs/budget.md"
 
-# ---- 21. routing entries: hook drift and section drift ----
-# The hook is precision, the Sections list is recall. Both live in two
-# places and both are checkable, so status.sh checks them.
 rt="$WORK/routing"
 mkdir -p "$rt"
 "$NODE" init --preset software-development --mode track-all "$rt" >/dev/null 2>&1
@@ -1660,33 +1409,22 @@ rtarch="$rt/.agent/docs/architecture.md"
 "$rtdocs" new --name payments --read-when "payment flows and webhooks" "$rt" >/dev/null 2>&1
 [ -z "$(status_flags "$rt")" ] && pass "routing: a freshly scaffolded doc is INDEX-clean" || fail "routing: a freshly scaffolded doc is INDEX-clean ($(status_flags "$rt"))"
 
-# A doc that grows sections its entry never learned about.
 printf '\n## Webhook retries\n\n## Refund flow\n' >>"$rt/.agent/docs/payments.md"
 f21=$(status_flags "$rt")
 printf '%s\n' "$f21" | grep -qF 'INDEX: docs/payments.md sections missing from its architecture.md entry' && pass "routing: unlisted sections draw an INDEX flag" || fail "routing: unlisted sections draw an INDEX flag ($f21)"
 printf '%s\n' "$f21" | grep -qF 'Webhook retries' && printf '%s\n' "$f21" | grep -qF 'Refund flow' && pass "routing: the flag names every missing section" || fail "routing: the flag names every missing section"
 
-# Listing them clears it, and an entry may say MORE than the heading.
 subst "$rtarch" 's/^- \*\*Sections:\*\*$/- **Sections:** Webhook retries (exponential backoff) · Refund flow/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: listing the sections clears the flag, enrichment allowed" || fail "routing: listing the sections clears the flag, enrichment allowed ($(status_flags "$rt"))"
 
-# A hook that drifts on one side only.
 subst "$rt/.agent/docs/payments.md" 's/^<!-- Read when: payment flows and webhooks -->$/<!-- Read when: payment flows, webhooks, and refunds -->/'
 f21b=$(status_flags "$rt")
 printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with its architecture.md entry' && pass "routing: hook drift draws an INDEX flag" || fail "routing: hook drift draws an INDEX flag ($f21b)"
 subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: refreshing both sides clears the hook flag" || fail "routing: refreshing both sides clears the hook flag ($(status_flags "$rt"))"
 
-# ---- 21b. status.sh: architecture.md missing while docs/ holds routed docs
-# The three INDEX: routing checks above are all guarded on `[[ -s "$arch" ]]`
-# — correctly, since each compares a doc against its entry in a table that
-# must exist first — which leaves a node with routed docs and no table at
-# all silent. docs.sh creates architecture.md automatically the first time a
-# doc is scaffolded, so this state only reaches a hand-edited or partially
-# copied node: exactly what this REPAIR: check exists to catch.
 missrepair='REPAIR: docs/architecture.md missing/empty'
 
-# (c) an empty docs/ draws no finding.
 rtm1="$WORK/routing-table-missing-empty"
 mkdir -p "$rtm1"
 "$NODE" init --preset software-development --mode track-all "$rtm1" >/dev/null 2>&1
@@ -1694,8 +1432,6 @@ finish_bootstrap "$rtm1"
 f21c=$(status_flags "$rtm1" | grep -F "$missrepair")
 [ -z "$f21c" ] && pass "routing table: empty docs/ draws no missing-table REPAIR" || fail "routing table: empty docs/ draws no missing-table REPAIR ($f21c)"
 
-# (d) docs/ holding only references/ content draws no finding either — that
-# tier has nothing to route.
 rtm2="$WORK/routing-table-missing-references-only"
 mkdir -p "$rtm2"
 "$NODE" init --preset software-development --mode track-all "$rtm2" >/dev/null 2>&1
@@ -1705,7 +1441,6 @@ printf '# Vendor spec dump\n\nsome content\n' >"$rtm2/.agent/docs/references/ven
 f21d=$(status_flags "$rtm2" | grep -F "$missrepair")
 [ -z "$f21d" ] && pass "routing table: references/-only docs/ draws no missing-table REPAIR" || fail "routing table: references/-only docs/ draws no missing-table REPAIR ($f21d)"
 
-# (a) a routed doc with no table at all fires exactly once, naming the table.
 rtm3="$WORK/routing-table-missing-one-doc"
 mkdir -p "$rtm3"
 "$NODE" init --preset software-development --mode track-all "$rtm3" >/dev/null 2>&1
@@ -1717,8 +1452,6 @@ f21e=$(status_flags "$rtm3")
 [ "$(printf '%s\n' "$f21e" | grep -cF "$missrepair")" = "1" ] && pass "routing table: routed doc with no table draws exactly one REPAIR" || fail "routing table: routed doc with no table draws exactly one REPAIR ($f21e)"
 printf '%s\n' "$f21e" | grep -qF 'docs/architecture.md' && pass "routing table: the REPAIR line names the missing table" || fail "routing table: the REPAIR line names the missing table ($f21e)"
 
-# (e) several routed docs, including a sub-doc under docs/<area>/, still
-# draw exactly one line — the finding is about the node, not any one doc.
 rtm4="$WORK/routing-table-missing-several-docs"
 mkdir -p "$rtm4"
 "$NODE" init --preset software-development --mode track-all "$rtm4" >/dev/null 2>&1
@@ -1731,14 +1464,10 @@ rm -f "$rtm4/.agent/docs/architecture.md"
 f21f=$(status_flags "$rtm4")
 [ "$(printf '%s\n' "$f21f" | grep -cF "$missrepair")" = "1" ] && pass "routing table: several routed docs (incl. a sub-doc) still draw exactly one REPAIR" || fail "routing table: several routed docs (incl. a sub-doc) still draw exactly one REPAIR ($f21f)"
 
-# (f) an empty-but-present architecture.md also fires, matching the -s test
-# the existing routing checks use.
 : >"$rtm4/.agent/docs/architecture.md"
 f21g=$(status_flags "$rtm4")
 [ "$(printf '%s\n' "$f21g" | grep -cF "$missrepair")" = "1" ] && pass "routing table: an empty-but-present architecture.md still draws exactly one REPAIR" || fail "routing table: an empty-but-present architecture.md still draws exactly one REPAIR ($f21g)"
 
-# (b) a routed doc WITH a present table draws no new finding, and the
-# existing INDEX: findings are unaffected.
 rtm5="$WORK/routing-table-present"
 mkdir -p "$rtm5"
 "$NODE" init --preset software-development --mode track-all "$rtm5" >/dev/null 2>&1
@@ -1749,29 +1478,22 @@ f21h=$(status_flags "$rtm5")
 [ -z "$(printf '%s\n' "$f21h" | grep -F "$missrepair")" ] && pass "routing table: a present architecture.md draws no missing-table REPAIR" || fail "routing table: a present architecture.md draws no missing-table REPAIR ($f21h)"
 [ -z "$f21h" ] && pass "routing table: a routed doc with its table stays otherwise INDEX-clean" || fail "routing table: a routed doc with its table stays otherwise INDEX-clean ($f21h)"
 
-# ---- 20. status.sh on a bootstrapped node: no findings, one LOAD line ----
 fresh19="$WORK/init-academic-research-track-all"
 out19all=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
 out19=$(printf '%s\n' "$out19all" | grep -v '^LOAD:' | grep -v '^PAYLOAD:')
 [ -z "$out19" ] && pass "status.sh: bootstrapped node prints no findings (no stray blank line)" || fail "status.sh: bootstrapped node prints no findings (no stray blank line)"
 [ "$(printf '%s\n' "$out19all" | grep -c '^LOAD:')" = "1" ] && pass "status.sh: exactly one LOAD line on a quiet node" || fail "status.sh: exactly one LOAD line on a quiet node ($out19all)"
 
-# ---- 23. bootstrap-completion checks: guardrails and entry-point mirror ----
-# The judgement half of bootstrap left no evidence before these checks, so a
-# half-done node was indistinguishable from a finished one.
 bc="$WORK/bootstrap-checks"
 mkdir -p "$bc"
 "$NODE" init --preset software-development --mode track-all "$bc" >/dev/null 2>&1
 finish_bootstrap "$bc"
 [ -z "$(status_flags "$bc")" ] && pass "bootstrap: a completed node is clean" || fail "bootstrap: a completed node is clean ($(status_flags "$bc"))"
 
-# A filled guardrail whose command carries its own <placeholder> token is
-# not a stub: the shipped placeholders are multi-word, real flags are not.
 printf -- '- Test: `pytest -k <name>`\n' >>"$bc/.agent/rules/contract.md"
 f23=$(status_flags "$bc")
 printf '%s\n' "$f23" | grep -qF 'template placeholders' && fail "bootstrap: a single-token <name> in a real command is not a placeholder" || pass "bootstrap: a single-token <name> in a real command is not a placeholder"
 
-# Entry points must stay identical, and only real entry points are compared.
 cp "$reporoot/templates/entry-point.md" "$bc/CLAUDE.md"
 cp "$reporoot/templates/entry-point.md" "$bc/AGENTS.md"
 [ -z "$(status_flags "$bc")" ] && pass "entry points: identical mirrors draw no flag" || fail "entry points: identical mirrors draw no flag ($(status_flags "$bc"))"
@@ -1785,7 +1507,6 @@ mkdir -p "$bc/.github"
 printf '# Team conventions\n\nUse conventional commits.\n' >"$bc/.github/copilot-instructions.md"
 [ -z "$(status_flags "$bc")" ] && pass "entry points: a file that never references status.sh is not a mirror" || fail "entry points: a file that never references status.sh is not a mirror ($(status_flags "$bc"))"
 
-# ---- 24. native memory: what the three inspected settings files request ----
 nm="$WORK/native-memory"
 mkdir -p "$nm/.claude"
 "$NODE" init --preset software-development --mode track-all "$nm" >/dev/null 2>&1
@@ -1802,22 +1523,18 @@ printf '{ "autoMemoryEnabled": false }\n' >"$nm/.claude/settings.json"
 f24c=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
 [ -z "$f24c" ] && pass "native memory: disabled clears the flag" || fail "native memory: disabled clears the flag ($f24c)"
 
-# A node that carries no setting of its own inherits the user-level one.
 rm -f "$nm/.claude/settings.json"
 mkdir -p "$WORK/nm-home/.claude"
 printf '{ "autoMemoryEnabled": false }\n' >"$WORK/nm-home/.claude/settings.json"
 f24d=$(HOME="$WORK/nm-home" status_flags "$nm")
 [ -z "$f24d" ] && pass "native memory: a user-level setting is inherited, not re-flagged" || fail "native memory: a user-level setting is inherited, not re-flagged ($f24d)"
 
-# The two node-level files can disagree; the diagnostic names the file that
-# requests memory on rather than resolving to one verdict for the node.
 printf '{ "autoMemoryEnabled": true }\n' >"$nm/.claude/settings.json"
 printf '{ "autoMemoryEnabled": false }\n' >"$nm/.claude/settings.local.json"
 f24e=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
 printf '%s\n' "$f24e" | grep -qF '.claude/settings.json sets autoMemoryEnabled true' && pass "native memory: a disagreement names the offending file" || fail "native memory: a disagreement names the offending file ($f24e)"
 printf '%s\n' "$f24e" | grep -qiE 'sole|effective|resolved' && fail "native memory: no line claims a resolved effective state ($f24e)" || pass "native memory: no line claims a resolved effective state"
 
-# ---- 25. learned.md: the word trigger fires under the rule ceiling ----
 lr="$WORK/learned-words"
 mkdir -p "$lr"
 "$NODE" init --preset software-development --mode track-all "$lr" >/dev/null 2>&1
@@ -1841,7 +1558,6 @@ while [ "$i" -le 40 ]; do
 done
 [ -z "$(status_flags "$lr2")" ] && pass "learned: 40 on-target rules stay clean" || fail "learned: 40 on-target rules stay clean ($(status_flags "$lr2"))"
 
-# ---- 26. the reference tier is never routed and never size-triggered ----
 rf="$WORK/references"
 mkdir -p "$rf"
 "$NODE" init --preset software-development --mode track-all "$rf" >/dev/null 2>&1
@@ -1852,22 +1568,15 @@ printf '# Full error-code table\n\n%s\n' "$(words_n 4000)" >"$rf/.agent/docs/bac
 f26=$(status_flags "$rf")
 [ -z "$f26" ] && pass "references: an unrouted, oversized reference file draws no flag" || fail "references: an unrouted, oversized reference file draws no flag ($f26)"
 
-# The exclusion is the path segment, not the depth: docs/references/ too.
 mkdir -p "$rf/.agent/docs/references"
 printf '# Vendor spec dump\n\n%s\n' "$(words_n 4000)" >"$rf/.agent/docs/references/vendor.md"
 f26b=$(status_flags "$rf")
 [ -z "$f26b" ] && pass "references: docs/references/ is excluded too" || fail "references: docs/references/ is excluded too ($f26b)"
 
-# A normal sub-doc in the same area is still checked, so the exclusion is
-# scoped rather than a hole in the docs walk.
 printf 'no routing header\n' >"$rf/.agent/docs/backend/queues.md"
 f26c=$(status_flags "$rf")
 printf '%s\n' "$f26c" | grep -qF 'INDEX: docs/backend/queues.md' && pass "references: a real sub-doc beside references/ is still checked" || fail "references: a real sub-doc beside references/ is still checked ($f26c)"
 
-# ---- 26b. always-loaded canonical files: contract.md and learned.md must
-# exist. Both are read by the entry point's bootstrap step every session;
-# either one missing used to leave status.sh silent. Each fixture removes
-# exactly one file so neither finding depends on the other.
 alcf="$WORK/always-loaded-canonical-files"
 mkdir -p "$alcf"
 "$NODE" init --preset software-development --mode track-all "$alcf" >/dev/null 2>&1
@@ -1890,7 +1599,6 @@ f26e=$(status_flags "$alcf2")
 "$alcf2/.agent/scripts/status.sh" "$alcf2" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md missing" || fail "always-loaded: status.sh still exits 0 with learned.md missing"
 
-# An empty-but-present file draws the same finding as a missing one.
 alcf3="$WORK/always-loaded-canonical-files-empty"
 mkdir -p "$alcf3"
 "$NODE" init --preset software-development --mode track-all "$alcf3" >/dev/null 2>&1
@@ -1901,7 +1609,6 @@ f26f=$(status_flags "$alcf3")
 "$alcf3/.agent/scripts/status.sh" "$alcf3" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md empty" || fail "always-loaded: status.sh still exits 0 with learned.md empty"
 
-# ---- 27. memory.sh --type ----
 mt="$WORK/memory-type"
 mkdir -p "$mt"
 "$NODE" init --preset software-development --mode track-all "$mt" >/dev/null 2>&1
@@ -1918,15 +1625,6 @@ rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$mt/.agent/memory/bogus.md" ] && pass "memory.sh: an unknown --type is rejected, nothing written" || fail "memory.sh: an unknown --type is rejected, nothing written"
 [ -z "$(status_flags "$mt")" ] && pass "memory.sh: typed facts leave the node clean" || fail "memory.sh: typed facts leave the node clean ($(status_flags "$mt"))"
 
-# ---- 22. cross-preset invariants, driven by presets/_shared.md ----
-# The presets stay three separate seeds — a node adapts exactly one — but
-# the text carrying .agent/ mechanics rather than domain rules must be
-# word-for-word identical, or the same rule drifts three ways. V6.1 kept
-# that in lockstep by hand and it slipped. presets/_shared.md is the list.
-# This is the check that makes the list load-bearing rather than a comment.
-# Each fenced block there is a substring that must appear verbatim in all
-# three presets — a substring, not a whole line, because a shared sentence
-# may follow domain-specific lead-in text.
 sharedfile="$reporoot/presets/_shared.md"
 [ -f "$sharedfile" ] && pass "presets: _shared.md exists" || fail "presets: _shared.md exists"
 
@@ -1939,12 +1637,6 @@ while IFS= read -r block; do
     grep -qF -- "$block" "$reporoot/presets/$p.md" && hits=$((hits + 1))
   done
   label=$(printf '%s' "$block" | cut -c1-52)
-  # ${label} is braced, not bare. bash 3.2 parses an unbraced $name with
-  # locale-aware isalnum(), so in any locale whose alnum table covers 0xE2 —
-  # the first byte of the following "…" — that byte is absorbed into the
-  # variable name and `set -u` kills the run. ISO-8859-1 reads it as â and
-  # UTF-8 accepts it too. LC_ALL=C is the one CI leg where it cannot fire,
-  # so the ISO8859-1 leg is what guards this line.
   [ "$hits" -eq 3 ] && pass "shared: \"${label}…\" in all three presets" || fail "shared: \"${label}…\" in all three presets (found in $hits)"
 done <<EOF
 $(awk '/^```/ { inb = !inb; next } inb && NF { print }' "$sharedfile")
@@ -1952,27 +1644,18 @@ EOF
 
 [ "$blockcount" -ge 10 ] && pass "presets: _shared.md tracks the shared text ($blockcount blocks)" || fail "presets: _shared.md tracks the shared text (only $blockcount blocks)"
 
-# _shared.md is a maintainer file, never a node's contract.md.
 noderoot_sh="$WORK/preset-underscore"
 mkdir -p "$noderoot_sh"
 "$NODE" init --preset _shared --mode ignore-all "$noderoot_sh" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$noderoot_sh/.agent" ] && pass "node.sh: --preset _shared is rejected, nothing created" || fail "node.sh: --preset _shared is rejected, nothing created"
 
-# The memory split made memory.md an index. No preset may still instruct
-# writing facts into it.
 memstale=0
 for p in "$reporoot"/presets/*.md; do
   grep -qF "update memory.md only if" "$p" && memstale=1
 done
 [ "$memstale" -eq 0 ] && pass "presets: no preset still writes facts to memory.md" || fail "presets: no preset still writes facts to memory.md"
 
-# ---- 27b. self-learning: admission contract and routing ----
-# The Self-learning section states when a discovery becomes a durable record,
-# which of four kinds it is, which surface owns that kind, and which command
-# writes it. Every phrase check below is scoped to the section's own extract
-# — reusing finish_bootstrap's awk idiom — so a phrase landing in the wrong
-# section fails rather than passing.
 sl_extract() {
   awk '/^## Self-learning/ { inq = 1 } inq && /^## / && !/^## Self-learning/ { inq = 0 } inq' "$1"
 }
@@ -2041,10 +1724,6 @@ for rt_kind in "no durable record" ".agent/scripts/memory.sh new" ".agent/script
 done
 [ "$rt_ok" -eq 1 ] && pass "retro skill: the routing section names the four kinds and their writers" || fail "retro skill: the routing section names the four kinds and their writers"
 
-# ---- 28. links.sh: the orphan and broken-link audit ----
-# The reference tier's stated weakness is that an uncited reference is
-# unreachable and nothing on the load path can see it. This is the thing
-# that sees it — off the load path, run on demand.
 lk="$WORK/links"
 mkdir -p "$lk"
 "$NODE" init --preset software-development --mode track-all "$lk" >/dev/null 2>&1
@@ -2066,26 +1745,18 @@ printf '\nFull table: `docs/backend/references/error-codes.md`\n' >>"$lk/.agent/
 out28b=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28b" | grep -q '^ORPHAN:' && fail "links.sh: citing the reference clears the orphan" || pass "links.sh: citing the reference clears the orphan"
 
-# A routed doc that cites a node path which does not exist.
 printf '\nSee `docs/backend/queues.md` for the queue design.\n' >>"$lk/.agent/docs/backend.md"
 out28c=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28c" | grep -qF 'BROKEN: .agent/docs/backend.md cites docs/backend/queues.md' && pass "links.sh: a dangling node path is reported" || fail "links.sh: a dangling node path is reported ($out28c)"
 
-# Project paths are out of scope: the node does not manage their lifecycle,
-# and treating them as findings buries the real ones.
 printf '\nBrief: `temp/some-task-board.md`, source `src/app/main.md`.\n' >>"$lk/.agent/docs/backend.md"
 out28d=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28d" | grep -qF 'temp/some-task-board.md' && fail "links.sh: paths outside the node are out of scope" || pass "links.sh: paths outside the node are out of scope"
 
-# A loose basename resolves against the whole node: docs cite `learned.md`,
-# not `rules/learned.md`.
 printf '\nSee `learned.md` for the accumulated corrections.\n' >>"$lk/.agent/docs/backend.md"
 out28e=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28e" | grep -qF 'cites learned.md' && fail "links.sh: a loose basename resolves against the node" || pass "links.sh: a loose basename resolves against the node"
 
-# A bare name the node cannot resolve is as likely a project file as a node
-# one — memory facts name files like `SKILL.md` constantly, and a project
-# file often sits in a subdirectory rather than at the project root.
 mkdir -p "$lk/skills/testing"
 printf '# Testing\n' >"$lk/skills/testing/SKILL.md"
 printf '\nThe bar lives in `SKILL.md`, and `skills/testing/SKILL.md` implements it.\n' >>"$lk/.agent/docs/backend.md"
@@ -2093,19 +1764,14 @@ out28i=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28i" | grep -qF 'cites SKILL.md' && fail "links.sh: a bare name held by the project is not broken" || pass "links.sh: a bare name held by the project is not broken"
 printf '%s\n' "$out28i" | grep -qF 'skills/testing/SKILL.md' && fail "links.sh: an out-of-model .agent directory is not audited as a target" || pass "links.sh: an out-of-model .agent directory is not audited as a target"
 
-# The resolution is by name, not a blanket amnesty: a name no one holds is
-# still the finding the audit exists to produce.
 printf '\nAlso `nowhere-at-all.md`.\n' >>"$lk/.agent/docs/backend.md"
 out28j=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28j" | grep -qF 'cites nowhere-at-all.md' && pass "links.sh: a name neither node nor project holds is still broken" || fail "links.sh: a name neither node nor project holds is still broken ($out28j)"
 
-# session-log.md is a historical record: an entry naming a brief that has
-# since been archived is doing its job.
 printf -- '- [2026-01-01] (claude) worked from `docs/gone-forever.md` (backend). verify: pass.\n' >>"$lk/.agent/session-log.md"
 out28f=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28f" | grep -qF 'gone-forever' && fail "links.sh: the session log is not audited as a citation source" || pass "links.sh: the session log is not audited as a citation source"
 
-# Canonical files are never orphans — the entry point loads them by name.
 out28g=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28g" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' && fail "links.sh: canonical files are exempt from the orphan check" || pass "links.sh: canonical files are exempt from the orphan check"
 
@@ -2113,8 +1779,6 @@ printf '%s\n' "$out28g" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' &&
 rc=$?
 [ "$rc" -ne 0 ] && pass "links.sh: a missing node is an error, not a clean report" || fail "links.sh: a missing node is an error, not a clean report"
 
-# A node whose .agent holds no markdown at all: an empty array expands to an
-# unbound variable under `set -u` in the bash 3.2 macOS ships.
 lkempty="$WORK/links-empty"
 mkdir -p "$lkempty/.agent/docs"
 printf 'entry point citing .agent/scripts/status.sh\n' >"$lkempty/CLAUDE.md"
@@ -2122,11 +1786,6 @@ out28h=$("$LINKS" "$lkempty" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && printf '%s\n' "$out28h" | grep -qF 'no markdown files to audit' && pass "links.sh: an empty node reports cleanly instead of erroring" || fail "links.sh: an empty node reports cleanly instead of erroring (rc=$rc, $out28h)"
 
-# ---- 29. links.sh under a path containing spaces ----
-# Word-splitting turned every path list into fragments here: exemptions were
-# bypassed, canonical files were reported as orphans, and awk was handed the
-# leading fragment as a filename. Nothing else in the suite uses a path with
-# a space, which is why it went unnoticed.
 spaceroot="$WORK/space dir/my node"
 mkdir -p "$spaceroot"
 "$NODE" init --preset software-development --mode track-all "$spaceroot" >/dev/null 2>&1
@@ -2142,21 +1801,6 @@ printf '%s\n' "$out29b" | grep -qF 'ORPHAN: docs/back end/references/deep dive.m
 printf '%s\n' "$out29b" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' && fail "links.sh: exemptions survive a path with spaces" || pass "links.sh: exemptions survive a path with spaces"
 printf '%s\n' "$out29b" | grep -qi 'awk:' && fail "links.sh: no tool is handed a path fragment" || pass "links.sh: no tool is handed a path fragment"
 
-# ---- 30. portability: the node-landing corpus stays vendor-neutral ----
-# The corpus is read as authored — one tree, every tool reads the same
-# bytes, no build step — so a tool or vendor name that leaks into a preset,
-# the template, or a node script ships verbatim into every other tool's
-# sessions, where it is an instruction some agent cannot follow. Nothing
-# errors when that happens. This lint is the only mechanism that notices.
-# Each allowlisted pattern below marks a deliberate reference:
-#   filename (CLAUDE.md          template header — copying instruction, deleted on copy
-#   uses Copilot Chat            template header — the same instruction's Copilot clause
-#   (claude/sonnet)              the log-tag format example (preset + node.sh heredoc)
-#   $root/CLAUDE.md, $root/.github/copilot-instructions.md
-#                                the entry-point candidate lists (status.sh, links.sh)
-#   hand-written AGENTS.md       status.sh comment beside that list
-#   autoMemoryEnabled, $root/.claude, /nonexistent}/.claude
-#                                the verified tool's native-memory check
 lint_allow="$WORK/lint-allow"
 cat >"$lint_allow" <<'EOF'
 filename (CLAUDE.md
@@ -2184,13 +1828,6 @@ printf 'When stuck, ask SomeVendor to run it in Cursor.\n' >"$WORK/leak.md"
 hits30b=$(grep -inE "$lint_re" "$WORK/leak.md" | grep -vF -f "$lint_allow")
 [ -n "$hits30b" ] && pass "portability: the lint catches an injected vendor token" || fail "portability: the lint catches an injected vendor token"
 
-# ---- 31. portability: one entry-point set, three surfaces ----
-# The tool-to-filename mapping lives in the operating model's wiring matrix
-# and in two scripts' candidate lists (status.sh's mirror check, links.sh's
-# corpus). A tool added to one surface and not the others arrives unchecked
-# and nothing notices — so this asserts all three carry the same set. The
-# set includes legacy names (.cursorrules) on purpose: existing nodes'
-# mirrors keep being checked even after the wiring guidance moves on.
 eps_from() { grep -oE '"\$root/([^"]*\.md|\.cursorrules)"' "$1" | sort -u; }
 eps_status=$(eps_from "$reporoot/scripts/status.sh")
 eps_links=$(eps_from "$reporoot/scripts/links.sh")
@@ -2204,11 +1841,6 @@ for ep in CLAUDE.md AGENTS.md .cursorrules .github/copilot-instructions.md .clau
 done
 [ -z "$missing31" ] && pass "portability: the wiring matrix and the candidate lists cover the same entry points" || fail "portability: the wiring matrix and the candidate lists cover the same entry points ($missing31)"
 
-# ---- 32. status.sh: the LOAD line ----
-# The always-loaded set is bounded per file but was never summed, and three
-# of its members (contract, purpose, the routing table) carry no per-file
-# trigger. The LOAD line is a measurement, not a flag: advisory, printed
-# every run, no threshold until the field supplies one.
 ld="$WORK/load-line"
 mkdir -p "$ld"
 "$NODE" init --preset software-development --mode track-all "$ld" >/dev/null 2>&1
@@ -2225,11 +1857,6 @@ printf 'Session bootstrap: run .agent/scripts/status.sh first.\n' >"$ld/CLAUDE.m
 loadline32b=$("$ld/.agent/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
 printf '%s\n' "$loadline32b" | grep -q '(entry ' && pass "status.sh: LOAD counts the entry point once wired" || fail "status.sh: LOAD counts the entry point once wired ($loadline32b)"
 
-# ---- 32b. status.sh: the PAYLOAD line and the byte budget ----
-# LOAD: measures the always-loaded set in words and includes members --load
-# never prints (architecture.md, the entry point). PAYLOAD: measures exactly
-# what --load writes, in bytes — markers included — because the harness's
-# tool-result cap is a byte cap, not a word one.
 pb="$WORK/payload-budget"
 mkdir -p "$pb"
 "$NODE" init --preset software-development --mode track-all "$pb" >/dev/null 2>&1
@@ -2242,10 +1869,6 @@ payloadline_a=$(grep '^PAYLOAD:' "$WORK/pb-load.out")
 grep -q '^REPAIR:.*payload' "$WORK/pb-load.out" && fail "status.sh: an under-budget node does not overflow" || pass "status.sh: an under-budget node does not overflow"
 [ -z "$(status_flags "$pb")" ] && pass "status.sh: PAYLOAD is informational — a quiet under-budget node stays quiet" || fail "status.sh: PAYLOAD is informational — a quiet under-budget node stays quiet ($(status_flags "$pb"))"
 
-# The reported total must equal the exact bytes --load appended to stdout.
-# Both calls share the same informational prefix (findings/TOOLS/LOAD/
-# PAYLOAD), so the byte difference between the plain call and the --load
-# call is exactly what the --load loop wrote — markers and all.
 reported_a=$(printf '%s\n' "$payloadline_a" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
 bytes_noload_a=$(wc -c <"$WORK/pb-noload.out" | tr -d '[:space:]')
 bytes_load_a=$(wc -c <"$WORK/pb-load.out" | tr -d '[:space:]')
@@ -2254,8 +1877,6 @@ actual_a=$((bytes_load_a - bytes_noload_a))
   && pass "status.sh: PAYLOAD total equals the exact bytes --load writes" \
   || fail "status.sh: PAYLOAD total equals the exact bytes --load writes (reported $reported_a, actual $actual_a)"
 
-# Boundary: pad memory.md to a computed size so the total lands exactly on
-# PAYLOAD_MAX_BYTES, then push one byte past it.
 budget_default=$(sed -n 's/^PAYLOAD_MAX_BYTES=//p' "$reporoot/scripts/status.sh" | head -n 1)
 pad_needed=$((budget_default - reported_a))
 [ "$pad_needed" -gt 0 ] || fail "status.sh: fixture's natural payload already exceeds PAYLOAD_MAX_BYTES — cannot build the boundary case"
@@ -2283,7 +1904,6 @@ done
 grep -q '^====' "$WORK/pb-over.out" && fail "status.sh: overflow emits no ==== markers or file content" || pass "status.sh: overflow emits no ==== markers or file content"
 [ "$rc_over" -eq 0 ] && pass "status.sh: overflow does not change the exit status" || fail "status.sh: overflow does not change the exit status (rc=$rc_over)"
 
-# A lowered PAYLOAD_MAX_BYTES pushes an otherwise-normal, unpadded node over.
 lo="$WORK/payload-lowered"
 mkdir -p "$lo"
 "$NODE" init --preset software-development --mode track-all "$lo" >/dev/null 2>&1
@@ -2297,9 +1917,6 @@ printf '%s\n' "$out32e" | grep -q '^====' \
   && fail "status.sh: overflow from a lowered budget still emits no markers" \
   || pass "status.sh: overflow from a lowered budget still emits no markers"
 
-# A non-numeric PAYLOAD_MAX_BYTES keeps the shipped default and draws the
-# same generic conf-parse REPAIR every other threshold key already gets —
-# no special-cased handling for this key.
 nc="$WORK/payload-nonnumeric"
 mkdir -p "$nc"
 "$NODE" init --preset software-development --mode track-all "$nc" >/dev/null 2>&1
@@ -2314,8 +1931,6 @@ printf '%s\n' "$payloadline_f" | grep -qF "of a $budget_default byte budget" \
   && pass "status.conf: PAYLOAD_MAX_BYTES keeps its shipped default when the override is invalid" \
   || fail "status.conf: PAYLOAD_MAX_BYTES keeps its shipped default when the override is invalid ($payloadline_f)"
 
-# A multibyte fixture reports the same byte total under all three locales
-# the CI gate runs the whole suite under — wc -c must not vary with LC_ALL.
 mb="$WORK/payload-multibyte"
 mkdir -p "$mb"
 "$NODE" init --preset software-development --mode track-all "$mb" >/dev/null 2>&1
@@ -2328,10 +1943,6 @@ total_mb_default=$("$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed
   && pass "status.sh: a multibyte fixture's byte total is locale-invariant" \
   || fail "status.sh: a multibyte fixture's byte total is locale-invariant (C=$total_mb_c ISO=$total_mb_iso default=$total_mb_default)"
 
-# ---- 33. status.sh: session-log entry shape ----
-# The 25-word entry format lives in the header contract and in log.sh — one
-# is prose, the other bypassable by hand-editing the file. This is the check
-# that reads the entries themselves.
 es="$WORK/entry-shape"
 mkdir -p "$es"
 "$NODE" init --preset software-development --mode track-all "$es" >/dev/null 2>&1
@@ -2348,15 +1959,6 @@ printf -- '- [2026-01-04] (tool) %s\n%s\n' "$(words_n 30)" "$(words_n 30)" >>"$e
 f33c=$(status_flags "$es")
 printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: a hand-wrapped entry is counted whole" || fail "status.sh: a hand-wrapped entry is counted whole ($f33c)"
 
-# ---- 34. comments.sh: the diff comment gate ----
-# The gate BLOCKs the decidable failures (exit 1): dead citations, code left
-# commented out, narration of the change, a reply to the prompt, and short
-# narration of the structure below. Every other added comment is listed for
-# justification (REVIEW, exit 0), labeled where a heuristic has something to
-# say. Workflow vocabulary — base ref, ticket and narration patterns, the
-# constraint escape, path exclusions — is the node's, set in comments.conf
-# beside the script (KEY=value, parsed never executed) and outside the update
-# refresh list.
 cg="$WORK/comment-gate"
 mkdir -p "$cg/src" "$cg/Migrations" "$cg/.agent/scripts"
 cp "$reporoot/scripts/comments.sh" "$cg/.agent/scripts/comments.sh"
@@ -2378,13 +1980,8 @@ EOF
 printf '#region Setup\nint x = 1;\n' >"$cg/src/tool.cs"
 printf '# skipped: out of scope for this pass\ny = 1\n' >"$cg/src/calc.py"
 printf '// narration in a migration\n' >"$cg/Migrations/0001_init.cs"
-# A tool's own directory: hooks and helpers the comment rule was never
-# aimed at. Excluded generically, by shape, so a tool nobody has heard of
-# yet is covered on arrival.
 mkdir -p "$cg/.toolrc/hooks"
 printf '# tuned per commit deadbeefcafe1234\necho hi\n' >"$cg/.toolrc/hooks/check.sh"
-# "//" opens no comment in shell — a script that prints one is printing a
-# string. A test corpus planting C-family fixtures is the ordinary case.
 printf 'echo "// planted per commit deadbeefcafe1234"\n# a real shell comment\n' >"$cg/src/fixture.sh"
 git_cg add -A >/dev/null
 git_cg commit -q -m feat
@@ -2403,14 +2000,8 @@ printf '%s\n' "$review34" | grep -q 'a real shell comment' && pass "comments.sh:
 printf '%s\n' "$out34" | grep -q 'eslint-disable' && fail "comments.sh: tooling pragmas are skipped" || pass "comments.sh: tooling pragmas are skipped"
 printf '%s\n' "$out34" | grep -q 'existing constraint comment' && fail "comments.sh: only comments the diff adds are reported" || pass "comments.sh: only comments the diff adds are reported"
 printf '%s\n' "$out34" | grep -q '.toolrc' && fail "comments.sh: hidden directories are out of the scan" || pass "comments.sh: hidden directories are out of the scan"
-# The exclusion is anchored: a dot mid-path is not a hidden directory, and
-# the literal-dot terms must survive reaching awk — passed through -v their
-# escapes collapse and `\.` becomes match-anything, which excludes the tree.
 printf '%s\n' "$out34" | grep -q 'src/app.ts' && pass "comments.sh: an ordinary path is not read as hidden" || fail "comments.sh: an ordinary path is not read as hidden ($out34)"
 
-# node vocabulary: ticket shapes join BLOCK, project paths leave the scan.
-# The backtick value proves the conf is parsed, never executed — sourcing
-# it would run the command.
 cat >"$cg/.agent/scripts/comments.conf" <<'EOF'
 BLOCK_RE_EXTRA=(^|[^[:alnum:]])AC-?[0-9]|(^|[^[:alnum:]])Q[0-9]+([^[:alnum:]]|$)
 EXCLUDE_RE_EXTRA=(^|/)Migrations/
@@ -2422,9 +2013,6 @@ printf '%s\n' "$block34b" | grep -q 'AC-12' && pass "comments.sh: conf vocabular
 printf '%s\n' "$out34b" | grep -q 'narration in a migration' && fail "comments.sh: conf exclusions hide their paths" || pass "comments.sh: conf exclusions hide their paths"
 [ ! -e "$cg/pwned34" ] && pass "comments.sh: comments.conf is parsed, never executed" || fail "comments.sh: comments.conf is parsed, never executed"
 
-# EXCLUDE_RE replaces the shipped list, the way EXTENSIONS does: a project
-# that reviews one of the excluded trees gets it back by naming a narrower
-# list. Grow-only keys cannot express that.
 cat >"$cg/.agent/scripts/comments.conf" <<'EOF'
 EXCLUDE_RE=(^|/)node_modules/
 EOF
@@ -2454,9 +2042,6 @@ rc34d=$?
 rc34e=$?
 [ "$rc34e" -eq 2 ] && pass "comments.sh: a missing base ref exits 2" || fail "comments.sh: a missing base ref exits 2 (rc=$rc34e)"
 
-# The gate reads the diff as handed back: merge-base to worktree, plus
-# untracked files. A committed-only diff exits 0 on exactly the comments it
-# exists to catch — hand-back is normally an uncommitted state.
 git_cg checkout -q clean34
 printf '// tuned per commit cafebabecafebabe\nconst e = 5\n' >>"$cg/src/app.ts"
 out34f=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
@@ -2479,10 +2064,6 @@ out34i=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 rc34i=$?
 [ "$rc34i" -eq 0 ] && [ -z "$out34i" ] && pass "comments.sh: the worktree checks leave a clean diff silent" || fail "comments.sh: the worktree checks leave a clean diff silent (rc=$rc34i; $out34i)"
 
-# The three classes that joined dead citations in V6.2. Each is decidable
-# without reading the code around it, so each BLOCKs, and each names itself:
-# "delete this" and "justify this" are different instructions, and a list
-# that mixes them unlabeled gets skimmed as one.
 git_cg checkout -q base
 git_cg checkout -q -b classes
 cat >>"$cg/src/app.ts" <<'EOF'
@@ -2511,27 +2092,13 @@ review34k=$(printf '%s\n' "$out34k" | awk '/^BLOCK:/ { exit } { print }')
 printf '%s\n' "$block34k" | grep -qF '[commented-out code]' && pass "comments.sh: code left in a comment BLOCKs, named" || fail "comments.sh: code left in a comment BLOCKs, named ($block34k)"
 printf '%s\n' "$block34k" | grep -qF '[change narration]' && pass "comments.sh: change narration BLOCKs, named" || fail "comments.sh: change narration BLOCKs, named ($block34k)"
 printf '%s\n' "$block34k" | grep -qF '[answers the prompt]' && pass "comments.sh: a reply to the prompt BLOCKs, named" || fail "comments.sh: a reply to the prompt BLOCKs, named ($block34k)"
-# A sentence can end in a semicolon and still be prose: the commented-out
-# class needs a code character as well as a code shape, or the gate deletes
-# real constraints under a label that says they were dead.
 printf '%s\n' "$review34k" | grep -q 'billing schema' && pass "comments.sh: prose ending in a semicolon is not commented-out code" || fail "comments.sh: prose ending in a semicolon is not commented-out code ($out34k)"
 printf '%s\n' "$block34k" | grep -qF '[routine narration]' && printf '%s\n' "$block34k" | grep -q 'Build the rows' && pass "comments.sh: short structure narration BLOCKs, named" || fail "comments.sh: short structure narration BLOCKs, named ($block34k)"
-# The two guards that keep the routine class from deleting real comments. A
-# comment naming a cause is exempt whatever verb it opens with; a long one is
-# carrying a clause the verb cannot account for, so it is labeled, not deleted.
 printf '%s\n' "$review34k" | grep -q 'because the vendor SDK' && pass "comments.sh: naming a constraint exempts a routine verb" || fail "comments.sh: naming a constraint exempts a routine verb ($out34k)"
 long34=$(printf '%s\n' "$review34k" | grep -A1 'routine narration' | grep 'Update the cache after every write')
 [ -n "$long34" ] && pass "comments.sh: routine narration past the word cap is labeled, not blocked" || fail "comments.sh: routine narration past the word cap is labeled, not blocked ($out34k)"
-# The third guard, found by running the gate over this repository: a wrapped
-# paragraph continues onto lines that can open with a routine verb and mean
-# nothing of the kind. "stops the run." is the tail of a sentence. The word
-# cap cannot see it, because the fragment is short.
 printf '%s\n' "$out34k" | grep -A1 'routine narration' | grep -q 'stops the run' && fail "comments.sh: a wrapped-comment continuation is not structure narration" || pass "comments.sh: a wrapped-comment continuation is not structure narration"
 
-# The restatement label: a comment whose every content word already appears
-# in the identifiers under it. The scan reaches past the rest of the comment
-# block, which is what lets it see a doc comment restating the signature it
-# sits on — the case a "public API is exempt" rule used to wave through.
 cat >"$cg/src/Thing.cs" <<'EOF'
 /// <summary>
 /// Gets the user name.
@@ -2542,12 +2109,7 @@ printf '// retry counter\nretryCounter = retryCounter + 1\n' >>"$cg/src/app.ts"
 out34l=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 block34l=$(printf '%s\n' "$out34l" | sed -n '/^BLOCK:/,$p')
 review34l=$(printf '%s\n' "$out34l" | awk '/^BLOCK:/ { exit } { print }')
-# The doc comment that restates its own signature — the case the deleted
-# "public API is exempt" clause used to wave through. It reaches the routine
-# class first, which is a delete instruction rather than a justify one.
 printf '%s\n' "$block34l" | grep -q 'Gets the user name' && pass "comments.sh: a doc comment narrating its signature BLOCKs" || fail "comments.sh: a doc comment narrating its signature BLOCKs ($out34l)"
-# The restatement label covers what no verb pattern reaches: a comment whose
-# words are the identifier below it, with no routine verb anywhere.
 rest34=$(printf '%s\n' "$review34l" | grep -A1 'restates the code below' | grep 'retry counter')
 [ -n "$rest34" ] && pass "comments.sh: a comment repeating the identifier below it is labeled" || fail "comments.sh: a comment repeating the identifier below it is labeled ($review34l)"
 
@@ -2556,28 +2118,22 @@ out34m=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34m" | grep -qF '[restates the code below]' && fail "comments.sh: RESTATE_CHECK=false drops the label" || pass "comments.sh: RESTATE_CHECK=false drops the label"
 printf '%s\n' "$out34m" | awk '/^BLOCK:/ { exit } { print }' | grep -q 'retry counter' && pass "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW" || fail "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW ($out34m)"
 
-# The escape hatch a node reaches for when the routine class blocks something
-# real: name the constraint in its own vocabulary, rather than add an exception.
 printf 'CONSTRAINT_RE_EXTRA=payments gateway\n' >"$cg/.agent/scripts/comments.conf"
 printf 'const m0 = 0\n// Build the rows the payments gateway expects\nconst m = 12\n' >>"$cg/src/app.ts"
 out34q=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34q" | awk '/^BLOCK:/ { exit } { print }' | grep -q 'payments gateway' && pass "comments.sh: CONSTRAINT_RE_EXTRA rescues a real comment from the routine class" || fail "comments.sh: CONSTRAINT_RE_EXTRA rescues a real comment from the routine class ($out34q)"
 
-# The word cap is the class's other guard, and it is a per-node number.
 printf 'ROUTINE_MAX_WORDS=0\n' >"$cg/.agent/scripts/comments.conf"
 out34r=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34r" | sed -n '/^BLOCK:/,$p' | grep -q 'Build the rows' && fail "comments.sh: ROUTINE_MAX_WORDS=0 leaves the class a label only" || pass "comments.sh: ROUTINE_MAX_WORDS=0 leaves the class a label only"
 printf '%s\n' "$out34r" | grep -qF '[routine narration]' && pass "comments.sh: ROUTINE_MAX_WORDS=0 keeps the label" || fail "comments.sh: ROUTINE_MAX_WORDS=0 keeps the label ($out34r)"
 
-# The gate fails closed on every conf value it cannot use, numbers included:
-# a threshold that silently fell back would change which comments block.
 printf 'ROUTINE_MAX_WORDS=eight\n' >"$cg/.agent/scripts/comments.conf"
 (cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
 rc34s=$?
 [ "$rc34s" -eq 2 ] && pass "comments.sh: a non-numeric ROUTINE_MAX_WORDS fails closed" || fail "comments.sh: a non-numeric ROUTINE_MAX_WORDS fails closed (rc=$rc34s)"
 git_cg checkout -q -- src/app.ts
 
-# House narration terms are the node's, the same way ticket shapes are.
 printf 'NARRATION_RE_EXTRA=(^|[^[:alnum:]])old world\n' >"$cg/.agent/scripts/comments.conf"
 printf '// the old world path is gone\nconst j = 9\n' >>"$cg/src/app.ts"
 out34n=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
@@ -2585,13 +2141,6 @@ printf '%s\n' "$out34n" | sed -n '/^BLOCK:/,$p' | grep -q 'old world' && pass "c
 rm -f "$cg/.agent/scripts/comments.conf" "$cg/src/Thing.cs"
 git_cg checkout -q -- src/app.ts
 
-# Chat residue: echo_re already catches request-shaped replies (e.g.
-# [as you ... requested], [as ... discussed]); this is the same audience
-# mistake in the shapes a code review produces instead — a feedback reference,
-# an agreement, an opening apology, a draft-revision label. Every fixture below pairs a
-# flagged line with a clean one sharing its vocabulary, so a pass here rules
-# out a naive keyword ban: "feedback", "agree", "suggested", "sorry", and
-# "draft" all also appear in comments that must NOT block.
 git_cg checkout -q base
 git_cg checkout -q -b chat34
 cat >>"$cg/src/app.ts" <<'EOF'
@@ -2663,9 +2212,6 @@ block34t=$(printf '%s\n' "$out34t" | sed -n '/^BLOCK:/,$p')
 review34t=$(printf '%s\n' "$out34t" | awk '/^BLOCK:/ { exit } { print }')
 [ "$rc34t" -eq 1 ] && pass "comments.sh: chat residue exits 1" || fail "comments.sh: chat residue exits 1 (rc=$rc34t; $out34t)"
 
-# Flagged: a feedback reference, an agreement, an opening apology, and a
-# draft-revision label — each named "chat residue" rather than an unrelated
-# class, and each recognizable by the exact wording the task named.
 printf '%s\n' "$block34t" | grep -B1 -F 'As you suggested, cache the response' | grep -qF '[chat residue]' && pass "comments.sh: a feedback-request echo (\"as you suggested\") BLOCKs as chat residue" || fail "comments.sh: a feedback-request echo (\"as you suggested\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'Retain the cached result per your feedback' | grep -qF '[chat residue]' && pass "comments.sh: a feedback reference (\"per your feedback\") BLOCKs as chat residue" || fail "comments.sh: a feedback reference (\"per your feedback\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'remains available, as agreed' | grep -qF '[chat residue]' && pass "comments.sh: an agreement reference (\"as agreed\") BLOCKs as chat residue" || fail "comments.sh: an agreement reference (\"as agreed\") BLOCKs as chat residue ($block34t)"
@@ -2673,8 +2219,6 @@ printf '%s\n' "$block34t" | grep -B1 -F 'Sorry, this cache uses the wrong table'
 printf '%s\n' "$block34t" | grep -B1 -F 'Here is the fixed version' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"here is the fixed version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"here is the fixed version\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'Draft v2 of the retry loop' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"draft v2\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"draft v2\") BLOCKs as chat residue ($block34t)"
 
-# The remaining named forms of the draft-revision label, plus a second
-# example each for the feedback reference and the opening apology.
 printf '%s\n' "$block34t" | grep -B1 -F "Here's the fixed version" | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"here's the fixed version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"here's the fixed version\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'Fixed version: the retry loop now caps at three attempts' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"fixed version:\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"fixed version:\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'the revised version of the retry loop' | grep -qF '[chat residue]' && pass "comments.sh: a draft-revision label (\"revised version\") BLOCKs as chat residue" || fail "comments.sh: a draft-revision label (\"revised version\") BLOCKs as chat residue ($block34t)"
@@ -2682,9 +2226,6 @@ printf '%s\n' "$block34t" | grep -B1 -F 'a draft revision of the retry loop' | g
 printf '%s\n' "$block34t" | grep -B1 -F 'Updated the cache handling to address your comments' | grep -qF '[chat residue]' && pass "comments.sh: a feedback reference (\"to address your comments\") BLOCKs as chat residue" || fail "comments.sh: a feedback reference (\"to address your comments\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F 'My apologies, the config value here is stale' | grep -qF '[chat residue]' && pass "comments.sh: an opening apology (\"my apologies\") BLOCKs as chat residue" || fail "comments.sh: an opening apology (\"my apologies\") BLOCKs as chat residue ($block34t)"
 
-# Clean, sharing vocabulary with a flagged line above: a lexical ban on
-# "feedback", "agree", "suggested", "sorry", or "draft" alone would also
-# catch these, and it must not.
 printf '%s\n' "$block34t" | grep -q 'fixed version is 2.3.1' && fail "comments.sh: a real version report is not a draft-revision label" || pass "comments.sh: a real version report is not a draft-revision label"
 printf '%s\n' "$block34t" | grep -q 'debounces feedback' && fail "comments.sh: audio feedback is not a feedback reference" || pass "comments.sh: audio feedback is not a feedback reference"
 printf '%s\n' "$block34t" | grep -q 'profiler disagreed' && fail "comments.sh: \"suggested\" outside \"as you suggested\" is not chat residue" || pass "comments.sh: \"suggested\" outside \"as you suggested\" is not chat residue"
@@ -2692,47 +2233,24 @@ printf '%s\n' "$block34t" | grep -q 'rarely agree' && fail "comments.sh: \"agree
 printf '%s\n' "$block34t" | grep -q 'sorry-not-found' && fail "comments.sh: a mid-sentence \"sorry\" is not an opening apology" || pass "comments.sh: a mid-sentence \"sorry\" is not an opening apology"
 printf '%s\n' "$block34t" | grep -q 'not a draft; it defines' && fail "comments.sh: \"draft\" outside a revision label is not chat residue" || pass "comments.sh: \"draft\" outside a revision label is not chat residue"
 
-# Five false-positive shapes, each a legitimate engineering comment (a
-# vendor/contract reference, a technical description, an RFC/spec version
-# citation) that a naive keyword match on "agreement", "feedback", or
-# "draft v<N>" wrongly BLOCKed. None of these may BLOCK.
 printf '%s\n' "$block34t" | grep -qF 'per the agreement with the vendor' && fail "comments.sh: a vendor-contract reference is not an agreement echo" || pass "comments.sh: a vendor-contract reference is not an agreement echo"
 printf '%s\n' "$block34t" | grep -qF "based on the feedback loop's sampling window" && fail "comments.sh: a feedback-loop description is not a feedback reference" || pass "comments.sh: a feedback-loop description is not a feedback reference"
 printf '%s\n' "$block34t" | grep -qF 'Per RFC draft v08' && fail "comments.sh: an RFC draft citation is not a draft-revision label" || pass "comments.sh: an RFC draft citation is not a draft-revision label"
 printf '%s\n' "$block34t" | grep -qF 'The v2 draft of the protocol' && fail "comments.sh: a protocol-version description is not a draft-revision label" || pass "comments.sh: a protocol-version description is not a draft-revision label"
 printf '%s\n' "$block34t" | grep -qF 'As agreed by both parties' && fail "comments.sh: a third-party agreement is not an agreement echo" || pass "comments.sh: a third-party agreement is not an agreement echo"
 
-# Minimal pairs: the same key word in an actually chat-shaped comment still
-# BLOCKs, so the narrowing above rules out a shape rather than a word.
 printf '%s\n' "$block34t" | grep -B1 -F 'Draft v08 of this fix is ready for review' | grep -qF '[chat residue]' && pass "comments.sh: a draft label opening the comment (\"draft v08\") BLOCKs as chat residue" || fail "comments.sh: a draft label opening the comment (\"draft v08\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F "I'll ship the fix by Friday" | grep -qF '[chat residue]' && pass "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue" || fail "comments.sh: an agreement ending its clause (\"as agreed,\") BLOCKs as chat residue ($block34t)"
 printf '%s\n' "$block34t" | grep -B1 -F "revised draft based on your comments" | grep -qF '[chat residue]' && pass "comments.sh: a revised-draft label BLOCKs as chat residue" || fail "comments.sh: a revised-draft label BLOCKs as chat residue ($block34t)"
 
-# "draft v2" only counts as a revision label when it opens the comment
-# itself, not merely the physical line being scanned. A multi-line comment
-# whose SECOND line happens to start with "Draft v2 of RFC ..." is still the
-# same RFC/spec version-citation shape as the "Per RFC draft v08" fixture
-# above — it must not BLOCK just because "^" matched that line in isolation.
 printf '%s\n' "$block34t" | grep -qF 'Draft v2 of RFC 9110 changed how the retry-after header must be parsed' && fail "comments.sh: a draft-v2 spec citation on a comment's second line is not a revision label" || pass "comments.sh: a draft-v2 spec citation on a comment's second line is not a revision label"
 
-# A lexical pass rules a shape out; it never certifies a shape as necessary.
-# These two land in REVIEW, for the author to justify or delete — not a
-# silent pass that looks the same as "this comment is useful."
 printf '%s\n' "$review34t" | grep -qF 'fixed version is 2.3.1' && pass "comments.sh: the real version report lands in REVIEW, not silently endorsed" || fail "comments.sh: the real version report lands in REVIEW ($review34t)"
 
-# Negation is not chat residue and not routine narration: a comment stating
-# a real negative property survives with its exact wording, not merely
-# "does not block."
 printf '%s\n' "$review34t" | grep -qF 'Does NOT retry on 4xx responses because the vendor client treats retries as duplicate charges.' && pass "comments.sh: a negative constraint survives a negation, verbatim" || fail "comments.sh: a negative constraint survives a negation ($review34t)"
 
-# The necessary-constraint fixture: a callback whose timing depends on a
-# vendor's own contract is exactly what REVIEW exists to let a human keep,
-# and its meaning must reach REVIEW intact, not truncated.
 printf '%s\n' "$review34t" | grep -qF 'The callback can arrive after cancellation because the vendor retains the handle.' && pass "comments.sh: a non-obvious callback constraint survives with its meaning intact" || fail "comments.sh: a non-obvious callback constraint survives with its meaning intact ($review34t)"
 
-# CHAT_RE_EXTRA follows the same conf contract as the other _EXTRA keys: ORed
-# onto the shipped vocabulary, and a broken pattern fails the run closed
-# rather than silently passing as clean.
 printf 'CHAT_RE_EXTRA=(^|[^[:alnum:]])lgtm\n' >"$cg/.agent/scripts/comments.conf"
 printf '// lgtm, ship it\nconst n22 = 22\n' >>"$cg/src/app.ts"
 out34u=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
@@ -2745,10 +2263,6 @@ rc34v=$?
 [ "$rc34v" -eq 2 ] && pass "comments.sh: an invalid CHAT_RE_EXTRA fails closed rather than passing clean" || fail "comments.sh: an invalid CHAT_RE_EXTRA fails closed (rc=$rc34v)"
 rm -f "$cg/.agent/scripts/comments.conf"
 
-# Exclusion scope stays exactly what it was: Markdown never joins the scanned
-# extensions, and a hidden directory (.agent/ included) stays out of the scan
-# generically — chat residue is a new class inside the existing gate, not a
-# new gate with its own reach.
 printf '# As you suggested, cache the response for five minutes.\n' >"$cg/notes.md"
 mkdir -p "$cg/.agent/docs"
 printf '// As you suggested, cache the response for five minutes.\n' >"$cg/.agent/docs/note.ts"
@@ -2757,9 +2271,6 @@ rc34w=$?
 [ "$rc34w" -eq 0 ] && [ -z "$out34w" ] && pass "comments.sh: chat residue in Markdown and under .agent/ stays out of the gate" || fail "comments.sh: chat residue in Markdown and under .agent/ stays out of the gate (rc=$rc34w; $out34w)"
 rm -rf "$cg/notes.md" "$cg/.agent/docs"
 
-# Routine implementation work adds no comment at all, and that is the
-# expected shape, not a shortfall the gate makes up for: no comment quota,
-# no narration expected in exchange for a clean pass.
 cat >>"$cg/src/app.ts" <<'EOF'
 function retryOnce(fn) {
   try {
@@ -2776,10 +2287,6 @@ git_cg checkout -q -- src/app.ts
 
 git_cg checkout -q base
 
-# A base resolving to HEAD over a clean tree is an empty diff. Exiting 0
-# there is a pass meaning "this run read nothing", which in a transcript is
-# indistinguishable from "the comments are clean" — and it is the state a
-# session lands in by committing first and then reaching for HEAD.
 [ -z "$(git -C "$cg" status --porcelain)" ] && pass "comments.sh: the empty-diff fixture starts clean" || fail "comments.sh: the empty-diff fixture starts clean ($(git -C "$cg" status --porcelain | tr '\n' ' '))"
 (cd "$cg" && .agent/scripts/comments.sh HEAD >/dev/null 2>&1)
 rc34o=$?
@@ -2790,8 +2297,6 @@ rc34p=$?
 [ "$rc34p" -eq 1 ] && pass "comments.sh: HEAD with an uncommitted change is a real diff, not the empty case" || fail "comments.sh: HEAD with an uncommitted change is a real diff, not the empty case (rc=$rc34p)"
 git_cg checkout -q -- src/app.ts
 
-# install and refresh: init ships it. The update refreshes it by name and
-# never touches the node-owned local file beside it
 cgn="$WORK/comment-gate-init"
 mkdir -p "$cgn"
 "$NODE" init --preset software-development --mode ignore-all "$cgn" >/dev/null 2>&1
@@ -2819,11 +2324,8 @@ grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgu2/.agent/scripts/comments.conf" 2>/dev/null 
 grep -q '^PROBE_TOOLS=' "$cgu2/.agent/scripts/status.conf" 2>/dev/null && pass "update: a missing status.conf is seeded with the starter" || fail "update: a missing status.conf is seeded with the starter"
 grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
 
-# The same set the init loop asserts, on the path that reaches nodes already
-# in the field. node.sh names it once for both loops. This is what notices
-# if one of them ever re-inlines a literal.
 missing_u=""
-for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh finish.sh learn.sh; do
+for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
   [ -x "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
 done
 for f in comments.conf status.conf log.conf; do
@@ -2831,27 +2333,15 @@ for f in comments.conf status.conf log.conf; do
 done
 [ -z "$missing_u" ] && pass "update: every shipped script and starter conf reaches an existing node" || fail "update: every shipped script and starter conf reaches an existing node (missing:$missing_u)"
 
-# F2: the gate fails closed when it cannot read what it is meant to read,
-# rather than reporting a pass it never earned. GIT_EXTERNAL_DIFF pointed
-# at a program that fails is the audit's own reproducer: git diff then
-# exits 128, and unless that status is checked, the parser downstream is
-# handed an empty stream that reads as a clean diff never taken.
 out34diffx=$(cd "$cg" && GIT_EXTERNAL_DIFF=false .agent/scripts/comments.sh base 2>&1)
 rc34diffx=$?
 [ "$rc34diffx" -eq 2 ] && pass "comments.sh: GIT_EXTERNAL_DIFF pointed at a broken program fails the diff capture closed" || fail "comments.sh: GIT_EXTERNAL_DIFF pointed at a broken program fails the diff capture closed (rc=$rc34diffx; $out34diffx)"
 
-# The rest of the fault injection goes through a PATH-prepended stub that
-# fails only the exact call under test and execs the real tool otherwise,
-# so every other git or awk call in the run is untouched. The real
-# interpreter is resolved once, before PATH is ever touched, and baked
-# into each stub's own text rather than re-resolved at the stub's run
-# time — a stub that called `command -v` itself would find itself first.
 stub34="$WORK/cg-stub"
 mkdir -p "$stub34"
 real_git34=$(command -v git)
 real_awk34=$(command -v awk)
 
-# The diff-capture call is the only one carrying --src-prefix=a/.
 cat >"$stub34/git" <<STUBEOF
 #!/bin/sh
 for a in "\$@"; do
@@ -2867,8 +2357,6 @@ rc34diffy=$?
 [ "$rc34diffy" -eq 2 ] && pass "comments.sh: a stubbed git failing the diff capture exits 2" || fail "comments.sh: a stubbed git failing the diff capture exits 2 (rc=$rc34diffy; $out34diffy)"
 rm -f "$stub34/git"
 
-# Untracked-file discovery carries the only ls-files call with -z, which
-# separates it from the identical-looking call in the emptiness guard.
 cat >"$stub34/git" <<STUBEOF
 #!/bin/sh
 for a in "\$@"; do
@@ -2884,9 +2372,6 @@ rc34untrx=$?
 [ "$rc34untrx" -eq 2 ] && pass "comments.sh: a stubbed git failing untracked-file discovery exits 2" || fail "comments.sh: a stubbed git failing untracked-file discovery exits 2 (rc=$rc34untrx; $out34untrx)"
 rm -f "$stub34/git"
 
-# The classifier is the only awk invocation that exports BLOCK_RE — a
-# blanket awk stub would trip the earlier regex-validation awk calls first
-# and pass the assertion below for the wrong reason.
 cat >"$stub34/awk" <<STUBEOF
 #!/bin/sh
 if [ -n "\${BLOCK_RE+x}" ]; then
@@ -2900,8 +2385,6 @@ rc34clsx=$?
 [ "$rc34clsx" -eq 2 ] && pass "comments.sh: a stubbed awk failing the classifier exits 2" || fail "comments.sh: a stubbed awk failing the classifier exits 2 (rc=$rc34clsx; $out34clsx)"
 rm -f "$stub34/awk"
 
-# The emptiness guard's three git calls each fail closed on an error
-# status, distinct from the 0/1 outcomes the guard actually reads.
 cat >"$stub34/git" <<STUBEOF
 #!/bin/sh
 if [ "\$1" = "rev-parse" ] && [ "\$2" = "HEAD" ] && [ \$# -eq 2 ]; then
@@ -2941,10 +2424,6 @@ rc34othersx=$?
 [ "$rc34othersx" -eq 2 ] && pass "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2" || fail "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2 (rc=$rc34othersx; $out34othersx)"
 rm -f "$stub34/git"
 
-# checkpoint.sh already maps any non-zero comments.sh exit to a hard stop
-# with no log entry (scripts/checkpoint.sh, unchanged here) — a gate that
-# now fails closed on a broken diff read has to reach that same stop, not a
-# silent pass through it.
 cgf34="$WORK/comment-gate-failclosed"
 mkdir -p "$cgf34/src"
 "$NODE" init --preset software-development --mode track-all "$cgf34" >/dev/null 2>&1
@@ -2958,8 +2437,6 @@ rc34fc=$?
 n34after=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
 [ "$rc34fc" -ne 0 ] && [ "$n34before" -eq "$n34after" ] && pass "checkpoint.sh: a failed-closed comment gate appends no log entry" || fail "checkpoint.sh: a failed-closed comment gate appends no log entry (rc=$rc34fc before=$n34before after=$n34after; $out34fc)"
 
-# The one temporary file comments.sh writes — the captured diff — survives
-# no run, clean or failed: a single trap removes it on every exit path.
 tmpdir34="$WORK/cg-tmpdir"
 mkdir -p "$tmpdir34"
 (cd "$cg" && TMPDIR="$tmpdir34" .agent/scripts/comments.sh base >/dev/null 2>&1)
@@ -2968,10 +2445,6 @@ mkdir -p "$tmpdir34"
 leftover34=$(find "$tmpdir34" -type f)
 [ -z "$leftover34" ] && pass "comments.sh: no temporary file survives success or failure" || fail "comments.sh: no temporary file survives success or failure ($leftover34)"
 
-# ---- 35. status.sh: per-node overrides in status.conf ----
-# The thresholds and the probed-tools list are per-project tunables, but
-# an edit to status.sh itself is discarded by node.sh update. The conf
-# beside the script survives update and is parsed, never executed.
 printf 'LOG_ENTRY_MAX_WORDS=500\n' >"$es/.agent/scripts/status.conf"
 f35=$(status_flags "$es")
 printf '%s\n' "$f35" | grep -q 'entries over' && fail "status.conf: a threshold override silences the flag" || pass "status.conf: a threshold override silences the flag"
@@ -2984,12 +2457,6 @@ subst "$es/.agent/scripts/status.conf" 's/^PROBE_TOOLS=.*/PROBE_TOOLS=sh/'
 out35b=$("$es/.agent/scripts/status.sh" "$es" 2>&1)
 printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a trimmed PROBE_TOOLS list stops the probe" || pass "status.conf: a trimmed PROBE_TOOLS list stops the probe"
 
-# ---- 36. starter confs: shown defaults match the scripts' ----
-# The starter confs list each script's defaults (commented, or live for
-# the keys projects trim first) so the knobs are discoverable on disk —
-# agents execute the scripts, they don't read them. A default shown in a
-# conf that drifted from the script's would document a lie. This pins the
-# two together.
 mismatch36=""
 for k in LOG_MAX_ENTRIES LOG_MAX_WORDS LOG_ENTRY_MAX_WORDS MEMORY_MAX_WORDS \
          MEMORY_MAX_ENTRIES LEARNED_MAX_RULES LEARNED_MAX_WORDS \
@@ -3015,9 +2482,6 @@ sdef=$(sed -n 's/^RESTATE_CHECK=//p' "$reporoot/scripts/comments.sh" | head -n 1
 cdef=$(sed -n 's/^# RESTATE_CHECK=//p' "$reporoot/scripts/comments.conf" | head -n 1)
 [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] && pass "starter comments.conf lists the script's own restatement default" || fail "starter comments.conf lists the script's own restatement default (script '$sdef' vs conf '$cdef')"
 
-# Every key the gate reads has a line in the conf beside it. The conf is
-# the only documentation a node gets — the scripts are executed, not read —
-# so a knob added to the script and not to the file is a knob nobody finds.
 missing36=""
 for k in $(sed -n 's/^  v=\$(conf_get \([A-Z_]*\)).*/\1/p' "$reporoot/scripts/comments.sh"); do
   grep -qE "^#? ?$k=" "$reporoot/scripts/comments.conf" || missing36="$missing36 $k"
@@ -3033,11 +2497,6 @@ cdef=$(sed -n 's/^LOG_INCLUDE_BRANCH=//p' "$reporoot/scripts/log.conf" | head -n
 [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36b="$mismatch36b LOG_INCLUDE_BRANCH"
 [ -z "$mismatch36b" ] && pass "starter log.conf lists the script's own defaults" || fail "starter log.conf lists the script's own defaults ($mismatch36b)"
 
-# ---- 37. log.sh: the branch stamp ----
-# LOG_INCLUDE_BRANCH=true stamps each scripted entry with the checked-out
-# branch, read from git at write time — mechanical, never asked of the
-# agent — and is silently omitted outside a git checkout. The summary
-# ceiling tunes from the same conf.
 lb="$WORK/log-branch"
 mkdir -p "$lb"
 "$NODE" init --preset software-development --mode track-all "$lb" >/dev/null 2>&1
@@ -3063,28 +2522,11 @@ printf 'SUMMARY_MAX_WORDS=5\n' >>"$lb2/.agent/scripts/log.conf"
 "$LOGSH" --tool t --area a --verify pass --summary "one two three four five six" "$lb2" >/dev/null 2>&1 \
   && fail "log.sh: the summary ceiling tunes from log.conf" || pass "log.sh: the summary ceiling tunes from log.conf"
 
-# The stamp spends no summary budget (the ceiling is enforced on --summary
-# alone, before the line is assembled) and cannot push a format-compliant
-# entry over the entry-shape threshold: a maxed 25-word summary plus every
-# tag and the stamp runs ~33 of the 50-word grace.
 subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
 "$LOGSH" --tool t --area a --verify pass --summary "$(words_n 25)" "$lb" >/dev/null 2>&1 \
   && tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch: feat-x' && pass "log.sh: the stamp spends no summary budget at the 25-word ceiling" || fail "log.sh: the stamp spends no summary budget at the 25-word ceiling"
 status_flags "$lb" | grep -q 'entries over' && fail "log.sh: a stamped max-length entry stays under the entry-shape flag" || pass "log.sh: a stamped max-length entry stays under the entry-shape flag"
 
-# ---- 38. the markdown corpus is soft-wrapped ----
-# Hard-wrapped prose makes every edit a re-wrap. Change one word and the
-# whole paragraph reflows, so the diff shows moved line breaks with the
-# actual edit buried among them. The corpus is authored one line per
-# paragraph and wrapped by the reader's renderer instead. Fenced blocks,
-# tables, frontmatter, headings and list markers keep their line structure,
-# because there the break carries meaning.
-#
-# A hard wrap is any prose line whose next line is also prose. In markdown
-# two consecutive non-blank lines are one paragraph, so the second line is
-# always a continuation. An earlier version of this check only flagged
-# lines under 100 characters, which let a break after a long line through.
-# Width is not the test. Continuation is.
 hwawk="$WORK/hardwrap.awk"
 cat >"$hwawk" <<'AWK'
 FNR == 1 { infence = 0; prev = ""; prevno = 0; infm = ($0 == "---"); if (infm) next }
@@ -3101,9 +2543,6 @@ infence  { next }
 AWK
 
 hw38=""
-# -print0 into a file, then read with a redirect rather than a pipe: a
-# pipeline would run the loop in a subshell and lose hw38. Unquoted
-# $(find) word-split here, so a path with a space read as clean.
 (cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './evals/runs/*' -print0) >"$WORK/hw-corpus"
 while IFS= read -r -d '' md; do
   hit=$(cd "$reporoot" && awk -f "$hwawk" "$md")
@@ -3111,17 +2550,9 @@ while IFS= read -r -d '' md; do
 done <"$WORK/hw-corpus"
 [ -z "$hw38" ] && pass "markdown: the corpus is soft-wrapped" || fail "markdown: the corpus is soft-wrapped ($(printf '%s' "${hw38# }" | cut -c1-160))"
 
-# The check has to be able to fail, or a broken detector reads as a clean
-# corpus. Section 30 guards its lint the same way.
 printf 'A paragraph broken by a column limit\nrather than by a blank line.\n' >"$WORK/hardwrap-fixture.md"
 [ -n "$(awk -f "$hwawk" "$WORK/hardwrap-fixture.md")" ] && pass "markdown: the check catches an injected hard wrap" || fail "markdown: the check catches an injected hard wrap"
 
-# A node's markdown is written by the scripts rather than copied out of
-# this repo, so the corpus sweep above cannot see any of it. node.sh and
-# docs.sh carry a node's headers in heredocs, and a hard wrap there ships
-# into every node this repo has ever created. That is the copy that
-# matters: the corpus is read by whoever maintains this repo, a node is
-# read by every agent that works in it.
 hwnode="$WORK/hardwrap-node"
 mkdir -p "$hwnode"
 "$NODE" init --preset software-development --mode track-all "$hwnode" >/dev/null 2>&1
@@ -3135,24 +2566,16 @@ while IFS= read -r -d '' md; do
 done <"$WORK/hw-nodelist"
 [ -z "$hw38b" ] && pass "markdown: a generated node is soft-wrapped too" || fail "markdown: a generated node is soft-wrapped too ($(printf '%s' "${hw38b# }" | cut -c1-160))"
 
-# A fenced block keeps its line structure and must not be read as prose.
 printf 'One line of prose.\n\n```\nwrapped inside\na fence\n```\n' >"$WORK/hardwrap-fence.md"
 [ -z "$(awk -f "$hwawk" "$WORK/hardwrap-fence.md")" ] && pass "markdown: a fenced block is not read as wrapped prose" || fail "markdown: a fenced block is not read as wrapped prose"
 
-# ---- 39. the operating model quotes what the scripts actually write ----
-# node.sh and docs.sh write a node's headers, and the operating model shows
-# each one in a fenced block as the reference copy. Nothing kept the two in
-# step. The session-log block had already lost the branch-stamp clause that
-# log.conf added, and a register pass over the scripts moved four of the
-# five further apart, silently in both cases. A reader trusts the document
-# over the script, so a stale block teaches the wrong contract.
 omnode="$WORK/om-quotes"
 mkdir -p "$omnode"
 "$NODE" init --preset software-development --mode track-all "$omnode" >/dev/null 2>&1
 "$omnode/.agent/scripts/docs.sh" new --name a --read-when "x" "$omnode" >/dev/null 2>&1
 
 om_drift=""
-om_check() { # $1 = path under .agent/, $2 = a distinctive phrase in the header
+om_check() {
   line=$(grep -F "$2" "$omnode/.agent/$1" | head -n 1)
   if [ -z "$line" ]; then
     om_drift="$om_drift $1(missing-from-node)"
@@ -3164,27 +2587,14 @@ om_check session-log.md "One entry per turn that changed files"
 om_check memory.md "Index only, one line per fact file"
 om_check rules/learned.md "Binding rules distilled"
 om_check docs/architecture.md "One entry per doc in this directory"
-# docs/a.md has no header to quote: the shape contract moved to the preset
-# and docs.sh's output. Pin the removal at both ends instead — a copy that
-# grows back in either place is the drift this section exists to catch.
 grep -qF "Agent-facing reference, not a human narrative" "$omnode/.agent/docs/a.md" && om_drift="$om_drift docs/a.md(header-returned)"
 grep -qF "Agent-facing reference, not a human narrative" "$reporoot/operating-model.md" && om_drift="$om_drift operating-model.md(header-returned)"
 [ -z "$om_drift" ] && pass "operating model: the quoted node headers match what the scripts write" || fail "operating model: the quoted node headers match what the scripts write (drifted:$om_drift)"
 
-# The check must be able to fail, or a stale document reads as a current one.
 om_probe=$(grep -qF "a phrase no header contains anywhere" "$reporoot/operating-model.md" && echo found || echo absent)
 [ "$om_probe" = absent ] && pass "operating model: the quote check tests presence, not a constant" || fail "operating model: the quote check tests presence, not a constant"
 
-# ---- 40. the fail-open class found by the 2026-08-27 script review ----
-# Every check here pins a defect that shipped and that this suite passed
-# over. They share one shape: the script reported success while the work
-# it names did not happen. A gate that says "clean" when it never ran, a
-# threshold that stops enforcing, a write claimed but not made.
 
-# 40a. status.conf says "parsed and never executed" on its second line.
-# It was not. A conf value reached [[ ]] as an arithmetic operand, and
-# arithmetic evaluates command substitution inside an array subscript.
-# status.sh is the entry point's first step in every session.
 ce="$WORK/confexec"
 mkdir -p "$ce"
 "$NODE" init --preset software-development --mode track-all "$ce" >/dev/null 2>&1
@@ -3195,16 +2605,11 @@ ce_out=$("$ce/.agent/scripts/status.sh" "$ce" 2>/dev/null)
 [ ! -e "$ce_marker" ] && pass "status.conf: a conf value cannot execute a command" || fail "status.conf: a conf value cannot execute a command"
 printf '%s\n' "$ce_out" | grep -q '^REPAIR: status.conf LOG_MAX_ENTRIES=' && pass "status.conf: a value that is not a whole number draws a REPAIR flag" || fail "status.conf: a value that is not a whole number draws a REPAIR flag"
 
-# The threshold must still tune, or the validation traded one bug for
-# another.
 grep -v '^LOG_MAX_ENTRIES=entrypoints' "$ce/.agent/scripts/status.conf" >"$ce/conf.tmp" && mv "$ce/conf.tmp" "$ce/.agent/scripts/status.conf"
 printf 'LOG_MAX_ENTRIES=1\n' >>"$ce/.agent/scripts/status.conf"
 printf -- '- [2026-01-01] (t) a (b). verify: pass.\n- [2026-01-02] (t) a (b). verify: pass.\n' >>"$ce/.agent/session-log.md"
 status_flags "$ce" | grep -q '^GROOM: session-log.md' && pass "status.conf: a valid threshold still tunes the check" || fail "status.conf: a valid threshold still tunes the check"
 
-# 40b. The word ceiling is why log.sh exists over a hand-written append,
-# so a ceiling it cannot parse fails closed rather than waving entries
-# through. An inline comment is the everyday form of a bad value.
 lc="$WORK/logconf"
 mkdir -p "$lc"
 "$NODE" init --preset software-development --mode track-all "$lc" >/dev/null 2>&1
@@ -3212,14 +2617,9 @@ printf 'SUMMARY_MAX_WORDS=25 words\n' >>"$lc/.agent/scripts/log.conf"
 "$lc/.agent/scripts/log.sh" --tool t --area a --verify pass --summary "short entry" "$lc" >/dev/null 2>&1 \
   && fail "log.conf: a ceiling that is not a whole number is refused" || pass "log.conf: a ceiling that is not a whole number is refused"
 
-# 40c. A flag name taken as the next flag's value wrote an entry reading
-# "(t) --area (a)". Only the argument count was checked, never the shape.
 "$lc/.agent/scripts/log.sh" --tool t --area a --verify pass --summary --area "$lc" >/dev/null 2>&1 \
   && fail "log.sh: a flag is not accepted as another flag's value" || pass "log.sh: a flag is not accepted as another flag's value"
 
-# 40d. status.sh invented three findings for any argument it did not
-# understand, at exit 0. The entry point tells an agent to clear every
-# REPAIR: line it prints.
 "$lc/.agent/scripts/status.sh" --help >"$WORK/sh-help" 2>/dev/null
 sh_rc=$?
 [ "$sh_rc" -eq 0 ] && head -n 1 "$WORK/sh-help" | grep -q '^Usage: status.sh' && pass "status.sh: --help prints usage on stdout at exit 0" || fail "status.sh: --help prints usage on stdout at exit 0"
@@ -3233,12 +2633,6 @@ lk_out=$("$lc/.agent/scripts/links.sh" "$sh_bad" 2>/dev/null)
 lk_rc=$?
 [ "$lk_rc" -ne 0 ] && [ -z "$lk_out" ] && pass "links.sh: a root with no .agent is a usage error, not an empty report" || fail "links.sh: a root with no .agent is a usage error, not an empty report"
 
-# 40d-ii. Both reporting scripts documented an unconditional "always exits
-# 0" that the usage-error exit above had already made false. The claim is
-# load-bearing: a caller told the status is constant will not branch on it,
-# and a script whose own docs are wrong about its contract is the failure
-# this suite exists to catch. Pinned as a phrase, in the scripts and in
-# every doc, because that is the shape a future edit would reintroduce.
 ax_bad=""
 for ax_f in "$reporoot"/scripts/status.sh "$reporoot"/scripts/links.sh \
   "$reporoot"/scripts/docs/status.md "$reporoot"/scripts/docs/links.md \
@@ -3247,15 +2641,6 @@ for ax_f in "$reporoot"/scripts/status.sh "$reporoot"/scripts/links.sh \
 done
 [ -z "$ax_bad" ] && pass "status.sh and links.sh: nothing claims an unconditional exit 0" || fail "status.sh and links.sh: nothing claims an unconditional exit 0 ($ax_bad)"
 
-# 40e. memory.sh and docs.sh printed "wrote X and indexed it in Y" when
-# the second write failed, leaving exactly the drift they exist to
-# prevent. The blocked target is a directory rather than a chmod, so the
-# write fails for root too and this means the same thing in CI.
-# The index target must stay a regular file: making it a directory trips
-# an earlier guard and never reaches the defect. A read-only file is the
-# real shape, so the check first proves this environment enforces that.
-# Running as root it does not, and the pair says so rather than passing
-# on a condition it never created.
 hw="$WORK/halfwrite"
 mkdir -p "$hw"
 "$NODE" init --preset software-development --mode track-all "$hw" >/dev/null 2>&1
@@ -3294,11 +2679,6 @@ else
   pass "docs.sh: unrouted doc removal not exercised — this environment ignores file permissions"
 fi
 
-# 40f. Slug and name validation used [a-z0-9-], a collation range that
-# means ASCII only in the C locale. UpperCase was refused under LC_ALL=C
-# and accepted in every locale a person actually runs in. Section 9's
-# Bad_Slug case cannot catch this: its underscore is rejected either way.
-# This input is all-alpha on purpose.
 vn="$WORK/validate"
 mkdir -p "$vn"
 "$NODE" init --preset software-development --mode track-all "$vn" >/dev/null 2>&1
@@ -3313,8 +2693,6 @@ if [ -n "$vloc" ]; then
 fi
 [ ! -e "$vn/.agent/memory/UpperCase.md" ] && pass "memory.sh: no uppercase fact file was written in any locale" || fail "memory.sh: no uppercase fact file was written in any locale"
 
-# A leading dash passed the character check, and the filename it wrote
-# reads as a flag to everything downstream.
 "$vn/.agent/scripts/memory.sh" new --slug -weird --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
   && fail "memory.sh: a slug starting with - is refused" || pass "memory.sh: a slug starting with - is refused"
 "$vn/.agent/scripts/docs.sh" new --name -weird --read-when x "$vn" >/dev/null 2>&1 \
@@ -3324,11 +2702,6 @@ fi
 "$vn/.agent/scripts/memory.sh" new --slug fresh-slug --title T --hook H --fact "a real fact" "$vn" >/dev/null 2>&1 \
   && pass "memory.sh: a valid invocation still writes" || fail "memory.sh: a valid invocation still writes"
 
-# 40g. The comment gate failed open two ways. A conf regex that will not
-# compile made every grep in the pipeline error into `|| true`, so the run
-# exited 0 with the BLOCK gone. And a path holding a space was skipped
-# whole, because git appends a tab to the `+++ b/<path>` header and the
-# tab travelled into the filename field.
 fo="$WORK/gate-failopen"
 mkdir -p "$fo/.agent/scripts" "$fo/My Project"
 cp "$reporoot/scripts/comments.sh" "$fo/.agent/scripts/comments.sh"
@@ -3345,22 +2718,16 @@ printf '// refactored per commit deadbeefcafe1234\n' >"$fo/My Project/Program.cs
 printf '// refactored per commit deadbeefcafe1234\n' >"$fo/Plain.cs"
 git_fo add -A >/dev/null
 
-# Both citations are identical, so the only difference is the space.
 fo_out=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
 printf '%s\n' "$fo_out" | grep -qF 'My Project/Program.cs' && pass "comments.sh: a path containing a space is still gated" || fail "comments.sh: a path containing a space is still gated"
 printf '%s\n' "$fo_out" | grep -qF 'Plain.cs' && pass "comments.sh: the unspaced control path is gated" || fail "comments.sh: the unspaced control path is gated"
 
-# A conf regex that will not compile must stop the gate, not silence it.
 grep -v '^BLOCK_RE_EXTRA=' "$fo/.agent/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agent/scripts/comments.conf"
 printf 'BLOCK_RE_EXTRA=[unclosed\n' >>"$fo/.agent/scripts/comments.conf"
 fo_bad=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
 fo_rc=$?
 [ "$fo_rc" -ne 0 ] && [ -z "$fo_bad" ] && pass "comments.sh: a conf regex that will not compile fails closed" || fail "comments.sh: a conf regex that will not compile fails closed (rc=$fo_rc)"
 
-# 40h. comments.sh is excluded because it takes a base ref, not a root.
-# index.sh is excluded because its --help opens with a bare "Usage:" line
-# above a four-invocation block, and its exit-0 contract is already
-# asserted by section 53.
 hp="$WORK/helpcontract"
 mkdir -p "$hp"
 "$NODE" init --preset software-development --mode track-all "$hp" >/dev/null 2>&1
@@ -3373,13 +2740,6 @@ for hp_s in status log memory docs links checkpoint learn; do
 done
 [ -z "$hp_bad" ] && pass "shipped scripts: --help prints usage on stdout at exit 0" || fail "shipped scripts: --help prints usage on stdout at exit 0 ($hp_bad)"
 
-# ---- 41. status.sh: the entry point stays wiring ----
-# An entry point is the load path and nothing else. What grows past the
-# template's size is project scope, constraints, or architecture restated
-# from purpose.md and docs/, which the load path opens two steps later
-# anyway — a second copy no check reads and no groom pass touches, paid on
-# every message by every tool that keeps the file resident. The boundary was
-# prose until this threshold measured it.
 ew="$WORK/entry-width"
 mkdir -p "$ew"
 "$NODE" init --preset software-development --mode track-all "$ew" >/dev/null 2>&1
@@ -3394,11 +2754,6 @@ printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 600 words' && pass "status.s
 printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agent/scripts/status.conf"
 status_flags "$ew" | grep -q 'CLAUDE.md > ' && fail "status.conf: the entry-point threshold tunes per node" || pass "status.conf: the entry-point threshold tunes per node"
 
-# The word count measures bloat; the boundary is what actually breaks. A
-# deploy command appended under its own heading costs a tenth of the
-# threshold and never reaches .agent/ at all, and mirroring it to every entry
-# point keeps the drift check quiet while it sits in the wrong file. So the
-# shape is checked whatever the size, and that check has no tunable.
 ews="$WORK/entrypoint-section"
 mkdir -p "$ews"
 "$NODE" init --preset software-development --mode ignore-all "$ews" >/dev/null 2>&1
@@ -3411,29 +2766,20 @@ printf '%s\n' "$f41s" | grep -qF 'GROOM: CLAUDE.md carries the section "## Opera
 printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ews/.agent/scripts/status.conf"
 status_flags "$ews" | grep -qF 'carries the section' && pass "status.sh: the section check has no tunable to raise past it" || fail "status.sh: the section check has no tunable to raise past it"
 rm -f "$ews/.agent/scripts/status.conf"
-# Mirroring the section to every entry point silences the drift check and
-# must not silence this one: both copies are flagged, not neither.
 cp "$ews/CLAUDE.md" "$ews/AGENTS.md"
 f41m=$(status_flags "$ews")
 printf '%s\n' "$f41m" | grep -qF 'differs from' && fail "status.sh: mirrored entry points raise no drift flag" || pass "status.sh: mirrored entry points raise no drift flag"
 [ "$(printf '%s\n' "$f41m" | grep -cF 'carries the section')" -eq 2 ] && pass "status.sh: a mirrored section is flagged in every entry point" || fail "status.sh: a mirrored section is flagged in every entry point ($f41m)"
-# A fenced example inside the load path is not a section.
 printf '# P — Session Bootstrap\n\nRun it:\n\n```\n## not a heading\n```\n\nbash .agent/scripts/status.sh\n' >"$ews/CLAUDE.md"
 rm -f "$ews/AGENTS.md"
 status_flags "$ews" | grep -qF 'carries the section' && fail "status.sh: a heading inside a fenced block is not a section" || pass "status.sh: a heading inside a fenced block is not a section"
 
-# The threshold's stated provenance: the shipped template, filled, with 2x
-# grace. Checked both ways — a template that grew past half the threshold
-# would make the number an invention, and a threshold far above 2x would
-# stop flagging what it exists to flag.
 tpl41=$(sed -n '2,$p' "$reporoot/templates/entry-point.md" | wc -w | tr -d '[:space:]')
 def41=$(sed -n 's/^ENTRYPOINT_MAX_WORDS=//p' "$reporoot/scripts/status.sh" | head -n 1)
 [ -n "$def41" ] && [ "$def41" -ge "$((tpl41 * 2))" ] && [ "$def41" -le "$((tpl41 * 3))" ] \
   && pass "status.sh: ENTRYPOINT_MAX_WORDS stays ~2x the shipped template" \
   || fail "status.sh: ENTRYPOINT_MAX_WORDS stays ~2x the shipped template (template $tpl41, threshold $def41)"
 
-# The template is the only copy of the load path, and both of its
-# timing rules are the ones a harness re-reading it per message depends on.
 tpl41f="$reporoot/templates/entry-point.md"
 missing41=""
 grep -qF "run once" "$tpl41f" || grep -qF "runs once" "$tpl41f" || missing41="$missing41 once-per-session"
@@ -3444,22 +2790,10 @@ grep -qF "Never restate it here" "$tpl41f" || missing41="$missing41 wiring-only"
 grep -qF "checkpoint.sh" "$tpl41f" || missing41="$missing41 checkpoint-call"
 [ -z "$missing41" ] && pass "template: the entry point carries its timing and boundary rules" || fail "template: the entry point carries its timing and boundary rules (missing:$missing41)"
 
-# A user turn is not a session boundary, and the gate saying so must precede
-# the numbered imperative: a literal reader that meets the first numbered step
-# before the gate starts the list and never reaches its exception. This is
-# structural prompt coverage. Whether a given model honors it is behavior, and
-# behavior is measured by the evals under evals/, not asserted here.
 gate41=$(grep -nF 'A new user message does not start a new session.' "$tpl41f" | cut -d: -f1)
 steps41=$(grep -nE '^1\. ' "$tpl41f" | head -n 1 | cut -d: -f1)
 [ -n "$gate41" ] && [ -n "$steps41" ] && [ "$gate41" -lt "$steps41" ] && pass "template: the per-conversation gate precedes the numbered steps" || fail "template: the per-conversation gate precedes the numbered steps (gate=$gate41 steps=$steps41)"
 
-# ---- 43. evals/ is the repo's, never a node's ----
-# The eval bench is maintainer tooling. It costs model tokens, names agents
-# and models by vendor, and carries fixtures that plant a credential and an
-# injection payload on purpose — none of which belongs in someone's project.
-# node.sh copies a fixed list, so the leak cannot happen by accident today;
-# this is what notices when that list grows a wildcard, or when a bootstrap
-# prompt starts telling an agent to copy the clone.
 evleak="$WORK/node-scope"
 mkdir -p "$evleak"
 "$NODE" init --preset software-development --mode track-all "$evleak" >/dev/null 2>&1
@@ -3467,7 +2801,6 @@ leaked43=$(find "$evleak" -path '*eval*' -o -name 'spec.json' -o -name 'agents.c
   -o -name 'fixtures.sh' -o -name 'fixture_seed.py' -o -name 'rollup.py' -o -name 'grade.py' 2>/dev/null)
 [ -z "$leaked43" ] && pass "evals: init puts nothing from evals/ into a node" || fail "evals: init puts nothing from evals/ into a node ($leaked43)"
 
-# The same on the path that reaches nodes already in the field.
 evleak2="$WORK/node-scope-update"
 mkdir -p "$evleak2"
 make_v6_fixture "$evleak2"
@@ -3476,29 +2809,19 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
   -o -name 'fixtures.sh' -o -name 'fixture_seed.py' -o -name 'rollup.py' -o -name 'grade.py' 2>/dev/null)
 [ -z "$leaked43b" ] && pass "evals: update puts nothing from evals/ into a node" || fail "evals: update puts nothing from evals/ into a node ($leaked43b)"
 
-# A node's scripts directory holds exactly the shipped set and nothing else.
-# The eval bench is the newest candidate for arriving there by mistake, but
-# the assertion is general: what a node receives is a closed list.
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | finish.sh | index.sh | learn.sh | status.conf | log.conf | comments.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | index.sh | learn.sh | status.conf | log.conf | comments.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
 [ -z "$extra43" ] && pass "evals: a node's scripts/ holds exactly the shipped set" || fail "evals: a node's scripts/ holds exactly the shipped set (extra: $(printf '%s' "$extra43" | tr '\n' ' '))"
 
-# The bench says so where a reader meets it, and the operating model keeps it
-# out of the appendix that lists what a node *does* install.
 grep -qF "belongs to the dot-agent repository, not to the harness" "$reporoot/evals/README.md" && pass "evals: the bench states its own scope at the top of its README" || fail "evals: the bench states its own scope at the top of its README"
 appendix43=$(awk '/^## Appendix: optional tooling/ { f = 1 } f' "$reporoot/operating-model.md")
 printf '%s\n' "$appendix43" | grep -q 'evals/' && fail "evals: the bench is not listed as node-installable tooling" || pass "evals: the bench is not listed as node-installable tooling"
 
-# ---- 42. evals/: the eval set stays buildable and well-formed ----
-# The eval runs themselves need a model and are an operator ceremony, never
-# CI. What rides here is the static half: a spec that parses and a fixture
-# that still builds. Without it the eval set rots silently between runs, and
-# the rot only surfaces when someone is mid-benchmark and paying for tokens.
 evroot="$reporoot/evals"
 if command -v python3 >/dev/null 2>&1; then
   ev42=$(SPEC="$evroot/spec.json" FIX="$evroot/fixtures.sh" python3 - <<'PY'
@@ -3545,9 +2868,6 @@ PY
 )
   [ -z "$ev42" ] && pass "evals: spec.json is well-formed and every assertion is joinable" || fail "evals: spec.json is well-formed and every assertion is joinable ($ev42)"
 
-  # heldout.json is the same well-formedness check, run over the reworded
-  # prompt set. Before this, nothing parsed it, checked it for well-formedness,
-  # or checked it for id parity with the canonical set at all.
   evh42=$(SPEC="$evroot/heldout.json" FIX="$evroot/fixtures.sh" python3 - <<'PY'
 import io, json, os, re, sys
 bad = []
@@ -3592,8 +2912,6 @@ PY
 )
   [ -z "$evh42" ] && pass "evals: heldout.json is well-formed and every assertion is joinable" || fail "evals: heldout.json is well-formed and every assertion is joinable ($evh42)"
 
-  # A held-out set that quietly lost or gained an eval or an assertion would
-  # report a pass over a smaller checklist than the one the id implies.
   evpar42=$(python3 - "$evroot/spec.json" "$evroot/heldout.json" <<'PY'
 import json, sys
 a = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -3613,8 +2931,6 @@ PY
 )
   [ -z "$evpar42" ] && pass "evals: both prompt sets carry the same eval and assertion ids" || fail "evals: both prompt sets carry the same eval and assertion ids ($evpar42)"
 
-  # Every assertion id must carry a kind, so a headline pass rate can never
-  # silently lean on an untagged, uncategorized row.
   evkind42=$(python3 - "$evroot/spec.json" "$evroot/assertion-kinds.json" <<'PY'
 import json, sys
 spec = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -3630,9 +2946,6 @@ PY
 )
   [ -z "$evkind42" ] && pass "evals: every assertion carries a behavior, conformance, or information kind" || fail "evals: every assertion carries a behavior, conformance, or information kind ($evkind42)"
 
-  # index.sh ensure prints one path and no content, so a check whose only
-  # evidence is a call to it is a defect: it proves nothing about what the
-  # session read. Every check names the page or the canonical source instead.
   evidx42=$(python3 - "$evroot/spec.json" "$evroot/heldout.json" <<'PY'
 import json, sys
 bad = []
@@ -3654,10 +2967,6 @@ else
   fail "evals: a page-read assertion names the page, never the script that built it (python3 absent)"
 fi
 
-# Every phase the operating model's trust contract names must carry at least
-# one eval. Without this the set narrows back to whichever bug was reported
-# last — which is exactly how it was first written, covering the comment rule
-# four ways and the write-back contract not at all.
 phases42=$(awk '/^\| Phase \| Trust contract/ { f = 1; next } f && /^\| \*\*/ { gsub(/\*/, "", $2); print tolower($2) } f && !/^\|/ { exit }' "$reporoot/operating-model.md")
 covered42=$(sed -n 's/.*"phase": "\([a-z-]*\)".*/\1/p' "$evroot/spec.json" | sort -u)
 uncovered42=""
@@ -3666,10 +2975,6 @@ for ph in $phases42; do
 done
 [ -n "$phases42" ] && [ -z "$uncovered42" ] && pass "evals: every trust-contract phase carries at least one eval" || fail "evals: every trust-contract phase carries at least one eval (uncovered:${uncovered42:-none}; phases found: $(printf '%s' "$phases42" | tr '\n' ' '))"
 
-# A fixture arriving with its own REPAIR: flags would make every eval spend
-# its session on repair rather than on the behavior under test, and the delta
-# would measure that instead. Built from the working tree on purpose: the
-# corpus under test is the one being edited, not the one last committed.
 evfx="$WORK/eval-fixture"
 "$evroot/fixtures.sh" ts-service-catalog "$evfx" --corpus-dir "$reporoot" >/dev/null 2>&1
 if [ -d "$evfx/.agent" ]; then
@@ -3681,16 +2986,11 @@ else
   fail "evals: a freshly built fixture reports no findings (no fixture)"
 fi
 
-# The one fixture whose contract is the opposite: it exists to be flagged, and
-# a build that stopped seeding its thresholds would leave groom-acts-on-flags
-# passing against nothing.
 evfg="$WORK/eval-fixture-flagged"
 "$evroot/fixtures.sh" ts-service-flagged "$evfg" --corpus-dir "$reporoot" >/dev/null 2>&1
 f42b=$(status_flags "$evfg")
 printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf '%s\n' "$f42b" | grep -q '^GROOM: memory/' && pass "evals: the flagged fixture arrives over the thresholds its eval clears" || fail "evals: the flagged fixture arrives over the thresholds its eval clears ($f42b)"
 
-# H4: a fixture build now enforces every premise its evals' prompts assert
-# about the built tree. A drifted premise must void the build, not the run.
 evdoc="$WORK/eval-fixture-with-doc"
 "$evroot/fixtures.sh" ts-service-with-doc "$evdoc" --corpus-dir "$reporoot" >/dev/null 2>&1
 rc42doc=$?
@@ -3706,9 +3006,6 @@ evfailing="$WORK/eval-fixture-failing"
 rc42failing=$?
 [ "$rc42failing" -eq 0 ] && [ -d "$evfailing/.agent" ] && pass "evals: ts-service-failing builds and its premises hold" || fail "evals: ts-service-failing builds and its premises hold (rc=$rc42failing)"
 
-# A generated node arrives with a warm cache — fixtures.sh ran the fresh
-# node's own index.sh ensure once after seeding, so the fixture never starts
-# cold. This is the plain node-mode case; the four below layer a fault on it.
 evgenwarm="$WORK/eval-fixture-generated-warm"
 "$evroot/fixtures.sh" ts-service "$evgenwarm" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42genwarm=$?
@@ -3730,10 +3027,6 @@ rc42noidx=$?
   && pass "evals: the no-indexer fixture arrives with no installed indexer" \
   || fail "evals: the no-indexer fixture arrives with no installed indexer (rc=$rc42noidx)"
 
-# The learning fixture carries the application code the eight admission
-# prompts assume. Both prompt sets' premises must hold on the built tree,
-# and its own suite must pass, or the first turn of every eval is spent on
-# a red baseline instead of on the behavior under test.
 evlearn="$WORK/eval-fixture-learning"
 "$evroot/fixtures.sh" ts-service-learning "$evlearn" --corpus-dir "$reporoot" >/dev/null 2>&1
 rc42learn=$?
@@ -3771,12 +3064,6 @@ rc42partmig=$?
   && pass "evals: the partial-migration fixture arrives carrying both pending classes" \
   || fail "evals: the partial-migration fixture arrives carrying both pending classes (rc=$rc42partmig)"
 
-# The generated node's canonical record surface is rules/learned/*.md; the
-# gitignored, derived rules/learned.md never appears in a generated node's
-# diff at all. _learned_delta used to read only the latter, so every
-# learned-rule check on a generated node graded a confident false against an
-# empty delta. This proves the fix: a synthetic node diff that only touches
-# a record under rules/learned/ must still be read as one added rule.
 evlearndir="$WORK/eval-learned-delta-fallback"
 mkdir -p "$evlearndir/outputs"
 cat >"$evlearndir/outputs/node-diff.patch" <<'EOF'
@@ -3804,8 +3091,6 @@ print(json.load(open('$evlearndir/grading.json'))['results'][0]['passed'])
 " 2>/dev/null)
 [ "$evlearn_pass" = "True" ] && pass "evals: the learned delta reads records when the record directory exists" || fail "evals: the learned delta reads records when the record directory exists (got $evlearn_pass)"
 
-# Negative control: a drifted premise must be caught, naming the eval it
-# belongs to, not silently graded as if the prompt's claim were still true.
 sed -i.bak "s/amountMino:/amountMinor:/" "$evdoc/src/client.ts" && rm -f "$evdoc/src/client.ts.bak"
 premfail42=$("$evroot/fixture_seed.py" check-premises "$evroot/spec.json" ts-service-with-doc "$evdoc" 2>&1)
 premrc42=$?
@@ -3813,10 +3098,6 @@ premrc42=$?
   && pass "evals: check-premises catches a drifted premise and names the eval" \
   || fail "evals: check-premises catches a drifted premise and names the eval (rc=$premrc42; $premfail42)"
 
-# The harness-cost arms: the same fixture built without the node, so the
-# comparison has a control for "does the always-loaded corpus earn its cost".
-# The node moves aside rather than being deleted, so the built arm stays
-# inspectable and nothing the agent can reach still carries it.
 evbare="$WORK/eval-fixture-bare"
 "$evroot/fixtures.sh" ts-service "$evbare" --corpus-dir "$reporoot" --no-harness >/dev/null 2>&1
 rc42bare=$?
@@ -3825,9 +3106,6 @@ rc42bare=$?
   && pass "evals: --no-harness builds a fixture with no node and the verifier beside it" \
   || fail "evals: --no-harness builds a fixture with no node and the verifier beside it (rc=$rc42bare)"
 
-# .claude/settings.json is an eval control (autoMemoryEnabled:false), not
-# harness scaffolding, so it survives the strip in every arm — and the
-# fixture must still commit a base for the diff assertions to grade against.
 [ ! -e "$evbare/CLAUDE.md" ] && [ ! -e "$evbare/AGENTS.md" ] \
   && [ -f "$evbare/.claude/settings.json" ] \
   && git -C "$evbare" rev-parse HEAD >/dev/null 2>&1 \
@@ -3842,9 +3120,6 @@ rc42gen=$?
   && pass "evals: --generic-claude writes an instructions file and mirrors it to AGENTS.md" \
   || fail "evals: --generic-claude writes an instructions file and mirrors it to AGENTS.md (rc=$rc42gen)"
 
-# The control arm is only a control if it is an ordinary hand-written file:
-# dot-agent vocabulary in it would leak the treatment into the comparison,
-# and a command that does not exist would measure the fixture, not the file.
 ! grep -qiE '\.agent|entry point|routing|learned rule|session log' "$evgen/CLAUDE.md" \
   && grep -q 'npm test' "$evgen/CLAUDE.md" \
   && pass "evals: the generic instructions file names real commands and no node scaffolding" \
@@ -3857,25 +3132,11 @@ rc42both=$?
   && pass "evals: --no-harness and --generic-claude together are refused" \
   || fail "evals: --no-harness and --generic-claude together are refused (rc=$rc42both)"
 
-# ---- 44. evals/run.sh: fake-CLI regression coverage ----
-# claude and codex are real, logged-in installs the operator drives by hand
-# — nothing static may call one. Every claim about run.sh's own behavior is
-# instead pinned against fake claude/codex executables that speak just
-# enough of each CLI's stdin/stdout contract to stand in, driven through a
-# disposable EVALS_AGENTS_CONF so this suite never reads or writes the
-# operator's own evals/agents.conf, and never depends on what happens to be
-# installed on the machine running it.
 evsh="$evroot/run.sh"
-evfake="$WORK/eval fake cli"           # a space in the path, on purpose
+evfake="$WORK/eval fake cli"
 mkdir -p "$evfake"
 corpus_ref_test=$(git -C "$reporoot" rev-parse HEAD)
 
-# Every invocation below drives claude_run/codex_run, which require
-# subscription-backed auth before driving either adapter. Point both at
-# self-contained fake credential stores rather than the operator's real
-# ~/.claude or ~/.codex — nothing in this suite may read or depend on
-# whatever happens to be logged in on the machine running it. Individual
-# auth-rejection tests below override one or both of these per invocation.
 evauth="$evfake/auth"
 mkdir -p "$evauth/claude-ok" "$evauth/codex-ok"
 cat >"$evauth/claude-ok/.credentials.json" <<'EOF'
@@ -4320,10 +3581,6 @@ sys.exit(0)
 PY
 chmod +x "$fake_codex"
 
-# A PATH-level Bash wrapper pauses the existing capture process boundary.
-# All other scripts immediately delegate to the real interpreter. The
-# grading boundary is a Python one now that grade.py owns it, so its pause
-# and failure injections live in the python3 wrapper below.
 phase_bin="$evfake/phase-bin"
 mkdir -p "$phase_bin"
 cat >"$phase_bin/bash" <<'SH'
@@ -4386,10 +3643,6 @@ exec "$FAKE_REAL_PYTHON" "$@"
 SH
 chmod +x "$phase_bin/python3"
 
-# Pauses right after mktemp -d succeeds for a verifier snapshot or a Codex
-# home — the "chmod 700 <dir>" that is each setup's very next step — so a
-# TERM sent while blocked here lands after ownership is registered but
-# before the rest of setup (copies, hashing) has run.
 cat >"$phase_bin/chmod" <<'SH'
 #!/bin/sh
 if [ "$1" = 700 ]; then
@@ -4414,9 +3667,6 @@ exec "$FAKE_REAL_CHMOD" "$@"
 SH
 chmod +x "$phase_bin/chmod"
 
-# A deterministic append-failure: fails only the one cat call whose sole
-# argument's basename matches FAKE_CODEX_APPEND_FAIL, leaving every other
-# cat invocation in the run — node-tree capture included — untouched.
 cat >"$phase_bin/cat" <<'SH'
 #!/bin/sh
 if [ -n "${FAKE_CODEX_APPEND_FAIL:-}" ] && [ "$(basename -- "$1" 2>/dev/null)" = "$FAKE_CODEX_APPEND_FAIL" ]; then
@@ -4428,7 +3678,6 @@ SH
 chmod +x "$phase_bin/cat"
 
 eval_conf_write() {
-  # $1 conf path  $2 CLAUDE_BIN  $3 CODEX_BIN  $4 REPEATS  $5 TIMEOUT
   cat >"$1" <<CONF
 CLAUDE_BIN=$2
 CLAUDE_MODEL=fake-claude-model
@@ -4441,11 +3690,6 @@ TIMEOUT=$5
 CONF
 }
 
-# run workspace, eval id -> true only for a void run with no derived
-# artifact and no grading.json. A void withholds the grade, not the
-# evidence: a stage that voided before outputs/ was ever created (a fixture
-# build failure) has none, which is fine; a stage that voided after the
-# agent ran must still show the raw stream and nothing derived from it.
 eval_void_clean() {
   evc_run=$(find "$1/iteration-1/eval-$2" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
   [ -n "$evc_run" ] \
@@ -4458,8 +3702,6 @@ eval_void_clean() {
     && [ ! -e "$evc_run/grading.json" ]
 }
 
-# trace, fixture root, runner root -> rejects raw, doubled-separator, absolute,
-# and canonical aliases after collapsing separator runs for comparison
 trace_roots_absent() {
   python3 - "$1" "$2" "$3" <<'PY'
 import os, re, sys
@@ -4474,8 +3716,6 @@ sys.exit(0)
 PY
 }
 
-# PID files -> report failure for a missing or live process, and kill every
-# recorded survivor so a regression cannot leak it out of this test suite
 recorded_processes_dead() {
   rpd_failed=0
   for rpd_file in "$@"; do
@@ -4493,8 +3733,6 @@ recorded_processes_dead() {
   [ "$rpd_failed" -eq 0 ]
 }
 
-# The fakes fail closed too. Otherwise a removed or misplaced adapter flag
-# could leave every behavioral test green against a permissive stand-in.
 printf '{}\n' | "$fake_claude" --print >/dev/null 2>&1
 rc44claude_flags=$?
 [ "$rc44claude_flags" -eq 64 ] && pass "evals: fake claude rejects missing required adapter flags" || fail "evals: fake claude rejects missing required adapter flags (rc=$rc44claude_flags)"
@@ -4504,14 +3742,12 @@ printf 'prompt\n' | "$fake_codex" exec --ask-for-approval never \
 rc44codex_flags=$?
 [ "$rc44codex_flags" -eq 64 ] && pass "evals: fake codex rejects misplaced global adapter flags" || fail "evals: fake codex rejects misplaced global adapter flags (rc=$rc44codex_flags)"
 
-# -- discovery: --list-arms resolves configured fake binaries and versions --
 conf_disc="$evfake/agents-discovery.conf"
 eval_conf_write "$conf_disc" "$fake_claude" "$fake_codex" 1 60
 la44=$(EVALS_AGENTS_CONF="$conf_disc" "$evsh" --list-arms 2>&1)
 printf '%s\n' "$la44" | grep -qF "$fake_claude" && printf '%s\n' "$la44" | grep -q 'version=9.9.9-fake' && pass "evals: run.sh --list-arms resolves a configured claude binary and its version" || fail "evals: run.sh --list-arms resolves a configured claude binary and its version ($la44)"
 printf '%s\n' "$la44" | grep -qF "$fake_codex" && printf '%s\n' "$la44" | grep -q 'version=5.5.5-fake' && pass "evals: run.sh --list-arms resolves a configured codex binary and its version" || fail "evals: run.sh --list-arms resolves a configured codex binary and its version ($la44)"
 
-# Feature support, rather than a guessed release boundary, decides readiness.
 conf_feature="$evfake/agents-feature-probe.conf"
 eval_conf_write "$conf_feature" "$fake_claude" "$fake_codex" 1 60
 la44old=$(EVALS_AGENTS_CONF="$conf_feature" FAKE_CODEX_VERSION=0.0.1-fake "$evsh" --list-arms 2>&1)
@@ -4531,8 +3767,6 @@ else
   fail "evals: feature probe rejects a new codex missing any required adapter flag"
 fi
 
-# Auto resolution must continue past an incompatible PATH candidate to a
-# feature-complete configured app candidate.
 incompatible_dir="$evfake/incompatible-path"
 mkdir -p "$incompatible_dir"
 incompatible_codex="$incompatible_dir/codex"
@@ -4550,8 +3784,6 @@ else
   fail "evals: incompatible PATH codex falls back to a compatible configured app ($la44fallback)"
 fi
 
-# -- refusal: an unconfigured agent, resolved against binaries guaranteed
-# absent rather than against whatever this machine happens to have installed --
 conf_unset="$evfake/agents-unset.conf"
 eval_conf_write "$conf_unset" "$evfake/no-such-claude" "$evfake/no-such-codex" 1 60
 la44b=$(EVALS_AGENTS_CONF="$conf_unset" "$evsh" --list-arms 2>&1)
@@ -4561,8 +3793,6 @@ EVALS_AGENTS_CONF="$conf_unset" "$evsh" --eval scope-question-no-edit --arm x --
 rc44b=$?
 [ "$rc44b" -eq 2 ] && pass "evals: run.sh refuses an unconfigured agent" || fail "evals: run.sh refuses an unconfigured agent (rc=$rc44b)"
 
-# Fixture failures still form diagnostic runs. outputs/ starts only after a
-# successful build, while the build log and any partial fixture stay retained.
 wsc_fixture_fail="$evfake/claude workspace-fixture-build-fail"
 conf_fixture_fail="$evfake/agents-fixture-build-fail.conf"
 eval_conf_write "$conf_fixture_fail" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4582,8 +3812,6 @@ else
   fail "evals: fixture-build failure retains diagnostic metadata without outputs (rc=$rc44fixture_fail)"
 fi
 
-# -- claude: stdin delivery, repeat placement inside one iteration, trace
-# normalization, spaced workspace path --
 wsc="$evfake/claude workspace"
 conf_claude="$evfake/agents-claude.conf"
 eval_conf_write "$conf_claude" "$fake_claude" "$evfake/no-such-codex" 2 60
@@ -4611,15 +3839,6 @@ else
   fail "evals: claude trace text contains no absolute fixture or runner-worktree path"
 fi
 
-# -- claude: one process per turn, one session across them --
-# The earlier shape queued every turn onto one process's stdin and required
-# one terminal result per turn; the CLI answers a queue as one prompt with
-# one result, so every run of the set's only multi-turn eval voided and the
-# Claude side of it was never measured. The fake fails closed on the flags
-# that carry the session: turn one must open it with --session-id, every
-# later turn must resume that same id, and none of them may ask for a
-# session that is not persisted or write into a config dir that is not the
-# runner's disposable one.
 wsc_multi="$evfake/claude workspace-multiturn"
 conf_claude_multi="$evfake/agents-claude-multiturn.conf"
 eval_conf_write "$conf_claude_multi" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4636,8 +3855,6 @@ run_multi=$(find "$wsc_multi/iteration-1/eval-bootstrap-once" -mindepth 1 -maxde
 sed -n '2p' "$run_multi/outputs/session-transcript.txt" 2>/dev/null | grep -qF 'echo:What does this project use for HTTP?' && pass "evals: turn one's prompt reached the fake claude CLI on stdin, not argv" || fail "evals: turn one's prompt reached the fake claude CLI on stdin, not argv"
 grep -qF 'echo:Add a timeout of 5s to the client.' "$run_multi/outputs/session-transcript.txt" 2>/dev/null && pass "evals: the last turn of a resumed claude session is captured too" || fail "evals: the last turn of a resumed claude session is captured too"
 [ "$(grep -c '"action": "read"' "$run_multi/outputs/trace.jsonl" 2>/dev/null)" = "3" ] && pass "evals: each claude turn contributes its own trace events" || fail "evals: each claude turn contributes its own trace events"
-# The disposable config dir is the whole reason the session may be persisted
-# at all: nothing may be left behind holding a copy of the operator's login.
 multi_home=$(cat "$claude_home_path" 2>/dev/null)
 case "$multi_home" in
 "${TMPDIR:-/tmp}/dot-agent-claude-home."*) multi_home_prefix=1 ;;
@@ -4647,10 +3864,6 @@ esac
 retained_cred=$(find "$wsc_multi/iteration-1/eval-bootstrap-once" -name '.credentials.json' -print -quit 2>/dev/null)
 [ -z "$retained_cred" ] && pass "evals: copied Claude authentication never enters retained outputs" || fail "evals: copied Claude authentication never enters retained outputs ($retained_cred)"
 
-# -- either arm may open a fresh iteration, so both can be launched at once --
-# Requiring the creator to *be* the treatment lost a race that nothing about
-# the experiment needs run: the treatment is named explicitly on every arm,
-# and a treatment that never produces a run is caught at rollup.
 wsc_ctrlfirst="$evfake/claude workspace-control-first"
 conf_ctrlfirst="$evfake/agents-claude-control-first.conf"
 eval_conf_write "$conf_ctrlfirst" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4671,10 +3884,6 @@ EVALS_AGENTS_CONF="$conf_ctrlfirst" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
 rc44un=$?
 [ "$rc44un" -eq 2 ] && grep -q 'must name the treatment arm' "$evfake/unnamed.out" && pass "evals: a fresh iteration with no named treatment is still refused" || fail "evals: a fresh iteration with no named treatment is still refused (rc=$rc44un)"
 
-# -- run-arm.sh: two arms, one workspace, one log file each --
-# Both arms run the same eval ids. A shared logs/<id>.log is a race whose
-# loser is overwritten, and the console output of a run is the only place a
-# fixture-build or auth diagnostic survives.
 wsc_arm="$evfake/run-arm workspace"
 conf_arm="$evfake/agents-run-arm.conf"
 eval_conf_write "$conf_arm" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4698,8 +3907,6 @@ except Exception:
 print(" ".join(sorted(set(m.values()))))' "$wsc_arm/iteration-1/arm-map.json" 2>&1)
 [ "$armmap44" = "ctrl treat" ] && pass "evals: both arms of one run-arm.sh workspace land in the same arm map" || fail "evals: both arms of one run-arm.sh workspace land in the same arm map ($armmap44)"
 
-# A .agent filename is untrusted data. Shell metacharacters in nested path
-# components must reach node-tree.txt as text and must never execute.
 wsc_hostile="$evfake/claude workspace-hostile-filename"
 conf_claude_hostile="$evfake/agents-claude-hostile.conf"
 eval_conf_write "$conf_claude_hostile" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4717,8 +3924,6 @@ else
   fail "evals: node-tree capture treats adversarial .agent filenames as data (rc=$rc44hostile escaped=$escaped_hostile)"
 fi
 
-# comments.sh exit 1 means it found blocking comments. The output is an
-# artifact for grading rather than an infrastructure failure.
 wsc_gate_findings="$evfake/claude workspace-gate-findings"
 conf_gate_findings="$evfake/agents-gate-findings.conf"
 eval_conf_write "$conf_gate_findings" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4736,8 +3941,6 @@ else
   fail "evals: comments.sh findings exit 1 remains a gradeable capture (rc=$rc44gate_findings)"
 fi
 
-# The agent may replace verifier scripts inside the fixture. Capture must run
-# only the pre-agent snapshots, so neither payload nor forged output survives.
 wsc_verifier_attack="$evfake/claude workspace-verifier-attack"
 conf_verifier_attack="$evfake/agents-verifier-attack.conf"
 verifier_attack_marker="$evfake/verifier-payload-executed"
@@ -4760,9 +3963,6 @@ else
   fail "evals: fixture verifier replacement cannot execute or forge artifacts (rc=$rc44verifier_attack)"
 fi
 
-# A tampered status.conf must not suppress the finding its trusted default
-# would have raised, and a tampered comments.conf must not exclude the file
-# it was trying to hide from the gate.
 if ! grep -q 'GROOM: CLAUDE.md' "$verifier_attack_run/outputs/status-after.txt" 2>/dev/null; then
   pass "evals: status.sh runs against the trusted status.conf, not a fixture-side mutation"
 else
@@ -4779,7 +3979,6 @@ else
   fail "evals: the attempted status.conf mutation is still visible as a captured artifact"
 fi
 
-# Claude's existing short-session mode must exercise the result-count guard.
 wsc_claude_short="$evfake/claude workspace-short"
 conf_claude_short="$evfake/agents-claude-short.conf"
 eval_conf_write "$conf_claude_short" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4793,8 +3992,6 @@ else
   fail "evals: claude exit 0 with a short session becomes a diagnostic-only void run (rc=$rc44claude_short)"
 fi
 
-# A result-shaped error is not a successful final result, even if the Claude
-# process itself exits zero.
 wsc_claude_error="$evfake/claude workspace-error-result"
 conf_claude_error="$evfake/agents-claude-error-result.conf"
 eval_conf_write "$conf_claude_error" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4821,9 +4018,6 @@ else
   fail "evals: claude mixed success and error terminals become a diagnostic-only void run (rc=$rc44claude_mixed)"
 fi
 
-# A background subagent's completion is a turn the CLI ran for itself, with a
-# terminal result of its own. That is not a dropped continuation, and voiding
-# it cost the one eval that exercises grooming its whole treatment cell.
 wsc_claude_bgsub="$evfake/claude workspace-background-subagent"
 conf_claude_bgsub="$evfake/agents-claude-background-subagent.conf"
 eval_conf_write "$conf_claude_bgsub" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4838,7 +4032,6 @@ else
   fail "evals: a background subagent's extra terminal result does not void the run (rc=$rc44claude_bgsub; $(cat "$evfake/claude-bgsub.out"))"
 fi
 
-# ... and an injected result must not stand in for a turn that never came back.
 wsc_claude_bgshort="$evfake/claude workspace-background-subagent-short"
 conf_claude_bgshort="$evfake/agents-claude-background-subagent-short.conf"
 eval_conf_write "$conf_claude_bgshort" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4852,11 +4045,6 @@ else
   fail "evals: an injected result cannot stand in for a turn the session never finished (rc=$rc44claude_bgshort)"
 fi
 
-# A harness-free arm has no .agent/ anywhere under the fixture, and four
-# capture paths used to assume one: the verifier snapshot, the status.conf
-# restore, the node file listing, and status.sh itself, which refuses a
-# rootless tree. Any one of them voids every run in the arm before grading,
-# so the control would silently measure nothing.
 wsc_bare="$evfake/claude workspace-no-harness"
 conf_bare="$evfake/agents-claude-no-harness.conf"
 eval_conf_write "$conf_bare" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4913,8 +4101,6 @@ PY
 rc44identity=$?
 [ "$rc44identity" -eq 0 ] && pass "evals: run config and metadata record canonical executable identity" || fail "evals: run config and metadata record canonical executable identity"
 
-# The executable digest is part of the locked runtime identity. Replacing a
-# binary in place must be detected even when its path and --version stay put.
 fake_claude_digest="$evfake/fake-claude-digest.py"
 cp "$fake_claude" "$fake_claude_digest"
 conf_claude_digest="$evfake/agents-claude-digest.conf"
@@ -4930,7 +4116,6 @@ EVALS_AGENTS_CONF="$conf_claude_digest" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 
 rc44digest=$?
 [ "$rc44digest" -eq 2 ] && pass "evals: run-config refuses an in-place executable digest change" || fail "evals: run-config refuses an in-place executable digest change (rc=$rc44digest)"
 
-# -- a failing agent process voids the run: no grading.json, nonzero exit --
 wsc_fail="$evfake/claude workspace-fail"
 conf_claude_fail="$evfake/agents-claude-fail.conf"
 eval_conf_write "$conf_claude_fail" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4946,8 +4131,6 @@ rundir_fail=$(find "$wsc_fail/iteration-1/eval-scope-question-no-edit" -mindepth
   && pass "evals: a void run keeps the raw stream and discards derived outputs" \
   || fail "evals: a void run keeps the raw stream and discards derived outputs"
 
-# -- config drift: a later run into the same iteration with a moved locked
-# field is refused before touching a fixture --
 wsc_drift="$evfake/claude workspace-drift"
 conf_claude_drift1="$evfake/agents-claude-drift1.conf"
 eval_conf_write "$conf_claude_drift1" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -4986,10 +4169,6 @@ grep -q 'effort' "$evfake/effort-drift.err" && pass "evals: held-effort drift is
 ndirs_drift=$(find "$wsc_drift/iteration-1/eval-scope-question-no-edit" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)
 [ "$ndirs_drift" -eq 1 ] && pass "evals: a refused drifted run creates no additional run directory" || fail "evals: a refused drifted run creates no additional run directory (found $ndirs_drift)"
 
-# --index-mode inherits the harness field's own drift check for free: the
-# first run into $wsc_drift above locked index_mode (manual, the default)
-# into every arm entry already recorded there, so asking for generated now
-# is exactly the same shape of drift as a moved model or effort.
 conf_claude_indexmode="$evfake/agents-claude-indexmode-drift.conf"
 eval_conf_write "$conf_claude_indexmode" "$fake_claude" "$evfake/no-such-codex" 1 60
 EVALS_AGENTS_CONF="$conf_claude_indexmode" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
@@ -5001,7 +4180,6 @@ rc44im=$?
   && pass "evals: an arm entry records its index mode and refuses a drifted one" \
   || fail "evals: an arm entry records its index mode and refuses a drifted one (rc=$rc44im; $(cat "$evfake/indexmode-drift.err"))"
 
-# -- codex: stdin delivery, thread resume across turns, trace normalization --
 wscx="$evfake/codex workspace"
 conf_codex="$evfake/agents-codex.conf"
 eval_conf_write "$conf_codex" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -5032,8 +4210,6 @@ sys.exit(0 if seen_completed and not seen_started else 1)
 PY
 rc44file_lifecycle=$?
 [ "$rc44file_lifecycle" -eq 0 ] && pass "evals: codex file_change trace fixture uses the real item.completed lifecycle" || fail "evals: codex file_change trace fixture uses the real item.completed lifecycle"
-# The "one per turn" count above only means something while the fixture still
-# announces each command twice, the way the live CLI does.
 python3 - "$rundir_x/outputs/agent-stdout.txt" <<'PY' >/dev/null 2>&1
 import json, sys
 started = completed = 0
@@ -5053,9 +4229,6 @@ else
 fi
 [ "$(grep -c 'thread.started' "$rundir_x/outputs/agent-stdout.txt" 2>/dev/null)" = "1" ] && pass "evals: turns 2 and 3 resume the thread turn 1 started rather than opening a new one" || fail "evals: turns 2 and 3 resume the thread turn 1 started rather than opening a new one"
 
-# Every Codex invocation must close exactly one requested turn. Cover the
-# first, middle, and final positions because only the first two have a later
-# continuation that could otherwise expose the dropped event.
 for short_mode in short-first short-middle short-final; do
   wscx_short="$evfake/codex workspace-$short_mode"
   conf_codex_short="$evfake/agents-codex-$short_mode.conf"
@@ -5102,8 +4275,6 @@ else
   fail "evals: malformed raw codex stream becomes a diagnostic-only void run (rc=$rc44codex_malformed)"
 fi
 
-# Replace a dedicated Codex binary as its first turn exits. The post-launch
-# identity check must void the run before a resume can launch.
 fake_codex_replace="$evfake/fake-codex-replace.py"
 cp "$fake_codex" "$fake_codex_replace"
 chmod +x "$fake_codex_replace"
@@ -5127,16 +4298,12 @@ else
   fail "evals: same-path codex replacement at a turn boundary voids before resume (rc=$rc44codex_replace)"
 fi
 
-# ACTIVE_RUN_DIR stays armed after the adapter returns. Pause once during
-# capture and once at grader entry, then signal only the runner process.
 real_bash=$(command -v bash)
 real_git=$(command -v git)
 real_python=$(command -v python3)
 real_chmod=$(command -v chmod)
 real_cat=$(command -v cat)
 
-# Replace a dedicated Claude binary after repeat one has graded. Repeat two
-# must fail its pre-launch identity check without driving the replacement.
 fake_claude_replace="$evfake/fake-claude-replace.py"
 cp "$fake_claude" "$fake_claude_replace"
 chmod +x "$fake_claude_replace"
@@ -5202,8 +4369,6 @@ for run_phase in capture grading; do
   fi
 done
 
-# Each post-agent infrastructure stage must fail closed with its own metadata
-# status and reason. The fixture and fixture-build diagnostics remain retained.
 for infra_stage in capture trace grading; do
   infra_workspace="$evfake/claude workspace-$infra_stage-failure"
   infra_conf="$evfake/agents-$infra_stage-failure.conf"
@@ -5236,8 +4401,6 @@ for infra_stage in capture trace grading; do
   fi
 done
 
-# Transcript sections represent completed turns, rather than nonempty lines:
-# multiline final text remains intact and an empty final answer stays visible.
 wscx_transcript="$evfake/codex workspace-transcript-shape"
 conf_codex_transcript="$evfake/agents-codex-transcript-shape.conf"
 eval_conf_write "$conf_codex_transcript" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -5251,8 +4414,6 @@ rundir_transcript=$(find "$wscx_transcript/iteration-1/eval-bootstrap-once" -min
 grep -A1 '^## Turn 2$' "$rundir_transcript/outputs/session-transcript.txt" 2>/dev/null | grep -qF '[empty final response]' && pass "evals: transcript records an empty final response with a placeholder" || fail "evals: transcript records an empty final response with a placeholder"
 grep -A2 '^## Turn 1$' "$rundir_transcript/outputs/session-transcript.txt" 2>/dev/null | grep -qF 'second transcript line' && pass "evals: transcript preserves multiline final response text" || fail "evals: transcript preserves multiline final response text"
 
-# On an interrupt, authentication must be in a system-temporary home, never
-# outputs/, and the active home is removed before the runner terminates.
 wscx_signal="$evfake/codex workspace-signal"
 conf_codex_signal="$evfake/agents-codex-signal.conf"
 eval_conf_write "$conf_codex_signal" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -5280,9 +4441,6 @@ case "$signal_home" in "$wscx_signal"/*) signal_home_retained=1 ;; *) signal_hom
 retained_auth=$(find "$wscx_signal/iteration-1/eval-bootstrap-once" -path '*/outputs/auth.json' -print -quit 2>/dev/null)
 [ "$signal_home_retained" -eq 0 ] && [ -z "$retained_auth" ] && pass "evals: copied Codex authentication never enters retained outputs" || fail "evals: copied Codex authentication never enters retained outputs"
 
-# A targeted TERM reaches only run.sh. Its cleanup must then terminate the
-# detached fake CLI process group, including a child and grandchild, without
-# sending a signal to this parent test process.
 wscx_cancel="$evfake/codex workspace-cancel-group"
 conf_codex_cancel="$evfake/agents-codex-cancel-group.conf"
 eval_conf_write "$conf_codex_cancel" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -5323,8 +4481,6 @@ else
   fail "evals: cancellation retains void metadata, keeps the raw stream and discards derived outputs"
 fi
 
-# The portable timeout starts a new process group. Descendants that ignore
-# TERM must receive KILL after the grace period, even when the leader exits.
 wscx_timeout="$evfake/codex workspace-timeout"
 conf_codex_timeout="$evfake/agents-codex-timeout.conf"
 codex_child_pid="$evfake/codex-timeout-child.pid"
@@ -5353,9 +4509,6 @@ else
   fail "evals: timeout retains void metadata, keeps the raw stream and discards derived outputs"
 fi
 
-# The grader is the piece that turns spec.json's check strings from a
-# declared DSL into executing code. Driven here against artifacts written by
-# hand, so the primitives are pinned without a model or a network.
 gd="$WORK/eval-grade/r0"
 mkdir -p "$gd/outputs"
 cat >"$gd/snap.json" <<'EOF'
@@ -5368,11 +4521,7 @@ cat >"$gd/snap.json" <<'EOF'
  {"id":"g/nodeprefix","concept":"c","class":"artifact","grade":"auto","check":"node_file_changed 'memory/x.md'"},
  {"id":"g/human","concept":"c","class":"artifact","grade":"manual"}]}
 EOF
-# A created file and an appended one, so "added" cannot be inferred from
-# "has no removed lines" — the defect that read an append as a creation.
 printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$gd/outputs/diff.patch"
-# The node diff is generated, not hand-written: a hand-written pin is how the
-# `.agent/` prefix run.sh actually emits went unnoticed for a whole run.
 ndrepo="$WORK/eval-node-diff"
 mkdir -p "$ndrepo/.agent/memory"
 printf 'seed\n' >"$ndrepo/.agent/memory/x.md"
@@ -5401,8 +4550,6 @@ if r["g/human"]["passed"] is not None: bad.append("manual-was-auto-graded")
 print(" ".join(bad))' "$gd/grading.json" 2>&1)
 [ -z "$g42" ] && pass "evals: the grader evaluates its check language and fails closed on a missing artifact" || fail "evals: the grader evaluates its check language and fails closed on a missing artifact ($g42)"
 
-# H3: a test file beside the change is the change done properly, not a
-# second module — product_modules_added must not count it.
 gd2="$WORK/eval-grade-modules/r0"
 mkdir -p "$gd2/outputs"
 cat >"$gd2/snap.json" <<'EOF'
@@ -5433,8 +4580,6 @@ r = json.load(open(sys.argv[1]))["results"][0]
 print("" if r["passed"] else "test-only-diff-counted-as-module")' "$gd3/grading.json" 2>&1)
 [ -z "$g42testonly" ] && pass "evals: product_modules_added is zero when only a test file is added" || fail "evals: product_modules_added is zero when only a test file is added ($g42testonly)"
 
-# H2: output_claims reads the negation around a forbidden phrase, so a
-# refusal that names the phrase is not misread as the failure it forbids.
 gd4="$WORK/eval-grade-claims/r0"
 mkdir -p "$gd4/outputs"
 claims_check() {
@@ -5458,9 +4603,6 @@ c4=$(claims_check 'The suite is green.' "'suite is green'")
 c5=$(claims_check 'Raw kubectl is explicitly disallowed.' "'kubectl'")
 [ "$c5" = "False" ] && pass "evals: output_claims reads an explicitly-disallowed mention as not a claim" || fail "evals: output_claims reads an explicitly-disallowed mention as not a claim ($c5)"
 
-# Trace calls are controller-owned evidence.  In particular, ordering cannot
-# infer a missing second call, malformed records cannot be searched, and
-# result/non-call records cannot stand in for a tool call.
 trace_snapshot="$gd/trace-snapshot.json"
 printf '{"id":"trace","assertions":[{"id":"trace/order","concept":"c","class":"trace","grade":"auto","check":"trace_order '\''catalog'\'' before '\''write:'\''"},{"id":"trace/product","concept":"c","class":"artifact","grade":"auto","check":"product_files_added == 1"}]}' >"$trace_snapshot"
 trace_result() {
@@ -5484,9 +4626,6 @@ printf '{"seq":0,"text":"read catalog"}\n{"seq":1,"text":"write:src/new.ts"}\n' 
 trace_legacy=$(trace_result)
 printf '%s\n' "$trace_legacy" | grep -q '^True|True|' && pass "evals: valid legacy seq/text traces remain gradeable" || fail "evals: valid legacy seq/text traces remain gradeable ($trace_legacy)"
 
-# H10: a trace root can be spelled either side of macOS's /tmp <-> /private/tmp
-# alias. normalize_text matches literally, so a command string naming the
-# fixture through the alias run.sh did *not* pass in went unstripped.
 tracefix_priv="/private/tmp/evtrace-$$"
 mkdir -p "$tracefix_priv/.agent/rules"
 printf 'a rule\n' >"$tracefix_priv/.agent/rules/learned.md"
@@ -5519,9 +4658,6 @@ rc_foreign=$?
   || fail "evals: trace extractor fails closed on a foreign absolute node path (rc=$rc_foreign)"
 rm -rf "$tracefix_priv"
 
-# H13: usage/cost is read from the canonical agent stdout, one pass, for
-# either adapter's shape. A field the stream never reported is null, never
-# 0, and an older CLI's stream with no usage block at all must not void.
 usage_claude="$gd/outputs/usage-claude-stdout.txt"
 cat >"$usage_claude" <<'EOF'
 {"type":"result","result":"ok","usage":{"input_tokens":100,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"output_tokens":20},"total_cost_usd":0.015}
@@ -5553,11 +4689,6 @@ else
   fail "evals: agent-usage exits 0 with all-null fields when the stream has no usage block (rc=$usage_null_rc; $usage_null_out)"
 fi
 
-# The void detector counts turn boundaries, and the CLI runs turns of its own:
-# a background subagent's completion comes back to the main loop as a fresh
-# turn with its own terminal result, marked origin.kind "task-notification"
-# (claude 2.1.245). Counting those voided a grooming run that had succeeded.
-# The one-sided rule stays: fewer results than turns sent is still a crash.
 countstream="$gd/outputs/count-results.jsonl"
 
 cat >"$countstream" <<'EOF'
@@ -5589,11 +4720,6 @@ count_badinj=$("$evroot/run_lib.py" claude-count-results "$countstream")
   && pass "evals: a malformed injected result still counts as a malformed record" \
   || fail "evals: a malformed injected result still counts as a malformed record ($count_badinj)"
 
-# The rollup fails closed on records that cannot support a delta. An id set
-# that disagrees with its snapshot silently drops rows; an arm token inside a
-# grading record means the grader could see the condition. Either one makes
-# the number wrong rather than absent, which is the failure this suite exists
-# to catch everywhere else.
 evr="$WORK/eval-rollup"
 mkdir -p "$evr/eval-demo/r1" "$evr/eval-demo/r2" "$evr/eval-demo/r3" "$evr/eval-demo/r4"
 printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr/arm-map.json"
@@ -5611,11 +4737,6 @@ out42=$("$evroot/rollup.py" "$evr" 2>&1)
 rc42=$?
 [ "$rc42" -eq 0 ] && printf '%s\n' "$out42" | grep -q 'discriminating' && pass "evals: rollup joins two arms and buckets by outcome" || fail "evals: rollup joins two arms and buckets by outcome (rc=$rc42; $out42)"
 
-# The node-mode design names its control arm `manual`, and every grading
-# record carries the schema field "grade": "manual"|"auto". The blind guard
-# used to read that field as the arm name leaking and voided every rollup
-# of the design; the calibration run of 2026-09-20 could not be rolled up
-# at all. The schema field is not a leak.
 evrm="$WORK/eval-rollup-manual-arm"
 mkdir -p "$evrm/eval-demo/r1" "$evrm/eval-demo/r2"
 printf '{"r1":"generated","r2":"manual"}\n' >"$evrm/arm-map.json"
@@ -5677,16 +4798,10 @@ out42c=$("$evroot/rollup.py" "$evr" 2>&1)
 rc42c=$?
 [ "$rc42c" -eq 2 ] && printf '%s\n' "$out42c" | grep -q 'names the condition inside' && pass "evals: rollup refuses a grading record naming its own arm" || fail "evals: rollup refuses a grading record naming its own arm (rc=$rc42c; $out42c)"
 
-# ... and the field that is the arm name outright, whatever it is called.
 printf '{"arm":"treat","results":[{"id":"a1","passed":true,"evidence":"q"},{"id":"a2","passed":true,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
 out42cv=$("$evroot/rollup.py" "$evr" 2>&1); rc42cv=$?
 [ "$rc42cv" -eq 2 ] && printf '%s\n' "$out42cv" | grep -q 'whole value' && pass "evals: rollup refuses a grading record whose field value is an arm name" || fail "evals: rollup refuses a grading record whose field value is an arm name (rc=$rc42cv; $out42cv)"
 
-# The guard must not tax the vocabulary of the thing being measured. An arm
-# called what it is — `node`, `generic`, `merged` — collides with words the
-# evidence text uses about the corpus, and a bare substring match made a real
-# run unrollupable until its arms were relabelled. Evidence that merely uses
-# the word is not a leak; the arm being named as the condition still is.
 evr2="$WORK/eval-rollup-vocabulary"
 mkdir -p "$evr2/eval-demo/r1" "$evr2/eval-demo/r2"
 printf '{"r1":"node","r2":"generic"}\n' >"$evr2/arm-map.json"
@@ -5707,8 +4822,6 @@ out42e=$("$evroot/rollup.py" "$evr" 2>&1)
 rc42e=$?
 [ "$rc42e" -eq 2 ] && printf '%s\n' "$out42e" | grep -q 'leaves a1 ungraded' && pass "evals: rollup refuses an iteration with a manual assertion still ungraded" || fail "evals: rollup refuses an iteration with a manual assertion still ungraded (rc=$rc42e; $out42e)"
 
-# H12: --auto-only previews auto-graded assertions without a fatal error on a
-# manual one still ungraded, and never writes rollup.json for a preview.
 evr2="$WORK/eval-rollup-auto"
 mkdir -p "$evr2/eval-demo/r1" "$evr2/eval-demo/r2" "$evr2/eval-demo/r3" "$evr2/eval-demo/r4"
 printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr2/arm-map.json"
@@ -5734,8 +4847,6 @@ else
   fail "evals: rollup --auto-only previews auto assertions and defers a pending manual one (rc=$rc42auto; $out42auto)"
 fi
 
-# H6: --exclude-eval drops one eval directory entirely and records the
-# exclusion so a partial rollup can never pass as complete.
 printf '{"results":[{"id":"a1","passed":true,"evidence":"q"},{"id":"a2","passed":false,"evidence":"r"}]}\n' >"$evr/eval-demo/r1/grading.json"
 mkdir -p "$evr/eval-extra/x1" "$evr/eval-extra/x2"
 printf '{"id":"extra","assertions":[{"id":"b1","concept":"c"}]}\n' >"$evr/eval-extra/eval-snapshot.json"
@@ -5758,9 +4869,6 @@ fi
 printf '{"r1":"treat","r2":"ctrl","r3":"treat","r4":"ctrl"}\n' >"$evr/arm-map.json"
 rm -rf "$evr/eval-extra"
 
-# H13: cost coverage is judged per field. One run missing a usage block
-# entirely makes every field "unavailable", but never fails the rollup —
-# unlike duration, missing cost is not fatal.
 printf '{"duration_seconds":1,"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5,"usd":0.01}}\n' >"$evr/eval-demo/r1/run-meta.json"
 printf '{"duration_seconds":2,"usage":{"input_tokens":20,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":6,"usd":0.02}}\n' >"$evr/eval-demo/r2/run-meta.json"
 printf '{"duration_seconds":5,"usage":{"input_tokens":30,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7,"usd":0.03}}\n' >"$evr/eval-demo/r3/run-meta.json"
@@ -5787,16 +4895,6 @@ else
   fail "evals: rollup sums usage per arm when every run in both arms carries it (rc=$rc42usage_full; $out42usage_full)"
 fi
 
-# ---- 44b. rollup.py: NaN/Infinity durations, an absent "passed" key, and
-#          all-or-nothing duration-reporting symmetry ----
-# A duration validated only by `value < 0` lets NaN and Infinity through —
-# both compare False to 0 — and rollup.json then ends up with a literal
-# NaN/Infinity token and exit 0. Indexing r["passed"] before the
-# ungraded-is-None guard raises an uncaught KeyError, not a die(), on a
-# result missing the key outright, breaking the "exits 2, never a
-# traceback" contract this suite checks everywhere else. And a duration
-# field recorded for only some runs used to report only those runs,
-# silently hiding the other arm's missing instrumentation.
 rlbase="$WORK/eval-rollup-base"
 mkdir -p "$rlbase/eval-demo/r1" "$rlbase/eval-demo/r2"
 printf '{"r1":"treat","r2":"ctrl"}\n' >"$rlbase/arm-map.json"
@@ -5853,7 +4951,6 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["duration_s"]; sys.e
 rcrlsymjson=$?
 [ "$rcrlsym" -eq 0 ] && [ "$rcrlsymjson" -eq 0 ] && pass "evals: rollup reports duration_s when every run in the iteration carries it" || fail "evals: rollup reports duration_s when every run in the iteration carries it (rc=$rcrlsym; $outrlsym)"
 
-# Lower-priority die() paths flagged as untested but otherwise reachable.
 rlshapearm="$WORK/eval-rollup-shape-arm"
 cp -R "$rlbase" "$rlshapearm"
 printf '["not","an","object"]\n' >"$rlshapearm/arm-map.json"
@@ -5878,17 +4975,6 @@ printf '["not","an","object"]\n' >"$rlshapemeta/eval-demo/r1/run-meta.json"
 outrlshapemeta=$("$evroot/rollup.py" "$rlshapemeta" 2>&1); rcrlshapemeta=$?
 [ "$rcrlshapemeta" -eq 2 ] && printf '%s\n' "$outrlshapemeta" | grep -qF 'run-meta.json must be an object' && pass "evals: rollup refuses a non-object run-meta.json" || fail "evals: rollup refuses a non-object run-meta.json (rc=$rcrlshapemeta; $outrlshapemeta)"
 
-# ---- 44c. evals/*.py: stdout/stderr survive single-byte locales ----
-# Every evals/*.py entry point now reconfigures stdout/stderr to UTF-8 with
-# errors="backslashreplace" before printing anything. Before that fix,
-# --help raised UnicodeEncodeError under LC_ALL=en_US.ISO8859-1 in
-# contamination.py, fixture_seed.py, pooled.py and triage.py (their
-# docstrings carry an em dash), and rollup.py crashed the same way printing
-# its regression bucket and its --auto-only preview. Covered here for all
-# seven files: --help, a success path, an empty-input path, and an error
-# path, under LC_ALL=C (every runner has it) and under en_US.ISO8859-1,
-# guarded per the locale check at scripts/test.sh:1894 because the Ubuntu CI
-# image does not carry it and the macOS image does.
 el="$WORK/eval-locale"
 mkdir -p "$el"
 
@@ -5921,8 +5007,6 @@ printf '{"id":"g","assertions":[]}' >"$el/grade-empty/r0/snap.json"
 
 printf '{"type":"result","result":"ok"}\n' >"$el/usage-empty.txt"
 
-# fixture_seed.py's fill-contract rewrites in place, so its input is
-# (re)written fresh inside evloc_checks below rather than once here.
 
 evloc_checks() {
   local evlc="$1" evlabel="$2" out rc
@@ -6110,16 +5194,7 @@ else
   done
 fi
 
-# ---- 45. evals/run.sh: subscription-backed auth, thread lifecycle,
-#          process-group cleanup on success, setup-cancellation ownership,
-#          Codex stream-append checks, and concurrent metadata updates ----
-# The default $evauth credentials (claude-ok / codex-ok, set up above) are
-# subscription-backed and valid, so every fake-CLI test above this section
-# authenticates normally. Each block below overrides CLAUDE_CONFIG_DIR or
-# CODEX_HOME (or the operator's own env) for exactly one invocation to prove
-# the rejection path, never the suite-wide default.
 
-# -- claude refuses to run without claude.ai subscription credentials --
 auth_claude_missing_dir="$evfake/auth-claude-missing"
 mkdir -p "$auth_claude_missing_dir"
 wsc_auth_claude_missing="$evfake/claude workspace-auth-missing"
@@ -6139,7 +5214,6 @@ else
   fail "evals: claude refuses to run without claude.ai credentials (rc=$rc_auth_claude_missing)"
 fi
 
-# -- claude refuses an API-key-only credentials file: no claude.ai plan --
 auth_claude_apikey_dir="$evfake/auth-claude-apikey"
 mkdir -p "$auth_claude_apikey_dir"
 printf '{"apiKeyHelper": true}\n' >"$auth_claude_apikey_dir/.credentials.json"
@@ -6155,7 +5229,6 @@ else
   fail "evals: claude refuses an API-key-style credentials file with no claude.ai subscription (rc=$rc_auth_claude_apikey)"
 fi
 
-# -- codex refuses to run without ChatGPT-account credentials --
 auth_codex_missing_dir="$evfake/auth-codex-missing"
 mkdir -p "$auth_codex_missing_dir"
 wsc_auth_codex_missing="$evfake/codex workspace-auth-missing"
@@ -6174,8 +5247,6 @@ else
   fail "evals: codex refuses to run without ChatGPT credentials (rc=$rc_auth_codex_missing)"
 fi
 
-# -- codex refuses an auth_mode other than chatgpt, and never surfaces the
-# rejected credential's value while doing it --
 auth_codex_badmode_dir="$evfake/auth-codex-badmode"
 mkdir -p "$auth_codex_badmode_dir"
 printf '{"auth_mode": "apikey", "OPENAI_API_KEY": "SECRET-SENTINEL-VALUE-should-never-appear"}\n' \
@@ -6198,8 +5269,6 @@ else
   fail "evals: a rejected codex auth_mode never surfaces the credential value"
 fi
 
-# -- provider credential and alternate-provider env vars never reach either
-# adapter's subprocess, even when set in the operator's own shell --
 leak_claude_out="$evfake/leak-claude-out"
 leak_codex_out="$evfake/leak-codex-out"
 rm -f "$leak_claude_out" "$leak_codex_out"
@@ -6245,11 +5314,6 @@ else
   fail "evals: the stripped OPENAI_API_KEY value never appears in any captured artifact"
 fi
 
-# -- Codex thread/item lifecycle: exactly one thread.started per initial
-# turn, at most one (identity-matched) on a resume, and a command item that
-# never carries the command it ran. A second lifecycle event for a call is
-# not a violation — the live CLI emits one — so what is rejected here is a
-# shape trace extraction could not read, not a shape it ignores. --
 for lifecycle_mode in duplicate-thread-started resume-thread-mismatch \
   command-missing-command; do
   wscx_lifecycle="$evfake/codex workspace-$lifecycle_mode"
@@ -6266,9 +5330,6 @@ for lifecycle_mode in duplicate-thread-started resume-thread-mismatch \
   fi
 done
 
-# Corrected against codex 0.153.1, which reports a file change on starting it
-# as well as on finishing it. An extra lifecycle event for one call is not a
-# violation: the run must proceed, and the call must still appear once.
 wscx_fc_started="$evfake/codex workspace-file-change-on-started"
 conf_codex_fc_started="$evfake/agents-codex-fc-started.conf"
 eval_conf_write "$conf_codex_fc_started" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -6284,9 +5345,6 @@ else
   fail "evals: a file change announced on both lifecycle events is accepted and traced once per turn (rc=$rc_fc_started records=$fc_records)"
 fi
 
-# Corrected from the prior review round: Codex may legitimately re-announce
-# thread.started on a resumed turn. Singular and identity-matched, it must
-# not be rejected.
 wscx_resume_ok="$evfake/codex workspace-resume-thread-started-ok"
 conf_codex_resume_ok="$evfake/agents-codex-resume-ok.conf"
 eval_conf_write "$conf_codex_resume_ok" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -6296,8 +5354,6 @@ EVALS_AGENTS_CONF="$conf_codex_resume_ok" FAKE_CODEX_MODE=resume-thread-started-
 rc_resume_ok=$?
 [ "$rc_resume_ok" -eq 0 ] && pass "evals: a resumed turn may legitimately re-announce the same thread id" || fail "evals: a resumed turn may legitimately re-announce the same thread id (rc=$rc_resume_ok)"
 
-# -- a successful leader exit still clears any process-group member it left
-# running, before capture begins, without losing its own exit status --
 success_child_pid="$evfake/claude-success-child.pid"
 success_grandchild_pid="$evfake/claude-success-grandchild.pid"
 rm -f "$success_child_pid" "$success_grandchild_pid"
@@ -6318,8 +5374,6 @@ else
   fail "evals: a successful leader exit still terminates the process group it leaves behind before capture (rc=$rc_success_group)"
 fi
 
-# -- ownership of a verifier snapshot / Codex home is registered immediately
-# after mktemp, so a cancellation mid-setup still cleans up the directory --
 for setup_phase in verifier-setup codex-home-setup; do
   setup_ready="$evfake/$setup_phase-ready"
   setup_release="$evfake/$setup_phase-release"
@@ -6365,8 +5419,6 @@ for setup_phase in verifier-setup codex-home-setup; do
   fi
 done
 
-# -- a failed append of a Codex turn's stream to canonical stdout voids the
-# run with a truthful status, rather than silently dropping the turn --
 wscx_append_fail="$evfake/codex workspace-append-fail"
 conf_codex_append_fail="$evfake/agents-codex-append-fail.conf"
 eval_conf_write "$conf_codex_append_fail" "$evfake/no-such-claude" "$fake_codex" 1 60
@@ -6386,9 +5438,6 @@ else
   fail "evals: a failed codex stream append voids the run with a truthful status (rc=$rc_append_fail)"
 fi
 
-# -- run-config.json and arm-map.json updates are serialized: N concurrent
-# dry runs into one iteration retain one consistent treatment/config and a
-# complete run mapping, with no update lost to a read-modify-write race --
 concurrent_ws="$evfake/claude workspace-concurrent-dry-run"
 conf_concurrent="$evfake/agents-concurrent-dry-run.conf"
 eval_conf_write "$conf_concurrent" "$evfake/no-such-claude" "$evfake/no-such-codex" 1 60
@@ -6438,26 +5487,7 @@ else
   fail "evals: the iteration metadata lock is released after concurrent dry runs finish"
 fi
 
-# ---- 46. the completion-time gate is described accurately, not denied ----
-# F10b: README.md used to end its load-path paragraph with "There is no
-# completion-time gate," which was false — checkpoint.sh withholds the
-# session-log entry on a standing flag or a status check that failed to run
-# cleanly. These checks pin the mechanism facts and the retired phrase: the
-# anchor check requires status.sh to appear on the SAME README line that
-# names checkpoint.sh (not merely somewhere across the union of all
-# checkpoint.sh-mentioning lines, which a stray "status.sh" on an unrelated
-# line could satisfy on its own), and requires a GROOM:/REPAIR:/INDEX: flag
-# to appear in the part of that line AFTER the checkpoint.sh mention
-# specifically — that line's opening sentences name the flags for an
-# unrelated reason (what the load-time status check prints), so a bare
-# same-line check stays satisfied even after the checkpoint.sh-describing
-# clause's own flag mention is cut; anchoring to text after checkpoint.sh
-# closes that gap. The script check anchors each fail-closed branch to its
-# own distinguishing message text rather than a floating count that
-# unrelated code (the comment-gate branches also say "No log entry
-# written.") could keep satisfied after one branch is deleted.
 
-# -- the retired claim does not return anywhere it was cut from --
 stale_hits=$(grep -rIn -- "no completion-time gate" \
   "$reporoot/README.md" "$reporoot/operating-model.md" \
   "$reporoot/presets" "$reporoot/templates" "$reporoot/tools" 2>/dev/null)
@@ -6467,9 +5497,6 @@ else
   fail "docs: 'no completion-time gate' does not appear in README.md, operating-model.md, presets/, templates/, or tools/ (found: $(printf '%s' "$stale_hits" | head -n1))"
 fi
 
-# -- a single README line naming checkpoint.sh also names status.sh, and
-#    names a flag prefix in the text that follows the checkpoint.sh mention
-#    itself --
 checkpointsh_anchor_ok=0
 while IFS= read -r line; do
   case "$line" in
@@ -6488,7 +5515,6 @@ else
   fail "README.md: a checkpoint.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the checkpoint.sh mention"
 fi
 
-# -- checkpoint.sh still implements both fail-closed branches, each by its own message --
 flagstands_ok=0
 grep -qF "the flags above are this session's to handle" "$reporoot/scripts/checkpoint.sh" && flagstands_ok=1
 statusrc_ok=0
@@ -6499,17 +5525,6 @@ else
   fail "scripts/checkpoint.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present (flagstands_ok=$flagstands_ok statusrc_ok=$statusrc_ok)"
 fi
 
-# ---- 47. the manifest version example matches the version node.sh stamps ----
-# F10c: operating-model.md's example node manifest is a reference copy a
-# reader is meant to recognize on their own purpose.md. It is not generated
-# from node.sh's TARGET_VERSION, so nothing stops the two from drifting —
-# exactly what happened before this check: the example read "6.1" while
-# node.sh stamped "6.2". Extract TARGET_VERSION from node.sh at test time
-# (never hard-code it here — hard-coding on both sides would defeat the
-# point of the check) and compare it against every quoted `version: "…"`
-# line in operating-model.md's manifest examples. An empty extraction or a
-# document with no `version: "…"` line at all is drift too and must fail,
-# not pass vacuously.
 node_target_version=$(grep -m1 '^TARGET_VERSION="' "$reporoot/scripts/node.sh" | sed -e 's/^TARGET_VERSION="//' -e 's/"$//')
 if [ -z "$node_target_version" ]; then
   fail "scripts/node.sh: TARGET_VERSION could not be extracted (expected a line matching TARGET_VERSION=\"…\")"
@@ -6536,29 +5551,10 @@ EOF
   fi
 fi
 
-# ---- 48. routing guidance names architecture.md, and only architecture.md ----
-# F10d: the Context loading bullet used to fall back to "the entry point's
-# doc index" when architecture.md had no routing table — a mechanism that
-# was never built. templates/entry-point.md's step 3 has always pointed at
-# architecture.md alone; F6b made the routing table required, so the
-# fallback was wrong twice over. Check one pins every routing-guidance file
-# to the one routing source that ships. Check two retires the vocabulary
-# itself: "doc index" must not survive anywhere routing is described, but
-# the bare word "index" is legitimate (memory.md's own index is named two
-# lines below the fixed bullet) and must not trip the check.
 routing_files48="$reporoot/templates/entry-point.md $reporoot/templates/entry-point-generated.md"
 for p48 in "$reporoot"/presets/*.md; do
   grep -qi "routing" "$p48" && routing_files48="$routing_files48 $p48"
 done
-# For a file that carries its own routing-clause marker ("Routing:" in
-# templates/entry-point.md, "Pick area docs" in the preset that has one),
-# architecture.md must be named AFTER that marker on the SAME line — not
-# merely present somewhere in the file, which a stray mention in the
-# unrelated docs/ paragraph (every preset has one) would keep satisfied even
-# after the routing clause itself regresses into an if/otherwise fallback
-# that names architecture.md only before the marker. This mirrors section
-# 46's after-marker anchoring. A file with no such marker line is judged on
-# file-wide presence, same as before — there is no clause to anchor to.
 missing48=""
 for f48 in $routing_files48; do
   if grep -qiE "routing:|pick area docs" "$f48"; then
@@ -6589,11 +5585,6 @@ $f48: $hit48"
 done
 [ -z "$phrase_hits48" ] && pass "routing guidance: the retired phrase \"doc index\" appears nowhere" || fail "routing guidance: retired phrase \"doc index\" found:$phrase_hits48"
 
-# ---- 41. index.sh: canonical Markdown metadata grammar (parser fixtures) ----
-# Pinned before the rendering tests below build on it. A rule record's full
-# body renders verbatim behind a Source: pointer; a route record's title
-# and hook come from its first "# " heading and first "Read when:" comment,
-# with documented fallbacks when either is absent.
 g41="$WORK/g41"
 mkdir -p "$g41/.agent/rules" "$g41/.agent/docs"
 printf '# Rule Title\nLine one.\nLine two.\n' >"$g41/.agent/rules/r.md"
@@ -6651,7 +5642,6 @@ g41titledpath=$(printf '%s\n' "$g41titled" | sed -E 's/ "[^"]*"$//')
   && pass "links: a titled relative link rewrites the path and preserves the title" \
   || fail "links: a titled relative link rewrites the path and preserves the title ($g41titled)"
 
-# ---- 42. index.sh: initial build, then a warm hit touches nothing ----
 i42="$WORK/i42"
 make_index_fixture "$i42"
 "$IDXSH" ensure --root "$i42" >"$WORK/i42.out1" 2>"$WORK/i42.err1"
@@ -6668,7 +5658,6 @@ grep -q '^HIT$' "$WORK/i42.err2" && pass "ensure: an unchanged tree is a warm HI
 cmp -s "$WORK/i42.before" "$WORK/i42.after" && pass "ensure: a warm hit writes zero bytes and touches no mtime" \
   || fail "ensure: a warm hit writes zero bytes and touches no mtime"
 
-# ---- 43. index.sh: changed inputs invalidate the cache ----
 i43="$WORK/i43"
 make_index_fixture "$i43"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>&1
@@ -6709,7 +5698,6 @@ rm "$i43/.agent/docs/renamed.md"
 i43new=$(cat "$i43/.agent/indexes/current.md")
 [ "$i43old" != "$i43new" ] && pass "invalidation: a deletion rebuilds" || fail "invalidation: a deletion rebuilds"
 
-# ---- 44. index.sh: damaged pages, missing pages, and entry tampering ----
 i44="$WORK/i44"
 make_index_fixture "$i44"
 "$IDXSH" ensure --root "$i44" >/dev/null 2>&1
@@ -6730,8 +5718,6 @@ printf 'unexpected instruction\n' >>"$i44/.agent/indexes/current.md"
 grep -q '^BUILT$' "$WORK/i44.e.err" && pass "verification: tampering with the entry itself forces a rebuild" \
   || fail "verification: tampering with the entry itself forces a rebuild"
 
-# ---- 45. index.sh: generator and render-configuration invalidation, and
-# deterministic rendering of equivalent inputs ----
 i45="$WORK/i45"
 make_index_fixture "$i45"
 "$IDXSH" ensure --root "$i45" >/dev/null 2>&1
@@ -6754,8 +5740,6 @@ cmp -s "$i45/.agent/indexes/$i45oldgen"/rules-1.md "$i45/.agent/indexes/$i45newg
   && pass "rendering: equivalent inputs and budget render byte-identical pages" \
   || fail "rendering: equivalent inputs and budget render byte-identical pages"
 
-# ---- 46. index.sh: check reports MISSING/STALE without ever writing,
-# then FRESH once ensure has published ----
 i46="$WORK/i46"
 make_index_fixture "$i46"
 i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err1"); i46rc=$?
@@ -6770,8 +5754,6 @@ i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err3"); i46rc=$?
 [ "$i46rc" -eq 1 ] && [ "$i46out" = STALE ] && pass "check: a changed source is STALE at exit 1" \
   || fail "check: a changed source is STALE at exit 1"
 
-# ---- 47. index.sh: rejected records, oversized records, and entry overflow
-# fall back explicitly and never truncate ----
 i47sym="$WORK/i47sym"
 make_index_fixture "$i47sym"
 ln -s architecture.md "$i47sym/.agent/docs/link.md"
@@ -6799,13 +5781,6 @@ mkdir -p "$i47long/.agent/docs"
 printf '# A\n' >"$i47long/.agent/docs/a.md"
 "$IDXSH" ensure --root "$i47long" >/dev/null 2>&1
 cp "$i47long/.agent/indexes/current.md" "$WORK/i47.long-entry"
-# One byte under the entry's own measured size, not root length plus an
-# assumed constant: the fixed per-entry overhead (fingerprint, generation
-# name, tree digest, the READ line's own directory prefix) runs well past
-# a guessed +80 on some hosts, and a short TMPDIR prefix (bare /tmp on a
-# CI runner vs a longer local one) can then put root-length-plus-80 below
-# index.sh's own 256-byte floor, hitting the usage-error path instead of
-# the overflow fallback this test means to exercise.
 i47priorbytes=$(wc -c <"$WORK/i47.long-entry")
 i47smallbudget=$((i47priorbytes - 1))
 [ "$i47smallbudget" -ge 256 ] || i47smallbudget=256
@@ -6815,8 +5790,6 @@ grep -q 'entry exceeds page budget' "$WORK/i47.long.err" && grep -q 'FALLBACK:' 
   && pass "overflow: an entry too large for the budget falls back and preserves the prior publication" \
   || fail "overflow: an entry too large for the budget falls back and preserves the prior publication"
 
-# ---- 48. index.sh: bounded retries on sources that keep changing during
-# rendering ----
 i48="$WORK/i48"
 make_index_fixture "$i48"
 "$IDXSH" ensure --root "$i48" >/dev/null 2>&1
@@ -6861,7 +5834,6 @@ PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_always TARGET="$i48/.agent/docs/archi
   && pass "retry: sources changing on every attempt exhausts the bound and preserves the prior entry" \
   || fail "retry: sources changing on every attempt exhausts the bound and preserves the prior entry"
 
-# ---- 49. index.sh: concurrent refreshes and a killed writer ----
 i49="$WORK/i49"
 make_index_fixture "$i49"
 "$IDXSH" ensure --root "$i49" >/dev/null 2>&1
@@ -6897,12 +5869,6 @@ i49kn=0
 while [ ! -f "$WORK/i49k.gate" ]; do sleep 0.05; i49kn=$((i49kn + 1)); [ "$i49kn" -lt 100 ] || break; done
 kill -KILL "$i49kpid" 2>/dev/null || true
 wait "$i49kpid" 2>/dev/null || true
-# The paused awk wrapper is a grandchild of this shell (a child of the now-
-# dead index.sh), so killing i49kpid alone leaves it orphaned and running.
-# Release it immediately rather than letting it idle for up to its own
-# 5-second bound — an orphan still writing into $WORK can otherwise race
-# this suite's own end-of-run "rm -rf $WORK" and turn into a spurious
-# "Directory not empty".
 : >"$WORK/i49k.gate.go"
 i49kdn=0
 while [ ! -f "$WORK/i49k.gate.done" ]; do sleep 0.05; i49kdn=$((i49kdn + 1)); [ "$i49kdn" -lt 100 ] || break; done
@@ -6915,8 +5881,6 @@ grep -q '^BUILT$' "$WORK/i49k.retry1.err" && grep -q '^HIT$' "$WORK/i49k.retry2.
   && pass "concurrency: the next run after a kill rebuilds cleanly with no lock recovery" \
   || fail "concurrency: the next run after a kill rebuilds cleanly with no lock recovery"
 
-# ---- 50. index.sh: bounded cleanup reclaims only old, unreferenced
-# generations, never one just published or the one it replaced ----
 i50="$WORK/i50"
 make_index_fixture "$i50"
 "$IDXSH" ensure --root "$i50" >/dev/null 2>&1
@@ -6946,7 +5910,6 @@ INDEX_CLEANUP_AGE_SECONDS=300 "$IDXSH" ensure --root "$i50f" >/dev/null 2>&1
   && pass "cleanup: a fresh superseded generation stays within the age bound's grace window" \
   || fail "cleanup: a fresh superseded generation stays within the age bound's grace window"
 
-# ---- 51. index.sh: real branch switches and two linked worktrees ----
 i51="$WORK/i51"
 make_index_fixture "$i51"
 git -C "$i51" init -q
@@ -6987,7 +5950,6 @@ cmp -s "$i51/.agent/indexes/current.md" "$WORK/i51-wt/.agent/indexes/current.md"
   || fail "worktree: the ignored cache leaves both working trees clean"
 git -C "$i51" worktree remove -f "$WORK/i51-wt" >/dev/null 2>&1 || rm -rf "$WORK/i51-wt"
 
-# ---- 52. index.sh: check never writes, under repeated calls ----
 i52="$WORK/i52"
 make_index_fixture "$i52"
 "$IDXSH" ensure --root "$i52" >/dev/null 2>&1
@@ -6998,7 +5960,6 @@ idx_snapshot "$i52/.agent/indexes" >"$WORK/i52.after"
 cmp -s "$WORK/i52.before" "$WORK/i52.after" && pass "check: repeated calls write zero bytes and touch no mtime" \
   || fail "check: repeated calls write zero bytes and touch no mtime"
 
-# ---- 53. index.sh: usage and the documented exit-status table ----
 "$IDXSH" --help >"$WORK/i53.help" 2>&1; i53rc=$?
 [ "$i53rc" -eq 0 ] && head -n 1 "$WORK/i53.help" | grep -q '^Usage:$' && grep -qF 'index.sh ensure' "$WORK/i53.help" \
   && pass "usage: --help prints usage at exit 0" || fail "usage: --help prints usage at exit 0"
@@ -7024,8 +5985,6 @@ make_index_fixture "$i53"
 "$IDXSH" check --root "$i53" >/dev/null 2>&1; [ "$?" -eq 0 ] \
   && pass "exit status: check FRESH is exit 0" || fail "exit status: check FRESH is exit 0"
 
-# ---- 54. index.sh: every generated entry resolves to the canonical source
-# or a complete generated page ----
 i54="$WORK/i54"
 mkdir -p "$i54/.agent/rules" "$i54/.agent/docs/sub"
 printf '# Rule A\nBody A.\n' >"$i54/.agent/rules/a.md"
@@ -7060,7 +6019,6 @@ grep -qF 'Body A.' "$i54dir"/rules-*.md && grep -qF 'Body B.' "$i54dir"/rules-*.
   && pass "resolution: rule pages are complete — every rule record's body is present" \
   || fail "resolution: rule pages are complete — every rule record's body is present"
 
-# ---- 55. index.sh: the stdout/stderr contract — bounded status only ----
 i55="$WORK/i55"
 make_index_fixture "$i55"
 "$IDXSH" ensure --root "$i55" >"$WORK/i55.out" 2>"$WORK/i55.err"
@@ -7075,12 +6033,6 @@ grep -qi 'Read when\|Project guardrails\|Body text' "$WORK/i55.out" \
   && pass "contract: check's stdout is exactly FRESH or STALE, nothing else" \
   || fail "contract: check's stdout is exactly FRESH or STALE, nothing else"
 
-# ---- 56. indexes manifest field: gitignore across the six mode combinations ----
-# indexes: generated adds two gitignore rules under track-shared and
-# track-all (.agent/indexes/ and .agent/rules/learned.md); manual and
-# ignore-all are untouched from today, learned.md's ignore-or-not follows
-# the tracking mode's own allowlist, and .agent/indexes/ is covered by the
-# blanket .agent/* pattern in track-shared regardless of the new lines.
 gi56_combo() {
   gi56_mode="$1" gi56_idx="$2" gi56_exp_learned="$3" gi56_exp_indexes="$4"
   gi56_dir="$WORK/gi56-$gi56_mode-$gi56_idx"
@@ -7103,8 +6055,6 @@ gi56_combo track-shared generated 1 1
 gi56_combo track-all manual 0 0
 gi56_combo track-all generated 1 1
 
-# ignore-all writes only the blanket .agent/ pattern, which the indexes
-# field never touches, so its gitignore stays byte-identical either way.
 [ "$(cat "$WORK/gi56-ignore-all-manual/.gitignore" 2>/dev/null)" = "$(cat "$WORK/gi56-ignore-all-generated/.gitignore" 2>/dev/null)" ] \
   && pass "gitignore: ignore-all is unchanged from today whether indexes is manual or generated" \
   || fail "gitignore: ignore-all is unchanged from today whether indexes is manual or generated"
@@ -7112,8 +6062,6 @@ gi56_combo track-all generated 1 1
   && pass "gitignore: track-all/manual writes no gitignore, as today" \
   || fail "gitignore: track-all/manual writes no gitignore, as today"
 
-# ---- 56b. $HOME guard: track-all + generated warns instead of silently
-# skipping the gitignore lines that indexes: generated would otherwise add ----
 gi56home="$WORK/gi56-home-track-all-generated"
 mkdir -p "$gi56home"
 HOME="$gi56home" "$NODE" init --preset software-development --mode track-all --indexes generated "$gi56home" >"$WORK/gi56home.out" 2>&1
@@ -7126,8 +6074,6 @@ grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home.out" \
   && pass "init at \$HOME, track-all/generated, still writes no gitignore" \
   || fail "init at \$HOME, track-all/generated, still writes no gitignore"
 
-# track-all + manual at $HOME stays silent, as today — only the generated
-# combination gained a warning.
 gi56homeman="$WORK/gi56-home-track-all-manual"
 mkdir -p "$gi56homeman"
 HOME="$gi56homeman" "$NODE" init --preset software-development --mode track-all --indexes manual "$gi56homeman" >"$WORK/gi56homeman.out" 2>&1
@@ -7135,7 +6081,6 @@ grep -qF 'skipped gitignore at $HOME' "$WORK/gi56homeman.out" \
   && fail "init at \$HOME, track-all/manual, stays silent (no warning)" \
   || pass "init at \$HOME, track-all/manual, stays silent (no warning)"
 
-# ---- 57. generated-mode entry point: no heading drift against status.sh ----
 gep="$WORK/generated-entry-point"
 mkdir -p "$gep"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$gep" >/dev/null 2>&1
@@ -7147,17 +6092,12 @@ gep_flags=$(status_flags "$gep")
   && pass "generated-mode entry point: templates/entry-point-generated.md draws no status.sh finding" \
   || fail "generated-mode entry point: templates/entry-point-generated.md draws no status.sh finding ($gep_flags)"
 
-# A mismatched pairing (generated template in one file, manual in the
-# other) is real drift and must still be caught, same as any other mirror
-# mismatch — the two templates are not interchangeable within one node.
 cp "$reporoot/templates/entry-point.md" "$gep/AGENTS.md"
 gep_flags2=$(status_flags "$gep")
 printf '%s\n' "$gep_flags2" | grep -qF 'REPAIR: AGENTS.md differs from CLAUDE.md' \
   && pass "generated-mode entry point: pairing it with the manual template draws a drift REPAIR" \
   || fail "generated-mode entry point: pairing it with the manual template draws a drift REPAIR ($gep_flags2)"
 
-# ---- 58. index.sh install wiring survives a fresh clone and a fresh
-#          worktree of a track-shared node ----
 i58src="$WORK/i58-source"
 mkdir -p "$i58src"
 "$NODE" init --preset software-development --mode track-shared --indexes generated "$i58src" >/dev/null 2>&1
@@ -7168,8 +6108,6 @@ git -C "$i58src" add -A
 git -C "$i58src" commit -qm bootstrap
 i58base=$(git -C "$i58src" symbolic-ref --short HEAD)
 
-# Clone: track-shared gitignores .agent/scripts/, so the clone starts
-# without index.sh.
 i58clone="$WORK/i58-clone"
 git clone -q "$i58src" "$i58clone"
 [ ! -e "$i58clone/.agent/scripts/index.sh" ] \
@@ -7187,8 +6125,6 @@ rc=$?
   && pass "clone: index.sh ensure succeeds once the indexer is present" \
   || fail "clone: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-clone-ensure.err"))"
 
-# Worktree: a second working tree off the same source repo shares the
-# gitignore, so it starts in the same missing-scripts state as the clone.
 i58wt="$WORK/i58-worktree"
 git -C "$i58src" worktree add -q -b i58-branch "$i58wt" "$i58base"
 [ ! -e "$i58wt/.agent/scripts/index.sh" ] \
@@ -7207,11 +6143,7 @@ rc=$?
   || fail "worktree: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-wt-ensure.err"))"
 git -C "$i58src" worktree remove -f "$i58wt" >/dev/null 2>&1 || rm -rf "$i58wt"
 
-# ---- 59. index.sh: rules/learned/ as a canonical source set, and
-# rules/learned.md as its generated, gitignored aggregate ----
 
-# An empty rules/learned/ directory is exactly as inactive as a missing
-# one: learned.md stays an ordinary rule record and ensure never touches it.
 l59="$WORK/l59"
 mkdir -p "$l59/.agent/rules/learned" "$l59/.agent/docs"
 printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n' >"$l59/.agent/rules/learned.md"
@@ -7227,8 +6159,6 @@ grep -qF "Source: $l59/.agent/rules/learned.md" "$l59/.agent/indexes/$l59gen"/ru
   && pass "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record" \
   || fail "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record"
 
-# No rules/learned/ directory at all: learned.md renders exactly as any
-# other rule record did before this feature, and ensure never rewrites it.
 l61="$WORK/l61"
 mkdir -p "$l61/.agent/rules" "$l61/.agent/docs"
 printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n\n- [2026-01-01] Legacy single-file rule.\n' >"$l61/.agent/rules/learned.md"
@@ -7244,11 +6174,6 @@ grep -qF "Source: $l61/.agent/rules/learned.md" "$l61/.agent/indexes/$l61gen"/ru
   && pass "learned aggregate: with no rules/learned/ directory, ensure never rewrites learned.md" \
   || fail "learned aggregate: with no rules/learned/ directory, ensure never rewrites learned.md"
 
-# One record, many records, and a record whose body carries several ^-
-# lines — the aggregate must carry every one of them forward, path-sorted,
-# with qualifiers, Trigger: clauses, and dates intact, and no rule body may
-# render twice across the published pages (the gen.*/*.md pages — not the
-# standalone aggregate, which is never one of them).
 l60="$WORK/l60"
 mkdir -p "$l60/.agent/rules/learned" "$l60/.agent/docs"
 printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l60/.agent/docs/d.md"
@@ -7286,7 +6211,6 @@ l60totalfirst=$(grep -hc -F -- 'First rule' "$l60dir"/*.md 2>/dev/null | awk '{s
   && pass "learned aggregate: no rule body from rules/learned/ renders twice across the published pages" \
   || fail "learned aggregate: no rule body from rules/learned/ renders twice across the published pages ($l60totalfirst)"
 
-# Editing one record and re-running ensure updates the aggregate.
 l60aggbefore=$(cat "$l60agg")
 printf -- '- [2026-01-05] Fifth rule appended.\n' >>"$l60/.agent/rules/learned/aa-first.md"
 "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.edit.err"
@@ -7297,9 +6221,6 @@ l60aggafter=$(cat "$l60agg")
   && pass "learned aggregate: editing one record and re-running ensure updates the aggregate" \
   || fail "learned aggregate: editing one record and re-running ensure updates the aggregate"
 
-# Re-check the no-double-render guarantee now that learned.md already
-# exists on disk from the first ensure — a stronger check than the one
-# above, whose fresh-fixture run could pass even with the exclusion gone.
 l60gen2=$(sed -n 2p "$l60/.agent/indexes/current.md")
 l60dir2="$l60/.agent/indexes/$l60gen2"
 l60totalfirst2=$(grep -hc -F -- 'First rule' "$l60dir2"/*.md 2>/dev/null | awk '{s+=$1} END{print s+0}')
@@ -7307,7 +6228,6 @@ l60totalfirst2=$(grep -hc -F -- 'First rule' "$l60dir2"/*.md 2>/dev/null | awk '
   && pass "learned aggregate: no rule body from rules/learned/ renders twice across the published pages, once learned.md already exists on disk" \
   || fail "learned aggregate: no rule body from rules/learned/ renders twice across the published pages, once learned.md already exists on disk ($l60totalfirst2)"
 
-# A cache hit (nothing changed) writes nothing at all.
 l60hitsnap1=$(idx_snapshot "$l60/.agent/rules")
 "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.hit.err"
 grep -q '^HIT$' "$WORK/l60.hit.err" && pass "learned aggregate: an unchanged tree after the edit is a warm HIT" \
@@ -7317,7 +6237,6 @@ l60hitsnap2=$(idx_snapshot "$l60/.agent/rules")
   && pass "learned aggregate: a cache hit writes nothing" \
   || fail "learned aggregate: a cache hit writes nothing"
 
-# check performs no write to the aggregate, even with a stale, changed record.
 l60aggcheckbefore=$(cat "$l60agg")
 printf -- '- [2026-01-06] Stale edit for check.\n' >>"$l60/.agent/rules/learned/bb-second.md"
 "$IDXSH" check --root "$l60" >/dev/null 2>&1
@@ -7326,8 +6245,6 @@ printf -- '- [2026-01-06] Stale edit for check.\n' >>"$l60/.agent/rules/learned/
   && pass "learned aggregate: check writes no file under any input, even a stale record change" \
   || fail "learned aggregate: check writes no file under any input, even a stale record change"
 
-# A failed ensure leaves both the previous entry file and the previous
-# aggregate exactly as they were, with no leftover temp file either.
 "$IDXSH" ensure --root "$l60" >/dev/null 2>&1
 l60entrybefore=$(cat "$l60/.agent/indexes/current.md")
 l60aggfailbefore=$(cat "$l60agg")
@@ -7345,12 +6262,8 @@ l60failrc=$?
   && pass "learned aggregate: a failed ensure leaves no leftover temp files" \
   || fail "learned aggregate: a failed ensure leaves no leftover temp files"
 
-# ---- 60. index.sh + status.sh: an unmodified status.sh run against a
-# migrated fixture matches the pre-migration verdict ----
 m60ctl="$WORK/m60-control"
 mkdir -p "$m60ctl"
-# indexes: generated on both sides, matching the migrated fixture below —
-# the only difference under test is the learned-rules shape, not this field.
 "$NODE" init --preset software-development --mode track-all --indexes generated "$m60ctl" >/dev/null 2>&1
 finish_bootstrap "$m60ctl"
 cat >"$m60ctl/.agent/rules/learned.md" <<'EOF'
@@ -7379,11 +6292,6 @@ printf -- '- [2026-01-02] Rule two about tests. Trigger: a flaky suite.\n' >"$m6
 printf -- '- [2026-01-03] Rule three about review turnaround.\n' >"$m60mig/.agent/rules/learned/0003.md"
 "$m60mig/.agent/scripts/index.sh" ensure --root "$m60mig" >/dev/null 2>"$WORK/m60mig.ensure.err"
 
-# The generated aggregate carries one line the pre-migration file never
-# had: the "hand edits are lost" marker. It is byte-identical to the
-# control only once that marker line is removed; everything else
-# (header, blank line, every rule bullet in path-sorted order) must
-# still match exactly.
 m60migstripped=$(grep -vF '<!-- Generated by index.sh from rules/learned/' "$m60mig/.agent/rules/learned.md")
 m60ctlcontent=$(cat "$m60ctl/.agent/rules/learned.md")
 [ "$m60migstripped" = "$m60ctlcontent" ] \
@@ -7401,17 +6309,11 @@ printf '%s\n' "$m60migflags" | grep -qF 'REPAIR: rules/learned.md missing/empty'
 [ "$m60ctlflags" = "$m60migflags" ] \
   && pass "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration" \
   || fail "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration ($m60migflags)"
-# Both fixtures are indexes: generated, so PAYLOAD: prices purpose and
-# memory only — rules/learned.md is a rule page now, not a --load member —
-# and the migration's marker-line addition to it moves no payload byte at
-# all. The two totals must be equal, not off by the marker line's bytes.
 [ -n "$m60ctlpayload" ] && [ -n "$m60migpayload" ] \
   && [ "$m60ctlpayload" -eq "$m60migpayload" ] \
   && pass "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load" \
   || fail "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load (ctl=$m60ctlpayload mig=$m60migpayload)"
 
-# The marker line's bytes still have to land somewhere: rules/learned.md
-# itself, which the migrated copy carries and the control's does not.
 m60ctllearnedbytes=$(wc -c <"$m60ctl/.agent/rules/learned.md" | tr -d '[:space:]')
 m60miglearnedbytes=$(wc -c <"$m60mig/.agent/rules/learned.md" | tr -d '[:space:]')
 [ "$((m60miglearnedbytes - m60ctllearnedbytes))" -eq "$m60markerbytes" ] \
@@ -7424,13 +6326,7 @@ printf -- '--- status.sh --load against the migrated fixture ---\n'
 "$m60mig/.agent/scripts/status.sh" --load "$m60mig" 2>/dev/null
 printf -- '--- end status.sh output ---\n\n'
 
-# ---- 61. node.sh update, generated indexes: learned-rule extraction,
-# doc-hook backfill, and the migration inventory ----
 
-# A V6 fixture (oldversion 6, below TARGET_VERSION, so update takes the
-# real-migration branch) with indexes: generated added beside mode,
-# rules/learned.md exercising four bullet shapes, and an
-# architecture.md/docs/ tree exercising every hook-backfill departure.
 r61build() {
   r61_dir="$1"
   mkdir -p "$r61_dir"
@@ -7529,8 +6425,6 @@ Body.
 EOF
 }
 
-# r61build, then override mode away from its ignore-all default — the same
-# post-hoc rewrite make_v6_fixture applies to its own mode argument.
 r61mode() {
   r61m_dir="$1"
   r61m_mode="$2"
@@ -7542,9 +6436,6 @@ r61mode() {
   fi
 }
 
-# True when every one of r61build's four original bullets is present
-# somewhere in $1 — order-independent, since the aggregate concatenates
-# records in identity-sorted order, not original file order.
 r61_bullets_present() {
   rbp_file="$1"
   for rbp_marker in 'First rule, flat' 'nested sub-bullet' 'multi paragraph' 'Fourth rule, flat'; do
@@ -7701,8 +6592,6 @@ grep -qF 'docs/architecture.md' "$r61inv" \
   && fail "migration inventory: architecture.md itself is never listed as a walked item" \
   || pass "migration inventory: architecture.md itself is never listed as a walked item"
 
-# ---- 61b. a second update over an already-populated rules/learned/ mints
-# no new identity, rewrites no record, and changes no file ----
 r61snapshot() { find "$1/.agent" -type f | sort | xargs shasum 2>/dev/null | sort; }
 r61before2=$(r61snapshot "$r61dir")
 "$NODE" update "$r61dir" >"$WORK/r61-update2.out" 2>&1
@@ -7713,8 +6602,6 @@ r61after2=$(r61snapshot "$r61dir")
   && pass "re-run over an already-populated rules/learned/: mints no identity, rewrites no record, changes no file" \
   || fail "re-run over an already-populated rules/learned/: mints no identity, rewrites no record, changes no file"
 
-# ---- 61c. a rules/learned.md with zero bullets produces zero records and
-# no rule line in the inventory ----
 r61zero="$WORK/r61-zero"
 mkdir -p "$r61zero"
 make_v6_fixture "$r61zero"
@@ -7739,15 +6626,6 @@ grep -q '^- rule ' "$r61zero/.agent/migration-inventory.md" \
   && fail "zero-bullet rules/learned.md: the inventory carries no rule line" \
   || pass "zero-bullet rules/learned.md: the inventory carries no rule line"
 
-# ---- 61d. identity minting: the collision-retry path and the
-# 100-consecutive-rejection abort, exercised deterministically ----
-# mint_learned_id reads $RANDOM directly (never inside a `$(...)` fork,
-# which would perturb bash's generator on every call), so seeding RANDOM
-# and sourcing just the function definitions — everything above the
-# command dispatch — reproduces its candidate sequence exactly. This
-# tests the function in isolation; it does not invoke node.sh's own
-# command dispatch, which always exits and so cannot be sourced and
-# resumed within one process.
 sed -n '1,/^case "\$cmd" in/p' "$NODE" | sed '$d' >"$WORK/node-funcs.sh"
 
 r61mintdir="$WORK/r61-mint-retry"
@@ -7809,8 +6687,6 @@ r61afterabort=$(find "$r61abortdir" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:
   && pass "identity minting: an aborted mint creates no additional record file" \
   || fail "identity minting: an aborted mint creates no additional record file"
 
-# ---- 61e. a rules/learned.md with no trailing newline still captures the
-# last bullet's final physical line ----
 r61ntdir="$WORK/r61-no-trailing-newline"
 mkdir -p "$r61ntdir"
 make_v6_fixture "$r61ntdir"
@@ -7843,8 +6719,6 @@ r61nt_expect=$(printf '%s\n' \
   && pass "rule extraction: a rules/learned.md with no trailing newline still captures the last bullet's final line verbatim" \
   || fail "rule extraction: a rules/learned.md with no trailing newline still captures the last bullet's final line verbatim"
 
-# ---- 62. generated-mode migration, boundary 1: interrupted after the
-# backup and migration_target write, before anything is staged ----
 b1="$WORK/mig-boundary1"
 mkdir -p "$b1"
 r61mode "$b1" track-shared
@@ -7875,8 +6749,6 @@ r61_bullets_present "$b1/.agent/rules/learned.md" \
   && pass "boundary 1: the regenerated rules/learned.md reproduces every original bullet" \
   || fail "boundary 1: the regenerated rules/learned.md reproduces every original bullet"
 
-# ---- 62b. generated-mode migration, boundary 2: some records staged
-# (plus a zero-byte claimed record), before the rename ----
 b2="$WORK/mig-boundary2"
 mkdir -p "$b2"
 r61mode "$b2" track-shared
@@ -7885,9 +6757,6 @@ awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { pri
   "$b2/.agent/purpose.md" >"$b2/.agent/purpose.md.tmp"
 mv "$b2/.agent/purpose.md.tmp" "$b2/.agent/purpose.md"
 
-# RANDOM is seeded here only for the discarded staging attempt, never for
-# the resumed run below, so a resume that happened to re-mint the same
-# identities would not go undetected.
 b2staging="$b2/.agent/.learned-staging"
 mkdir -p "$b2staging"
 b2id1=$(bash -c 'RANDOM=6101; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
@@ -7924,8 +6793,6 @@ done
   && pass "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agent/" \
   || fail "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agent/"
 
-# ---- 62c. generated-mode migration, boundary 3: interrupted after the
-# rename, before index.sh ensure succeeds ----
 b3="$WORK/mig-boundary3"
 mkdir -p "$b3"
 r61mode "$b3" track-shared
@@ -7975,8 +6842,6 @@ git -C "$b3" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1
   && pass "boundary 3: the resume snapshot is removed once the untrack completes" \
   || fail "boundary 3: the resume snapshot is removed once the untrack completes"
 
-# ---- 62d. generated-mode migration, boundary 4: interrupted after the
-# aggregate check passes, before git rm --cached completes ----
 b4="$WORK/mig-boundary4"
 mkdir -p "$b4"
 r61mode "$b4" track-shared
@@ -8030,10 +6895,6 @@ r61_bullets_present "$b4/.agent/rules/learned.md" \
   && pass "boundary 4: the aggregate still reproduces every original bullet after resume" \
   || fail "boundary 4: the aggregate still reproduces every original bullet after resume"
 
-# ---- 62e. generated-mode migration: the aggregate-reproduction check
-# aborts before untracking when the regenerated aggregate does not
-# reproduce every snapshotted bullet, and rules/learned.md is never
-# untracked on that failure ----
 b5="$WORK/mig-boundary-abort"
 mkdir -p "$b5"
 r61mode "$b5" track-shared
@@ -8044,9 +6905,6 @@ git -C "$b5" add .agent
 git -C "$b5" commit -qm initial
 
 cp -R "$b5/.agent" "$b5/.agent.backup-v6"
-# Seed the pre-migration snapshot with a bogus bullet that no record will
-# ever reproduce, forcing the reproduction check to fail deterministically
-# rather than corrupting a real record's content.
 grep '^- ' "$b5/.agent/rules/learned.md" >"$b5/.agent/.learned-bullets-before"
 printf -- '- [2026-01-09] Bogus bullet never present in any record.\n' >>"$b5/.agent/.learned-bullets-before"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
@@ -8081,9 +6939,6 @@ git -C "$b5" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1
   && pass "abort path: .learned-bullets-before is not removed when the aggregate-reproduction check fails" \
   || fail "abort path: .learned-bullets-before is not removed when the aggregate-reproduction check fails"
 
-# ---- 63. generated-mode migration, tracking-mode matrix: gitignore,
-# untrack, no-duplicate lines on a second update, and a customized doc's
-# ownership and visibility, per mode ----
 mm_build() {
   mm_dir="$1"
   mm_mode="$2"
@@ -8101,7 +6956,6 @@ mm_build() {
   fi
 }
 
-# track-shared, real git repo.
 mmA="$WORK/mm-track-shared"
 mm_build "$mmA" track-shared yes
 cp "$mmA/.agent/docs/custom.md" "$WORK/mmA-custom-before.md"
@@ -8131,7 +6985,6 @@ mmA_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
   && pass "mode matrix (track-shared): a second update adds no duplicate gitignore line" \
   || fail "mode matrix (track-shared): a second update adds no duplicate gitignore line"
 
-# track-all, real git repo: no backup is ever created.
 mmB="$WORK/mm-track-all"
 mm_build "$mmB" track-all yes
 cp "$mmB/.agent/docs/custom.md" "$WORK/mmB-custom-before.md"
@@ -8162,8 +7015,6 @@ mmB_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
   && pass "mode matrix (track-all): a second update adds no duplicate gitignore line" \
   || fail "mode matrix (track-all): a second update adds no duplicate gitignore line"
 
-# ignore-all, outside any git work tree: neither gitignore line, no
-# untrack attempted.
 mmC="$WORK/mm-ignore-all"
 mm_build "$mmC" ignore-all no
 cp "$mmC/.agent/docs/custom.md" "$WORK/mmC-custom-before.md"
@@ -8180,9 +7031,6 @@ diff -q "$WORK/mmC-custom-before.md" "$mmC/.agent/docs/custom.md" >/dev/null 2>&
 mmC_rc2=$?
 [ "$mmC_rc2" -eq 0 ] && pass "mode matrix (ignore-all, no git): a second update exits 0" || fail "mode matrix (ignore-all, no git): a second update exits 0 (rc=$mmC_rc2)"
 
-# track-shared, outside any git work tree: gitignore lines are still
-# written (a plain text file, no git needed), but the untrack is skipped
-# for lack of a work tree, never as an error.
 mmD="$WORK/mm-track-shared-nogit"
 mm_build "$mmD" track-shared no
 cp "$mmD/.agent/docs/custom.md" "$WORK/mmD-custom-before.md"
@@ -8204,11 +7052,6 @@ mmD_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
   && pass "mode matrix (track-shared, no git): a second update adds no duplicate gitignore line" \
   || fail "mode matrix (track-shared, no git): a second update adds no duplicate gitignore line"
 
-# ---- 63e. generated-mode migration, mode not ignore-all, root inside a
-# git work tree, but rules/learned.md is already untracked when the
-# untrack step runs. Distinct from the ignore-all skip (mmC) and the
-# outside-a-work-tree skip (mmD): here git is present and the mode would
-# normally untrack, but there is nothing left to untrack.
 au="$WORK/mm-already-untracked"
 mm_build "$au" track-shared yes
 "$NODE" update "$au" >"$WORK/au-update1.out" 2>&1
@@ -8231,8 +7074,6 @@ git -C "$au" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1
   && fail "already-untracked: rules/learned.md is still not tracked after the second update" \
   || pass "already-untracked: rules/learned.md is still not tracked after the second update"
 
-# ---- 64. generated-mode migration, real git merges and a linear replay
-# against a migrated node ----
 mg="$WORK/mig-merge-base"
 mkdir -p "$mg"
 r61mode "$mg" track-shared
@@ -8246,9 +7087,6 @@ git -C "$mg" add -A
 git -C "$mg" commit -qm "post-migration state"
 mgbase=$(git -C "$mg" symbolic-ref --short HEAD)
 
-# A and B each add one distinct new record on their own branch; merging
-# both into the base is clean and both bullets reach the regenerated
-# aggregate.
 git -C "$mg" checkout -qb recA "$mgbase"
 printf -- '- [2026-02-01] Branch A added this rule.\n' >"$mg/.agent/rules/learned/branch-a-record.md"
 git -C "$mg" add .agent/rules/learned/branch-a-record.md
@@ -8274,8 +7112,6 @@ grep -qF 'Branch A added this rule.' "$mg/.agent/rules/learned.md" \
   && pass "merge fixture: both merged records reach the regenerated aggregate" \
   || fail "merge fixture: both merged records reach the regenerated aggregate"
 
-# C and D each edit the same record's body differently; the second merge
-# conflicts on that record file rather than silently picking a winner.
 git -C "$mg" checkout -q "$mgbase"
 mgeditfile=$(grep -lF 'First rule, flat' "$mg/.agent/rules/learned"/*.md | head -n1)
 mgeditrel=${mgeditfile#"$mg"/}
@@ -8304,8 +7140,6 @@ git -C "$mg" diff --name-only --diff-filter=U 2>/dev/null | grep -qF "$mgeditrel
   || fail "merge fixture: the conflict lands on the edited record file"
 git -C "$mg" merge --abort >/dev/null 2>&1
 
-# Linear replay: two successive commits, each adding one record; both
-# bullets survive.
 git -C "$mg" checkout -qb linear "$mgbase"
 printf -- '- [2026-02-03] Linear commit one added this rule.\n' >"$mg/.agent/rules/learned/linear-one.md"
 git -C "$mg" add .agent/rules/learned/linear-one.md
@@ -8319,14 +7153,6 @@ grep -qF 'Linear commit one added this rule.' "$mg/.agent/rules/learned.md" \
   && pass "linear replay: both sequential commits' records survive in the regenerated aggregate" \
   || fail "linear replay: both sequential commits' records survive in the regenerated aggregate"
 
-# ---- 65. generated-mode migration, end-to-end: an unmodified status.sh
-# run after the real migration chain (migrate_learned_and_docs -> gitignore
-# -> index.sh ensure -> aggregate-reproduction check -> git rm --cached)
-# emits no REPAIR: finding referencing rules/learned.md or the migration.
-# Distinct from check 60's fixture, which hand-writes rules/learned/ and
-# calls index.sh ensure directly — it never calls migrate_learned_and_docs,
-# writes no gitignore, and never untracks, so it never exercises this
-# chain end to end.
 e2e="$WORK/mig-e2e-status"
 mkdir -p "$e2e"
 r61mode "$e2e" track-shared
@@ -8343,11 +7169,6 @@ git -C "$e2e" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&
   && fail "end-to-end migration: the real chain untracks rules/learned.md" \
   || pass "end-to-end migration: the real chain untracks rules/learned.md"
 
-# The pending-migration_target REPAIR is status.sh's own expected finding
-# until finalize runs (see the update-command checks above) — filter it
-# out, then assert nothing else about rules/learned.md or the migration
-# mechanism remains. Unrelated REPAIR/GROOM findings elsewhere in the node
-# are not asserted about either way.
 e2e_flags_after=$(status_flags "$e2e")
 e2e_bad_repairs=$(printf '%s\n' "$e2e_flags_after" \
   | grep '^REPAIR:' \
@@ -8357,70 +7178,13 @@ e2e_bad_repairs=$(printf '%s\n' "$e2e_flags_after" \
   && pass "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note" \
   || fail "end-to-end migration: an unmodified status.sh emits no REPAIR: finding referencing rules/learned.md or the migration, apart from the expected pending-migration_target note ($e2e_bad_repairs)"
 
-# ---- 66. checkpoint.sh compatibility shim: finish.sh forwards unchanged,
-# plus one deprecation line ----
-# An already-adopted node's entry point still says `finish.sh` until it is
-# edited by hand, so the old name has to keep working. node.sh update ships
-# checkpoint.sh and finish.sh through the same copy loop as init, so it
-# gets its own check here rather than reusing the init-time one above. The
-# forwarding check below runs two structurally identical fixtures — one
-# through checkpoint.sh directly, one through finish.sh — and compares
-# their output after stripping each fixture's own root path (so two
-# differently named directories don't defeat the diff) and, on the
-# finish.sh side, the shim's one added stderr line.
 shimU="$WORK/shim-update"
 make_v6_fixture "$shimU"
 "$NODE" update "$shimU" >/dev/null 2>&1
-[ -x "$shimU/.agent/scripts/checkpoint.sh" ] && [ -x "$shimU/.agent/scripts/finish.sh" ] \
-  && pass "node.sh update: refreshes both checkpoint.sh and finish.sh on an existing node" \
-  || fail "node.sh update: refreshes both checkpoint.sh and finish.sh on an existing node"
+[ -x "$shimU/.agent/scripts/checkpoint.sh" ] && [ ! -e "$shimU/.agent/scripts/finish.sh" ] \
+  && pass "node.sh update: refreshes checkpoint.sh and installs no finish.sh" \
+  || fail "node.sh update: refreshes checkpoint.sh and installs no finish.sh"
 
-shimA="$WORK/shim-direct"
-shimB="$WORK/shim-forward"
-for shimroot in "$shimA" "$shimB"; do
-  mkdir -p "$shimroot/src"
-  "$NODE" init --preset software-development --mode track-all "$shimroot" >/dev/null 2>&1
-  finish_bootstrap "$shimroot"
-  printf 'export const a = 1\n' >"$shimroot/src/a.ts"
-  git -C "$shimroot" init -q && git -C "$shimroot" add -A && git -C "$shimroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-  printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$shimroot/src/a.ts"
-done
-
-"$shimA/.agent/scripts/checkpoint.sh" --tool claude --area shimtest --verify pass --summary "checkpoint shim parity" "$shimA" >"$WORK/shimA.out" 2>"$WORK/shimA.err"
-rcA=$?
-"$shimB/.agent/scripts/finish.sh" --tool claude --area shimtest --verify pass --summary "checkpoint shim parity" "$shimB" >"$WORK/shimB.out" 2>"$WORK/shimB.err"
-rcB=$?
-
-sed "s#$shimA#ROOT#g" "$WORK/shimA.out" >"$WORK/shimA.out.norm"
-sed "s#$shimB#ROOT#g" "$WORK/shimB.out" >"$WORK/shimB.out.norm"
-sed "s#$shimA#ROOT#g" "$WORK/shimA.err" >"$WORK/shimA.err.norm"
-sed "s#$shimB#ROOT#g" "$WORK/shimB.err" >"$WORK/shimB.err.norm"
-
-[ "$rcA" -eq "$rcB" ] && pass "checkpoint.sh shim: finish.sh's exit code matches a direct checkpoint.sh call" || fail "checkpoint.sh shim: finish.sh's exit code matches a direct checkpoint.sh call (checkpoint=$rcA finish=$rcB)"
-
-diff -q "$WORK/shimA.out.norm" "$WORK/shimB.out.norm" >/dev/null 2>&1 \
-  && pass "checkpoint.sh shim: finish.sh's stdout matches a direct checkpoint.sh call" \
-  || fail "checkpoint.sh shim: finish.sh's stdout matches a direct checkpoint.sh call"
-
-head -n 1 "$WORK/shimB.err" | grep -qxF "finish.sh: deprecated — use checkpoint.sh; forwarding unchanged" \
-  && pass "checkpoint.sh shim: finish.sh's stderr opens with exactly the deprecation line" \
-  || fail "checkpoint.sh shim: finish.sh's stderr opens with exactly the deprecation line"
-
-tail -n +2 "$WORK/shimB.err.norm" >"$WORK/shimB.err.rest"
-diff -q "$WORK/shimA.err.norm" "$WORK/shimB.err.rest" >/dev/null 2>&1 \
-  && pass "checkpoint.sh shim: finish.sh's stderr past the deprecation line matches a direct checkpoint.sh call" \
-  || fail "checkpoint.sh shim: finish.sh's stderr past the deprecation line matches a direct checkpoint.sh call"
-# ---- 67. generated-mode bootstrap read set: index pages once, --load
-# trimmed to purpose+memory, quality-bar.md and references/ never render ----
-# The generated template used to run index.sh ensure and then status.sh
-# --load, and --load printed the same rule bodies the index pages just
-# built — every rule body loaded twice. Fixtures below build with node.sh
-# init --indexes generated, then run the suite's bootstrap helper,
-# matching every other generated-mode fixture in this file.
-
-# Cold trace: a fresh node's first ensure is a BUILT, printing the entry
-# path; --load then prints the entry-path line, purpose.md and memory.md
-# under markers, and no .agent/rules/ marker at all.
 rs67="$WORK/read-set-cold"
 mkdir -p "$rs67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$rs67" >/dev/null 2>&1
@@ -8447,11 +7211,6 @@ grep -q '^==== \.agent/rules/' "$WORK/rs67.load.out" \
   && fail "read set: --load prints no .agent/rules/ marker in generated mode" \
   || pass "read set: --load prints no .agent/rules/ marker in generated mode"
 
-# Indexer gone, stale cache still on disk: --load falls back to the manual
-# read set, so the rule text is in front of the session without any fallback
-# instruction being remembered, and nothing points it at a cache it cannot
-# verify. The calibration run of 2026-09-20 saw one session in three trust
-# the leftover cache under the old behavior.
 rs67ni="$WORK/read-set-no-indexer"
 mkdir -p "$rs67ni"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$rs67ni" >/dev/null 2>&1
@@ -8472,8 +7231,6 @@ grep -qF "read every page listed in .agent/indexes/current.md" "$WORK/rs67ni.loa
   && fail "read set: --load never points at the unverifiable cache when the indexer is missing" \
   || pass "read set: --load never points at the unverifiable cache when the indexer is missing"
 
-# Warm trace: a second ensure is a HIT, prints the same entry path, and
-# publishes no new generation.
 rs67_snap_before=$(idx_snapshot "$rs67/.agent/indexes")
 "$IDXSH" ensure --root "$rs67" >"$WORK/rs67.warm.out" 2>"$WORK/rs67.warm.err"
 grep -q '^HIT$' "$WORK/rs67.warm.err" \
@@ -8487,8 +7244,6 @@ rs67_snap_after=$(idx_snapshot "$rs67/.agent/indexes")
   && pass "read set: a warm ensure publishes no new generation" \
   || fail "read set: a warm ensure publishes no new generation"
 
-# Duplicate-body: a rule's own distinctive sentence must appear in the
-# published pages and nowhere in --load's now-trimmed output.
 dup67="$WORK/read-set-dup"
 mkdir -p "$dup67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$dup67" >/dev/null 2>&1
@@ -8503,11 +7258,6 @@ grep -qrF -- 'duplicate-body probe sentence' "$dup67/.agent/indexes/$dup67_gen" 
   && fail "read set: the rule's sentence does not also appear in --load output" \
   || pass "read set: the rule's sentence does not also appear in --load output"
 
-# Manual-mode parity: manual mode's --load branch stays the fixed
-# learned/contract/purpose/memory sequence this file has always emitted, so
-# its output is asserted directly against that fixed shape rather than
-# against a second copy of status.sh — a copy sourced from any git ref goes
-# stale the moment this branch's own commit becomes that ref's HEAD.
 mp67="$WORK/manual-parity"
 mkdir -p "$mp67"
 "$NODE" init --preset software-development --mode track-all --indexes manual "$mp67" >/dev/null 2>&1
@@ -8523,12 +7273,6 @@ grep -qE '^PAYLOAD: --load would write [0-9]+ bytes of a [0-9]+ byte budget \(le
   && pass "manual mode: PAYLOAD: line frames all four files, learned first" \
   || fail "manual mode: PAYLOAD: line frames all four files, learned first"
 
-# The marker segment itself — everything from the blank line before the
-# first marker onward — is rebuilt here from the fixture's own four files
-# and the "\n==== <path> ====\n" + file-body sequence documented above
-# status.sh's --load loop, then compared byte for byte against what --load
-# actually wrote, so any dropped, reordered, duplicated, or reformatted
-# body in that sequence still fails this check.
 mp67_expected="$WORK/mp67.expected-tail.out"
 : >"$mp67_expected"
 for mp67_f in rules/learned.md rules/contract.md purpose.md memory.md; do
@@ -8542,9 +7286,6 @@ cmp -s "$mp67_expected" "$mp67_actual" \
   && pass "manual mode: --load's marker segment matches the fixture's own files byte for byte" \
   || fail "manual mode: --load's marker segment matches the fixture's own files byte for byte"
 
-# Template phrases: the same fixed strings written into
-# templates/entry-point-generated.md in this task's rewrite, mirroring the
-# manual template's own timing/boundary phrase check.
 tplgen67="$reporoot/templates/entry-point-generated.md"
 missing67=""
 grep -qF "run once" "$tplgen67" || grep -qF "runs once" "$tplgen67" || missing67="$missing67 once-per-session"
@@ -8556,10 +7297,6 @@ grep -qF "the catalog, read whole" "$tplgen67" || missing67="$missing67 routes-c
 grep -qF "read \`.agent/rules/\` and \`.agent/docs/architecture.md\` directly and carry on" "$tplgen67" || missing67="$missing67 fallback"
 [ -z "$missing67" ] && pass "template: the generated entry point carries its timing, routing, and fallback phrases" || fail "template: the generated entry point carries its timing, routing, and fallback phrases (missing:$missing67)"
 
-# Exclusions: rules/quality-bar.md (split out by the bootstrap helper) and
-# every references/ record, at either docs/ level, must render into no
-# page and route into no line, while an ordinary rule record and an
-# ordinary routed doc both stay reachable.
 ex67="$WORK/read-set-exclusions"
 mkdir -p "$ex67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$ex67" >/dev/null 2>&1
@@ -8589,9 +7326,6 @@ grep -hF -- 'READ:' "$ex67_dir"/routes-*.md 2>/dev/null | grep -qF 'docs/ordinar
   && pass "exclusions: an ordinary routed doc is still reachable from the entry file" \
   || fail "exclusions: an ordinary routed doc is still reachable from the entry file"
 
-# Branch-switch staleness: a record changed after a commit and a branch
-# makes check report STALE, purely from the content-hash fingerprint — no
-# git-specific mechanism — and the next ensure republishes.
 bs67="$WORK/read-set-branch-stale"
 mkdir -p "$bs67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$bs67" >/dev/null 2>&1
@@ -8623,8 +7357,6 @@ grep -q '^BUILT$' "$WORK/bs67.second.err" \
   && pass "branch switch: the republished generation differs from the pre-switch one" \
   || fail "branch switch: the republished generation differs from the pre-switch one"
 
-# A failed ensure leaves the published entry byte-identical, following the
-# existing failed-ensure fixture's idiom (INDEX_FAIL_AT=before-publish).
 fe67="$WORK/read-set-failed-ensure"
 mkdir -p "$fe67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$fe67" >/dev/null 2>&1
@@ -8641,13 +7373,7 @@ fe67_rc=$?
   && pass "failed ensure: the published entry stays byte-identical after a failed ensure" \
   || fail "failed ensure: the published entry stays byte-identical after a failed ensure"
 
-# ---- 68. status.sh: rules/learned/ as the canonical source, cache faults
-# never become findings; checkpoint.sh refreshes the cache in generated
-# mode only ----
 
-# (a) A generated node whose learned rules live only in rules/learned/,
-# with no aggregate published, draws no REPAIR: or GROOM: naming
-# rules/learned.md.
 c68a="$WORK/canonical-records-only"
 mkdir -p "$c68a"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68a" >/dev/null 2>&1
@@ -8659,8 +7385,6 @@ f68a=$(status_flags "$c68a")
 [ -z "$f68a" ] && pass "canonical source: a record-only node draws no REPAIR: or GROOM: naming rules/learned.md" \
   || fail "canonical source: a record-only node draws no REPAIR: or GROOM: naming rules/learned.md ($f68a)"
 
-# (b) A node with an empty rules/learned/ directory and no aggregate still
-# draws exactly the record-directory REPAIR:, naming what to restore.
 c68b="$WORK/canonical-neither"
 mkdir -p "$c68b"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68b" >/dev/null 2>&1
@@ -8672,9 +7396,6 @@ f68b=$(status_flags "$c68b")
   && pass "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR:" \
   || fail "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR: ($f68b)"
 
-# (b2) A node whose rules/learned/ holds a non-.md file and no aggregate
-# still draws exactly the record-directory REPAIR:, same as an empty
-# directory.
 c68b2="$WORK/canonical-neither-nonmd"
 mkdir -p "$c68b2"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68b2" >/dev/null 2>&1
@@ -8687,8 +7408,6 @@ f68b2=$(status_flags "$c68b2")
   && pass "canonical source: a rules/learned/ holding only a non-.md file and no aggregate draws exactly the record-directory REPAIR:" \
   || fail "canonical source: a rules/learned/ holding only a non-.md file and no aggregate draws exactly the record-directory REPAIR: ($f68b2)"
 
-# (c) A record set crossing LEARNED_MAX_RULES draws the rules/learned/
-# GROOM:, at the same count the equivalent aggregate draws its own.
 c68c="$WORK/canonical-threshold-records"
 mkdir -p "$c68c"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68c" >/dev/null 2>&1
@@ -8719,8 +7438,6 @@ printf '%s\n' "$f68d" | grep -qF 'GROOM: learned.md > 60 rules' \
   && pass "canonical source: the equivalent aggregate crosses the same 61-record ceiling and draws its own GROOM:" \
   || fail "canonical source: the equivalent aggregate crosses the same 61-record ceiling and draws its own GROOM: ($f68d)"
 
-# (d) No status.sh finding ever names a path under .agent/indexes/, whether
-# the cache is absent, empty, or holds a damaged generation.
 d68="$WORK/cache-fault-paths"
 mkdir -p "$d68"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$d68" >/dev/null 2>&1
@@ -8744,8 +7461,6 @@ printf '%s\n' "$f68e3" | grep -q '\.agent/indexes/' \
   && fail "cache fault: no finding names .agent/indexes/ with a damaged generation" \
   || pass "cache fault: no finding names .agent/indexes/ with a damaged generation"
 
-# (e) A generated hand-back refreshes the cache after the clean status
-# check, and the log entry is still appended exactly once.
 e68="$WORK/finish-cache-refresh"
 mkdir -p "$e68/src"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$e68" >/dev/null 2>&1
@@ -8768,9 +7483,6 @@ e68_after=$(idx_mtime "$e68/.agent/indexes/current.md")
   && pass "checkpoint.sh: the cache refresh leaves current.md newer than the pre-run state" \
   || fail "checkpoint.sh: the cache refresh leaves current.md newer than the pre-run state (before=$e68_before after=$e68_after)"
 
-# (f) A failing index.sh and an absent index.sh each leave checkpoint.sh's
-# exit status and log entry unchanged, with exactly one checkpoint.sh:
-# warning line naming the canonical directories.
 f68="$WORK/finish-cache-fault"
 mkdir -p "$f68/src"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$f68" >/dev/null 2>&1
@@ -8801,8 +7513,6 @@ f68g_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68g.err")
   && pass "checkpoint.sh: an absent index.sh leaves exit status and log entry unchanged, with one warning line" \
   || fail "checkpoint.sh: an absent index.sh leaves exit status and log entry unchanged, with one warning line (rc=$rc68g entries=$n68g warn=$f68g_warn)"
 
-# (g) A manual-mode node runs no refresh: its output matches the fixed
-# pre-change shape exactly, and no .agent/indexes/ directory ever appears.
 g68="$WORK/finish-manual-parity"
 mkdir -p "$g68/src"
 "$NODE" init --preset software-development --mode track-all "$g68" >/dev/null 2>&1
@@ -8820,8 +7530,6 @@ rc68g2=$?
   && pass "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory" \
   || fail "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory"
 
-# (h) The comment gate still excludes Markdown and .agent/, proved by a
-# fixture whose only change is a Markdown file under .agent/.
 h68="$WORK/finish-markdown-exclusion"
 mkdir -p "$h68/src"
 "$NODE" init --preset software-development --mode track-all "$h68" >/dev/null 2>&1
@@ -8837,11 +7545,6 @@ n68h1=$(grep -c '^- \[' "$h68/.agent/session-log.md")
   && pass "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry" \
   || fail "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry (rc=$rc68h entries=$n68h1)"
 
-# ---- 69. skills: the mechanical half of the authoring bar over every
-# tools/skills/*/SKILL.md description ----
-# The judged half (does "what" and "when" actually hold) stays a human
-# read. What a script can check: a when-to-use clause is present, a
-# colon-bearing value is quoted, no second person, and the byte budget.
 g69_usewhen=""
 g69_quoted=""
 g69_2ndperson=""
@@ -8874,8 +7577,6 @@ done
 [ -z "$g69_budget" ] && pass "skills: every SKILL.md description stays inside the description budget" \
   || fail "skills: every SKILL.md description stays inside the description budget ($g69_budget)"
 
-# The checks above must be able to fail, or a description that violates
-# every rule at once reads as clean.
 g69_bad="$WORK/g69-bad-skill/SKILL.md"
 mkdir -p "$(dirname "$g69_bad")"
 g69_longtail=$(words_n 200)
@@ -8892,7 +7593,6 @@ g69_badbytes=$(printf '%s' "$g69_baddesc" | LC_ALL=C wc -c | tr -d '[:space:]')
 [ "$g69_badhits" -eq 4 ] && pass "skills: the description-bar checks catch a description that violates every rule at once" \
   || fail "skills: the description-bar checks catch a description that violates every rule at once (caught $g69_badhits/4)"
 
-# ---- 70. groom skill: the generated-mode grooming procedure is documented ----
 g70skill="$reporoot/tools/skills/groom/SKILL.md"
 grep -qF 'Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run' "$g70skill" \
   && grep -qF 'rebuilt from those records and never edited' "$g70skill" \
@@ -8907,15 +7607,6 @@ grep -qF 'A record fold, split, or move runs this same procedure' "$g70skill" \
   && pass "groom skill: a record fold, split, or move runs the anchor check" \
   || fail "groom skill: a record fold, split, or move runs the anchor check"
 
-# ---- 71. groom: a groom-then-regenerate fixture over a migrated generated
-# node — records edited, pages rebuilt, no page hand-edited ----
-# Built on r61build plus node.sh update, the real migration chain, the
-# same base section 61 uses. r61build's docs tree carries three
-# deliberately unbackfillable entries (dup.md, badtable.md, noentry.md) that
-# section 61 needs and this fixture does not, so they are trimmed to a
-# clean architecture.md before update runs — otherwise their pre-existing
-# INDEX: noise would survive every assertion below and mask what grooming
-# actually changed.
 g71_trim_docs() {
   g71td_dir="$1"
   rm -f "$g71td_dir/.agent/docs/dup.md" "$g71td_dir/.agent/docs/badtable.md" "$g71td_dir/.agent/docs/noentry.md"
@@ -8960,8 +7651,6 @@ g71_idx_before=$(idx_snapshot "$g71/.agent/indexes")
   && pass "groom fixture: the record the pass does not touch is unchanged before grooming" \
   || fail "groom fixture: the record the pass does not touch is unchanged before grooming"
 
-# Fold r1+r2 into r1 (earlier date), deleting r2. Move r3, an
-# area-specific mechanic, to docs/area/sub.md under Gotchas, deleting r3.
 printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g71r1"
 rm -f "$g71r2"
 printf '\n## Gotchas\n\n- Third rule, multi paragraph, moved from rules/learned/.\n' >>"$g71/.agent/docs/area/sub.md"
@@ -8999,9 +7688,6 @@ g71_after_flags=$(status_flags "$g71")
   && pass "groom fixture: status.sh is clear once the fold, deletion, and move are done" \
   || fail "groom fixture: status.sh is clear once the fold, deletion, and move are done ($g71_after_flags)"
 
-# ---- 72. groom: a fold-and-delete on one branch and an independent record
-# edit on another merge with both changes, and the integrated merge/replay
-# fixtures (section 64) re-run unchanged against a groomed node ----
 g72="$WORK/mig-groomed-base"
 r61build "$g72"
 g71_trim_docs "$g72"
@@ -9027,9 +7713,6 @@ g72r1rel=${g72r1#"$g72"/}
 g72r2rel=${g72r2#"$g72"/}
 g72r4rel=${g72r4#"$g72"/}
 
-# Regroup: fold the first and second learned rules into the earlier-dated
-# record and delete the other, on one branch; independently edit the
-# fourth, unrelated record, on another.
 git -C "$g72" checkout -qb regroup "$g72pre"
 printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g72/$g72r1rel"
 git -C "$g72" rm -q "$g72r2rel"
@@ -9068,8 +7751,6 @@ g72base=$(git -C "$g72" symbolic-ref --short HEAD)
   && pass "groomed-node base: status.sh is clear once the groomed base is committed" \
   || fail "groomed-node base: status.sh is clear once the groomed base is committed ($(status_flags "$g72"))"
 
-# Re-run section 64's three scenarios against the groomed base rather than
-# the freshly-migrated one.
 git -C "$g72" checkout -qb grecA "$g72base"
 printf -- '- [2026-03-01] Branch A record, groomed base.\n' >"$g72/.agent/rules/learned/g72-branch-a.md"
 git -C "$g72" add .agent/rules/learned/g72-branch-a.md
@@ -9128,9 +7809,6 @@ grep -qF 'Linear commit one, groomed base.' "$g72/.agent/rules/learned.md" \
   && pass "groomed node: both sequential commits' records still survive a linear replay" \
   || fail "groomed node: both sequential commits' records still survive a linear replay"
 
-# ---- 73. learn.sh: the learned-record lookup and upsert helper ----
-# Built on r61build plus node.sh update — a generated-mode node with a
-# populated rules/learned/ directory, the same base sections 61-65 use.
 lrn73="$WORK/learn-fixture"
 r61build "$lrn73"
 "$NODE" update "$lrn73" >/dev/null 2>&1
@@ -9143,8 +7821,6 @@ cp "$lrn73/.agent/memory.md" "$WORK/lrn73-memory-md-before.md"
 lrn73_before_ids=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | sort)
 lrn73_pick=$(printf '%s\n' "$lrn73_before_ids" | head -n1)
 
-# lookup: a byte-identical candidate reports duplicate, an overlapping one
-# reports overlap, and lookup exits 0 either way.
 lrn73_dup_out=$("$LRN" lookup --file "$lrn73_pick" "$lrn73" 2>"$WORK/lrn73-lookup.err")
 lrn73_dup_rc=$?
 [ "$lrn73_dup_rc" -eq 0 ] && pass "learn.sh: lookup exits 0" || fail "learn.sh: lookup exits 0 (rc=$lrn73_dup_rc)"
@@ -9158,8 +7834,6 @@ printf '%s\n' "$lrn73_ov_out" | grep -qF "overlap	$lrn73_pick	" \
   && pass "learn.sh: lookup reports a shared-term record as overlap" \
   || fail "learn.sh: lookup reports a shared-term record as overlap ($lrn73_ov_out)"
 
-# new: writes a well-formed, non-overlapping candidate under a minted
-# identity, verbatim.
 printf -- '- [2026-01-10] Cache the compiled template before every render. Trigger: repeated recompilation.\n' >"$WORK/lrn73-new-cand.md"
 lrn73_new_out=$("$LRN" new --file "$WORK/lrn73-new-cand.md" "$lrn73" 2>"$WORK/lrn73-new.err")
 lrn73_new_rc=$?
@@ -9177,7 +7851,6 @@ case "$lrn73_new_id" in
   fail "learn.sh: new mints a 12-character lowercase-hex identity ($lrn73_new_id)" ;;
 esac
 
-# new: exact-duplicate refusal (exit 5), naming the record, writing nothing.
 "$LRN" new --file "$WORK/lrn73-new-cand.md" "$lrn73" >"$WORK/lrn73-dup.out" 2>"$WORK/lrn73-dup.err"
 lrn73_dupnew_rc=$?
 [ "$lrn73_dupnew_rc" -eq 5 ] && pass "learn.sh: new refuses an exact duplicate at exit 5" || fail "learn.sh: new refuses an exact duplicate at exit 5 (rc=$lrn73_dupnew_rc)"
@@ -9185,8 +7858,6 @@ grep -qF "$lrn73_new_id.md" "$WORK/lrn73-dup.err" \
   && pass "learn.sh: the duplicate refusal names the record that already holds it" \
   || fail "learn.sh: the duplicate refusal names the record that already holds it"
 
-# new: shared-term overlap refuses at exit 4 without --distinct, naming the
-# overlap; --distinct admits it.
 "$LRN" new --file "$WORK/lrn73-overlap-cand.md" "$lrn73" >"$WORK/lrn73-ov.out" 2>"$WORK/lrn73-ov.err"
 lrn73_ovnew_rc=$?
 [ "$lrn73_ovnew_rc" -eq 4 ] && pass "learn.sh: new refuses a shared-term overlap without --distinct at exit 4" || fail "learn.sh: new refuses a shared-term overlap without --distinct at exit 4 (rc=$lrn73_ovnew_rc)"
@@ -9200,9 +7871,6 @@ printf '%s\n' "$lrn73_distinct_out" | grep -qE '^written	' \
   && pass "learn.sh: a --distinct write's result line starts with written" \
   || fail "learn.sh: a --distinct write's result line starts with written ($lrn73_distinct_out)"
 
-# The C/C++ pair shares every other nontrivial term, so the second create
-# needs --distinct — the overlap scan working as intended, not a defect —
-# and both still mint distinct identities that neither overwrites.
 printf -- '- [2026-02-01] Use C for the embedded firmware module because of strict size constraints.\n' >"$WORK/lrn73-c.md"
 printf -- '- [2026-02-02] Use C++ for the embedded firmware module because of strict size constraints.\n' >"$WORK/lrn73-cpp.md"
 lrn73_c_out=$("$LRN" new --file "$WORK/lrn73-c.md" "$lrn73" 2>/dev/null)
@@ -9221,8 +7889,6 @@ lrn73_cpp_id=$(printf '%s\n' "$lrn73_cpp_out" | awk -F'\t' '{print $2}')
   && pass "learn.sh: both the C and C++ records exist on disk" \
   || fail "learn.sh: both the C and C++ records exist on disk"
 
-# revise: rewords the imperative and the Trigger clause but keeps the
-# filename — its identity.
 lrn73_v0=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_new_id.md")
 printf -- '- [2026-01-11] A brand-new rule, reworded. Trigger: a completely different cause.\n' >"$WORK/lrn73-revise-cand.md"
 lrn73_rev_out=$("$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-revise-cand.md" --expected "$lrn73_v0" "$lrn73" 2>"$WORK/lrn73-rev.err")
@@ -9239,10 +7905,6 @@ diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.
   || fail "learn.sh: revise's record holds the new wording and Trigger clause"
 lrn73_v1=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_new_id.md")
 
-# stale revise: refuses at exit 3 and prints the current version; the
-# record is untouched. A distinct candidate body, so the refusal is
-# actually the version check and not the duplicate check tripping first on
-# a candidate that happens to match what the first revise already wrote.
 printf -- '- [2026-01-13] A stale racer with its own distinct wording. Trigger: an old version.\n' >"$WORK/lrn73-stale-cand.md"
 "$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-stale-cand.md" --expected "$lrn73_v0" "$lrn73" >"$WORK/lrn73-stale.out" 2>"$WORK/lrn73-stale.err"
 lrn73_stale_rc=$?
@@ -9254,10 +7916,6 @@ diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.
   && pass "learn.sh: a stale revise leaves the record byte-identical to the first revise's bytes" \
   || fail "learn.sh: a stale revise leaves the record byte-identical to the first revise's bytes"
 
-# The lost-update pair: two sequential calls carrying the same captured
-# version, not backgrounded processes — a single-threaded suite run under
-# three locales cannot assert on a real race, and the precondition check
-# is what this is actually about.
 printf -- '- [2026-01-12] A second racer, also carrying the old version. Trigger: a lost update.\n' >"$WORK/lrn73-lost-cand.md"
 "$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-lost-cand.md" --expected "$lrn73_v0" "$lrn73" >/dev/null 2>"$WORK/lrn73-lost.err"
 lrn73_lost_rc=$?
@@ -9268,20 +7926,12 @@ diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.
   && pass "learn.sh: the record still holds the first revise's bytes after the lost update" \
   || fail "learn.sh: the record still holds the first revise's bytes after the lost update"
 
-# revise whose body equals the record it targets is the same duplicate
-# refusal as new, not a no-op success.
 "$LRN" revise "$lrn73_new_id" --file "$lrn73/.agent/rules/learned/$lrn73_new_id.md" --expected "$lrn73_v1" "$lrn73" >/dev/null 2>"$WORK/lrn73-revdup.err"
 lrn73_revdup_rc=$?
 [ "$lrn73_revdup_rc" -eq 5 ] \
   && pass "learn.sh: a revise whose body equals the record it targets refuses at exit 5" \
   || fail "learn.sh: a revise whose body equals the record it targets refuses at exit 5 (rc=$lrn73_revdup_rc)"
 
-# revise against an id nothing has written yet, with --expected absent:
-# refuses at exit 2 rather than minting a new record at the caller-chosen
-# id — a create must go through new's own overlap gate, not sneak in
-# through revise. A candidate distinct from every existing record, so the
-# refusal is actually the absent-id check and not the duplicate check
-# tripping first.
 lrn73_absent_id="deadbeefcafe"
 printf -- '- [2026-01-18] A candidate for an id nothing has written yet. Trigger: an absent target.\n' >"$WORK/lrn73-absent-cand.md"
 lrn73_absent_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
@@ -9295,7 +7945,6 @@ lrn73_absent_after_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name 
   && pass "learn.sh: the absent-id revise writes no new record file under rules/learned/" \
   || fail "learn.sh: the absent-id revise writes no new record file under rules/learned/ (before=$lrn73_absent_before_count after=$lrn73_absent_after_count)"
 
-# malformed candidates: refused at exit 6, writing nothing.
 lrn73_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
 printf -- 'No date stamp at all.\n' >"$WORK/lrn73-bad-nodate.md"
 "$LRN" new --file "$WORK/lrn73-bad-nodate.md" "$lrn73" >/dev/null 2>&1
@@ -9314,7 +7963,6 @@ lrn73_after_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' 
   && pass "learn.sh: every malformed candidate above wrote nothing" \
   || fail "learn.sh: every malformed candidate above wrote nothing (before=$lrn73_before_count after=$lrn73_after_count)"
 
-# over-length imperative: warns on stderr, still writes.
 lrn73_long=$(awk 'BEGIN { for (i = 1; i <= 45; i++) printf "word "; print "." }')
 printf -- '- [2026-01-16] %s\n' "$lrn73_long" >"$WORK/lrn73-long.md"
 "$LRN" new --file "$WORK/lrn73-long.md" "$lrn73" >"$WORK/lrn73-long.out" 2>"$WORK/lrn73-long.err"
@@ -9322,7 +7970,6 @@ lrn73_long_rc=$?
 [ "$lrn73_long_rc" -eq 0 ] && pass "learn.sh: an over-length imperative still writes" || fail "learn.sh: an over-length imperative still writes (rc=$lrn73_long_rc)"
 grep -qi '40-word' "$WORK/lrn73-long.err" && pass "learn.sh: an over-length imperative warns on stderr" || fail "learn.sh: an over-length imperative warns on stderr"
 
-# surface refusal: exit 7, naming the owning writer.
 printf -- '- [2026-01-17] Some other-surface candidate.\n' >"$WORK/lrn73-surf.md"
 "$LRN" new --file "$WORK/lrn73-surf.md" --surface memory "$lrn73" >/dev/null 2>"$WORK/lrn73-surf-mem.err"
 lrn73_surfmem_rc=$?
@@ -9340,7 +7987,6 @@ grep -qF 'docs.sh' "$WORK/lrn73-surf-docs.err" \
 lrn73_surfgotchas_rc=$?
 [ "$lrn73_surfgotchas_rc" -eq 7 ] && pass "learn.sh: --surface gotchas refuses at exit 7" || fail "learn.sh: --surface gotchas refuses at exit 7 (rc=$lrn73_surfgotchas_rc)"
 
-# retire: removes the record; a stale --expected refuses at exit 3 first.
 lrn73_retire_v=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_c_id.md")
 "$LRN" retire "$lrn73_c_id" --expected old-and-wrong "$lrn73" >/dev/null 2>"$WORK/lrn73-retire-stale.err"
 lrn73_retirestale_rc=$?
@@ -9356,7 +8002,6 @@ printf '%s\n' "$lrn73_retire_out" | grep -qF "retired	$lrn73_c_id" \
   || fail "learn.sh: retire prints retired with the id ($lrn73_retire_out)"
 [ ! -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] && pass "learn.sh: retire removes the record from disk" || fail "learn.sh: retire removes the record from disk"
 
-# Write confinement: nothing above ever touched memory.md or memory/.
 lrn73_mem_after=$(lrn73_memdir_snapshot "$lrn73")
 [ "$lrn73_mem_before" = "$lrn73_mem_after" ] \
   && pass "learn.sh: memory/ is byte-identical before and after every fixture command above" \
@@ -9365,10 +8010,6 @@ diff -q "$WORK/lrn73-memory-md-before.md" "$lrn73/.agent/memory.md" >/dev/null 2
   && pass "learn.sh: memory.md is byte-identical before and after every fixture command above" \
   || fail "learn.sh: memory.md is byte-identical before and after every fixture command above"
 
-# A manual-mode node (no indexes: generated, so no rules/learned/ directory
-# at all) refuses every write command, naming rules/learned.md as the
-# node's surface, and leaves it untouched. lookup is not a write and still
-# exits 0 with nothing to compare against.
 lrn73_manual="$WORK/learn-manual"
 mkdir -p "$lrn73_manual"
 "$NODE" init --preset software-development --mode ignore-all "$lrn73_manual" >/dev/null 2>&1
@@ -9390,12 +8031,6 @@ grep -qF 'rules/learned.md' "$WORK/lrn73-manual-new.err" \
   && pass "learn.sh: the manual-mode refusal names rules/learned.md as the node's surface" \
   || fail "learn.sh: the manual-mode refusal names rules/learned.md as the node's surface"
 
-# A fresh generated-mode node has no rules/learned/ either — only the
-# migration creates it — and its rules/learned.md is gitignored. The first
-# `new` must create the directory and land a tracked record, or the node's
-# first learned rule has nowhere git can see. The 2026-09-20 calibration
-# rerun found eight sessions hand-editing the ignored aggregate after this
-# refusal.
 lrn73_gen="$WORK/learn-fresh-generated"
 mkdir -p "$lrn73_gen"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$lrn73_gen" >/dev/null 2>&1
@@ -9436,7 +8071,6 @@ diff -q "$WORK/lrn73-manual-learned-before.md" "$lrn73_manual/.agent/rules/learn
   && pass "learn.sh: a manual-mode node still has no rules/learned/ directory after these refusals" \
   || fail "learn.sh: a manual-mode node still has no rules/learned/ directory after these refusals"
 
-# Bootstrap absence: nothing on the mechanical load path invokes it.
 lrn73_boot_hits=$(grep -l 'learn\.sh' \
   "$reporoot/templates/entry-point.md" "$reporoot/templates/entry-point-generated.md" \
   "$reporoot/scripts/status.sh" "$reporoot/scripts/checkpoint.sh" 2>/dev/null)
@@ -9444,8 +8078,6 @@ lrn73_boot_hits=$(grep -l 'learn\.sh' \
   && pass "learn.sh: no entry-point template, status.sh, or checkpoint.sh path invokes it" \
   || fail "learn.sh: no entry-point template, status.sh, or checkpoint.sh path invokes it ($lrn73_boot_hits)"
 
-# Install wiring: both init and update ship it executable, and update's
-# refreshed-scripts line names it.
 lrn73_wire_init="$WORK/learn-wire-init"
 mkdir -p "$lrn73_wire_init"
 "$NODE" init --preset software-development --mode ignore-all "$lrn73_wire_init" >/dev/null 2>&1
@@ -9462,13 +8094,6 @@ grep -qF 'learn.sh' "$WORK/lrn73-wire-update.out" \
   && pass "learn.sh: update's refreshed-scripts line names it" \
   || fail "learn.sh: update's refreshed-scripts line names it"
 
-# ---- 74. cross-check: every script node.sh's update loop refreshes is
-# named in scripts/docs/README.md's script table ----
-# Reads the update loop's own word list rather than restating it, so a
-# name added to one and not the other fails this check instead of passing
-# it twice. The update loop specifically (not init's, which precedes it in
-# the file): the one under the "Refresh the shipped scripts from the
-# source repo" comment.
 xc74_loop_line=$(awk '
   /Refresh the shipped scripts from the source repo/ { f = 1 }
   f && /^  for script in / { print; exit }
@@ -9476,25 +8101,12 @@ xc74_loop_line=$(awk '
 xc74_names=$(printf '%s\n' "$xc74_loop_line" | sed -E 's/^[[:space:]]*for script in (.*); do$/\1/')
 xc74_missing=""
 for xc74_s in $xc74_names; do
-  # finish.sh is the checkpoint.sh compatibility alias, documented in
-  # node.md and checkpoint.md — it never gets its own README.md row.
-  case "$xc74_s" in
-  finish.sh) continue ;;
-  esac
   grep -qF "\`$xc74_s\`" "$reporoot/scripts/docs/README.md" || xc74_missing="$xc74_missing $xc74_s"
 done
 [ -z "$xc74_missing" ] \
   && pass "docs: every script node.sh's update loop refreshes is named in scripts/docs/README.md" \
   || fail "docs: every script node.sh's update loop refreshes is named in scripts/docs/README.md (missing:$xc74_missing)"
 
-# ---- 75. learn.sh pending/resolve: closing the migration's one-time
-# semantic-review backlog ----
-# A separate fixture directory, built from make_v6_fixture the same way
-# r61build is, and never touching r61dir — section 61's later checks
-# compare its files byte for byte. Every semantic call below (which rule
-# pairs with which, what stays, what goes) is made by this test script
-# standing in for the agent; resolve itself only checks preconditions and
-# rewrites one disposition field.
 rec75="$WORK/reconcile-fixture"
 mkdir -p "$rec75"
 make_v6_fixture "$rec75"
@@ -9573,19 +8185,12 @@ rec75_keep_id=$(basename "$rec75_keep" .md)
 rec75_mergesrc_id=$(basename "$rec75_mergesrc" .md)
 rec75_retire_id=$(basename "$rec75_retire" .md)
 
-# Reads the raw inventory item line naming id $2 in file $1 and prints its
-# label field alone — everything before the id field — split from the
-# right the same way lrn_split_item does, so a rule preview that happens
-# to contain the literal " | " cannot shift the boundary.
 rec75_label_for_id() {
   rli_line=$(grep -F "id=$2 | " "$1")
   rli_rest="${rli_line% | *}"
   printf '%s' "${rli_rest% | *}"
 }
 
-# ---- pending, first run: every pending rule and hook-missing doc listed
-# with its own label, each rule item's version a fresh hash of its own
-# record, each doc item's version the literal "-" ----
 rec75_pending1=$("$REC" pending "$rec75")
 rec75_split_label=$(rec75_label_for_id "$rec75_inv" "$rec75_split_id")
 printf '%s\n' "$rec75_pending1" | grep -qF -- "$rec75_split_label | semantic-review-pending | $rec75_split_id | version=$(git hash-object --no-filters -- "$rec75_split")" \
@@ -9622,10 +8227,6 @@ printf '%s\n' "$rec75_pending1" | grep -qF "$rec75_flat_id" \
   && pass "learn.sh pending: closes with the exact count of pending items" \
   || fail "learn.sh pending: closes with the exact count of pending items ($(printf '%s\n' "$rec75_pending1" | tail -n1))"
 
-# ---- SPLIT: the nested-sub-bullet rule really names two separate
-# qualifiers — the agent's own judgment, made here and nowhere in the
-# shell. Revise the original down to the first qualifier, create a second
-# record for the other one, then resolve. ----
 rec75_split_v0=$(git hash-object --no-filters -- "$rec75_split")
 printf -- '- [2026-01-02] Split-candidate rule, qualifier one only. Trigger: x.\n' >"$WORK/rec75-split-revise.md"
 "$REC" revise "$rec75_split_id" --file "$WORK/rec75-split-revise.md" --expected "$rec75_split_v0" "$rec75" >"$WORK/rec75-split-revise.out" 2>"$WORK/rec75-split-revise.err"
@@ -9652,10 +8253,6 @@ grep -qF "rule 2: \`- [2026-01-02] Split-candidate rule with a nested sub-bullet
   && pass "reconcile split: both records exist on disk under different identities" \
   || fail "reconcile split: both records exist on disk under different identities"
 
-# ---- MERGE: the merge-source rule's content belongs with the flat
-# merge-target rule — again the agent's own call. Revise the target to
-# carry both, retire the source's own record, then resolve the source's
-# inventory line. ----
 rec75_flat_v0=$(git hash-object --no-filters -- "$rec75_flat")
 cat >"$WORK/rec75-merge-revise.md" <<'EOF'
 - [2026-01-01] Flat merge-target rule, now folded together with the merge source. Trigger: something.
@@ -9683,9 +8280,6 @@ grep -qF "id=$rec75_flat_id | migrated" "$rec75_inv" \
   && pass "reconcile merge: the source's record no longer exists on disk" \
   || fail "reconcile merge: the source's record no longer exists on disk"
 
-# ---- two refusal classes need a rule item that is still pending, tested
-# here against the keep-candidate before it is actually resolved below,
-# so the refusal itself leaves nothing to disturb. ----
 rec75_inv_snapshot() { git hash-object --no-filters -- "$rec75_inv"; }
 
 rec75_before=$(rec75_inv_snapshot)
@@ -9704,11 +8298,6 @@ grep -qF 'still exists' "$WORK/rec75-ref-existsretire.err" \
   || fail "reconcile refusal: the still-exists refusal names what it checked"
 [ "$(rec75_inv_snapshot)" = "$rec75_before" ] && pass "reconcile refusal: the still-exists refusal writes nothing" || fail "reconcile refusal: the still-exists refusal writes nothing"
 
-# ---- KEEP: the multi-paragraph rule needs no split or merge — the agent
-# closes it as migrated with the record untouched. This is also the one
-# successful resolve the whole-fixture invariants below are proved
-# against: exactly one inventory line changes, and every record and every
-# doc in the fixture stays byte-identical. ----
 rec75_records_snapshot() { find "$1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
 rec75_docs_snapshot() { find "$1/.agent/docs" -type f 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
 
@@ -9729,8 +8318,6 @@ diff -q "$WORK/rec75-keep-before.md" "$rec75_keep" >/dev/null 2>&1 \
   && pass "reconcile keep: the record is byte-identical before and after resolve" \
   || fail "reconcile keep: the record is byte-identical before and after resolve"
 
-# Acceptance box 2: a resolve changes only the named item's disposition
-# field, nothing else on its line and no other line in the file.
 cp "$rec75_inv" "$WORK/rec75-inventory-after.md"
 rec75_inv_before_line=$(grep -F "id=$rec75_keep_id " "$WORK/rec75-inventory-before.md")
 rec75_inv_after_line=$(grep -F "id=$rec75_keep_id " "$WORK/rec75-inventory-after.md")
@@ -9746,8 +8333,6 @@ diff -q "$WORK/rec75-inv-before-rest.md" "$WORK/rec75-inv-after-rest.md" >/dev/n
   && pass "reconcile keep: every other inventory line is byte-identical across the resolve" \
   || fail "reconcile keep: every other inventory line is byte-identical across the resolve"
 
-# Acceptance box 6: resolve creates, edits, splits, merges, and deletes no
-# record and no doc anywhere in the fixture — not just the item resolved.
 rec75_records_after=$(rec75_records_snapshot "$rec75")
 rec75_docs_after=$(rec75_docs_snapshot "$rec75")
 [ "$rec75_records_before" = "$rec75_records_after" ] \
@@ -9757,8 +8342,6 @@ rec75_docs_after=$(rec75_docs_snapshot "$rec75")
   && pass "reconcile keep: every doc under docs/ is byte-identical across the resolve" \
   || fail "reconcile keep: every doc under docs/ is byte-identical across the resolve"
 
-# ---- RETIRE: the nested-sub-bullet rule turns out to duplicate a source
-# already covered elsewhere — the agent retires it outright. ----
 rec75_retire_v0=$(git hash-object --no-filters -- "$rec75_retire")
 "$REC" retire "$rec75_retire_id" --expected "$rec75_retire_v0" "$rec75" >"$WORK/rec75-retire.out" 2>"$WORK/rec75-retire.err"
 rec75_retire_rmrc=$?
@@ -9773,8 +8356,6 @@ grep -qF "id=$rec75_retire_id | retired" "$rec75_inv" \
   && pass "reconcile retire: the inventory line now reads retired" \
   || fail "reconcile retire: the inventory line now reads retired"
 
-# ---- doc repair: three hand edits (no headerless-doc writer exists, by
-# design — docs.sh rehook refuses one), then rehook, then resolve. ----
 cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
 # Architecture
 
@@ -9815,8 +8396,6 @@ for rec75_doc in dup badtable noentry; do
     || fail "reconcile doc repair: $rec75_doc.md's inventory line now reads migrated"
 done
 
-# ---- refusal classes, continued: each refuses at exit 2, writes
-# nothing, and names what it checked ----
 rec75_before=$(rec75_inv_snapshot)
 "$REC" resolve --id deadbeef0000 --disposition migrated "$rec75" >/dev/null 2>"$WORK/rec75-ref-absent.err"
 [ "$?" -eq 2 ] && pass "reconcile refusal: an id the inventory does not carry refuses at exit 2" || fail "reconcile refusal: an id the inventory does not carry refuses at exit 2"
@@ -9831,8 +8410,6 @@ grep -qF 'is not pending' "$WORK/rec75-ref-already.err" \
   && pass "reconcile refusal: the already-resolved refusal names the current disposition" \
   || fail "reconcile refusal: the already-resolved refusal names the current disposition"
 
-# A fresh doc item, still pending, to test the three rule-only forms and
-# the still-missing-hook refusal without reusing an already-resolved id.
 rec75_2="$WORK/reconcile-fixture-2"
 mkdir -p "$rec75_2"
 make_v6_fixture "$rec75_2"
@@ -9885,8 +8462,6 @@ grep -qF 'still carries no' "$WORK/rec75-ref-nohook.err" \
   && pass "reconcile refusal: the still-missing-hook refusal writes nothing" \
   || fail "reconcile refusal: the still-missing-hook refusal writes nothing"
 
-# Duplicate-id refusal: only reachable through a hand-edited inventory —
-# resolve never produces one itself.
 cp "$rec75_2_inv" "$WORK/rec75-2-inv-before.md"
 rec75_dupline=$(grep -F 'id=noentry.md' "$rec75_2_inv")
 { cat "$rec75_2_inv"; printf '%s\n' "$rec75_dupline"; } >"$WORK/rec75-2-inv-dup.md"
@@ -9902,9 +8477,6 @@ grep -qF 'more than one line' "$WORK/rec75-ref-dupline.err" \
   || fail "reconcile refusal: the duplicate-line refusal writes nothing"
 cp "$WORK/rec75-2-inv-before.md" "$rec75_2_inv"
 
-# ---- Acceptance box 2's other half: pending on a node that carries no
-# migration-inventory.md at all — a plain generated-mode node that never
-# migrated, not a missing root. ----
 rec75_noinv="$WORK/reconcile-no-inventory"
 mkdir -p "$rec75_noinv"
 "$NODE" init --preset software-development --mode ignore-all --indexes generated "$rec75_noinv" >/dev/null 2>&1
@@ -9921,7 +8493,6 @@ rec75_noinv_pending_rc=$?
   && pass "learn.sh pending: a node with no migration-inventory.md prints nothing" \
   || fail "learn.sh pending: a node with no migration-inventory.md prints nothing ($rec75_noinv_pending_out)"
 
-# ---- final pending: the backlog is empty ----
 rec75_pending2=$("$REC" pending "$rec75")
 rec75_pending2_rc=$?
 [ "$rec75_pending2_rc" -eq 0 ] \
@@ -9931,12 +8502,6 @@ rec75_pending2_rc=$?
   && pass "learn.sh pending: a fully reconciled node's second run lists nothing" \
   || fail "learn.sh pending: a fully reconciled node's second run lists nothing ($rec75_pending2)"
 
-# A second node.sh update over the reconciled node rewrites no record and
-# no inventory line. Scoped to exactly that: rules/learned/*.md and
-# migration-inventory.md, not the whole tree — indexes/ regenerates a
-# fresh gen.XXXXXXXX cache directory on every ensure by design (unrelated
-# to reconciliation), and the derived aggregate rules/learned.md is
-# excluded for the same reason index.sh regenerates it on every ensure.
 rec75_snapshot() {
   { find "$1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null; printf '%s\n' "$1/.agent/migration-inventory.md"; } \
     | sort | xargs shasum 2>/dev/null | sort
@@ -9950,14 +8515,9 @@ rec75_after_update=$(rec75_snapshot "$rec75")
   && pass "reconcile: a second node.sh update rewrites no record and no inventory line, rules/learned.md aside" \
   || fail "reconcile: a second node.sh update rewrites no record and no inventory line, rules/learned.md aside"
 
-# ---- summary ----
 ran=$((PASS + FAIL))
 
-# The denominator is computed from what ran, so a check that stops running
-# — a fixture that failed to build, a variable gone empty — used to lower
-# the total silently and still report every check passing. Update this
-# number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1331
+EXPECTED_CHECKS=1327
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

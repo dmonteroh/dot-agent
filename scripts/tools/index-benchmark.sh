@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# scripts/tools/index-benchmark.sh — measures index.sh's process latency at 100
-# and 1,000 canonical-source records, cold and warm cache, on this
-# machine, and reports median and p95 real time (not mean/min/max).
-#
-# Methodology ported from tmp/merge-6.2/spikes/indexes/benchmark.sh: an
-# external process timer (/usr/bin/time -p) wraps each invocation,
-# repeated REPEATS times per case. Cold removes the cache directory
-# before every invocation; warm primes one verified HIT first, then
-# times repeated hits. Results: scripts/docs/index-benchmark.md.
-#
-# Usage: scripts/tools/index-benchmark.sh [REPEATS >= 10]
 set -Eeuo pipefail
 export LC_ALL=C
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -23,10 +12,6 @@ scratch=$(mktemp -d "${TMPDIR:-/tmp}/index-bench.XXXXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 trap 'exit 130' INT TERM
 
-# Builds $count records under $fdir/.agent/{rules,docs}, alternating
-# record kind, each with a small heading and a two-line body — the same
-# per-record shape make_index_fixture uses in scripts/test.sh, just
-# generated at scale rather than checked in.
 make_fixture() {
   fdir="$1"; count="$2"
   mkdir -p "$fdir/.agent/rules" "$fdir/.agent/docs"

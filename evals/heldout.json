@@ -93,10 +93,10 @@
         {
           "id": "bootstrap-once/finish-once",
           "concept": "finish-once",
-          "text": "finish.sh is invoked exactly once across the three turns — on the one that changed a file, not on the two that answered a question.",
+          "text": "checkpoint.sh is invoked exactly once across the three turns — on the one that changed a file, not on the two that answered a question.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_count 'finish.sh' == 1"
+          "check": "trace_count 'checkpoint.sh' == 1"
         },
         {
           "id": "bootstrap-once/one-log-entry",
@@ -832,7 +832,7 @@
           "text": "The transcript shows comments.sh invoked against a base ref before the diff was handed back.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_contains 'comments.sh' || trace_contains 'finish.sh'"
+          "check": "trace_contains 'comments.sh' || trace_contains 'checkpoint.sh'"
         }
       ]
     },
