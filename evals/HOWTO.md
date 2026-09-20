@@ -77,13 +77,16 @@ Two groups of evals don't belong in that loop, because each names a different va
 
   See `README.md`'s "The eval set" for why, and its note on handing the foreign arm content rather than paths.
 
-- The sixteen generated-index, learning-admission, migration, comments, stress, and handoff evals carry `arm_variable: node-mode` — neither pinned control revision (`2f779b7`, `5001189`) ships `index.sh` or `learn.sh`, so a corpus-arm comparison against either would measure the absence of a file, not the behavior of a mechanism. Give them their own iteration too, corpus held at `$REF` for both arms, and vary `--index-mode` instead:
+- The sixteen generated-index, learning-admission, migration, comments, stress, and handoff evals carry `arm_variable: node-mode` — neither pinned control revision (`2f779b7`, `5001189`) ships `index.sh` or `learn.sh`, so a corpus-arm comparison against either would measure the absence of a file, not the behavior of a mechanism. Give them their own iteration too, corpus held at `$REF` for both arms, and vary `--index-mode` instead. Four of the sixteen — `index-cache-fault-fallback`, `index-missing-indexer`, `index-branch-switch`, and `migration-backlog-reconcile` — build on a fixture `fixtures.sh` refuses outside `--indexes generated` (a corrupted cache, a missing indexer, a branch-switched cache, and a migration backlog all presuppose a generated cache that exists to be faulty), so they have no manual-mode counterpart at all: run them generated-only, reported as feasibility evidence rather than a delta. Running either against `--index-mode manual` hard-fails with `fixtures.sh: <name> requires --indexes generated (got 'manual')` — exclude them from the dual-arm loop below rather than hitting that.
+
+  Twelve genuinely run both arms:
 
   ```
   for id in $(python3 -c "
   import json
+  skip = {'index-cache-fault-fallback', 'index-missing-indexer', 'index-branch-switch', 'migration-backlog-reconcile'}
   for e in json.load(open('evals/spec.json'))['evals']:
-      if e.get('arm_variable') == 'node-mode':
+      if e.get('arm_variable') == 'node-mode' and e['id'] not in skip:
           print(e['id'])
   "); do
     evals/run.sh --eval "$id" --arm generated --treatment-arm generated --index-mode generated \
@@ -93,7 +96,16 @@ Two groups of evals don't belong in that loop, because each names a different va
   done
   ```
 
-  `--index-mode` threads into `fixtures.sh`'s own `--indexes` flag, mirroring `--harness` exactly, and is recorded in `run-config.json` beside `harness` under the same drift check. `node-mode` locks agent, model, *and* corpus ref together, rather than just two of them the way `corpus` and `agent` each do — name the two arms for what they are (`generated`, `manual`) so a rollup reads as behavior rather than as a coin flip. See `README.md`'s "The method" for the full picture. Four of the sixteen (a corrupted cache, a missing indexer, a branch-switched cache, the migration backlog) have no manual-mode counterpart at all and run generated-only, reported as feasibility evidence rather than a delta.
+  The other four run generated-only, one arm, no manual counterpart:
+
+  ```
+  for id in index-cache-fault-fallback index-missing-indexer index-branch-switch migration-backlog-reconcile; do
+    evals/run.sh --eval "$id" --arm generated --treatment-arm generated --index-mode generated \
+      --agent claude --corpus-ref "$REF" --workspace "$W" --iteration 2
+  done
+  ```
+
+  `--index-mode` threads into `fixtures.sh`'s own `--indexes` flag, mirroring `--harness` exactly, and is recorded in `run-config.json` beside `harness` under the same drift check. `node-mode` locks agent, model, *and* corpus ref together, rather than just two of them the way `corpus` and `agent` each do — name the two arms for what they are (`generated`, `manual`) so a rollup reads as behavior rather than as a coin flip. See `README.md`'s "The method" for the full picture.
 
   Each generated-mode cell also writes `indexes-before.txt` and `indexes-after.txt` under `outputs/` — one path-and-digest line per `.agent/indexes/` file, the first taken right after the fixture build, the second at capture time. Diff the two when a generated-index assertion looks wrong: `node-diff.patch` is staged, so `.gitignore` hides the whole `.agent/indexes/` tree from it on a generated node, and the manifest pair is the only place a hand-edit of a generated page actually shows up.
 

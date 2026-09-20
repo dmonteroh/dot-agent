@@ -441,7 +441,7 @@ EOF
 One line per original authoritative item: its new location, identity, and disposition.
 
 - rule 1: `Retry outbound vendor calls at most three times.` -> rules/learned/0123456789ab.md | id=0123456789ab | semantic-review-pending
-- doc docs/legacy-notes.md -> docs/legacy-notes.md | id=docs/legacy-notes.md | hook-missing
+- doc docs/legacy-notes.md -> docs/legacy-notes.md | id=legacy-notes.md | hook-missing
 EOF
   ;;
 esac
