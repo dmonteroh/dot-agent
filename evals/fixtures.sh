@@ -224,11 +224,23 @@ mv "$contract.body" "$contract"
 
 "$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
 
-sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
-    -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
-    -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
-    "$corpus/templates/entry-point.md" \
-  | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
+# entry-point-generated.md carries indexer-specific bootstrap steps in place
+# of the <Routing:...> placeholder, so it has no such placeholder to fill —
+# only the manual template's routing sed applies there.
+if [ "$indexes" = generated ]; then
+  entry_template="$corpus/templates/entry-point-generated.md"
+  sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
+      -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
+      "$entry_template" \
+    | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
+else
+  entry_template="$corpus/templates/entry-point.md"
+  sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
+      -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
+      -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
+      "$entry_template" \
+    | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
+fi
 cp "$dest/CLAUDE.md" "$dest/AGENTS.md"
 
 mkdir -p "$dest/.claude"
