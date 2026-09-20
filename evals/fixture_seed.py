@@ -27,7 +27,7 @@ Full documentation: evals/README.md.
 
 Usage: fixture_seed.py fill-contract <contract.md>
        fixture_seed.py route-sections <architecture.md> <sections>
-       fixture_seed.py check-premises <spec.json> <fixture-name> <built-dir>
+       fixture_seed.py check-premises <spec.json> <fixture-name> <built-dir> [eval-id]
 """
 
 import io
@@ -38,7 +38,7 @@ import sys
 
 USAGE = """Usage: fixture_seed.py fill-contract <contract.md>
        fixture_seed.py route-sections <architecture.md> <sections>
-       fixture_seed.py check-premises <spec.json> <fixture-name> <built-dir>
+       fixture_seed.py check-premises <spec.json> <fixture-name> <built-dir> [eval-id]
 
 fill-contract   replaces every "- <Key>: <placeholder>" line in the contract
                 with the eval fixture's answer for that key. A key with no
@@ -50,15 +50,11 @@ route-sections  writes <sections> into the first empty "- **Sections:**"
                 only thing making a sub-doc reachable, so a fixture whose
                 trap is a routed doc depends on this edit landing.
 
-check-premises  loads <spec.json>, takes the union of "premises" over every
-                eval whose "fixture" equals <fixture-name>, and evaluates
-                each against <built-dir>. Each premise has "path" (relative
-                to <built-dir>) and exactly one of "contains" (a literal
-                substring that must be present), "absent" (a literal
-                substring that must not be present), or "exists": true (the
-                path must exist). Any failure prints one line per failed
-                premise and exits 2 — a prompt's premise about the fixture
-                is enforced the same way the fixture's other traps are.
+check-premises  loads <spec.json> and evaluates premises against <built-dir>.
+                With [eval-id], it checks only that eval. Without one, it
+                checks every eval using <fixture-name>. Each premise has a
+                relative "path" and one check: "contains", "absent", or
+                "exists": true. Any failure prints one line and exits 2.
 """
 
 # The answers a real operator would give during bootstrap, for the
@@ -114,10 +110,12 @@ def route_sections(text, sections):
                         "- **Sections:** %s\n" % sections, 1)
 
 
-def load_premises(spec_path, fixture_name):
-    """Union of "premises" over every eval whose "fixture" equals
-    fixture_name, in spec order, duplicates kept — a duplicate premise is
-    redundant, not wrong."""
+def load_premises(spec_path, fixture_name, eval_id=None):
+    """Premises for eval_id, or their union for fixture_name when omitted.
+
+    Results stay in spec order and keep duplicates. A duplicate premise is
+    redundant, not wrong.
+    """
     if not os.path.isfile(spec_path):
         die("no such file: %s" % spec_path)
     with io.open(spec_path, encoding="utf-8") as fh:
@@ -126,11 +124,17 @@ def load_premises(spec_path, fixture_name):
         except ValueError as exc:
             die("cannot parse %s: %s" % (spec_path, exc))
     premises = []
+    matched_eval = False
     for ev in spec.get("evals", []):
         if ev.get("fixture") != fixture_name:
             continue
+        if eval_id is not None and ev.get("id") != eval_id:
+            continue
+        matched_eval = True
         for p in ev.get("premises", []) or []:
             premises.append((ev.get("id", "?"), p))
+    if eval_id is not None and not matched_eval:
+        die("eval %s does not use fixture %s" % (eval_id, fixture_name))
     return premises
 
 
@@ -157,10 +161,11 @@ def check_premise(built_dir, premise):
 
 
 def cmd_check_premises(args):
-    if len(args) != 3:
-        die("check-premises takes <spec.json> <fixture-name> <built-dir>")
-    spec_path, fixture_name, built_dir = args
-    premises = load_premises(spec_path, fixture_name)
+    if len(args) not in (3, 4):
+        die("check-premises takes <spec.json> <fixture-name> <built-dir> [eval-id]")
+    spec_path, fixture_name, built_dir = args[:3]
+    selected_eval_id = args[3] if len(args) == 4 else None
+    premises = load_premises(spec_path, fixture_name, selected_eval_id)
     failures = []
     for eval_id, premise in premises:
         ok, detail = check_premise(built_dir, premise)

@@ -11,6 +11,7 @@
 #
 # Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
 #                    [--indexes <manual|generated>]
+#                    [--eval <eval-id>]
 #                    [--no-harness | --generic-claude]
 #        fixtures.sh <fixture> <destination> --corpus-dir <path>
 #        fixtures.sh --list
@@ -26,6 +27,7 @@ usage() {
   cat <<'EOF'
 Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
                    [--indexes <manual|generated>]
+                   [--eval <eval-id>]
                    [--no-harness | --generic-claude]
        fixtures.sh <fixture> <destination> --corpus-dir <path>
        fixtures.sh --list
@@ -37,11 +39,11 @@ Builds an eval fixture: a project tree with an .agent/ node bootstrapped from
 pins a ref, because two arms built from a moving tree are not a matched pair.
 The uncommitted case is for checking the fixture builder itself.
 
---indexes defaults to manual, so every existing fixture builds
-byte-identically with no flag at all. generated passes --indexes generated
-to node.sh init, then runs the fresh node's own .agent/scripts/index.sh
-ensure once, so the fixture arrives with a warm cache rather than a cold
-one — the state every generated-node eval actually measures.
+--indexes defaults to manual. The builder passes the flag when the pinned
+corpus advertises it and omits it for an older manual-only corpus. generated
+requires the corpus to support the flag, then runs the fresh node's own
+.agent/scripts/index.sh ensure once, so the fixture arrives with a warm cache
+rather than a cold one — the state every generated-node eval actually measures.
 
 --no-harness builds the same fixture with the .agent/ node moved aside to
 <destination>.verifier and no CLAUDE.md or AGENTS.md. It is the control arm
@@ -103,10 +105,12 @@ harness_mode="node"
 # manual unless asked, so every fixture built with no flag at all stays
 # byte-identical to what this builder produced before --indexes existed.
 indexes="manual"
+eval_id=""
 while [ $# -gt 0 ]; do
   case "$1" in
   --corpus-ref) corpus_ref="${2:-}"; shift 2 ;;
   --corpus-dir) corpus_dir="${2:-}"; shift 2 ;;
+  --eval) eval_id="${2:-}"; shift 2 ;;
   --indexes)
     case "${2:-}" in
     manual | generated) ;;
@@ -208,11 +212,31 @@ EOF
   ;;
 esac
 
-"$corpus/scripts/node.sh" init --preset software-development --mode track-all \
-  --indexes "$indexes" "$dest" >/dev/null || {
-  echo "fixtures.sh: node.sh init failed" >&2
-  exit 1
-}
+node_help=$("$corpus/scripts/node.sh" --help 2>&1 || true)
+node_indexes_flag=""
+case "$node_help" in
+*--indexes*) node_indexes_flag="--indexes" ;;
+*)
+  if [ "$indexes" = generated ]; then
+    echo "fixtures.sh: corpus $corpus_sha does not support generated indexes" >&2
+    exit 1
+  fi
+  ;;
+esac
+
+if [ -n "$node_indexes_flag" ]; then
+  "$corpus/scripts/node.sh" init --preset software-development --mode track-all \
+    --indexes "$indexes" "$dest" >/dev/null || {
+    echo "fixtures.sh: node.sh init failed" >&2
+    exit 1
+  }
+else
+  "$corpus/scripts/node.sh" init --preset software-development --mode track-all \
+    "$dest" >/dev/null || {
+    echo "fixtures.sh: node.sh init failed" >&2
+    exit 1
+  }
+fi
 
 # Seeding below goes through this repository's own writer scripts, never the
 # node's: a corpus revision under test may ship fewer scripts than the
@@ -764,7 +788,11 @@ esac
 # A premise a prompt asserts about the built tree ("the doc says X", "the
 # field is misspelled Y") is enforced here, at build time. A drifted premise
 # voids the run instead of quietly grading a fiction.
-"$selfdir/fixture_seed.py" check-premises "${EVALS_SPEC:-$selfdir/spec.json}" "$fixture" "$dest" || exit 1
+if [ -n "$eval_id" ]; then
+  "$selfdir/fixture_seed.py" check-premises "${EVALS_SPEC:-$selfdir/spec.json}" "$fixture" "$dest" "$eval_id" || exit 1
+else
+  "$selfdir/fixture_seed.py" check-premises "${EVALS_SPEC:-$selfdir/spec.json}" "$fixture" "$dest" || exit 1
+fi
 
 # The harness-cost arms. The node is moved to a sibling of the fixture rather
 # than deleted: the built arm stays inspectable, and a node the agent can

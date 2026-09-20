@@ -111,7 +111,7 @@ def diff_files(patch):
 
 
 def node_files():
-    # run.sh captures the node diff with `git diff -- .agent`, so every
+    # The captured node patch prefixes every path with `.agent/`, so every
     # header is `+++ b/.agent/<path>`. Assertions name node paths from the
     # node root (`session-log.md`, `memory/x.md`), so the prefix is stripped
     # here, once, rather than in nine predicates.
@@ -255,7 +255,7 @@ def p_memory_files_modified(op, n):
 # gitignored and never diffed. status.sh reads the record directory when it
 # holds at least one *.md file and falls back to rules/learned.md otherwise
 # (learned_dir_active); this mirrors the same rule against the node diff, so
-# a generated-node learning assertion no longer grades against an empty
+# A generated-node learning assertion must not grade against an empty
 # delta by construction.
 LEARNED_RECORD = re.compile(r"^rules/learned/[^/]+\.md$")
 

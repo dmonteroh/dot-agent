@@ -13,8 +13,8 @@
 # output goes to <workspace>/logs/<arm>/<id>.log — per arm, because two arms
 # of one workspace run the same eval ids, and a shared logs/<id>.log is a
 # race whose loser silently overwrites the winner's console output.
-# <workspace>/run.log carries one line per finished eval and an ARM DONE
-# line. Grooming and the multi-file feature evals start first, so the batch's
+# <workspace>/run.log carries one line per finished eval and an ARM DONE or
+# ARM FAILED line. Grooming and the multi-file feature evals start first, so the batch's
 # wall time tracks the slowest eval rather than the order of the spec.
 # REPEATS comes from agents.conf, or from the file EVALS_AGENTS_CONF names.
 # --spec selects an alternate prompt set (heldout.json) through EVALS_SPEC.
@@ -76,7 +76,7 @@ done
 [ $# -eq 3 ] || { usage >&2; exit 2; }
 workspace="$1"; arm="$2"; ref="$3"
 treatment="${treatment:-$arm}"
-case "$jobs" in "" | *[!0-9]*) echo "run-arm.sh: --jobs must be a whole number (got '$jobs')" >&2; exit 2 ;; esac
+case "$jobs" in "" | *[!0-9]* | 0) echo "run-arm.sh: --jobs must be a positive whole number (got '$jobs')" >&2; exit 2 ;; esac
 case "$harness" in
 node) harness_flag="" ;;
 generic) harness_flag="--generic-claude" ;;
@@ -127,9 +127,16 @@ run_one() {
     >"$RUN_ARM_WORKSPACE/logs/$RUN_ARM_ARM/$id.log" 2>&1
   rc=$?
   echo "== $(date +%H:%M:%S) $RUN_ARM_ARM $id exit=$rc" >>"$RUN_ARM_LOG"
+  return "$rc"
 }
 export -f run_one
 
 echo "START $arm ref=$ref agent=$agent harness=$harness index_mode=$index_mode treatment=$treatment jobs=$jobs spec=$(basename "$specfile") $(date +%H:%M:%S)" >>"$log"
 printf '%s\n' "$ids" | xargs -n 1 -P "$jobs" bash -c 'run_one "$0"'
+batch_rc=$?
+if [ "$batch_rc" -ne 0 ]; then
+  echo "ARM FAILED $arm exit=$batch_rc $(date +%H:%M:%S)" >>"$log"
+  echo "run-arm.sh: arm '$arm' failed — see $log and $workspace/logs/$arm/" >&2
+  exit 1
+fi
 echo "ARM DONE $arm $(date +%H:%M:%S)" >>"$log"

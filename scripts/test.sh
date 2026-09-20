@@ -136,6 +136,13 @@ idx_snapshot() {
 PRESETS="software-development academic-research domain-knowledge"
 MODES="ignore-all track-shared track-all"
 
+"$NODE" --help >"$WORK/node-help.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && pass "node.sh: top-level --help exits 0" || fail "node.sh: top-level --help exits 0 (rc=$rc)"
+grep -qF 'update preserves the manifest value when' "$WORK/node-help.out" \
+  && pass "node.sh: help distinguishes init's default from update's preserved mode" \
+  || fail "node.sh: help distinguishes init's default from update's preserved mode"
+
 for preset in $PRESETS; do
   for mode in $MODES; do
     root="$WORK/init-$preset-$mode"
@@ -289,6 +296,23 @@ grep -qF "indexes: manual backfilled" "$WORK/update.out" \
   && pass "update: index.sh is installed alongside the existing seven scripts" \
   || fail "update: index.sh is installed alongside the existing seven scripts"
 
+adopt_migrating="$WORK/adopt-generated-migrating"
+mkdir -p "$adopt_migrating"
+make_v6_fixture "$adopt_migrating" track-shared
+git -C "$adopt_migrating" init -q
+git -C "$adopt_migrating" add .agent/purpose.md .agent/rules .agent/docs
+git -C "$adopt_migrating" -c user.name=Fixture -c user.email=fixture@example.com commit -qm base
+"$NODE" update --indexes generated "$adopt_migrating" >"$WORK/adopt-generated-migrating.out" 2>&1
+rc_adopt_migrating=$?
+[ "$rc_adopt_migrating" -eq 0 ] \
+  && grep -qxF '  indexes: generated        # manual | generated' "$adopt_migrating/.agent/purpose.md" \
+  && pass "update --indexes generated selects generated mode during a version migration" \
+  || fail "update --indexes generated selects generated mode during a version migration (rc=$rc_adopt_migrating; $(cat "$WORK/adopt-generated-migrating.out"))"
+[ -f "$adopt_migrating/.agent/indexes/current.md" ] \
+  && [ "$(find "$adopt_migrating/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" -eq 1 ] \
+  && pass "migration-time generated adoption extracts rules and builds the index" \
+  || fail "migration-time generated adoption extracts rules and builds the index"
+
 idxpresent_older() {
   io_dir="$1" io_value="$2"
   mkdir -p "$io_dir"
@@ -331,6 +355,82 @@ idxpresent_current() {
 }
 idxpresent_current "$idxgen" generated
 idxpresent_current "$idxman" manual
+
+adopt_current="$WORK/adopt-generated-current"
+mkdir -p "$adopt_current"
+git -C "$adopt_current" init -q
+"$NODE" init --preset software-development --mode track-shared --indexes manual "$adopt_current" >/dev/null 2>&1
+cat >>"$adopt_current/.agent/rules/learned.md" <<'EOF'
+- [2026-09-20] Keep the payment timeout aligned with the vendor SLA. Trigger: timeout drift.
+- [2026-09-20] Run the reconciliation check before deployment. Trigger: missed reconciliation.
+EOF
+git -C "$adopt_current" add .gitignore .agent/purpose.md .agent/rules .agent/docs
+git -C "$adopt_current" -c user.name=Fixture -c user.email=fixture@example.com commit -qm base
+"$NODE" update --indexes generated "$adopt_current" >"$WORK/adopt-generated-current.out" 2>&1
+rc_adopt_current=$?
+[ "$rc_adopt_current" -eq 0 ] && pass "update --indexes generated adopts generated mode on a version-current node" || fail "update --indexes generated adopts generated mode on a version-current node (rc=$rc_adopt_current; $(cat "$WORK/adopt-generated-current.out"))"
+[ -d "$adopt_current/.agent.backup-v6.2-indexes-generated" ] \
+  && pass "generated-mode adoption backs up a version-current track-shared node" \
+  || fail "generated-mode adoption backs up a version-current track-shared node"
+grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agent/purpose.md" \
+  && pass "generated-mode adoption records indexes: generated" \
+  || fail "generated-mode adoption records indexes: generated"
+adopt_record_count=$(find "$adopt_current/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')
+[ "$adopt_record_count" -eq 2 ] \
+  && pass "generated-mode adoption extracts every learned rule into a record" \
+  || fail "generated-mode adoption extracts every learned rule into a record (count=$adopt_record_count)"
+grep -qF 'Keep the payment timeout aligned with the vendor SLA.' "$adopt_current/.agent/rules/learned.md" \
+  && grep -qF 'Run the reconciliation check before deployment.' "$adopt_current/.agent/rules/learned.md" \
+  && pass "generated-mode adoption regenerates the aggregate without rule loss" \
+  || fail "generated-mode adoption regenerates the aggregate without rule loss"
+if grep -qxF '.agent/indexes/' "$adopt_current/.gitignore" \
+  && grep -qxF '.agent/rules/learned.md' "$adopt_current/.gitignore"; then
+  pass "generated-mode adoption adds both ignore rules"
+else
+  fail "generated-mode adoption adds both ignore rules"
+fi
+git -C "$adopt_current" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+  && fail "generated-mode adoption untracks the derived learned aggregate" \
+  || pass "generated-mode adoption untracks the derived learned aggregate"
+[ -f "$adopt_current/.agent/indexes/current.md" ] && [ -x "$adopt_current/.agent/scripts/learn.sh" ] \
+  && pass "generated-mode adoption builds the index and installs its learned-record writer" \
+  || fail "generated-mode adoption builds the index and installs its learned-record writer"
+adopt_records_before=$(find "$adopt_current/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f -exec shasum {} + | sort)
+"$NODE" update --indexes generated "$adopt_current" >"$WORK/adopt-generated-current-2.out" 2>&1
+rc_adopt_current_2=$?
+adopt_records_after=$(find "$adopt_current/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f -exec shasum {} + | sort)
+[ "$rc_adopt_current_2" -eq 0 ] && [ "$adopt_records_before" = "$adopt_records_after" ] \
+  && pass "generated-mode adoption is idempotent on a second explicit run" \
+  || fail "generated-mode adoption is idempotent on a second explicit run (rc=$rc_adopt_current_2)"
+"$NODE" update --indexes manual "$adopt_current" >"$WORK/adopt-generated-revert.out" 2>&1
+rc_adopt_revert=$?
+[ "$rc_adopt_revert" -ne 0 ] && grep -qF 'refusing generated-to-manual conversion' "$WORK/adopt-generated-revert.out" \
+  && pass "update refuses generated-to-manual conversion outside the documented procedure" \
+  || fail "update refuses generated-to-manual conversion outside the documented procedure (rc=$rc_adopt_revert)"
+grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agent/purpose.md" \
+  && pass "a refused generated-to-manual update leaves the manifest unchanged" \
+  || fail "a refused generated-to-manual update leaves the manifest unchanged"
+
+adopt_collision="$WORK/adopt-generated-shape-collision"
+mkdir -p "$adopt_collision"
+"$NODE" init --preset software-development --mode track-shared --indexes manual "$adopt_collision" >/dev/null 2>&1
+subst "$adopt_collision/.agent/memory.md" 's/This contract covers memory\/ too/This older header lacks the directory contract/'
+mkdir -p "$adopt_collision/.agent.backup-v6.2-shape"
+printf 'pre-existing shape backup\n' >"$adopt_collision/.agent.backup-v6.2-shape/marker"
+cp -R "$adopt_collision/.agent" "$WORK/adopt-collision-agent-before"
+cp "$adopt_collision/.gitignore" "$WORK/adopt-collision-gitignore-before"
+"$NODE" update --indexes generated "$adopt_collision" >"$WORK/adopt-collision.out" 2>&1
+rc_adopt_collision=$?
+[ "$rc_adopt_collision" -ne 0 ] && grep -qF 'backup path already exists' "$WORK/adopt-collision.out" \
+  && pass "generated adoption preflights a conflicting shape backup" \
+  || fail "generated adoption preflights a conflicting shape backup (rc=$rc_adopt_collision; $(cat "$WORK/adopt-collision.out"))"
+if diff -r "$WORK/adopt-collision-agent-before" "$adopt_collision/.agent" >/dev/null 2>&1 \
+  && diff -q "$WORK/adopt-collision-gitignore-before" "$adopt_collision/.gitignore" >/dev/null 2>&1 \
+  && [ ! -e "$adopt_collision/.agent.backup-v6.2-indexes-generated" ]; then
+  pass "a generated-adoption backup collision leaves the node untouched"
+else
+  fail "a generated-adoption backup collision leaves the node untouched"
+fi
 
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
@@ -2251,6 +2351,17 @@ printf '%s\n' "$review34t" | grep -qF 'Does NOT retry on 4xx responses because t
 
 printf '%s\n' "$review34t" | grep -qF 'The callback can arrive after cancellation because the vendor retains the handle.' && pass "comments.sh: a non-obvious callback constraint survives with its meaning intact" || fail "comments.sh: a non-obvious callback constraint survives with its meaning intact ($review34t)"
 
+cat >>"$cg/src/app.ts" <<'EOF'
+// Keep the label readable in diagnostic output.
+const diagnosticLabel = "left — right"
+EOF
+out34utf8=$(cd "$cg" && LC_ALL=C.UTF-8 .agent/scripts/comments.sh chat34 2>&1)
+rc34utf8=$?
+[ "$rc34utf8" -eq 0 ] && printf '%s\n' "$out34utf8" | grep -qF 'Keep the label readable in diagnostic output.' \
+  && pass "comments.sh: UTF-8 code below a review comment does not break classification" \
+  || fail "comments.sh: UTF-8 code below a review comment does not break classification (rc=$rc34utf8; $out34utf8)"
+git_cg checkout -q -- src/app.ts
+
 printf 'CHAT_RE_EXTRA=(^|[^[:alnum:]])lgtm\n' >"$cg/.agent/scripts/comments.conf"
 printf '// lgtm, ship it\nconst n22 = 22\n' >>"$cg/src/app.ts"
 out34u=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
@@ -3097,6 +3208,11 @@ premrc42=$?
 [ "$premrc42" -eq 2 ] && printf '%s\n' "$premfail42" | grep -q 'routing-scales' \
   && pass "evals: check-premises catches a drifted premise and names the eval" \
   || fail "evals: check-premises catches a drifted premise and names the eval (rc=$premrc42; $premfail42)"
+"$evroot/fixture_seed.py" check-premises "$evroot/spec.json" ts-service-with-doc "$evdoc" routing-finds-doc >/dev/null 2>&1
+premtargetrc42=$?
+[ "$premtargetrc42" -eq 0 ] \
+  && pass "evals: targeted premise checks ignore unrelated evals sharing the fixture" \
+  || fail "evals: targeted premise checks ignore unrelated evals sharing the fixture (rc=$premtargetrc42)"
 
 evbare="$WORK/eval-fixture-bare"
 "$evroot/fixtures.sh" ts-service "$evbare" --corpus-dir "$reporoot" --no-harness >/dev/null 2>&1
@@ -3906,6 +4022,56 @@ except Exception:
     sys.exit("unreadable")
 print(" ".join(sorted(set(m.values()))))' "$wsc_arm/iteration-1/arm-map.json" 2>&1)
 [ "$armmap44" = "ctrl treat" ] && pass "evals: both arms of one run-arm.sh workspace land in the same arm map" || fail "evals: both arms of one run-arm.sh workspace land in the same arm map ($armmap44)"
+
+wsc_arm_fail="$evfake/run-arm failure workspace"
+EVALS_AGENTS_CONF="$conf_arm" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evroot/run-arm.sh" --jobs 2 --evals scope-question-no-edit,routing-scales \
+  "$wsc_arm_fail" broken definitely-not-a-corpus-ref >"$evfake/run-arm-fail.out" 2>&1
+rc44armfail=$?
+[ "$rc44armfail" -ne 0 ] && pass "evals: run-arm.sh exits nonzero when parallel child evals fail" || fail "evals: run-arm.sh exits nonzero when parallel child evals fail"
+if grep -q '^ARM FAILED broken ' "$wsc_arm_fail/run.log" 2>/dev/null \
+  && ! grep -q '^ARM DONE broken ' "$wsc_arm_fail/run.log" 2>/dev/null; then
+  pass "evals: a failed run-arm.sh batch records ARM FAILED, never ARM DONE"
+else
+  fail "evals: a failed run-arm.sh batch records ARM FAILED, never ARM DONE ($(cat "$wsc_arm_fail/run.log" 2>/dev/null))"
+fi
+
+"$evroot/run-arm.sh" --jobs 0 --evals scope-question-no-edit \
+  "$evfake/run-arm-zero-jobs" zero "$corpus_ref_test" >"$evfake/run-arm-zero.out" 2>&1
+rc44armzero=$?
+[ "$rc44armzero" -eq 2 ] && grep -q 'positive whole number' "$evfake/run-arm-zero.out" \
+  && pass "evals: run-arm.sh refuses unbounded --jobs 0" \
+  || fail "evals: run-arm.sh refuses unbounded --jobs 0 (rc=$rc44armzero; $(cat "$evfake/run-arm-zero.out"))"
+
+compat_corpus="$evfake/pre-indexes corpus"
+mkdir -p "$compat_corpus/scripts"
+cp -R "$reporoot/templates" "$reporoot/presets" "$compat_corpus/"
+cat >"$compat_corpus/scripts/node.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --help ]; then
+  printf 'Usage: node.sh init --preset <name> --mode <mode> [root]\n'
+  exit 0
+fi
+for compat_arg in "$@"; do
+  [ "$compat_arg" != --indexes ] || exit 97
+done
+exec "$COMPAT_NODE" "$@"
+SH
+chmod +x "$compat_corpus/scripts/node.sh"
+compat_manual="$evfake/pre-indexes-manual"
+COMPAT_NODE="$NODE" "$evroot/fixtures.sh" ts-service "$compat_manual" \
+  --corpus-dir "$compat_corpus" --indexes manual >"$evfake/pre-indexes-manual.out" 2>&1
+rc44compatmanual=$?
+[ "$rc44compatmanual" -eq 0 ] && pass "evals: a manual fixture builds against a corpus predating --indexes" || fail "evals: a manual fixture builds against a corpus predating --indexes (rc=$rc44compatmanual; $(cat "$evfake/pre-indexes-manual.out"))"
+grep -q '^  indexes: manual' "$compat_manual/.agent/purpose.md" 2>/dev/null \
+  && pass "evals: the pre-indexes compatibility path preserves the manual default" \
+  || fail "evals: the pre-indexes compatibility path preserves the manual default"
+COMPAT_NODE="$NODE" "$evroot/fixtures.sh" ts-service "$evfake/pre-indexes-generated" \
+  --corpus-dir "$compat_corpus" --indexes generated >"$evfake/pre-indexes-generated.out" 2>&1
+rc44compatgenerated=$?
+[ "$rc44compatgenerated" -ne 0 ] && grep -q 'does not support generated indexes' "$evfake/pre-indexes-generated.out" \
+  && pass "evals: generated fixtures refuse a corpus predating --indexes" \
+  || fail "evals: generated fixtures refuse a corpus predating --indexes (rc=$rc44compatgenerated; $(cat "$evfake/pre-indexes-generated.out"))"
 
 wsc_hostile="$evfake/claude workspace-hostile-filename"
 conf_claude_hostile="$evfake/agents-claude-hostile.conf"
@@ -6073,6 +6239,14 @@ grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home.out" \
 [ ! -e "$gi56home/.gitignore" ] \
   && pass "init at \$HOME, track-all/generated, still writes no gitignore" \
   || fail "init at \$HOME, track-all/generated, still writes no gitignore"
+HOME="$gi56home" "$NODE" update --indexes generated "$gi56home" >"$WORK/gi56home-update.out" 2>&1
+rc_gi56home_update=$?
+[ "$rc_gi56home_update" -eq 0 ] && [ -f "$gi56home/.agent/indexes/current.md" ] \
+  && pass "generated adoption at \$HOME still builds and verifies the index" \
+  || fail "generated adoption at \$HOME still builds and verifies the index (rc=$rc_gi56home_update)"
+[ ! -e "$gi56home/.gitignore" ] && grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home-update.out" \
+  && pass "generated adoption at \$HOME leaves gitignore reconciliation to the operator" \
+  || fail "generated adoption at \$HOME leaves gitignore reconciliation to the operator"
 
 gi56homeman="$WORK/gi56-home-track-all-manual"
 mkdir -p "$gi56homeman"
@@ -8517,7 +8691,7 @@ rec75_after_update=$(rec75_snapshot "$rec75")
 
 ran=$((PASS + FAIL))
 
-EXPECTED_CHECKS=1327
+EXPECTED_CHECKS=1354
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

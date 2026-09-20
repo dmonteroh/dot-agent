@@ -13,16 +13,20 @@ usage() {
   cat <<'EOF'
 Usage:
   node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [root]
-  node.sh update [root]
+  node.sh update [--indexes <manual|generated>] [root]
   node.sh finalize [root]
 
---indexes defaults to manual. root defaults to . — the script operates on
-<root>/.agent
+init defaults --indexes to manual. update preserves the manifest value when
+--indexes is omitted. root defaults to . — the script operates on <root>/.agent
 EOF
 }
 
 cmd="${1:-}"
 [ $# -ge 1 ] && shift
+if [ "$cmd" = -h ] || [ "$cmd" = --help ]; then
+  usage
+  exit 0
+fi
 
 memory_index_header_stale() {
   mih_memory="$1"
@@ -441,6 +445,75 @@ migrate_learned_and_docs() {
   return 0
 }
 
+enable_generated_indexes() {
+  egi_root="$1"
+  egi_agent="$2"
+  egi_mode="$3"
+
+  migrate_learned_and_docs "$egi_agent" \
+    || { echo "node.sh: learned-rule extraction or doc-hook backfill failed under $egi_agent — aborting" >&2; return 1; }
+
+  egi_home=0
+  if [ "$(cd "$egi_root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
+    egi_home=1
+    echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
+  fi
+
+  egi_gitignore="$egi_root/.gitignore"
+  if [ "$egi_home" -eq 0 ]; then
+    case "$egi_mode" in
+    track-shared | track-all)
+      if [ ! -e "$egi_gitignore" ] || ! grep -qxF ".agent/indexes/" "$egi_gitignore"; then
+        [ -s "$egi_gitignore" ] && [ -n "$(tail -c 1 "$egi_gitignore")" ] && echo >>"$egi_gitignore"
+        printf '.agent/indexes/\n' >>"$egi_gitignore"
+      fi
+      if [ ! -e "$egi_gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$egi_gitignore"; then
+        [ -s "$egi_gitignore" ] && [ -n "$(tail -c 1 "$egi_gitignore")" ] && echo >>"$egi_gitignore"
+        printf '.agent/rules/learned.md\n' >>"$egi_gitignore"
+      fi
+      ;;
+    esac
+  fi
+
+  "$egi_agent/scripts/index.sh" ensure --root "$egi_root" >/dev/null \
+    || { echo "node.sh: index.sh ensure failed while regenerating rules/learned.md under $egi_agent — aborting before untracking" >&2; return 1; }
+
+  egi_learned_md="$egi_agent/rules/learned.md"
+  egi_bullets_before="$egi_agent/.learned-bullets-before"
+  egi_source_bullets="$egi_bullets_before"
+  [ -f "$egi_source_bullets" ] || egi_source_bullets="$egi_learned_md"
+  egi_before_tmp="$egi_agent/.learned-bullets-before-check.tmp"
+  egi_after_tmp="$egi_agent/.learned-bullets-after-check.tmp"
+  grep '^- ' "$egi_source_bullets" 2>/dev/null | sort >"$egi_before_tmp"
+  grep '^- ' "$egi_learned_md" 2>/dev/null | sort >"$egi_after_tmp"
+  if diff -q "$egi_before_tmp" "$egi_after_tmp" >/dev/null 2>&1; then
+    rm -f "$egi_before_tmp" "$egi_after_tmp"
+  else
+    rm -f "$egi_before_tmp" "$egi_after_tmp"
+    echo "node.sh: regenerated $egi_learned_md does not reproduce every original bullet under $egi_agent — aborting before untracking" >&2
+    return 1
+  fi
+
+  egi_untrack_skip=""
+  if [ "$egi_home" -eq 1 ]; then
+    egi_untrack_skip="\$HOME needs its generated-mode gitignore entries reconciled by hand"
+  elif [ "$egi_mode" = ignore-all ]; then
+    egi_untrack_skip="mode is ignore-all"
+  elif ! git -C "$egi_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    egi_untrack_skip="$egi_root is not inside a git work tree"
+  elif ! git -C "$egi_root" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1; then
+    egi_untrack_skip=".agent/rules/learned.md is not tracked"
+  fi
+  if [ -z "$egi_untrack_skip" ]; then
+    git -C "$egi_root" rm --cached --quiet -- .agent/rules/learned.md \
+      || { echo "node.sh: git rm --cached .agent/rules/learned.md failed under $egi_root — aborting" >&2; return 1; }
+  else
+    echo "node.sh: skipped untracking .agent/rules/learned.md ($egi_untrack_skip)"
+  fi
+  rm -f "$egi_bullets_before"
+  return 0
+}
+
 case "$cmd" in
 init)
   preset=""
@@ -600,7 +673,30 @@ EOF
   ;;
 
 update)
-  root="${1:-.}"
+  requested_indexes=""
+  root="."
+  root_seen=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --indexes)
+      [ $# -ge 2 ] || { echo "node.sh: --indexes needs a value" >&2; usage >&2; exit 1; }
+      requested_indexes="$2"; shift 2 ;;
+    -h | --help)
+      usage; exit 0 ;;
+    --*)
+      echo "node.sh: unknown flag: $1" >&2; usage >&2; exit 1 ;;
+    *)
+      [ "$root_seen" -eq 0 ] || { echo "node.sh: update accepts one root" >&2; usage >&2; exit 1; }
+      root="$1"; root_seen=1; shift ;;
+    esac
+  done
+  case "$requested_indexes" in
+  "" | manual | generated) ;;
+  *)
+    echo "node.sh: unknown --indexes: '$requested_indexes' (must be manual or generated)" >&2
+    usage >&2
+    exit 1 ;;
+  esac
   agent="$root/.agent"
   purpose="$agent/purpose.md"
 
@@ -640,6 +736,12 @@ EOF
     exit 1 ;;
   esac
 
+  if [ "$indexes" = generated ] && [ "$requested_indexes" = manual ]; then
+    echo "node.sh: refusing generated-to-manual conversion during update — follow scripts/docs/node.md#reverting-to-manual-mode" >&2
+    exit 1
+  fi
+  desired_indexes="${requested_indexes:-$indexes}"
+
   lowest=$(printf '%s\n%s\n' "$oldversion" "$TARGET_VERSION" | sort -V | head -n1)
   if [ "$lowest" != "$oldversion" ]; then
     echo "node.sh: node is current (version $oldversion)"
@@ -647,10 +749,46 @@ EOF
   fi
 
   if [ "$oldversion" = "$TARGET_VERSION" ]; then
-    if [ -z "$indexes_line" ]; then
-      write_indexes "$purpose" manual \
+    shape_stale=0
+    if memory_headers_stale "$agent" || doc_headers_stale "$agent" || session_log_header_stale "$agent/session-log.md"; then
+      shape_stale=1
+    fi
+
+    adoption_backup=""
+    shape_backup=""
+    if [ "$mode" != "track-all" ]; then
+      if [ "$desired_indexes" = generated ] && [ "$indexes" != generated ]; then
+        adoption_backup="$root/.agent.backup-v$oldversion-indexes-generated"
+      fi
+      if [ "$shape_stale" -eq 1 ]; then
+        shape_backup="$root/.agent.backup-v$oldversion-shape"
+      fi
+      for candidate_backup in "$adoption_backup" "$shape_backup"; do
+        [ -n "$candidate_backup" ] || continue
+        if [ -e "$candidate_backup" ]; then
+          echo "node.sh: backup path already exists: $candidate_backup — refusing to proceed" >&2
+          exit 1
+        fi
+      done
+    fi
+
+    if [ "$desired_indexes" = generated ] && [ "$indexes" != generated ]; then
+      if [ "$mode" != "track-all" ]; then
+        cp -R "$agent" "$adoption_backup" \
+          || { echo "node.sh: backup to $adoption_backup failed — aborting before touching the node" >&2; exit 1; }
+        echo "node.sh: backed up node to $adoption_backup"
+      fi
+    fi
+
+    if [ -z "$indexes_line" ] || [ "$desired_indexes" != "$indexes" ]; then
+      write_indexes "$purpose" "$desired_indexes" \
         || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
-      echo "node.sh: indexes: manual backfilled into $purpose"
+      if [ -z "$indexes_line" ] && [ "$desired_indexes" = manual ]; then
+        echo "node.sh: indexes: manual backfilled into $purpose"
+      else
+        echo "node.sh: indexes: $desired_indexes recorded in $purpose"
+      fi
+      indexes="$desired_indexes"
     fi
 
     mkdir -p "$agent/scripts" \
@@ -659,16 +797,19 @@ EOF
       || { echo "node.sh: index.sh copy failed" >&2; exit 1; }
     chmod +x "$agent/scripts/index.sh"
 
-    if memory_headers_stale "$agent" || doc_headers_stale "$agent" || session_log_header_stale "$agent/session-log.md"; then
+    if [ "$requested_indexes" = generated ]; then
+      cp "$srcroot/scripts/learn.sh" "$agent/scripts/learn.sh" \
+        || { echo "node.sh: learn.sh copy failed" >&2; exit 1; }
+      chmod +x "$agent/scripts/learn.sh"
+      enable_generated_indexes "$root" "$agent" "$mode" || exit 1
+      echo "node.sh: generated indexes adopted for $agent"
+    fi
+
+    if [ "$shape_stale" -eq 1 ]; then
       if [ "$mode" != "track-all" ]; then
-        backup="$root/.agent.backup-v$oldversion-shape"
-        if [ -e "$backup" ]; then
-          echo "node.sh: backup path already exists: $backup — refusing to proceed" >&2
-          exit 1
-        fi
-        cp -R "$agent" "$backup" \
-          || { echo "node.sh: backup to $backup failed — aborting before touching the node" >&2; exit 1; }
-        echo "node.sh: backed up node to $backup"
+        cp -R "$agent" "$shape_backup" \
+          || { echo "node.sh: backup to $shape_backup failed — aborting before touching the node" >&2; exit 1; }
+        echo "node.sh: backed up node to $shape_backup"
       fi
       migrate_memory_headers "$agent"
       echo "node.sh: $migrate_note"
@@ -700,10 +841,15 @@ EOF
   write_migration_target "$purpose" "$TARGET_VERSION" \
     || { echo "node.sh: failed to record migration_target in $purpose — aborting before touching node content" >&2; exit 1; }
 
-  if [ -z "$indexes_line" ]; then
-    write_indexes "$purpose" manual \
+  if [ -z "$indexes_line" ] || [ "$desired_indexes" != "$indexes" ]; then
+    write_indexes "$purpose" "$desired_indexes" \
       || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
-    echo "node.sh: indexes: manual backfilled into $purpose"
+    if [ -z "$indexes_line" ] && [ "$desired_indexes" = manual ]; then
+      echo "node.sh: indexes: manual backfilled into $purpose"
+    else
+      echo "node.sh: indexes: $desired_indexes recorded in $purpose"
+    fi
+    indexes="$desired_indexes"
   fi
 
   memdir="$agent/memory"
@@ -771,61 +917,7 @@ EOF
   done
 
   if [ "$indexes" = generated ]; then
-    migrate_learned_and_docs "$agent" \
-      || { echo "node.sh: learned-rule extraction or doc-hook backfill failed under $agent — aborting" >&2; exit 1; }
-
-    if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
-      echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
-    else
-      gitignore="$root/.gitignore"
-      case "$mode" in
-      track-shared | track-all)
-        if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/indexes/" "$gitignore"; then
-          [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
-          printf '.agent/indexes/\n' >>"$gitignore"
-        fi
-        if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$gitignore"; then
-          [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
-          printf '.agent/rules/learned.md\n' >>"$gitignore"
-        fi
-        ;;
-      esac
-
-      "$agent/scripts/index.sh" ensure --root "$root" >/dev/null \
-        || { echo "node.sh: index.sh ensure failed while regenerating rules/learned.md under $agent — aborting before untracking" >&2; exit 1; }
-
-      learned_md="$agent/rules/learned.md"
-      bullets_before="$agent/.learned-bullets-before"
-      source_bullets="$bullets_before"
-      [ -f "$source_bullets" ] || source_bullets="$learned_md"
-      before_bullets_tmp="$agent/.learned-bullets-before-check.tmp"
-      after_bullets_tmp="$agent/.learned-bullets-after-check.tmp"
-      grep '^- ' "$source_bullets" 2>/dev/null | sort >"$before_bullets_tmp"
-      grep '^- ' "$learned_md" 2>/dev/null | sort >"$after_bullets_tmp"
-      if diff -q "$before_bullets_tmp" "$after_bullets_tmp" >/dev/null 2>&1; then
-        rm -f "$before_bullets_tmp" "$after_bullets_tmp"
-      else
-        rm -f "$before_bullets_tmp" "$after_bullets_tmp"
-        echo "node.sh: regenerated $learned_md does not reproduce every original bullet under $agent — aborting before untracking" >&2
-        exit 1
-      fi
-
-      untrack_skip_reason=""
-      if [ "$mode" = ignore-all ]; then
-        untrack_skip_reason="mode is ignore-all"
-      elif ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        untrack_skip_reason="$root is not inside a git work tree"
-      elif ! git -C "$root" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1; then
-        untrack_skip_reason=".agent/rules/learned.md is not tracked"
-      fi
-      if [ -z "$untrack_skip_reason" ]; then
-        git -C "$root" rm --cached --quiet -- .agent/rules/learned.md \
-          || { echo "node.sh: git rm --cached .agent/rules/learned.md failed under $root — aborting" >&2; exit 1; }
-      else
-        echo "node.sh: skipped untracking .agent/rules/learned.md ($untrack_skip_reason)"
-      fi
-      rm -f "$bullets_before"
-    fi
+    enable_generated_indexes "$root" "$agent" "$mode" || exit 1
   fi
 
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"

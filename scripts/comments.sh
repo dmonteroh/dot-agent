@@ -177,7 +177,7 @@ findings=$(printf '%s\n' "$added" \
     ECHO_RE="$echo_re" ROUTINE_RE="$routine_re" CONSTRAINT_RE="$constraint_re" \
     CHAT_RE="$chat_re" DRAFT_V_RE="$draft_v_re" APOLOGY_RE="$apology_re" \
     ROUTINE_MAX_WORDS="$ROUTINE_MAX_WORDS" RESTATE_CHECK="$RESTATE_CHECK" \
-    awk '
+    LC_ALL=C awk '
   function is_comment(file, line,   star) {
     if (line == "/**" || line == "/*" || line == "*/" || line == "*") return 0
     star = (line ~ /^\*[[:space:]]/ && line !~ /^\*[[:space:]]*[{,+>~=]/)

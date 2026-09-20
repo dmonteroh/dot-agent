@@ -204,10 +204,10 @@ Deciding *whether a name addresses the node at all* is the other half, and shape
 
 | Finding | Means |
 | --- | --- |
-| `BLOCK:` (exit 1) | the comment is dead on arrival, in one of five decidable ways. Delete it, or state the constraint the code cannot; durable *why* goes to docs |
+| `BLOCK:` (exit 1) | the comment is dead on arrival, in one of six decidable ways. Delete it, or state the constraint the code cannot. Durable *why* goes to docs |
 | `REVIEW:` (exit 0) | every other comment the diff adds. The author justifies each as a non-obvious invariant, constraint, or workaround, or deletes it |
 
-Every finding names its class, because "delete this" and "justify this" are different instructions and a list that mixes them gets skimmed as one. The five blocking classes:
+Every finding names its class, because "delete this" and "justify this" are different instructions and a list that mixes them gets skimmed as one. The six blocking classes:
 
 | Class | What it catches |
 | --- | --- |
@@ -215,6 +215,7 @@ Every finding names its class, because "delete this" and "justify this" are diff
 | `commented-out code` | code left in a comment instead of deleted. Both a code shape and a code character are required, so a sentence that opens with "if" or ends with a semicolon is not one |
 | `change narration` | the comment written from the diff's point of view: "previously", "no longer", "now returns", "renamed from". It carries information to whoever wrote it and none to the next reader, who has no before-state |
 | `answers the prompt` | a reply to whoever asked for the change. The answer belongs in the reply, read once, not in the file, read forever by people who never saw the question |
+| `chat residue` | feedback references, agreements, apologies, and draft-revision labels from the review thread. They address participants the next reader cannot see |
 | `routine narration` | the comment that says in English what the lines under it say in code: "build the rows", "gets the user name", "loop over the items". A verb of routine action plus an article is the shape |
 
 `routine narration` is the only class that reasons about English rather than about shape, so it carries two guards. A comment naming a cause, a constraint, or an external actor is exempt — "update the cache because the vendor SDK holds a stale handle" is doing the job the rule asks for, whatever verb it opens with, and `CONSTRAINT_RE_EXTRA` is where a node adds its own vocabulary. And blocking stops at `ROUTINE_MAX_WORDS` (8, chosen default): past that the comment is carrying a clause the opening verb cannot account for, so it is labeled and left to the author rather than deleted on a keyword. A false positive is repaired by naming the constraint, not by an exception.
@@ -233,6 +234,7 @@ EXTENSIONS=ts tsx cs py
 EXCLUDE_RE_EXTRA=/types/generated/|(^|/)Migrations/
 BLOCK_RE_EXTRA=(^|[^[:alnum:]])AC-?[0-9]|(^|[^[:alnum:]])Q[0-9]+([^[:alnum:]]|$)
 NARRATION_RE_EXTRA=(^|[^[:alnum:]])(pre-migration|old world)
+CHAT_RE_EXTRA=(^|[^[:alnum:]])review bot note
 CONSTRAINT_RE_EXTRA=(payments gateway|ledger|iso20022)
 PRAGMA_RE_EXTRA=noinspection
 ROUTINE_MAX_WORDS=8
@@ -389,9 +391,19 @@ The operating model evolves. Existing `.agent/` setups don't automatically updat
 
 A version migration is two phases, and only the second one moves `version`: `scripts/node.sh update` does the mechanical part and deliberately leaves the node mid-migration; `scripts/node.sh finalize` closes it out once the mechanical part and the agent's own reconciliation are both done.
 
-Run `scripts/node.sh update`. It reads the `dot-agent` frontmatter on `purpose.md`, compares `version` against the script's target by version-sort (`sort -V` semantics), and backs up any node whose memory is untracked (every mode but `track-all`) before touching it. It refreshes the shipped node scripts from the source repo — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh` — by exactly those nine names. Anything else under `.agent/scripts/` is the node's and is never overwritten. `update` never changes `indexes`: it carries forward whatever value the manifest already has. A fresh clone or `git worktree add` checkout of a `track-shared` node carries no `.agent/scripts/` at all; running `update` against it installs at minimum `index.sh` on a version-current node, or the full script set on one still mid-migration (`scripts/docs/node.md#installing-the-indexer-into-a-fresh-clone-or-worktree`). Selecting `indexes: generated` on a node already at the current version does not itself extract learned records or add the generated-mode gitignore lines — that only happens during a version migration or at a fresh `init` (`scripts/docs/node.md#adopting-generated-mode-after-reaching-the-current-version`), a known, accepted limitation rather than a bug. The exception is a missing starter conf — `comments.conf`, `status.conf`, `log.conf` — which is seeded, the one write that cannot clobber node content. It applies the mechanical migrations for the version gap (e.g. the memory-split baseline: `memory/` created, `memory.md`'s prior body moved verbatim to `memory/legacy.md`, a fresh index written), and writes `migration_target` into the manifest, holding the version this migration is moving toward. **`version` itself is left untouched** — it stays at its pre-migration value until `finalize` stamps it, so a manifest carrying `migration_target` is legibly mid-migration however far reconciliation has gotten, and an interruption anywhere in `update` or in the agent's reconciliation is detectable from the manifest alone. `update`'s closing output names what's still owed: splitting `memory/legacy.md` into fact files, reconciling `rules/contract.md` and `docs/` against the current presets and operating model, then running `finalize`.
+Run `scripts/node.sh update [--indexes generated]`. It reads the manifest, compares `version` by version-sort semantics, and backs up nodes whose memory is untracked. It refreshes exactly nine shipped scripts: `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. Anything else under `.agent/scripts/` belongs to the node and remains untouched.
 
-A node newer than the script's target is left untouched. A node at the target version receives only recognized shape refreshes, such as a corrected memory header from the same pre-release, and is otherwise a no-op. A version migration backs up to `.agent.backup-v<old-version>`; a same-version shape refresh backs up to `.agent.backup-v<version>-shape`, so the two paths never collide with each other. A collision on the version-migration backup is not always a stop: if `migration_target` already names the version this run is moving toward, the existing backup is read as an earlier run's interrupted snapshot and this run resumes against it rather than re-copying over it — running `update` again after an interruption (a crashed process, a killed session) is exactly how a stalled migration continues. Any other collision on that path aborts, unchanged, with a "backup path already exists" refusal; the same-version shape-refresh backup has no resume case and always aborts the same way on collision. A node missing its manifest entirely (bootstrapped pre-V6, or the stamp was lost) is not something the script restores mechanically: read `CHANGELOG.md`, the pre-V6 migration checklist, and update the node by hand.
+Omitting `--indexes` preserves the manifest value. Passing `--indexes generated` selects generated mode during migration or adopts it on a current-version node. The command extracts learned-rule records, backfills doc hooks, adds ignore rules, regenerates the aggregate, and checks it before untracking. Generated-to-manual conversion remains the explicit procedure in `scripts/docs/node.md#reverting-to-manual-mode`.
+
+A fresh `track-shared` clone or worktree carries no `.agent/scripts/`. On a current-version node, ordinary update installs `index.sh`. Explicit generated adoption also installs `learn.sh`. A version migration refreshes all nine scripts. Missing starter confs are seeded without overwriting existing confs.
+
+For a version gap, update applies the mechanical migrations and writes `migration_target`. It leaves `version` unchanged until `finalize`, so an interrupted migration remains visible. The closing output names the remaining reconciliation work and the final command.
+
+A node newer than the script's target is left untouched. A target-version node receives recognized shape refreshes and explicitly requested generated adoption. Otherwise it is a no-op.
+
+A version migration backs up to `.agent.backup-v<old-version>`. Shape refresh uses `.agent.backup-v<version>-shape`, while generated adoption uses `.agent.backup-v<version>-indexes-generated`. A matching `migration_target` makes the version-migration backup resumable. Any other collision aborts without changes.
+
+The script does not restore a missing manifest. Read `CHANGELOG.md` and update a pre-V6 or damaged node by hand.
 
 After `update` runs, the agent reconciles what mechanics can't: splitting `memory/legacy.md` into fact files (flagged by `status.sh`'s `GROOM:` line), adding new rules, updating terminology, preserving project-specific content.
 

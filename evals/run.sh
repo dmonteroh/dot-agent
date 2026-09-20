@@ -14,7 +14,7 @@
 # the provider API — both adapters drive the operator's own logged-in CLI.
 #
 # Tunables: agents.conf beside this script, or the path in EVALS_AGENTS_CONF
-# if set (scripts/test.sh points this at a disposable conf so its fake-CLI
+# EVALS_AGENTS_CONF may name a disposable conf so a fake-CLI test
 # coverage never touches the operator's own agents.conf). CLAUDE_* and
 # CODEX_* ship with the reference model and effort filled in.
 #
@@ -1399,7 +1399,7 @@ while [ "$rep" -le "$repeats_eff" ]; do
   # corpus ref still leaves a diagnostic run rather than an unshaped directory.
   ACTIVE_RUN_DIR="$rundir"
   fixdir="$rundir/fixture"
-  fixture_args=("$fixture" "$fixdir" --corpus-ref "$corpus_ref" --indexes "$index_mode")
+  fixture_args=("$fixture" "$fixdir" --corpus-ref "$corpus_ref" --indexes "$index_mode" --eval "$evalid")
   case "$harness_mode" in
   none) fixture_args+=(--no-harness) ;;
   generic) fixture_args+=(--generic-claude) ;;
