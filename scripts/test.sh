@@ -4000,6 +4000,19 @@ EVALS_AGENTS_CONF="$conf_ctrlfirst" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
 rc44un=$?
 [ "$rc44un" -eq 2 ] && grep -q 'must name the treatment arm' "$evfake/unnamed.out" && pass "evals: a fresh iteration with no named treatment is still refused" || fail "evals: a fresh iteration with no named treatment is still refused (rc=$rc44un)"
 
+wsc_arm_name_collision="$evfake/arm-name-collision"
+EVALS_AGENTS_CONF="$conf_ctrlfirst" "$evsh" --eval verify-baseline-failure \
+  --arm baseline --treatment-arm candidate --agent claude \
+  --corpus-ref "$corpus_ref_test" --workspace "$wsc_arm_name_collision" --dry-run \
+  >"$evfake/arm-name-collision.out" 2>&1
+rc44armname=$?
+[ "$rc44armname" -eq 2 ] && grep -qF "arm name 'baseline' is a component of eval id 'verify-baseline-failure'" "$evfake/arm-name-collision.out" \
+  && pass "evals: run.sh refuses an arm name that would leak through the eval path" \
+  || fail "evals: run.sh refuses an arm name that would leak through the eval path (rc=$rc44armname; $(cat "$evfake/arm-name-collision.out"))"
+[ ! -e "$wsc_arm_name_collision" ] \
+  && pass "evals: an arm-name collision creates no iteration workspace" \
+  || fail "evals: an arm-name collision creates no iteration workspace"
+
 wsc_arm="$evfake/run-arm workspace"
 conf_arm="$evfake/agents-run-arm.conf"
 eval_conf_write "$conf_arm" "$fake_claude" "$evfake/no-such-codex" 1 60
@@ -8691,7 +8704,7 @@ rec75_after_update=$(rec75_snapshot "$rec75")
 
 ran=$((PASS + FAIL))
 
-EXPECTED_CHECKS=1354
+EXPECTED_CHECKS=1356
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

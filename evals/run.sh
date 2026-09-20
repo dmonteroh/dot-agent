@@ -1281,6 +1281,16 @@ command -v python3 >/dev/null 2>&1 || { echo "run.sh: python3 not found" >&2; ex
 entry=$(EVALID="$evalid" SPEC="$spec" "$selfdir/run_lib.py" eval-lookup) || {
   echo "run.sh: no eval with id '$evalid' in spec.json" >&2; exit 2; }
 
+eval_id_components=$(printf '%s\n' "$evalid" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '\n')
+for condition_name in "$arm" "$treatment"; do
+  [ -n "$condition_name" ] || continue
+  condition_lower=$(printf '%s' "$condition_name" | tr '[:upper:]' '[:lower:]')
+  if printf '%s\n' "$eval_id_components" | grep -qxF "$condition_lower"; then
+    echo "run.sh: arm name '$condition_name' is a component of eval id '$evalid' — choose a label that cannot leak through grading paths" >&2
+    exit 2
+  fi
+done
+
 fixture=$(printf '%s' "$entry" | "$selfdir/run_lib.py" fixture-name)
 
 arm_variable=$(printf '%s' "$entry" | SPEC="$spec" "$selfdir/run_lib.py" arm-variable)
