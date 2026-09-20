@@ -43,15 +43,25 @@ project-root/
 │   │                       # + links.sh, the on-demand link audit
 │   │                       # + comments.sh, the diff comment gate
 │   │                       # + checkpoint.sh, the hand-back call: gate, status
-│   │                       # check, log entry, in that order —
+│   │                       # check, log entry, in that order — finish.sh is
+│   │                       # a compatibility shim that forwards to it
+│   │                       # + index.sh (indexes: generated only), the
+│   │                       # disposable Markdown index cache: ensure|check
+│   │                       # + learn.sh, the learned-rule admission
+│   │                       # helper: lookup|new|revise|retire —
 │   │                       # node-owned tunables seeded at init:
 │   │                       # comments.conf, status.conf, log.conf.
 │   │                       # Each script's usage is its own header; each
 │   │                       # conf lists every key it reads. Full docs stay
 │   │                       # in the source repo, under scripts/docs/
+│   ├── indexes/            # indexes: generated only. Rendered from rules/
+│   │                       # and docs/, gitignored, disposable — rebuilt by
+│   │                       # index.sh, never hand-edited (scripts/docs/index.md)
 │   └── skills/             # Optional — installed skill payloads; tools
 │                           # read them via symlink (.claude/skills → here)
 ```
+
+In `indexes: generated`, `.agent/indexes/` and the aggregate `.agent/rules/learned.md` are both regenerable and gitignored — never hand-edit either; the canonical source is `rules/learned/`, one tracked record per learned rule. See [Storage contract](scripts/docs/node.md#storage-contract) and `scripts/docs/index.md`.
 
 ### File purposes
 
@@ -252,6 +262,7 @@ dot-agent:
   version: "6.2"
   preset: software-development
   mode: track-shared        # ignore-all | track-shared | track-all
+  indexes: manual           # manual | generated — absent reads as manual
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 ```
@@ -296,11 +307,11 @@ The retro phase first finds the failing source. It fixes the contract, docs, cod
 - Distinct from human-authored rules (the preset): human rules define the framework, learned rules capture what the agent discovered working within it.
 - Versioned via git, so bad rules can be reverted. In `track-shared` mode they pass PR review before binding anyone else's sessions (see [Tracking modes](#tracking-modes)).
 - The entry format, curation law, and routing rule (behavioral rules stay here, and area gotchas go to their area doc) live in the file's own header and the preset's **Self-learning** section.
-- Unlike `memory.md`, `learned.md` stays a single file: it is the artifact that passes PR review in `track-shared`, and a rule set reviewed as one diff is reviewable in a way that many small files are not.
+- Unlike `memory.md`, `learned.md` stays a single file — in `indexes: manual`, unconditionally. In `indexes: generated`, the canonical records are one file per rule under `rules/learned/`, admitted through `learn.sh lookup|new|revise|retire`'s duplicate and overlap checks; `rules/learned.md` is a derived, gitignored aggregate `index.sh ensure` regenerates from them, never hand-edited. The single file still matters where it exists: it is the artifact that passes PR review in `track-shared`, and a rule set reviewed as one diff is reviewable in a way that many small files are not — which is why `track-shared` review moves to `rules/learned/` itself once a node is in generated mode. Reverting a generated node to manual is a short, lossless procedure (`scripts/docs/node.md#reverting-to-manual-mode`), since the aggregate already carries every record's content.
 
 ### The load order
 
-A session loads context before doing anything else. The load order is executable, not prose: it is the numbered steps of the [canonical entry point](#the-canonical-entry-point) — one call to `status.sh --load`, which prints the findings and then the learned rules, the preset, purpose, and the memory index in that order; the matching fact files; the routed docs. How far to scale the reads for a given task is the preset's **Context loading** section.
+A session loads context before doing anything else. The load order is executable, not prose: it is the numbered steps of the [canonical entry point](#the-canonical-entry-point). In `indexes: manual` — the template at `templates/entry-point.md` — that is one call to `status.sh --load`, which prints the findings and then the learned rules, the preset, purpose, and the memory index in that order; the matching fact files; the routed docs. In `indexes: generated` — `templates/entry-point-generated.md` — step 1 is `index.sh ensure` plus the pages it names on success (or the canonical `rules/`/`docs/` sources it names on a build failure), and `status.sh --load` then covers purpose and memory only, since rule and doc bodies are read from the index pages instead. How far to scale the reads for a given task is the preset's **Context loading** section.
 
 ### Tracking modes
 
@@ -324,6 +335,8 @@ The `track-shared` gitignore the bootstrap writes:
 This is an allowlist: `.agent/*` ignores everything, and only the negated lines are un-ignored. `memory/` needs no negation of its own — a directory nobody negates is ignored by default, the same way `memory.md` already is. The design fails safe: a new file or directory stays private until someone explicitly tracks it.
 
 In `track-shared`, a PR that touches `learned.md` gets human review: every rule the agent taught itself passes an accept/edit/reject gate before it binds anyone else's sessions.
+
+The gitignore above is `indexes: manual`'s shape. `indexes: generated` adds exactly two more ignored lines, `.agent/indexes/` and `.agent/rules/learned.md`, on top of whichever tracking mode already governs the rest of the node — including under `ignore-all`, where they add nothing because the whole tree is already ignored. The full six-case table (tracking mode × `indexes` value) is `scripts/docs/node.md`'s [Storage contract](scripts/docs/node.md#storage-contract); it is not repeated here.
 
 ### Native tool memory
 
@@ -363,9 +376,9 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
-6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode>`**: creates the skeleton, stamps the manifest, and writes the matching gitignore entries (see [Tracking modes](#tracking-modes)). It copies the shipped node scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`) and the starter confs (`comments.conf`, `status.conf`, `log.conf`), and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
+6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated]`**: creates the skeleton, stamps the manifest (including `indexes`, default `manual`), and writes the matching gitignore entries (see [Tracking modes](#tracking-modes)). It copies the nine canonical shipped node scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`), the `finish.sh` compatibility alias for `checkpoint.sh`, and the starter confs (`comments.conf`, `status.conf`, `log.conf`), and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
 7. **Agent adapts the preset** that `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment. Split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
-8. **Agent wires your tools**: writes the canonical entry-point template (see [Wiring your tools](#wiring-your-tools)) into each tool's filename, filling the placeholders: project line, doc routing. All entry points stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
+8. **Agent wires your tools**: writes the canonical entry-point template — `templates/entry-point.md` for `indexes: manual`, `templates/entry-point-generated.md` for `indexes: generated` (see [Wiring your tools](#wiring-your-tools)) — into each tool's filename, filling the placeholders: project line, doc routing. All entry points of the same kind stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
 
@@ -377,7 +390,7 @@ The operating model evolves. Existing `.agent/` setups don't automatically updat
 
 A version migration is two phases, and only the second one moves `version`: `scripts/node.sh update` does the mechanical part and deliberately leaves the node mid-migration; `scripts/node.sh finalize` closes it out once the mechanical part and the agent's own reconciliation are both done.
 
-Run `scripts/node.sh update`. It reads the `dot-agent` frontmatter on `purpose.md`, compares `version` against the script's target by version-sort (`sort -V` semantics), and backs up any node whose memory is untracked (every mode but `track-all`) before touching it. It refreshes the shipped node scripts from the source repo — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, by exactly those names. Anything else under `.agent/scripts/` is the node's and is never overwritten. The exception is a missing starter conf — `comments.conf`, `status.conf`, `log.conf` — which is seeded, the one write that cannot clobber node content. It applies the mechanical migrations for the version gap (e.g. the memory-split baseline: `memory/` created, `memory.md`'s prior body moved verbatim to `memory/legacy.md`, a fresh index written), and writes `migration_target` into the manifest, holding the version this migration is moving toward. **`version` itself is left untouched** — it stays at its pre-migration value until `finalize` stamps it, so a manifest carrying `migration_target` is legibly mid-migration however far reconciliation has gotten, and an interruption anywhere in `update` or in the agent's reconciliation is detectable from the manifest alone. `update`'s closing output names what's still owed: splitting `memory/legacy.md` into fact files, reconciling `rules/contract.md` and `docs/` against the current presets and operating model, then running `finalize`.
+Run `scripts/node.sh update`. It reads the `dot-agent` frontmatter on `purpose.md`, compares `version` against the script's target by version-sort (`sort -V` semantics), and backs up any node whose memory is untracked (every mode but `track-all`) before touching it. It refreshes the shipped node scripts from the source repo — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `finish.sh`, `learn.sh` — by exactly those ten names. Anything else under `.agent/scripts/` is the node's and is never overwritten. `update` never changes `indexes`: it carries forward whatever value the manifest already has. A fresh clone or `git worktree add` checkout of a `track-shared` node carries no `.agent/scripts/` at all; running `update` against it installs at minimum `index.sh` on a version-current node, or the full script set on one still mid-migration (`scripts/docs/node.md#installing-the-indexer-into-a-fresh-clone-or-worktree`). Selecting `indexes: generated` on a node already at the current version does not itself extract learned records or add the generated-mode gitignore lines — that only happens during a version migration or at a fresh `init` (`scripts/docs/node.md#adopting-generated-mode-after-reaching-the-current-version`), a known, accepted limitation rather than a bug. The exception is a missing starter conf — `comments.conf`, `status.conf`, `log.conf` — which is seeded, the one write that cannot clobber node content. It applies the mechanical migrations for the version gap (e.g. the memory-split baseline: `memory/` created, `memory.md`'s prior body moved verbatim to `memory/legacy.md`, a fresh index written), and writes `migration_target` into the manifest, holding the version this migration is moving toward. **`version` itself is left untouched** — it stays at its pre-migration value until `finalize` stamps it, so a manifest carrying `migration_target` is legibly mid-migration however far reconciliation has gotten, and an interruption anywhere in `update` or in the agent's reconciliation is detectable from the manifest alone. `update`'s closing output names what's still owed: splitting `memory/legacy.md` into fact files, reconciling `rules/contract.md` and `docs/` against the current presets and operating model, then running `finalize`.
 
 A node newer than the script's target is left untouched. A node at the target version receives only recognized shape refreshes, such as a corrected memory header from the same pre-release, and is otherwise a no-op. A version migration backs up to `.agent.backup-v<old-version>`; a same-version shape refresh backs up to `.agent.backup-v<version>-shape`, so the two paths never collide with each other. A collision on the version-migration backup is not always a stop: if `migration_target` already names the version this run is moving toward, the existing backup is read as an earlier run's interrupted snapshot and this run resumes against it rather than re-copying over it — running `update` again after an interruption (a crashed process, a killed session) is exactly how a stalled migration continues. Any other collision on that path aborts, unchanged, with a "backup path already exists" refusal; the same-version shape-refresh backup has no resume case and always aborts the same way on collision. A node missing its manifest entirely (bootstrapped pre-V6, or the stamp was lost) is not something the script restores mechanically: read `CHANGELOG.md`, the pre-V6 migration checklist, and update the node by hand.
 
@@ -582,6 +595,12 @@ Each eval prompt runs **twice** under one arm variable, and the result is the de
 The set is organized by the phase of the [trust contract](#the-trust-contract) each eval tests, not by the bug that prompted it — a set organized by bug report drifts toward whatever failed most recently, and `test.sh` asserts every phase in that table carries at least one eval. The corpus supplies most of its own graders: `comments.sh` by finding class, `status.sh` by its own flags, `links.sh` by reachability, plus tree diffs and the agent's call trace for ordering. What stays manual is what needs judgement, and it is graded blind.
 
 No eval runs in CI. A run costs model tokens, needs an agent configured against a model someone is paying for, and returns a distribution rather than a bit. What does ride CI is static: the spec's shape, a fixture build, the grader's check language driven against fixed artifacts, and the runner's refusal to guess an agent. `evals/README.md` carries the procedure.
+
+### A measured run at generated-index and learning-admission scope
+
+The 2026-09-20 rerun (`tmp/merge-6.2/f20e-rerun-2026-09-20.md`) ran both CLIs against every in-scope eval, at the corpus revisions in this branch's history, generated- and manual-index arms both. Auto-graded assertions on the eight learning-admission evals were identical between the two index modes on every negative case — no spurious rule, no duplicate, no order-scale rule, a contradiction superseded in place, a preference updated at the same slug — on both CLIs and both prompt sets (`spec.json` and `heldout.json`). Where the two arms diverged, per that report, it was the destination of a durable write, not whether one happened.
+
+The report's own "Still open" section attaches qualifiers this document carries forward rather than resolving: whether contributor-facing project knowledge belongs under `.agent/` or in the repository's own docs is an open question the corpus does not answer, and this document takes no position on it. Two of the eval bench's own prompts carry known defects — one references a cap the fixture lacks, one asks for an inbound surface the fixture's client does not have — and are bench issues, not shipped-corpus defects. The rerun's human-graded assertions (64 records in `f20e-manual-grades-round1.md`, 244 in `f20e-manual-grades-round2.md`) were graded blind by a subagent; per the report's own count, 275 of those human-graded records still carry that subagent's verdict, awaiting the operator's override, not a final one. None of the above is a release-readiness claim: F9's release gate — a confirmed baseline, a frozen candidate, a repeat count, a cost or time ceiling — remains unmet.
 
 ---
 
