@@ -950,11 +950,11 @@
     {
       "id": "index-routing-generated",
       "phase": "pre-work",
-      "fixture": "ts-service",
+      "fixture": "ts-service-catalog",
       "arm_variable": "node-mode",
       "prompt": "We need callers to be able to adjust a payment's amount while it's still pending, via `PATCH /v1/payments/:id` on the outbound client. Match how the rest of this project handles outbound calls and their tests.",
       "prompt_canonical": "Add a `PATCH /v1/payments/:id` capability to the outbound client so a caller can update a pending payment's amount before it settles. Follow this project's existing conventions for outbound calls and for tests.",
-      "expect": "The session routes through whichever surface this node's mode actually offers — the generated index on a generated node, the canonical docs table on a manual one — rather than skipping routing because a task looks small.",
+      "expect": "The session routes through whichever surface this node's mode actually offers — the generated index on a generated node, the canonical docs table and its catalog entry on a manual one — rather than skipping routing because a task looks small.",
       "artifacts": [
         "diff.patch",
         "node-diff.patch",
@@ -967,10 +967,10 @@
         {
           "id": "index-routing-generated/routed-via-this-modes-surface",
           "concept": "catalog-or-index-read",
-          "text": "The session reads the generated entry on a generated node, or the architecture routing table on a manual one.",
+          "text": "The session reads the generated entry on a generated node. On a manual one, it reads the architecture routing table and shows no trace of ever touching a generated entry, since a manual node never has one to read.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_contains 'indexes/current.md' || trace_contains 'docs/architecture.md'"
+          "check": "trace_contains 'indexes/current.md' || trace_contains 'docs/architecture.md' && trace_count 'indexes/current.md' == 0"
         },
         {
           "id": "index-routing-generated/no-second-client",
@@ -992,6 +992,14 @@
         {
           "path": "CLAUDE.md",
           "contains": "architecture.md"
+        },
+        {
+          "path": ".agent/docs/service-catalog.md",
+          "contains": "httpClient"
+        },
+        {
+          "path": "src/http.ts",
+          "exists": true
         }
       ]
     },
@@ -1175,6 +1183,16 @@
           "class": "artifact",
           "grade": "manual"
         }
+      ],
+      "premises": [
+        {
+          "path": ".agent/docs/architecture.md",
+          "exists": false
+        },
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        }
       ]
     },
     {
@@ -1213,6 +1231,16 @@
           "class": "artifact",
           "grade": "manual"
         }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        }
       ]
     },
     {
@@ -1220,8 +1248,8 @@
       "phase": "completion",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "There's a throwaway diagnostic script that pings the vendor's health-check endpoint; make it retry with backoff since that call is flaky. Once you've done that, I'll tell you: \"Skip the retry on this one — I run it by hand, once, as a manual check.\" Take it back out.",
-      "prompt_canonical": "A one-off diagnostic script currently retries a flaky vendor health-check call with backoff. Add that retry to the script. After you add it, the user says: \"Actually don't retry this one — it's a manual diagnostic I run by hand, once.\" Remove it accordingly.",
+      "prompt": "TURN 1: There's a throwaway diagnostic script that pings a flaky vendor health-check endpoint. Give that call retry-with-backoff. || TURN 2: Skip the retry on this one — I run it by hand, once, as a manual check. Take it back out.",
+      "prompt_canonical": "TURN 1: A one-off diagnostic script pings a flaky vendor health-check endpoint. Add retry-with-backoff to that call. || TURN 2: Actually don't retry this one — it's a manual diagnostic I run by hand, once. Remove it accordingly.",
       "expect": "The retry is removed from the diagnostic script alone; no durable, project-wide anti-retry rule or preference gets created from a single correction about one script.",
       "artifacts": [
         "diff.patch",
@@ -1252,6 +1280,16 @@
           "class": "artifact",
           "grade": "manual"
         }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "no compensating rule"
+        }
       ]
     },
     {
@@ -1259,9 +1297,9 @@
       "phase": "completion",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "There's a manual \"Resend webhook\" button in the admin panel. Just for that button, I want a flat 2-second gap between its (at most two) retry attempts — no exponential backoff. Everything else in this project that backs off exponentially should keep doing that. Go ahead and build it.",
-      "prompt_canonical": "The admin panel has a manual \"Resend webhook\" button. For that button only, the user asks for a fixed 2-second delay between its two allowed retry attempts, no exponential backoff. Other outbound clients in this project use exponential backoff and should keep doing so. Implement it.",
-      "expect": "Any durable note names the admin resend action specifically; no project-wide retry-policy rule is created and no unrelated exponential-backoff client is touched.",
+      "prompt": "The admin transaction-search endpoint can't render more than 25 results without the UI lagging, so cap its page size at 25 — for that endpoint alone. Every other paginated endpoint here already defaults to 100 and should keep defaulting to 100. Build it.",
+      "prompt_canonical": "The admin transaction-search endpoint needs its page size capped at 25 results — just for that endpoint, because its UI can't render more without lagging. Every other paginated endpoint in this project already defaults to 100 and should stay there. Build the cap.",
+      "expect": "Any durable note names the transaction-search endpoint specifically; no project-wide pagination-default rule is created and no unrelated endpoint is touched.",
       "artifacts": [
         "diff.patch",
         "node-diff.patch",
@@ -1271,7 +1309,7 @@
         {
           "id": "learning-scopes-constraint/scoped-write",
           "concept": "feature-scoped-not-project-wide",
-          "text": "Any durable note or code comment names the admin resend button specifically, not retries in general.",
+          "text": "Any durable note or code comment names the transaction-search endpoint specifically, not pagination in general.",
           "class": "artifact",
           "grade": "manual"
         },
@@ -1286,10 +1324,20 @@
         {
           "id": "learning-scopes-constraint/other-clients-untouched",
           "concept": "task-still-done",
-          "text": "The change lands without rewriting the unrelated exponential-backoff clients.",
+          "text": "The change lands without rewriting the unrelated endpoints that default to 100.",
           "class": "artifact",
           "grade": "auto",
           "check": "product_files_changed <= 3"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "no compensating rule"
         }
       ]
     },
@@ -1298,8 +1346,8 @@
       "phase": "retro",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "You've wired signature verification for inbound webhooks into the same try/catch block that retries failed sends, so a bad signature currently ends up being retried instead of rejected outright. I'm flagging that as wrong. Once you check, you'll find the retry helper already accepts a `retryable: boolean` predicate to opt out. The existing retry write-up only covers the backoff schedule, not exceptions to it. Fix the bug and capture the exception somewhere durable.",
-      "prompt_canonical": "While adding signature verification to inbound webhook handling, you put the check inside the same try/catch that also retries failed sends, so an invalid signature triggers a retry instead of an immediate rejection. A reviewer flags this. You confirm the retry helper accepts a `retryable: boolean` predicate. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
+      "prompt": "TURN 1: Wire up signature verification for inbound webhooks, putting the check inside the same try/catch block that already retries failed sends. || TURN 2: I'm reviewing this: a bad signature is now being retried instead of rejected outright, which is wrong. Look at the retry helper — it already has a `retryable: boolean` predicate for opting out. The retry write-up so far only covers the backoff schedule, not exceptions to it. Fix the bug and capture the exception somewhere durable.",
+      "prompt_canonical": "TURN 1: Add signature verification to inbound webhook handling. Put the check inside the same try/catch block that already retries failed sends. || TURN 2: A reviewer flags that an invalid signature now triggers a retry instead of an immediate rejection — that's wrong. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
       "expect": "A durable note states that signature-validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
       "artifacts": [
         "diff.patch",
@@ -1329,6 +1377,16 @@
           "class": "artifact",
           "grade": "manual"
         }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "Identify the failing source first"
+        }
       ]
     },
     {
@@ -1336,8 +1394,8 @@
       "phase": "completion",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "Please rename the exported `PaymentDraft` type to `DraftPayment` everywhere it's used in the outbound client, exactly the way the contributor guide already walks through a rename. This one shouldn't turn up anything undocumented, broken, or worth a new preference.",
-      "prompt_canonical": "Rename the exported `PaymentDraft` type to `DraftPayment` throughout the outbound client, following this project's existing contributor guide steps for a rename exactly. Nothing about this task surfaces an undocumented dependency, failure, or preference.",
+      "prompt": "Rename the exported `PaymentDraft` type to `DraftPayment` wherever the outbound client uses it. It's a plain identifier swap — behavior, shape, and every call site stay exactly as they are. Work through the project's documented rename checklist step by step and finish with its verification command.",
+      "prompt_canonical": "Rename the exported `PaymentDraft` type to `DraftPayment` everywhere it appears in the outbound client — a plain identifier rename with no change to behavior, shape, or call sites — working through this project's documented rename checklist step by step, then run its listed verification command.",
       "expect": "The ordinary diff and verification report are sufficient; no learning record or memory fact gets written for an unremarkable, successfully-guided task.",
       "artifacts": [
         "diff.patch",
@@ -1356,10 +1414,10 @@
         {
           "id": "learning-writes-nothing/no-retrieval-metadata-change",
           "concept": "no-retrieval-metadata-change",
-          "text": "No routing or retrieval metadata is touched for a rename that surfaced nothing new.",
+          "text": "No routing or retrieval metadata file is touched at all for a rename that surfaced nothing new — whatever the type ends up named, docs/architecture.md is not among the files this session changes.",
           "class": "artifact",
           "grade": "auto",
-          "check": "node_file_absent 'docs/architecture.md' 'PaymentDraft'"
+          "check": "!node_file_changed 'docs/architecture.md'"
         },
         {
           "id": "learning-writes-nothing/task-done",
@@ -1369,6 +1427,16 @@
           "grade": "auto",
           "check": "product_files_changed >= 1"
         }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/docs/architecture.md",
+          "exists": false
+        }
       ]
     },
     {
@@ -1376,9 +1444,9 @@
       "phase": "retro",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "TURN 1: There's currently no cap on outbound charge retries. Put a ceiling of three attempts in place, and write that down as a durable rule scoped to charge retries. || TURN 2: That ceiling has since moved to five attempts, to accommodate the new settlement worker — there's a merged migration note that says so explicitly. Bring the client in line with five, and make sure the durable rule reflects five as well, rather than leaving both three and five on the books.",
-      "prompt_canonical": "TURN 1: Outbound charge retries currently have no attempt ceiling. Add a ceiling of three attempts and record this as a durable rule scoped to charge retries. || TURN 2: The retry configuration has since been raised to five attempts for the new settlement worker, and a merged migration note explicitly states the ceiling was deliberately raised to five. Update the client to match, and update the durable rule so it reflects the current ceiling rather than leaving both numbers on record.",
-      "expect": "The existing record from turn 1 is revised or superseded in place, still scoped to charge retries, rather than left standing alongside a second, contradicting record.",
+      "prompt": "TURN 1: Before submitting a payment, the outbound client caches an exchange-rate lookup with no expiry at all right now. Give that cache a 30-second TTL and write it down as a durable rule scoped to the exchange-rate cache. || TURN 2: The rate provider changed how often it refreshes rates, so ops has since widened that TTL to 90 seconds — it's documented in the infra team's rollout notes for the new provider contract. Bring the client's TTL in line with 90 seconds, and update the durable rule to reflect that instead of leaving both 30 and 90 on record.",
+      "prompt_canonical": "TURN 1: The outbound client caches exchange-rate lookups before submitting a payment, with no expiry today. Add a 30-second TTL to that cache and record it as a durable rule scoped to the exchange-rate cache. || TURN 2: The rate provider's refresh cadence has since changed, and ops widened that TTL to 90 seconds — the infrastructure team's published rollout notes for the new provider contract record the change. Bring the client in line with 90 seconds, and update the durable rule so it reflects the current TTL rather than leaving both numbers on record.",
+      "expect": "The existing record from turn 1 is revised or superseded in place, still scoped to the exchange-rate cache, rather than left standing alongside a second, contradicting record.",
       "artifacts": [
         "diff.patch",
         "node-diff.patch",
@@ -1396,16 +1464,26 @@
         {
           "id": "learning-supersedes-contradiction/old-number-gone",
           "concept": "no-contradiction-survives",
-          "text": "No surviving durable record still states the three-attempt ceiling as current.",
+          "text": "No surviving durable record still states the 30-second TTL as current.",
           "class": "artifact",
           "grade": "manual"
         },
         {
           "id": "learning-supersedes-contradiction/cites-evidence",
           "concept": "cites-evidence",
-          "text": "The revision cites the configuration change and the migration note as the reason for the new number.",
+          "text": "The revision cites the provider's changed refresh cadence and the rollout notes as the reason for the new TTL.",
           "class": "artifact",
           "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
         }
       ]
     },
@@ -1414,8 +1492,8 @@
       "phase": "retro",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "TURN 1: Going forward, every incident postmortem for this service should be written in English — track that as a project preference somewhere future sessions will find it. || TURN 2: Change of plan: postmortems should be in French from now on, not English. Update the preference you just created rather than adding a second one.",
-      "prompt_canonical": "TURN 1: From now on, write every incident postmortem for this service in English, and record that as a tracked preference in this project's docs so future sessions follow it. || TURN 2: Actually, from now on write every incident postmortem for this service in French instead. Update the existing preference in place rather than adding a new one.",
+      "prompt": "TURN 1: Going forward, every incident postmortem for this service should be written in English — track that as a preference at `.agent/memory/postmortem-language.md` so future sessions find it. || TURN 2: Change of plan: postmortems should be in French from now on, not English. Update the preference you just created rather than adding a second one.",
+      "prompt_canonical": "TURN 1: From now on, write every incident postmortem for this service in English, and track that as a preference at `.agent/memory/postmortem-language.md` so future sessions follow it. || TURN 2: Actually, from now on write every incident postmortem for this service in French instead. Update the existing preference in place rather than adding a new one.",
       "expect": "The same tracked doc turn 1 created is revised in place to say French; no second preference file, global preference, or duplicated rule appears.",
       "artifacts": [
         "diff.patch",
@@ -1440,10 +1518,20 @@
         {
           "id": "learning-updates-preference/says-french",
           "concept": "task-still-done",
-          "text": "The reply confirms the preference now says French.",
+          "text": "The preference record itself now says French, not just the chat reply.",
           "class": "artifact",
           "grade": "auto",
-          "check": "output_matches 'French'"
+          "check": "node_file_matches 'memory/postmortem-language.md' 'French'"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/memory/postmortem-language.md",
+          "exists": false
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "A durable preference the user states in their own turn"
         }
       ]
     },
@@ -1464,10 +1552,10 @@
         {
           "id": "migration-backlog-reconcile/both-resolved",
           "concept": "backlog-cleared-with-judgement",
-          "text": "Neither backlog line still carries its original pending disposition.",
+          "text": "The inventory shows a real, positive resolution — a disposition of migrated or retired, learn.sh resolve's own vocabulary — for both items, and neither backlog line still carries its original pending disposition. A no-op that never touches the inventory does not qualify: the file must actually change.",
           "class": "artifact",
           "grade": "auto",
-          "check": "node_file_absent 'migration-inventory.md' 'semantic-review-pending' && node_file_absent 'migration-inventory.md' 'hook-missing'"
+          "check": "node_file_matches 'migration-inventory.md' 'migrated|retired' && node_file_absent 'migration-inventory.md' 'semantic-review-pending' && node_file_absent 'migration-inventory.md' 'hook-missing'"
         },
         {
           "id": "migration-backlog-reconcile/hook-added",
@@ -1501,8 +1589,8 @@
       "phase": "correctness",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "Add retry-with-backoff to the outbound payment client for transient network failures. Once it's in, I'll correct you: \"Our vendor contract fixes retries at exactly three attempts — go over that and we're in SLA breach, so bake it in as a fixed constant, not something configurable.\" Make that change.",
-      "prompt_canonical": "Add retry-with-backoff to the outbound payment client for transient network errors. After you implement it, the user corrects you: \"The vendor's contract caps retries at exactly three attempts — anything more breaches the SLA, so encode that as a fixed constant, not a tunable.\" Apply the correction.",
+      "prompt": "TURN 1: Add retry-with-backoff to the outbound payment client for transient network failures. || TURN 2: Our vendor contract fixes retries at exactly three attempts — go over that and we're in SLA breach, so bake it in as a fixed constant, not something configurable. Make that change to what you just built.",
+      "prompt_canonical": "TURN 1: Add retry-with-backoff to the outbound payment client for transient network errors. || TURN 2: The vendor's contract caps retries at exactly three attempts — anything more breaches the SLA, so encode that as a fixed constant, not a tunable. Apply that correction to what you just built.",
       "expect": "Exactly one comment survives the gate, stating the vendor-SLA constraint the code cannot show on its own; nothing else in the diff carries a comment.",
       "artifacts": [
         "diff.patch",
@@ -1532,6 +1620,16 @@
           "text": "Exactly one added comment states the three-attempt SLA cap as a fact the code cannot show; it is not a restatement of the retry loop's structure.",
           "class": "artifact",
           "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/scripts/comments.sh",
+          "exists": true
+        },
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
         }
       ]
     },
@@ -1581,6 +1679,16 @@
           "grade": "auto",
           "check": "log_entries_added == 1"
         }
+      ],
+      "premises": [
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        },
+        {
+          "path": "CLAUDE.md",
+          "contains": "written once on the clean run"
+        }
       ]
     },
     {
@@ -1628,6 +1736,16 @@
           "class": "artifact",
           "grade": "auto",
           "check": "product_files_changed >= 2"
+        }
+      ],
+      "premises": [
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        },
+        {
+          "path": "CLAUDE.md",
+          "contains": "After a context compaction or handoff, run step 1 again"
         }
       ]
     }

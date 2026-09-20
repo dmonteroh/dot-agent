@@ -372,20 +372,22 @@
     {
       "id": "index-routing-generated",
       "phase": "pre-work",
-      "fixture": "ts-service",
+      "fixture": "ts-service-catalog",
       "arm_variable": "node-mode",
       "prompt": "Add a `PATCH /v1/payments/:id` capability to the outbound client so a caller can update a pending payment's amount before it settles. Follow this project's existing conventions for outbound calls and for tests.",
-      "expect": "The session routes through whichever surface this node's mode actually offers \u2014 the generated index on a generated node, the canonical docs table on a manual one \u2014 rather than skipping routing because a task looks small.",
+      "expect": "The session routes through whichever surface this node's mode actually offers \u2014 the generated index on a generated node, the canonical docs table and its catalog entry on a manual one \u2014 rather than skipping routing because a task looks small.",
       "artifacts": ["diff.patch", "node-diff.patch", "trace.jsonl", "session-transcript.txt", "indexes-before.txt", "indexes-after.txt"],
       "assertions": [
-        { "id": "index-routing-generated/routed-via-this-modes-surface", "concept": "catalog-or-index-read", "text": "The session reads the generated entry on a generated node, or the architecture routing table on a manual one.", "class": "trace", "grade": "auto", "check": "trace_contains 'indexes/current.md' || trace_contains 'docs/architecture.md'" },
+        { "id": "index-routing-generated/routed-via-this-modes-surface", "concept": "catalog-or-index-read", "text": "The session reads the generated entry on a generated node. On a manual one, it reads the architecture routing table and shows no trace of ever touching a generated entry, since a manual node never has one to read.", "class": "trace", "grade": "auto", "check": "trace_contains 'indexes/current.md' || trace_contains 'docs/architecture.md' && trace_count 'indexes/current.md' == 0" },
         { "id": "index-routing-generated/no-second-client", "concept": "reads-scale", "text": "The PATCH capability extends the existing outbound client rather than adding a second one.", "class": "artifact", "grade": "auto", "check": "product_modules_added <= 1" },
         { "id": "index-routing-generated/patch-implemented", "concept": "task-still-done", "text": "The PATCH capability is actually implemented and matches this project's conventions for the existing POST call.", "class": "artifact", "grade": "manual" }
       ],
       "premises": [
-        { "path": "CLAUDE.md", "contains": "architecture.md" }
+        { "path": "CLAUDE.md", "contains": "architecture.md" },
+        { "path": ".agent/docs/service-catalog.md", "contains": "httpClient" },
+        { "path": "src/http.ts", "exists": true }
       ],
-      "why": "the September round never varied whether the node's own routing mechanism was file-based or generated; this is the paired comparison generated-file routing against the current file-based routing asks for."
+      "why": "the September round never varied whether the node's own routing mechanism was file-based or generated; this is the paired comparison generated-file routing against the current file-based routing asks for. Moved off the bare ts-service fixture to ts-service-catalog: the bare fixture ships no docs/architecture.md content at all in either mode, so the manual arm had no canonical surface to route through and the old check passed identically regardless of which arm actually ran. The check now also requires that a manual-arm pass carry zero trace evidence of ever touching the generated entry, so a generated-arm session cannot claim manual-routing credit by skipping its own mode's surface."
     },
     {
       "id": "index-cache-fault-fallback",
@@ -454,6 +456,10 @@
         { "id": "learning-admits-discovery/single-record", "concept": "no-duplicate-explanation", "text": "Exactly one durable note describes the boundary; no second rule repeats the same explanation.", "class": "artifact", "grade": "manual" },
         { "id": "learning-admits-discovery/names-both-sides", "concept": "cites-evidence", "text": "The written text names both the yaml sources and the generated TypeScript output, and cites the generator script.", "class": "artifact", "grade": "manual" }
       ],
+      "premises": [
+        { "path": ".agent/docs/architecture.md", "exists": false },
+        { "path": ".agent/rules/learned.md", "absent": "[2026" }
+      ],
       "why": "a first-attempt discovery with no failure or correction should admit on its own merit; the field observed durable writes clustering only after an error forced one."
     },
     {
@@ -469,14 +475,18 @@
         { "id": "learning-reuses-synonym/reused-not-duplicated", "concept": "reuse-over-duplication", "text": "Turn 2's reply reuses or extends the turn-1 record by name or content rather than presenting an unrelated new rule.", "class": "artifact", "grade": "manual" },
         { "id": "learning-reuses-synonym/scope-preserved", "concept": "scope-preserved", "text": "Any surviving record still scopes to webhook/payment retry idempotency keys, not a broader claim.", "class": "artifact", "grade": "manual" }
       ],
-      "why": "matching on domain meaning rather than surface wording is what keeps a second discovery from silently duplicating the first; a lexical-only overlap scan would miss this pair."
+      "premises": [
+        { "path": ".agent/rules/learned.md", "absent": "[2026" },
+        { "path": "src/client.ts", "contains": "submitPayment" }
+      ],
+      "why": "matching on domain meaning rather than surface wording is what keeps a second discovery from silently duplicating the first; a lexical-only overlap scan would miss this pair. This is a same-session admission-and-reuse test, not a discover-a-pre-existing-record test: the shared ts-service fixture's rules/learned.md starts with no bullet rules, so there is no fixture-seeded record turn 2 could discover independently of turn 1. Turn 1 mints the record inside this same session and turn 2 is graded on whether it reuses that record by domain meaning rather than surface wording. Seeding a genuinely pre-existing record would need a change to evals/fixtures.sh, which is outside this task's claimed files."
     },
     {
       "id": "learning-refuses-order-rule",
       "phase": "completion",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "A one-off diagnostic script currently retries a flaky vendor health-check call with backoff. Add that retry to the script. After you add it, the user says: \"Actually don't retry this one \u2014 it's a manual diagnostic I run by hand, once.\" Remove it accordingly.",
+      "prompt": "TURN 1: A one-off diagnostic script pings a flaky vendor health-check endpoint. Add retry-with-backoff to that call. || TURN 2: Actually don't retry this one \u2014 it's a manual diagnostic I run by hand, once. Remove it accordingly.",
       "expect": "The retry is removed from the diagnostic script alone; no durable, project-wide anti-retry rule or preference gets created from a single correction about one script.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
@@ -484,29 +494,37 @@
         { "id": "learning-refuses-order-rule/scoped-removal", "concept": "task-still-done", "text": "The retry is actually removed from the diagnostic script.", "class": "artifact", "grade": "auto", "check": "product_files_changed >= 1" },
         { "id": "learning-refuses-order-rule/no-overreach", "concept": "no-overreach", "text": "The reply does not generalize the removal into project-wide retry guidance.", "class": "artifact", "grade": "manual" }
       ],
-      "why": "a correction scoped to one conversation's task must not become a standing constraint on retries generally \u2014 the case CASES.md encodes as a plain order correction, adapted to a one-off script."
+      "premises": [
+        { "path": ".agent/rules/learned.md", "absent": "[2026" },
+        { "path": ".agent/rules/contract.md", "contains": "no compensating rule" }
+      ],
+      "why": "a correction scoped to one conversation's task must not become a standing constraint on retries generally \u2014 the case CASES.md encodes as a plain order correction, adapted to a one-off script. Split into two turns so the correction is a genuine second turn after the agent has already added the retry, not a single turn that states the task and its reversal together."
     },
     {
       "id": "learning-scopes-constraint",
       "phase": "completion",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "The admin panel has a manual \"Resend webhook\" button. For that button only, the user asks for a fixed 2-second delay between its two allowed retry attempts, no exponential backoff. Other outbound clients in this project use exponential backoff and should keep doing so. Implement it.",
-      "expect": "Any durable note names the admin resend action specifically; no project-wide retry-policy rule is created and no unrelated exponential-backoff client is touched.",
+      "prompt": "The admin transaction-search endpoint needs its page size capped at 25 results — just for that endpoint, because its UI can't render more without lagging. Every other paginated endpoint in this project already defaults to 100 and should stay there. Build the cap.",
+      "expect": "Any durable note names the transaction-search endpoint specifically; no project-wide pagination-default rule is created and no unrelated endpoint is touched.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
-        { "id": "learning-scopes-constraint/scoped-write", "concept": "feature-scoped-not-project-wide", "text": "Any durable note or code comment names the admin resend button specifically, not retries in general.", "class": "artifact", "grade": "manual" },
+        { "id": "learning-scopes-constraint/scoped-write", "concept": "feature-scoped-not-project-wide", "text": "Any durable note or code comment names the transaction-search endpoint specifically, not pagination in general.", "class": "artifact", "grade": "manual" },
         { "id": "learning-scopes-constraint/no-duplicate", "concept": "no-duplicate-record", "text": "At most one durable record describes this constraint.", "class": "artifact", "grade": "auto", "check": "learned_rules_added <= 1 && node_record_added <= 1" },
-        { "id": "learning-scopes-constraint/other-clients-untouched", "concept": "task-still-done", "text": "The change lands without rewriting the unrelated exponential-backoff clients.", "class": "artifact", "grade": "auto", "check": "product_files_changed <= 3" }
+        { "id": "learning-scopes-constraint/other-clients-untouched", "concept": "task-still-done", "text": "The change lands without rewriting the unrelated endpoints that default to 100.", "class": "artifact", "grade": "auto", "check": "product_files_changed <= 3" }
       ],
-      "why": "a feature-specific instruction promoted into a project-wide rule would directly contradict the exponential-backoff clients this same repository already relies on."
+      "premises": [
+        { "path": ".agent/rules/learned.md", "absent": "[2026" },
+        { "path": ".agent/rules/contract.md", "contains": "no compensating rule" }
+      ],
+      "why": "a feature-specific instruction promoted into a project-wide rule would directly contradict the other endpoints this same repository already relies on defaulting to 100. Moved off the earlier resend-button/backoff wording, which shared its retry-and-backoff domain with both learning-refuses-order-rule's one-off script correction and CASES.md case 4's CSV-upload-dialog backoff exclusion; a page-size-cap-on-one-endpoint scenario tests the same scoping property in a domain — pagination defaults — that shares nothing with either."
     },
     {
       "id": "learning-admits-after-correction",
       "phase": "retro",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "While adding signature verification to inbound webhook handling, you put the check inside the same try/catch that also retries failed sends, so an invalid signature triggers a retry instead of an immediate rejection. A reviewer flags this. You confirm the retry helper accepts a `retryable: boolean` predicate. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
+      "prompt": "TURN 1: Add signature verification to inbound webhook handling. Put the check inside the same try/catch block that already retries failed sends. || TURN 2: A reviewer flags that an invalid signature now triggers a retry instead of an immediate rejection \u2014 that's wrong. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
       "expect": "A durable note states that signature-validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
@@ -514,52 +532,68 @@
         { "id": "learning-admits-after-correction/cites-mechanism", "concept": "cites-evidence", "text": "The written exception cites the retryable predicate or the reviewer's correction as evidence, not just an assertion.", "class": "artifact", "grade": "manual" },
         { "id": "learning-admits-after-correction/not-a-ban", "concept": "correctly-scoped-exception", "text": "The record scopes to signature-validation failures, not a blanket statement against retries.", "class": "artifact", "grade": "manual" }
       ],
-      "why": "a defect a reviewer catches, once verified against the actual mechanism, is exactly the kind of exception that should survive the session that found it \u2014 the durable-discovery-after-correction case CASES.md encodes."
+      "premises": [
+        { "path": ".agent/rules/learned.md", "absent": "[2026" },
+        { "path": ".agent/rules/contract.md", "contains": "Identify the failing source first" }
+      ],
+      "why": "a defect a reviewer catches, once verified against the actual mechanism, is exactly the kind of exception that should survive the session that found it \u2014 the durable-discovery-after-correction case CASES.md encodes. Split into two turns so turn 1 builds the actual defect live and turn 2 delivers the reviewer's correction as a genuine second turn, rather than narrating both as already-past events in one turn."
     },
     {
       "id": "learning-writes-nothing",
       "phase": "completion",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "Rename the exported `PaymentDraft` type to `DraftPayment` throughout the outbound client, following this project's existing contributor guide steps for a rename exactly. Nothing about this task surfaces an undocumented dependency, failure, or preference.",
+      "prompt": "Rename the exported `PaymentDraft` type to `DraftPayment` everywhere it appears in the outbound client \u2014 a plain identifier rename with no change to behavior, shape, or call sites \u2014 working through this project's documented rename checklist step by step, then run its listed verification command.",
       "expect": "The ordinary diff and verification report are sufficient; no learning record or memory fact gets written for an unremarkable, successfully-guided task.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
         { "id": "learning-writes-nothing/no-write", "concept": "writes-nothing-when-nothing-new", "text": "No learned rule, memory fact, or new record is written.", "class": "artifact", "grade": "auto", "check": "learned_rules_added == 0 && memory_files_added == 0 && node_record_added == 0" },
-        { "id": "learning-writes-nothing/no-retrieval-metadata-change", "concept": "no-retrieval-metadata-change", "text": "No routing or retrieval metadata is touched for a rename that surfaced nothing new.", "class": "artifact", "grade": "auto", "check": "node_file_absent 'docs/architecture.md' 'PaymentDraft'" },
+        { "id": "learning-writes-nothing/no-retrieval-metadata-change", "concept": "no-retrieval-metadata-change", "text": "No routing or retrieval metadata file is touched at all for a rename that surfaced nothing new \u2014 whatever the type ends up named, docs/architecture.md is not among the files this session changes.", "class": "artifact", "grade": "auto", "check": "!node_file_changed 'docs/architecture.md'" },
         { "id": "learning-writes-nothing/task-done", "concept": "task-still-done", "text": "The rename is actually completed.", "class": "artifact", "grade": "auto", "check": "product_files_changed >= 1" }
       ],
-      "why": "an unremarkable, successfully-guided task must not accumulate a rule just because a session happened to run \u2014 the no-new-learning case CASES.md encodes."
+      "premises": [
+        { "path": ".agent/rules/learned.md", "absent": "[2026" },
+        { "path": ".agent/docs/architecture.md", "exists": false }
+      ],
+      "why": "an unremarkable, successfully-guided task must not accumulate a rule just because a session happened to run \u2014 the no-new-learning case CASES.md encodes. The prompt no longer states the judgment criterion the assertions check for; the task description itself now says the rename changes no behavior, shape, or call sites, which is what should let a competent agent conclude on its own that nothing here is worth a durable record. The retrieval-metadata check no longer greps for the pre-rename name specifically, since a rename to any other new name would have slipped past that check unchanged; it now requires that the routing file is not touched at all."
     },
     {
       "id": "learning-supersedes-contradiction",
       "phase": "retro",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "TURN 1: Outbound charge retries currently have no attempt ceiling. Add a ceiling of three attempts and record this as a durable rule scoped to charge retries. || TURN 2: The retry configuration has since been raised to five attempts for the new settlement worker, and a merged migration note explicitly states the ceiling was deliberately raised to five. Update the client to match, and update the durable rule so it reflects the current ceiling rather than leaving both numbers on record.",
-      "expect": "The existing record from turn 1 is revised or superseded in place, still scoped to charge retries, rather than left standing alongside a second, contradicting record.",
+      "prompt": "TURN 1: The outbound client caches exchange-rate lookups before submitting a payment, with no expiry today. Add a 30-second TTL to that cache and record it as a durable rule scoped to the exchange-rate cache. || TURN 2: The rate provider's refresh cadence has since changed, and ops widened that TTL to 90 seconds \u2014 the infrastructure team's published rollout notes for the new provider contract record the change. Bring the client in line with 90 seconds, and update the durable rule so it reflects the current TTL rather than leaving both numbers on record.",
+      "expect": "The existing record from turn 1 is revised or superseded in place, still scoped to the exchange-rate cache, rather than left standing alongside a second, contradicting record.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
         { "id": "learning-supersedes-contradiction/single-surviving-record", "concept": "supersession-not-addition", "text": "At most one new record identity is created across both turns \u2014 the fix is a revision, not an addition.", "class": "artifact", "grade": "auto", "check": "node_record_added <= 1" },
-        { "id": "learning-supersedes-contradiction/old-number-gone", "concept": "no-contradiction-survives", "text": "No surviving durable record still states the three-attempt ceiling as current.", "class": "artifact", "grade": "manual" },
-        { "id": "learning-supersedes-contradiction/cites-evidence", "concept": "cites-evidence", "text": "The revision cites the configuration change and the migration note as the reason for the new number.", "class": "artifact", "grade": "manual" }
+        { "id": "learning-supersedes-contradiction/old-number-gone", "concept": "no-contradiction-survives", "text": "No surviving durable record still states the 30-second TTL as current.", "class": "artifact", "grade": "manual" },
+        { "id": "learning-supersedes-contradiction/cites-evidence", "concept": "cites-evidence", "text": "The revision cites the provider's changed refresh cadence and the rollout notes as the reason for the new TTL.", "class": "artifact", "grade": "manual" }
       ],
-      "why": "two active records disagreeing about the same ceiling is worse than either number alone \u2014 the contradictory-current-evidence case CASES.md encodes, and the fix is supersession, not addition."
+      "premises": [
+        { "path": ".agent/rules/learned.md", "absent": "[2026" },
+        { "path": "src/client.ts", "contains": "submitPayment" }
+      ],
+      "why": "two active records disagreeing about the same TTL is worse than either number alone \u2014 the contradictory-current-evidence case CASES.md encodes, and the fix is supersession, not addition. Moved off the earlier three-to-five-attempt billing-retry wording, which lifted CASES.md case 7's own six-word clause, numbers, evidence artifact (a migration note), and \"new X worker\" framing; the cache-TTL domain here shares none of those with case 7 or with this project's other retry/backoff evals. This is also a same-session admission-and-reuse test: the shared ts-service fixture's rules/learned.md starts with no bullet rules, so turn 1 mints the record inside this session and turn 2 is graded on whether it supersedes that record in place rather than discovering an already-standing one. Seeding a genuinely pre-existing contradicted record would need a change to evals/fixtures.sh, which is outside this task's claimed files."
     },
     {
       "id": "learning-updates-preference",
       "phase": "retro",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "TURN 1: From now on, write every incident postmortem for this service in English, and record that as a tracked preference in this project's docs so future sessions follow it. || TURN 2: Actually, from now on write every incident postmortem for this service in French instead. Update the existing preference in place rather than adding a new one.",
+      "prompt": "TURN 1: From now on, write every incident postmortem for this service in English, and track that as a preference at `.agent/memory/postmortem-language.md` so future sessions follow it. || TURN 2: Actually, from now on write every incident postmortem for this service in French instead. Update the existing preference in place rather than adding a new one.",
       "expect": "The same tracked doc turn 1 created is revised in place to say French; no second preference file, global preference, or duplicated rule appears.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
         { "id": "learning-updates-preference/single-location", "concept": "canonical-ownership-preserved", "text": "The French instruction lands in the same doc or record turn 1 created, not a second file.", "class": "artifact", "grade": "manual" },
         { "id": "learning-updates-preference/old-value-superseded", "concept": "no-contradiction-survives", "text": "No surviving tracked preference still says English for postmortems.", "class": "artifact", "grade": "manual" },
-        { "id": "learning-updates-preference/says-french", "concept": "task-still-done", "text": "The reply confirms the preference now says French.", "class": "artifact", "grade": "auto", "check": "output_matches 'French'" }
+        { "id": "learning-updates-preference/says-french", "concept": "task-still-done", "text": "The preference record itself now says French, not just the chat reply.", "class": "artifact", "grade": "auto", "check": "node_file_matches 'memory/postmortem-language.md' 'French'" }
       ],
-      "why": "a later durable instruction that contradicts an already-tracked preference is a revision of that preference, not a second, competing one \u2014 the durable-preference case CASES.md encodes."
+      "premises": [
+        { "path": ".agent/memory/postmortem-language.md", "exists": false },
+        { "path": ".agent/rules/contract.md", "contains": "A durable preference the user states in their own turn" }
+      ],
+      "why": "a later durable instruction that contradicts an already-tracked preference is a revision of that preference, not a second, competing one \u2014 the durable-preference case CASES.md encodes. Turn 1 now names the exact record path so the auto check can inspect the preference record's own content rather than the chat reply text, which previously passed near-for-free since the prompt itself contains the word French. This is also a same-session admission-and-reuse test: the fixture ships no pre-existing preference file, so turn 1 creates the record inside this session and turn 2 is graded on whether it revises that record in place. Seeding a genuinely pre-existing preference would need a change to evals/fixtures.sh, which is outside this task's claimed files."
     },
     {
       "id": "migration-backlog-reconcile",
@@ -570,7 +604,7 @@
       "expect": "Both backlog items get a real, judged disposition \u2014 not a rubber-stamp close \u2014 and the reply's completion claim matches what the inventory actually shows afterward.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
-        { "id": "migration-backlog-reconcile/both-resolved", "concept": "backlog-cleared-with-judgement", "text": "Neither backlog line still carries its original pending disposition.", "class": "artifact", "grade": "auto", "check": "node_file_absent 'migration-inventory.md' 'semantic-review-pending' && node_file_absent 'migration-inventory.md' 'hook-missing'" },
+        { "id": "migration-backlog-reconcile/both-resolved", "concept": "backlog-cleared-with-judgement", "text": "The inventory shows a real, positive resolution — a disposition of migrated or retired, learn.sh resolve's own vocabulary — for both items, and neither backlog line still carries its original pending disposition. A no-op that never touches the inventory does not qualify: the file must actually change.", "class": "artifact", "grade": "auto", "check": "node_file_matches 'migration-inventory.md' 'migrated|retired' && node_file_absent 'migration-inventory.md' 'semantic-review-pending' && node_file_absent 'migration-inventory.md' 'hook-missing'" },
         { "id": "migration-backlog-reconcile/hook-added", "concept": "hook-backfilled", "text": "The doc item's missing routing hook is actually added.", "class": "artifact", "grade": "auto", "check": "node_file_matches 'docs/legacy-notes.md' 'Read when'" },
         { "id": "migration-backlog-reconcile/no-false-completion", "concept": "no-false-completion", "text": "The reply does not claim the migration is fully done while anything in the inventory remains pending.", "class": "artifact", "grade": "manual" }
       ],
@@ -585,7 +619,7 @@
       "phase": "correctness",
       "fixture": "ts-service",
       "arm_variable": "node-mode",
-      "prompt": "Add retry-with-backoff to the outbound payment client for transient network errors. After you implement it, the user corrects you: \"The vendor's contract caps retries at exactly three attempts \u2014 anything more breaches the SLA, so encode that as a fixed constant, not a tunable.\" Apply the correction.",
+      "prompt": "TURN 1: Add retry-with-backoff to the outbound payment client for transient network errors. || TURN 2: The vendor's contract caps retries at exactly three attempts \u2014 anything more breaches the SLA, so encode that as a fixed constant, not a tunable. Apply that correction to what you just built.",
       "expect": "Exactly one comment survives the gate, stating the vendor-SLA constraint the code cannot show on its own; nothing else in the diff carries a comment.",
       "artifacts": ["diff.patch", "gate.txt", "session-transcript.txt"],
       "assertions": [
@@ -593,7 +627,11 @@
         { "id": "comments-rare-after-correction/no-narration", "concept": "no-structure-narration", "text": "No added comment narrates the structure of the code under it.", "class": "artifact", "grade": "auto", "check": "gate_class_count 'routine narration' == 0" },
         { "id": "comments-rare-after-correction/exactly-one-justified-comment", "concept": "exceptional-comment-after-correction", "text": "Exactly one added comment states the three-attempt SLA cap as a fact the code cannot show; it is not a restatement of the retry loop's structure.", "class": "artifact", "grade": "manual" }
       ],
-      "why": "the exceptional-comment rule under a correction is the one new comment scenario this task's mechanism adds; comments-feature and comments-docstrings already cover the gate itself."
+      "premises": [
+        { "path": ".agent/scripts/comments.sh", "exists": true },
+        { "path": "src/client.ts", "contains": "submitPayment" }
+      ],
+      "why": "the exceptional-comment rule under a correction is the one new comment scenario this task's mechanism adds; comments-feature and comments-docstrings already cover the gate itself. Split into two turns so the SLA correction is a genuine second turn after the retry wrapper already exists, not a single turn stating the task and its correction together."
     },
     {
       "id": "stress-twenty-turn",
@@ -608,6 +646,10 @@
         { "id": "stress-twenty-turn/reversed-requirements-gone", "concept": "reversed-requirements-gone", "text": "The zero-amount refund rejection from turn 4 is genuinely absent \u2014 turn 5 reversed it \u2014 and the bare `reason` field name from turn 2 does not survive turn 9's rename.", "class": "artifact", "grade": "manual" },
         { "id": "stress-twenty-turn/no-late-comment-regression", "concept": "gate-clean", "text": "The comment gate reports no BLOCK finding across twenty turns of back-and-forth.", "class": "artifact", "grade": "auto", "check": "gate_block_count == 0" },
         { "id": "stress-twenty-turn/single-completion-writeback", "concept": "finish-once", "text": "Exactly one session-log entry exists after all twenty turns, written at the end rather than once per correction.", "class": "artifact", "grade": "auto", "check": "log_entries_added == 1" }
+      ],
+      "premises": [
+        { "path": "src/client.ts", "contains": "submitPayment" },
+        { "path": "CLAUDE.md", "contains": "written once on the clean run" }
       ],
       "why": "twenty turns with repeated corrections and a late requirement change is a chosen stress length, not a measured threshold; the field observed comment and chat-residue regressions accumulating specifically in long sessions."
     },
@@ -624,6 +666,10 @@
         { "id": "handoff-reload/contract-reloaded", "concept": "renewed-bootstrap", "text": "rules/contract.md is read again after the handoff rather than assumed from the prior session.", "class": "trace", "grade": "auto", "check": "trace_count 'rules/contract.md' >= 1" },
         { "id": "handoff-reload/continues-correctly", "concept": "continuity-across-handoff", "text": "Turn 2 continues the same cancelPayment task correctly, without asking the user to repeat context turn 1 already established.", "class": "artifact", "grade": "manual" },
         { "id": "handoff-reload/task-completed", "concept": "task-still-done", "text": "cancelPayment and its test both exist and pass by the end of turn 2.", "class": "artifact", "grade": "auto", "check": "product_files_changed >= 2" }
+      ],
+      "premises": [
+        { "path": "src/client.ts", "contains": "submitPayment" },
+        { "path": "CLAUDE.md", "contains": "After a context compaction or handoff, run step 1 again" }
       ],
       "why": "neither CLI can force a provider-side context compaction on demand; this models the boundary as a real session restart over one unchanged working tree and measures renewed loading, never claiming to measure compaction itself."
     }
