@@ -72,6 +72,12 @@ A node actually migrating (its manifest version is older than this script's) and
 
 Once every record exists, `update` adds `.agent/indexes/` and `.agent/rules/learned.md` to the gitignore (in `track-shared` and `track-all`), runs `index.sh ensure` to regenerate `rules/learned.md` from the new records, and checks the regenerated file's bullets against the ones the migration started from. Only on an exact match — nothing added, dropped, or reworded — does it run `git rm --cached` on `rules/learned.md` to untrack it. A mismatch aborts before that untrack, so a file is never dropped from git on the strength of an aggregate that has not been proven to reproduce every original bullet. In `ignore-all`, outside a git work tree, or when `rules/learned.md` was never tracked to begin with, the untrack step is skipped and reported rather than treated as a failure. At `<root>` = `$HOME`, none of this — gitignore lines, the `ensure` regeneration, or the untrack — runs at all. `update` prints the same warning `init` does and leaves the gitignore and the aggregate for the node to reconcile by hand.
 
+### Adopting generated mode after reaching the current version
+
+Changing `indexes: manual` to `indexes: generated` on a version-current node does not make `update` extract learned records or add generated-mode ignore rules. This also applies to nodes upgraded in manual mode. Select generated mode before the version migration, or wait for a later version migration to adopt it. Fresh nodes can select generated mode at `init`.
+
+Running `index.sh ensure` after that manifest edit can build a cache from existing sources, but does not perform adoption. Under `track-shared`, `.agent/*` already ignores the cache. Under `track-all`, the cache can remain unignored without a matching ignore rule.
+
 ## Reverting to manual mode
 
 Generated mode has no `revert` subcommand. Going back to manual is a short procedure, safe because `rules/learned.md` is a lossless, path-sorted concatenation of every record under `rules/learned/` (`scripts/docs/index.md`) — nothing a rule ever said is discarded by any of these steps. If a record under `rules/learned/` changed more recently than the last `index.sh ensure`, run `ensure` once before starting, so `rules/learned.md` reflects every record before it stops being regenerated.
