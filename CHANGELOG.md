@@ -92,6 +92,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 - `run.sh` refuses an arm label that is also a component of the selected eval id. Such a label reaches every grading path and makes the blind rollup reject the completed run.
 - Manual fixtures omit `--indexes` when a historical corpus predates that flag. `run.sh` also identifies the selected eval, so fixture construction checks that scenario's premises instead of unrelated scenarios sharing its fixture.
 - `evals/v6.2-release-validation-2026-09-20.md` records the release pass before the compatibility fix above. No paired rollup was produced because every baseline fixture build failed. The report remains the candidate-only descriptive read and full failure trail for that run.
+- `evals/v6.2-release-validation-2026-09-21.md` supersedes that failed pass. Both agents completed every paired session at three repeats, then every unstable eval at five repeats. The candidate led by 8.8 percentage points on Claude and 19.3 on Codex, with zero regressions on both agents. Assertions that stayed mixed within an arm remain explicitly unstable and support no release claim.
 
 #### Mechanics
 
