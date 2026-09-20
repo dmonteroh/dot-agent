@@ -143,6 +143,18 @@ purpose="$agent/purpose.md"
 indexes_line=$(grep -m1 '^  indexes:' "$purpose" 2>/dev/null)
 indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
 [ -n "$indexes" ] || indexes=manual
+# A generated node whose indexer is gone cannot rebuild or verify its cache,
+# so the always-loaded set falls back to the canonical files, printed inline
+# exactly as on a manual node. The session then holds the rule text without
+# having to remember a fallback instruction, and a stale cache left on disk
+# is never the only thing it is pointed at. Advisory, not a finding:
+# checkpoint.sh already warns on the missing indexer without failing, and a
+# REPAIR here would turn that warning into a blocker.
+indexer="$agent/scripts/index.sh"
+load_mode="$indexes"
+if [[ "$indexes" == generated ]] && [[ ! -f "$indexer" ]]; then
+  load_mode=manual
+fi
 docs="$agent/docs"
 arch="$docs/architecture.md"
 
@@ -561,7 +573,7 @@ payload_add() { # $1: label  $2: file path
   payload_total=$((payload_total + fbytes))
   payload_detail="$payload_detail, $1 $fbytes"
 }
-if [[ "$indexes" == generated ]]; then
+if [[ "$load_mode" == generated ]]; then
   payload_add purpose "$purpose"
   payload_add memory "$memory"
 else
@@ -581,7 +593,7 @@ fi
 # same harness-truncation failure with a different cause, so the loop either
 # runs in full or not at all.
 if [[ "$load" -eq 1 ]]; then
-  if [[ "$indexes" == generated ]]; then
+  if [[ "$load_mode" == generated ]]; then
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
       echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
     else
@@ -593,6 +605,9 @@ if [[ "$load" -eq 1 ]]; then
       done
     fi
   else
+    if [[ "$indexes" == generated ]]; then
+      echo "Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."
+    fi
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
       echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
     else

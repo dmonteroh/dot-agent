@@ -20,7 +20,7 @@ set -u
 selfdir=$(cd "$(dirname "$0")" && pwd)
 reporoot=$(cd "$selfdir/.." && pwd)
 
-FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration"
+FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration ts-service-learning"
 
 usage() {
   cat <<'EOF'
@@ -74,6 +74,12 @@ Fixtures:
   ts-service-partial-migration a migrated node whose migration-inventory.md
                             carries a semantic-review-pending rule and a
                             hook-missing doc
+  ts-service-learning       plus the application code the eight learning-
+                            admission prompts talk about: a shared retry
+                            helper, webhook send and receive paths, an
+                            exchange-rate cache, three paginated admin
+                            endpoints, a generated webhook schema, a
+                            diagnostic script, and a rename checklist
 EOF
 }
 
@@ -166,7 +172,7 @@ mkdir -p "$dest" || exit 1
 dest=$(cd "$dest" && pwd)
 
 case "$fixture" in
-ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration)
+ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration | ts-service-learning)
   mkdir -p "$dest/src"
   cat >"$dest/package.json" <<'EOF'
 {
@@ -471,6 +477,276 @@ ts-service-index-fault)
   ;;
 ts-service-no-indexer)
   rm -f "$dest/.agent/scripts/index.sh"
+  ;;
+ts-service-learning)
+  # The eight learning-admission prompts each assume a piece of application
+  # code: a webhook retry helper, an inbound handler with a retry block, an
+  # exchange-rate cache, an admin search endpoint beside other paginated
+  # ones, a generated schema, a diagnostic script, a rename checklist. The
+  # first calibration run built them on the bare ts-service tree, and every
+  # session correctly refused to invent the missing code, so the positive
+  # half of every case graded 0/N. This fixture carries that code, small and
+  # runnable under `node --test`, and no documentation of any of it: what
+  # the session records, and whether it records at all, is the measurement.
+  mkdir -p "$dest/src/admin" "$dest/src/generated" "$dest/scripts" \
+    "$dest/webhooks/source" "$dest/docs"
+  cat >"$dest/src/domain.ts" <<'EOF'
+export interface Account {
+  accountId: string
+  displayName: string
+}
+
+export interface Money {
+  amountMinor: number
+  currency: string
+}
+EOF
+  cat >"$dest/src/retry.ts" <<'EOF'
+export interface RetryOptions {
+  attempts?: number
+  backoffMs?: number[]
+  retryable?: (err: unknown) => boolean
+}
+
+const DEFAULT_BACKOFF_MS = [200, 800, 2000]
+
+export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions = {}): Promise<T> {
+  const attempts = opts.attempts ?? 3
+  const backoff = opts.backoffMs ?? DEFAULT_BACKOFF_MS
+  const retryable = opts.retryable ?? (() => true)
+  let lastErr: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      if (!retryable(err) || i === attempts - 1) break
+      await new Promise((r) => setTimeout(r, backoff[Math.min(i, backoff.length - 1)]))
+    }
+  }
+  throw lastErr
+}
+EOF
+  cat >"$dest/src/exchangeRate.ts" <<'EOF'
+const rateCache = new Map<string, number>()
+
+export async function lookupRate(currency: string): Promise<number> {
+  const cached = rateCache.get(currency)
+  if (cached !== undefined) return cached
+  const res = await fetch(`https://rates.example/v1/${currency}`)
+  const body = (await res.json()) as { rate: number }
+  rateCache.set(currency, body.rate)
+  return body.rate
+}
+
+export function clearRateCache(): void {
+  rateCache.clear()
+}
+EOF
+  cat >"$dest/src/client.ts" <<'EOF'
+import { lookupRate } from "./exchangeRate.ts"
+import { withRetry } from "./retry.ts"
+
+export interface PaymentDraft {
+  id: string
+  accountId: string
+  amountMinor: number
+  currency: string
+}
+
+export interface Payment extends PaymentDraft {
+  rateApplied: number
+}
+
+export function paymentIdempotencyKey(p: PaymentDraft): string {
+  return `payment:${p.id}`
+}
+
+export async function submitPayment(draft: PaymentDraft): Promise<Response> {
+  const rateApplied = await lookupRate(draft.currency)
+  const p: Payment = { ...draft, rateApplied }
+  return withRetry(() =>
+    fetch("https://vendor.example/v1/payments", {
+      method: "POST",
+      headers: { "Idempotency-Key": paymentIdempotencyKey(p) },
+      body: JSON.stringify(p),
+    }),
+  )
+}
+EOF
+  cat >"$dest/src/client.test.ts" <<'EOF'
+import test from "node:test"
+import assert from "node:assert/strict"
+import { paymentIdempotencyKey, type PaymentDraft } from "./client.ts"
+
+test("payment idempotency key is stable for the same draft", () => {
+  const draft: PaymentDraft = { id: "p1", accountId: "acct-9", amountMinor: 1200, currency: "EUR" }
+  assert.equal(paymentIdempotencyKey(draft), paymentIdempotencyKey({ ...draft }))
+})
+EOF
+  cat >"$dest/src/webhookRetry.ts" <<'EOF'
+import { withRetry } from "./retry.ts"
+import type { WebhookEvent } from "./generated/webhookSchema.ts"
+
+export function webhookIdempotencyKey(event: WebhookEvent): string {
+  return `webhook:${event.id}`
+}
+
+export async function sendWebhook(event: WebhookEvent, target: string): Promise<Response> {
+  return withRetry(() =>
+    fetch(target, {
+      method: "POST",
+      headers: { "Idempotency-Key": webhookIdempotencyKey(event) },
+      body: JSON.stringify(event),
+    }),
+  )
+}
+EOF
+  cat >"$dest/src/webhookInbound.ts" <<'EOF'
+import { withRetry } from "./retry.ts"
+
+export interface InboundWebhook {
+  id: string
+  signature: string
+  body: string
+}
+
+export async function handleInboundWebhook(hook: InboundWebhook, ackUrl: string): Promise<void> {
+  try {
+    await withRetry(() =>
+      fetch(ackUrl, { method: "POST", body: JSON.stringify({ id: hook.id }) }),
+    )
+  } catch (err) {
+    throw new Error(`webhook ${hook.id} could not be acknowledged: ${String(err)}`)
+  }
+}
+EOF
+  cat >"$dest/src/pagination.ts" <<'EOF'
+export const DEFAULT_PAGE_SIZE = 100
+
+export interface Page<T> {
+  items: T[]
+  nextCursor: string | null
+}
+
+export function pageSize(requested?: number): number {
+  return requested && requested > 0 ? requested : DEFAULT_PAGE_SIZE
+}
+EOF
+  cat >"$dest/src/admin/transactionSearch.ts" <<'EOF'
+import { pageSize, type Page } from "../pagination.ts"
+
+export interface TransactionRow {
+  id: string
+  accountId: string
+  amountMinor: number
+}
+
+export async function searchTransactions(query: string, requestedPageSize?: number): Promise<Page<TransactionRow>> {
+  const size = pageSize(requestedPageSize)
+  const res = await fetch(`https://vendor.example/v1/admin/transactions?q=${encodeURIComponent(query)}&limit=${size}`)
+  return (await res.json()) as Page<TransactionRow>
+}
+EOF
+  cat >"$dest/src/admin/customers.ts" <<'EOF'
+import { pageSize, type Page } from "../pagination.ts"
+import type { Account } from "../domain.ts"
+
+export async function listCustomers(requestedPageSize?: number): Promise<Page<Account>> {
+  const size = pageSize(requestedPageSize)
+  const res = await fetch(`https://vendor.example/v1/admin/customers?limit=${size}`)
+  return (await res.json()) as Page<Account>
+}
+EOF
+  cat >"$dest/src/admin/refunds.ts" <<'EOF'
+import { pageSize, type Page } from "../pagination.ts"
+
+export interface RefundRow {
+  id: string
+  paymentId: string
+  amountMinor: number
+}
+
+export async function listRefunds(requestedPageSize?: number): Promise<Page<RefundRow>> {
+  const size = pageSize(requestedPageSize)
+  const res = await fetch(`https://vendor.example/v1/admin/refunds?limit=${size}`)
+  return (await res.json()) as Page<RefundRow>
+}
+EOF
+  cat >"$dest/webhooks/source/payment.created.yaml" <<'EOF'
+event: payment.created
+fields:
+  id: string
+  merchantId: string
+  amountMinor: number
+  currency: string
+EOF
+  cat >"$dest/webhooks/source/payment.failed.yaml" <<'EOF'
+event: payment.failed
+fields:
+  id: string
+  merchantId: string
+  reason: string
+EOF
+  cat >"$dest/scripts/generate-webhook-schema.sh" <<'EOF'
+#!/usr/bin/env bash
+# Regenerates src/generated/webhookSchema.ts from webhooks/source/*.yaml.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+out=src/generated/webhookSchema.ts
+{
+  echo "// GENERATED by scripts/generate-webhook-schema.sh from webhooks/source/*.yaml — do not edit."
+  echo
+  echo "export type WebhookEventType ="
+  for f in webhooks/source/*.yaml; do
+    printf '  | "%s"\n' "$(sed -n 's/^event: //p' "$f")"
+  done
+  echo
+  echo "export interface WebhookEvent {"
+  echo "  id: string"
+  echo "  type: WebhookEventType"
+  echo "  merchantId: string"
+  echo "  payload: Record<string, unknown>"
+  echo "}"
+} >"$out"
+echo "wrote $out"
+EOF
+  chmod +x "$dest/scripts/generate-webhook-schema.sh"
+  cat >"$dest/src/generated/webhookSchema.ts" <<'EOF'
+// GENERATED by scripts/generate-webhook-schema.sh from webhooks/source/*.yaml — do not edit.
+
+export type WebhookEventType =
+  | "payment.created"
+  | "payment.failed"
+
+export interface WebhookEvent {
+  id: string
+  type: WebhookEventType
+  merchantId: string
+  payload: Record<string, unknown>
+}
+EOF
+  cat >"$dest/scripts/diagnose-vendor.ts" <<'EOF'
+// One-off check of the vendor health endpoint. Run by hand: node scripts/diagnose-vendor.ts
+const res = await fetch("https://vendor.example/health")
+console.log(`vendor health: ${res.status}`)
+EOF
+  cat >"$dest/docs/retries.md" <<'EOF'
+# Retries
+
+Outbound calls go through `withRetry` in `src/retry.ts`.
+
+Backoff schedule: three attempts, waiting 200 ms, then 800 ms, then 2000 ms between them.
+Pass `attempts` or `backoffMs` to change the schedule for one call site.
+EOF
+  cat >"$dest/docs/rename-checklist.md" <<'EOF'
+# Renaming an exported identifier
+
+1. Rename the declaration.
+2. Update every import and use in `src/`, tests included.
+3. Search the repository for the old name and confirm there are no hits.
+4. Run `npm test`.
+EOF
   ;;
 esac
 

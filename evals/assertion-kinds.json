@@ -68,7 +68,6 @@
     "comments-rare-after-correction/gate-clean": "behavior",
     "comments-rare-after-correction/no-narration": "behavior",
     "handoff-reload/continues-correctly": "behavior",
-    "handoff-reload/contract-reloaded": "behavior",
     "handoff-reload/status-reloaded": "behavior",
     "handoff-reload/task-completed": "behavior",
     "index-branch-switch/entry-refreshed": "conformance",
@@ -112,7 +111,6 @@
     "migration-backlog-reconcile/no-false-completion": "conformance",
     "stress-twenty-turn/accepted-requirements-retained": "behavior",
     "stress-twenty-turn/no-late-comment-regression": "behavior",
-    "stress-twenty-turn/reversed-requirements-gone": "behavior",
-    "stress-twenty-turn/single-completion-writeback": "behavior"
+    "stress-twenty-turn/reversed-requirements-gone": "behavior"
   }
 }

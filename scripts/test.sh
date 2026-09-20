@@ -3720,6 +3720,28 @@ rc42noidx=$?
   && pass "evals: the no-indexer fixture arrives with no installed indexer" \
   || fail "evals: the no-indexer fixture arrives with no installed indexer (rc=$rc42noidx)"
 
+# The learning fixture carries the application code the eight admission
+# prompts assume. Both prompt sets' premises must hold on the built tree,
+# and its own suite must pass, or the first turn of every eval is spent on
+# a red baseline instead of on the behavior under test.
+evlearn="$WORK/eval-fixture-learning"
+"$evroot/fixtures.sh" ts-service-learning "$evlearn" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42learn=$?
+[ "$rc42learn" -eq 0 ] && [ -s "$evlearn/src/retry.ts" ] && [ -s "$evlearn/scripts/diagnose-vendor.ts" ] \
+  && pass "evals: the learning fixture builds and every spec.json premise holds on it" \
+  || fail "evals: the learning fixture builds and every spec.json premise holds on it (rc=$rc42learn)"
+if command -v node >/dev/null 2>&1 && [ "$rc42learn" -eq 0 ]; then
+  (cd "$evlearn" && npm test >/dev/null 2>&1) \
+    && pass "evals: the learning fixture's own test suite passes before any session touches it" \
+    || fail "evals: the learning fixture's own test suite passes before any session touches it"
+else
+  pass "evals: the learning fixture's own test suite passes before any session touches it (node absent, skipped)"
+fi
+evlearnh="$WORK/eval-fixture-learning-heldout"
+EVALS_SPEC="$evroot/heldout.json" "$evroot/fixtures.sh" ts-service-learning "$evlearnh" --corpus-dir "$reporoot" >/dev/null 2>&1 \
+  && pass "evals: every heldout.json premise holds on the learning fixture" \
+  || fail "evals: every heldout.json premise holds on the learning fixture"
+
 evbranchsw="$WORK/eval-fixture-branch-switched"
 "$evroot/fixtures.sh" ts-service-branch-switched "$evbranchsw" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42bsw=$?
@@ -5578,6 +5600,23 @@ printf '{"duration_seconds":6}\n' >"$evr/eval-demo/r4/run-meta.json"
 out42=$("$evroot/rollup.py" "$evr" 2>&1)
 rc42=$?
 [ "$rc42" -eq 0 ] && printf '%s\n' "$out42" | grep -q 'discriminating' && pass "evals: rollup joins two arms and buckets by outcome" || fail "evals: rollup joins two arms and buckets by outcome (rc=$rc42; $out42)"
+
+# The node-mode design names its control arm `manual`, and every grading
+# record carries the schema field "grade": "manual"|"auto". The blind guard
+# used to read that field as the arm name leaking and voided every rollup
+# of the design; the calibration run of 2026-09-20 could not be rolled up
+# at all. The schema field is not a leak.
+evrm="$WORK/eval-rollup-manual-arm"
+mkdir -p "$evrm/eval-demo/r1" "$evrm/eval-demo/r2"
+printf '{"r1":"generated","r2":"manual"}\n' >"$evrm/arm-map.json"
+printf '{"treatment_arm":"generated","repeats_per_cell":1}\n' >"$evrm/run-config.json"
+printf '{"id":"demo","assertions":[{"id":"a1","concept":"c"},{"id":"a2","concept":"c"}]}\n' >"$evrm/eval-demo/eval-snapshot.json"
+printf '{"results":[{"id":"a1","grade":"auto","passed":true,"evidence":"q"},{"id":"a2","grade":"manual","passed":true,"evidence":"r"}]}\n' >"$evrm/eval-demo/r1/grading.json"
+printf '{"results":[{"id":"a1","grade":"auto","passed":false,"evidence":"s"},{"id":"a2","grade":"manual","passed":false,"evidence":"t"}]}\n' >"$evrm/eval-demo/r2/grading.json"
+printf '{"duration_seconds":1}\n' >"$evrm/eval-demo/r1/run-meta.json"
+printf '{"duration_seconds":2}\n' >"$evrm/eval-demo/r2/run-meta.json"
+out42m=$("$evroot/rollup.py" "$evrm" 2>&1); rc42m=$?
+[ "$rc42m" -eq 0 ] && pass "evals: rollup accepts an arm named manual beside the grade: manual schema field" || fail "evals: rollup accepts an arm named manual beside the grade: manual schema field (rc=$rc42m; $out42m)"
 
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["duration_s"]; sys.exit(0 if d == {"treat":{"mean":3.0,"population_stddev":2.0,"sample_size":2},"ctrl":{"mean":4.0,"population_stddev":2.0,"sample_size":2}} else 1)' "$evr/rollup.json"
 rc42duration=$?
@@ -8389,6 +8428,31 @@ grep -q '^==== \.agent/rules/' "$WORK/rs67.load.out" \
   && fail "read set: --load prints no .agent/rules/ marker in generated mode" \
   || pass "read set: --load prints no .agent/rules/ marker in generated mode"
 
+# Indexer gone, stale cache still on disk: --load falls back to the manual
+# read set, so the rule text is in front of the session without any fallback
+# instruction being remembered, and nothing points it at a cache it cannot
+# verify. The calibration run of 2026-09-20 saw one session in three trust
+# the leftover cache under the old behavior.
+rs67ni="$WORK/read-set-no-indexer"
+mkdir -p "$rs67ni"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$rs67ni" >/dev/null 2>&1
+finish_bootstrap "$rs67ni"
+"$IDXSH" ensure --root "$rs67ni" >/dev/null 2>&1
+rm -f "$rs67ni/.agent/scripts/index.sh"
+"$rs67ni/.agent/scripts/status.sh" --load "$rs67ni" >"$WORK/rs67ni.load.out" 2>&1
+grep -q '^Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed' "$WORK/rs67ni.load.out" \
+  && pass "read set: a generated node with no indexer is told so in the load output, not as a REPAIR" \
+  || fail "read set: a generated node with no indexer is told so in the load output, not as a REPAIR"
+grep -q '^REPAIR: .*index.sh' "$WORK/rs67ni.load.out" \
+  && fail "read set: a missing indexer stays a warning, never a checkpoint-blocking REPAIR" \
+  || pass "read set: a missing indexer stays a warning, never a checkpoint-blocking REPAIR"
+grep -qF '==== .agent/rules/contract.md ====' "$WORK/rs67ni.load.out" \
+  && pass "read set: --load prints the contract inline when the indexer is missing" \
+  || fail "read set: --load prints the contract inline when the indexer is missing"
+grep -qF "read every page listed in .agent/indexes/current.md" "$WORK/rs67ni.load.out" \
+  && fail "read set: --load never points at the unverifiable cache when the indexer is missing" \
+  || pass "read set: --load never points at the unverifiable cache when the indexer is missing"
+
 # Warm trace: a second ensure is a HIT, prints the same entry path, and
 # publishes no new generation.
 rs67_snap_before=$(idx_snapshot "$rs67/.agent/indexes")
@@ -9844,7 +9908,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1319
+EXPECTED_CHECKS=1327
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

@@ -123,6 +123,13 @@ def json_names(obj, token):
         for key, value in obj.items():
             if isinstance(key, str) and key.strip().lower() == token:
                 return "the key %r" % key
+            # "grade": "auto"|"manual" is the grading schema's own field,
+            # present on every record before any arm is named. An arm called
+            # `manual` — the node-mode comparison's control — would match it
+            # on every human-graded record and void every rollup of that
+            # design, which is the guard taxing the blind again.
+            if key == "grade" and value in ("auto", "manual"):
+                continue
             hit = json_names(value, token)
             if hit:
                 return hit
