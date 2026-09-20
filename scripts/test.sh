@@ -3534,8 +3534,114 @@ sys.stdout.write("; ".join(bad))
 PY
 )
   [ -z "$ev42" ] && pass "evals: spec.json is well-formed and every assertion is joinable" || fail "evals: spec.json is well-formed and every assertion is joinable ($ev42)"
+
+  # heldout.json is the same well-formedness check, run over the reworded
+  # prompt set. Before this, nothing parsed it, checked it for well-formedness,
+  # or checked it for id parity with the canonical set at all.
+  evh42=$(SPEC="$evroot/heldout.json" FIX="$evroot/fixtures.sh" python3 - <<'PY'
+import io, json, os, re, sys
+bad = []
+spec = json.load(io.open(os.environ["SPEC"], encoding="utf-8"))
+fixtures = set(re.search(r'^FIXTURES="([^"]*)"', io.open(os.environ["FIX"], encoding="utf-8").read(), re.M).group(1).split())
+seen = set()
+for ev in spec["evals"]:
+    for field in ("id", "fixture", "prompt", "expect", "artifacts", "assertions"):
+        if not ev.get(field):
+            bad.append("%s missing %s" % (ev.get("id", "?"), field))
+    if ev.get("fixture") not in fixtures:
+        bad.append("%s names unknown fixture %r" % (ev["id"], ev.get("fixture")))
+    for a in ev.get("assertions", []):
+        for field in ("id", "concept", "text", "class", "grade"):
+            if not a.get(field):
+                bad.append("%s/%s missing %s" % (ev["id"], a.get("id", "?"), field))
+        if a.get("class") not in ("artifact", "trace"):
+            bad.append("%s class=%r" % (a.get("id"), a.get("class")))
+        if a.get("grade") not in ("auto", "manual"):
+            bad.append("%s grade=%r" % (a.get("id"), a.get("grade")))
+        if a.get("grade") == "auto" and not a.get("check"):
+            bad.append("%s is auto-graded with no check" % a.get("id"))
+        if not str(a.get("id", "")).startswith(ev["id"] + "/"):
+            bad.append("%s is not namespaced under its eval" % a.get("id"))
+        if a.get("id") in seen:
+            bad.append("duplicate assertion id %s" % a.get("id"))
+        seen.add(a.get("id"))
+    for p in ev.get("premises", []) or []:
+        if not p.get("path"):
+            bad.append("%s has a premise with no path: %r" % (ev["id"], p))
+        keys = [k for k in ("contains", "absent", "exists") if k in p]
+        if len(keys) != 1:
+            bad.append("%s has a premise with %d of contains/absent/exists, want exactly 1: %r"
+                       % (ev["id"], len(keys), p))
+for key in ("arms", "weighting"):
+    if not spec.get(key):
+        bad.append("spec missing %s" % key)
+if not spec.get("arms", {}).get("control", {}).get("definition"):
+    bad.append("spec has no control-arm definition — an undefined control is an undefined experiment")
+sys.stdout.write("; ".join(bad))
+PY
+)
+  [ -z "$evh42" ] && pass "evals: heldout.json is well-formed and every assertion is joinable" || fail "evals: heldout.json is well-formed and every assertion is joinable ($evh42)"
+
+  # A held-out set that quietly lost or gained an eval or an assertion would
+  # report a pass over a smaller checklist than the one the id implies.
+  evpar42=$(python3 - "$evroot/spec.json" "$evroot/heldout.json" <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1], encoding="utf-8"))
+b = json.load(open(sys.argv[2], encoding="utf-8"))
+bad = []
+aids, bids = sorted(e["id"] for e in a["evals"]), sorted(e["id"] for e in b["evals"])
+if aids != bids:
+    bad.append("eval ids differ: only in spec %r, only in heldout %r" %
+               (sorted(set(aids) - set(bids)), sorted(set(bids) - set(aids))))
+aa = sorted(x["id"] for e in a["evals"] for x in e["assertions"])
+ba = sorted(x["id"] for e in b["evals"] for x in e["assertions"])
+if aa != ba:
+    bad.append("assertion ids differ: only in spec %r, only in heldout %r" %
+               (sorted(set(aa) - set(ba)), sorted(set(ba) - set(aa))))
+sys.stdout.write("; ".join(bad))
+PY
+)
+  [ -z "$evpar42" ] && pass "evals: both prompt sets carry the same eval and assertion ids" || fail "evals: both prompt sets carry the same eval and assertion ids ($evpar42)"
+
+  # Every assertion id must carry a kind, so a headline pass rate can never
+  # silently lean on an untagged, uncategorized row.
+  evkind42=$(python3 - "$evroot/spec.json" "$evroot/assertion-kinds.json" <<'PY'
+import json, sys
+spec = json.load(open(sys.argv[1], encoding="utf-8"))
+kinds = json.load(open(sys.argv[2], encoding="utf-8"))["kinds"]
+valid = {"behavior", "conformance", "information"}
+bad = []
+for e in spec["evals"]:
+    for a in e["assertions"]:
+        if kinds.get(a["id"]) not in valid:
+            bad.append("%s kind=%r" % (a["id"], kinds.get(a["id"])))
+sys.stdout.write("; ".join(bad))
+PY
+)
+  [ -z "$evkind42" ] && pass "evals: every assertion carries a behavior, conformance, or information kind" || fail "evals: every assertion carries a behavior, conformance, or information kind ($evkind42)"
+
+  # index.sh ensure prints one path and no content, so a check whose only
+  # evidence is a call to it is a defect: it proves nothing about what the
+  # session read. Every check names the page or the canonical source instead.
+  evidx42=$(python3 - "$evroot/spec.json" "$evroot/heldout.json" <<'PY'
+import json, sys
+bad = []
+for path in sys.argv[1:]:
+    spec = json.load(open(path, encoding="utf-8"))
+    for e in spec["evals"]:
+        for a in e["assertions"]:
+            if "index.sh" in (a.get("check") or ""):
+                bad.append("%s:%s" % (path, a["id"]))
+sys.stdout.write("; ".join(bad))
+PY
+)
+  [ -z "$evidx42" ] && pass "evals: a page-read assertion names the page, never the script that built it" || fail "evals: a page-read assertion names the page, never the script that built it ($evidx42)"
 else
   fail "evals: spec.json is well-formed and every assertion is joinable (python3 absent)"
+  fail "evals: heldout.json is well-formed and every assertion is joinable (python3 absent)"
+  fail "evals: both prompt sets carry the same eval and assertion ids (python3 absent)"
+  fail "evals: every assertion carries a behavior, conformance, or information kind (python3 absent)"
+  fail "evals: a page-read assertion names the page, never the script that built it (python3 absent)"
 fi
 
 # Every phase the operating model's trust contract names must carry at least
@@ -3589,6 +3695,82 @@ evfailing="$WORK/eval-fixture-failing"
 "$evroot/fixtures.sh" ts-service-failing "$evfailing" --corpus-dir "$reporoot" >/dev/null 2>&1
 rc42failing=$?
 [ "$rc42failing" -eq 0 ] && [ -d "$evfailing/.agent" ] && pass "evals: ts-service-failing builds and its premises hold" || fail "evals: ts-service-failing builds and its premises hold (rc=$rc42failing)"
+
+# A generated node arrives with a warm cache — fixtures.sh ran the fresh
+# node's own index.sh ensure once after seeding, so the fixture never starts
+# cold. This is the plain node-mode case; the four below layer a fault on it.
+evgenwarm="$WORK/eval-fixture-generated-warm"
+"$evroot/fixtures.sh" ts-service "$evgenwarm" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
+rc42genwarm=$?
+[ "$rc42genwarm" -eq 0 ] && [ -s "$evgenwarm/.agent/indexes/current.md" ] \
+  && pass "evals: a generated-mode fixture builds and its indexer leaves a warm cache" \
+  || fail "evals: a generated-mode fixture builds and its indexer leaves a warm cache (rc=$rc42genwarm)"
+
+evidxfault="$WORK/eval-fixture-index-fault"
+"$evroot/fixtures.sh" ts-service-index-fault "$evidxfault" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
+rc42idxfault=$?
+[ "$rc42idxfault" -eq 0 ] && grep -qx 'stale0000000000000000000000000000000000' "$evidxfault/.agent/indexes/current.md" 2>/dev/null \
+  && pass "evals: the index-fault fixture arrives with a stale entry its eval must recover from" \
+  || fail "evals: the index-fault fixture arrives with a stale entry its eval must recover from (rc=$rc42idxfault)"
+
+evnoidx="$WORK/eval-fixture-no-indexer"
+"$evroot/fixtures.sh" ts-service-no-indexer "$evnoidx" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
+rc42noidx=$?
+[ "$rc42noidx" -eq 0 ] && [ ! -e "$evnoidx/.agent/scripts/index.sh" ] \
+  && pass "evals: the no-indexer fixture arrives with no installed indexer" \
+  || fail "evals: the no-indexer fixture arrives with no installed indexer (rc=$rc42noidx)"
+
+evbranchsw="$WORK/eval-fixture-branch-switched"
+"$evroot/fixtures.sh" ts-service-branch-switched "$evbranchsw" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
+rc42bsw=$?
+bsw_branch=$(git -C "$evbranchsw" branch --show-current 2>/dev/null)
+bsw_other_has_note=$(git -C "$evbranchsw" show fixture-other:.agent/docs/branch-notes.md 2>/dev/null | grep -c 'Only on fixture-other')
+bsw_here_lacks_note=$(grep -c 'Only on fixture-other' "$evbranchsw/.agent/docs/branch-notes.md" 2>/dev/null)
+[ "$rc42bsw" -eq 0 ] && [ "$bsw_branch" = "fixture-base" ] && [ "${bsw_other_has_note:-0}" -ge 1 ] \
+  && [ "${bsw_here_lacks_note:-0}" -eq 0 ] && [ -s "$evbranchsw/.agent/indexes/current.md" ] \
+  && pass "evals: the branch-switched fixture arrives with a cache built on the other branch" \
+  || fail "evals: the branch-switched fixture arrives with a cache built on the other branch (rc=$rc42bsw, branch=$bsw_branch)"
+
+evpartmig="$WORK/eval-fixture-partial-migration"
+"$evroot/fixtures.sh" ts-service-partial-migration "$evpartmig" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
+rc42partmig=$?
+[ "$rc42partmig" -eq 0 ] && grep -q 'semantic-review-pending' "$evpartmig/.agent/migration-inventory.md" 2>/dev/null \
+  && grep -q 'hook-missing' "$evpartmig/.agent/migration-inventory.md" 2>/dev/null \
+  && pass "evals: the partial-migration fixture arrives carrying both pending classes" \
+  || fail "evals: the partial-migration fixture arrives carrying both pending classes (rc=$rc42partmig)"
+
+# The generated node's canonical record surface is rules/learned/*.md; the
+# gitignored, derived rules/learned.md never appears in a generated node's
+# diff at all. _learned_delta used to read only the latter, so every
+# learned-rule check on a generated node graded a confident false against an
+# empty delta. This proves the fix: a synthetic node diff that only touches
+# a record under rules/learned/ must still be read as one added rule.
+evlearndir="$WORK/eval-learned-delta-fallback"
+mkdir -p "$evlearndir/outputs"
+cat >"$evlearndir/outputs/node-diff.patch" <<'EOF'
+diff --git a/.agent/rules/learned/aaaaaaaaaaaa.md b/.agent/rules/learned/aaaaaaaaaaaa.md
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/.agent/rules/learned/aaaaaaaaaaaa.md
+@@ -0,0 +1 @@
++- [2026-09-19] Prefer the generated record directory over the aggregate.
+EOF
+: >"$evlearndir/outputs/diff.patch"
+: >"$evlearndir/outputs/trace.jsonl"
+: >"$evlearndir/outputs/session-transcript.txt"
+: >"$evlearndir/outputs/status-after.txt"
+: >"$evlearndir/outputs/gate.txt"
+: >"$evlearndir/outputs/node-tree.txt"
+cat >"$evlearndir/snapshot.json" <<'EOF'
+{"assertions": [{"id": "x/y", "concept": "c", "text": "t", "class": "artifact", "grade": "auto", "check": "learned_rules_added == 1"}]}
+EOF
+"$evroot/grade.py" "$evlearndir" "$evlearndir/snapshot.json" >/dev/null 2>&1
+evlearn_pass=$(python3 -c "
+import json
+print(json.load(open('$evlearndir/grading.json'))['results'][0]['passed'])
+" 2>/dev/null)
+[ "$evlearn_pass" = "True" ] && pass "evals: the learned delta reads records when the record directory exists" || fail "evals: the learned delta reads records when the record directory exists (got $evlearn_pass)"
 
 # Negative control: a drifted premise must be caught, naming the eval it
 # belongs to, not silently graded as if the prompt's claim were still true.
@@ -4771,6 +4953,21 @@ rc44effort=$?
 grep -q 'effort' "$evfake/effort-drift.err" && pass "evals: held-effort drift is named in the refusal" || fail "evals: held-effort drift is named in the refusal ($(cat "$evfake/effort-drift.err"))"
 ndirs_drift=$(find "$wsc_drift/iteration-1/eval-scope-question-no-edit" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)
 [ "$ndirs_drift" -eq 1 ] && pass "evals: a refused drifted run creates no additional run directory" || fail "evals: a refused drifted run creates no additional run directory (found $ndirs_drift)"
+
+# --index-mode inherits the harness field's own drift check for free: the
+# first run into $wsc_drift above locked index_mode (manual, the default)
+# into every arm entry already recorded there, so asking for generated now
+# is exactly the same shape of drift as a moved model or effort.
+conf_claude_indexmode="$evfake/agents-claude-indexmode-drift.conf"
+eval_conf_write "$conf_claude_indexmode" "$fake_claude" "$evfake/no-such-codex" 1 60
+EVALS_AGENTS_CONF="$conf_claude_indexmode" FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
+  "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
+  --agent claude --corpus-ref "$corpus_ref_test" --workspace "$wsc_drift" --index-mode generated \
+  >"$evfake/indexmode-drift.err" 2>&1
+rc44im=$?
+[ "$rc44im" -eq 2 ] && grep -q 'index_mode' "$evfake/indexmode-drift.err" \
+  && pass "evals: an arm entry records its index mode and refuses a drifted one" \
+  || fail "evals: an arm entry records its index mode and refuses a drifted one (rc=$rc44im; $(cat "$evfake/indexmode-drift.err"))"
 
 # -- codex: stdin delivery, thread resume across turns, trace normalization --
 wscx="$evfake/codex workspace"
@@ -9647,7 +9844,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1308
+EXPECTED_CHECKS=1319
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

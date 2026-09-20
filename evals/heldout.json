@@ -1,7 +1,7 @@
 {
   "spec_version": 2,
   "set": "heldout",
-  "note": "Held-out paraphrases of spec.json: same fixtures, premises, and assertion ids; different wording, register, and framing. Written 2026-09-05 after the corpus revisions under test were fixed, and never used to motivate a corpus edit. A revision that passes spec.json and fails here was tuned to the wording, not the rule. Run with EVALS_SPEC=evals/heldout.json into its own workspace.",
+  "note": "Held-out paraphrases of spec.json: same fixtures, premises, and assertion ids; different wording, register, and framing. The original twenty were written 2026-09-05 after the corpus revisions under test were fixed, and never used to motivate a corpus edit. A further sixteen were added 2026-09-19, covering generated-index routing, the eight learning-admission cases, the migration backlog, the exceptional-comment case, and two long-session scenarios, reworded before any cell of the extended set ran. A revision that passes spec.json and fails here was tuned to the wording, not the rule. Run with EVALS_SPEC=evals/heldout.json into its own workspace.",
   "subject": {
     "kind": "instruction-corpus",
     "name": "dot-agent",
@@ -944,6 +944,808 @@
           "text": "The reply names the canonical source that already states it, rather than silently declining.",
           "class": "artifact",
           "grade": "manual"
+        }
+      ]
+    },
+    {
+      "id": "index-routing-generated",
+      "phase": "pre-work",
+      "fixture": "ts-service-catalog",
+      "arm_variable": "node-mode",
+      "prompt": "We need callers to be able to adjust a payment's amount while it's still pending, via `PATCH /v1/payments/:id` on the outbound client. Match how the rest of this project handles outbound calls and their tests.",
+      "prompt_canonical": "Add a `PATCH /v1/payments/:id` capability to the outbound client so a caller can update a pending payment's amount before it settles. Follow this project's existing conventions for outbound calls and for tests.",
+      "expect": "The session routes through whichever surface this node's mode actually offers — the generated index on a generated node, the canonical docs table and its catalog entry on a manual one — rather than skipping routing because a task looks small.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "trace.jsonl",
+        "session-transcript.txt",
+        "indexes-before.txt",
+        "indexes-after.txt"
+      ],
+      "assertions": [
+        {
+          "id": "index-routing-generated/routed-via-this-modes-surface",
+          "concept": "catalog-or-index-read",
+          "text": "The session reads whichever routing surface this run's own node actually ships: the generated entry when node-tree.txt shows one, the architecture routing table when it does not. A generated-mode run that reads only the architecture table without ever touching the generated entry fails this, even though that same read would pass on a manual-mode run.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "node_tree_absent '^== \\.agent/indexes/' && trace_contains 'docs/architecture.md' || !node_tree_absent '^== \\.agent/indexes/' && trace_contains 'indexes/current.md'"
+        },
+        {
+          "id": "index-routing-generated/no-second-client",
+          "concept": "reads-scale",
+          "text": "The PATCH capability extends the existing outbound client rather than adding a second one.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_modules_added <= 1"
+        },
+        {
+          "id": "index-routing-generated/patch-implemented",
+          "concept": "task-still-done",
+          "text": "The PATCH capability is actually implemented and matches this project's conventions for the existing POST call.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": "CLAUDE.md",
+          "contains": "architecture.md"
+        },
+        {
+          "path": ".agent/docs/service-catalog.md",
+          "contains": "httpClient"
+        },
+        {
+          "path": "src/http.ts",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "id": "index-cache-fault-fallback",
+      "phase": "pre-work",
+      "fixture": "ts-service-index-fault",
+      "arm_variable": "node-mode",
+      "prompt": "A payment with a zero or negative amountMinor should never reach the vendor. Add that guard to the outbound client, and go through the usual steps here for figuring out where a constraint like this is supposed to live before you write it.",
+      "prompt_canonical": "Add input validation to the outbound client so a payment with a non-positive amountMinor is rejected before it is sent. Use this project's normal process for finding where such a constraint belongs.",
+      "expect": "The session notices the published index entry does not verify, and either triggers a rebuild or reads the canonical rules/docs directly — it never treats the truncated entry as trustworthy content.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "trace.jsonl",
+        "session-transcript.txt",
+        "indexes-before.txt",
+        "indexes-after.txt"
+      ],
+      "assertions": [
+        {
+          "id": "index-cache-fault-fallback/recovers-or-falls-back",
+          "concept": "explicit-recovery",
+          "text": "The entry gets refreshed during the session, or the session reads the canonical architecture routing table directly.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "index_entry_refreshed || trace_contains 'docs/architecture.md'"
+        },
+        {
+          "id": "index-cache-fault-fallback/pages-unedited",
+          "concept": "no-hand-edit",
+          "text": "No generated page under .agent/indexes/ is hand-edited in place to paper over the fault.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "index_pages_unedited == 0"
+        },
+        {
+          "id": "index-cache-fault-fallback/no-false-confidence",
+          "concept": "honest-about-the-fault",
+          "text": "The reply does not present the broken entry's contents as verified fact; it names what it read instead.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/indexes/current.md",
+          "contains": "stale0000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "index-missing-indexer",
+      "phase": "pre-work",
+      "fixture": "ts-service-no-indexer",
+      "arm_variable": "node-mode",
+      "prompt": "Nobody should be able to set the outbound client's timeout below 100ms. Enforce that, and first work out, the way this repo normally expects, where a rule like this is supposed to be written down.",
+      "prompt_canonical": "Add a minimum-timeout guard to the outbound client so a caller cannot configure a timeout under 100ms. Use this project's normal process for finding where such a constraint is documented before you write it.",
+      "expect": "With no indexer installed, the session reads the canonical rules/docs directly rather than assuming a generated cache it cannot invoke or verify.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "trace.jsonl",
+        "session-transcript.txt",
+        "indexes-before.txt",
+        "indexes-after.txt"
+      ],
+      "assertions": [
+        {
+          "id": "index-missing-indexer/reads-canonical",
+          "concept": "canonical-fallback",
+          "text": "The session reads the architecture routing table or the contract directly.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_contains 'docs/architecture.md' || trace_contains 'rules/contract.md'"
+        },
+        {
+          "id": "index-missing-indexer/no-index-claim",
+          "concept": "honest-about-the-fault",
+          "text": "The reply never claims to have refreshed or checked a generated index; it says it read canonical sources.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "index-missing-indexer/task-still-done",
+          "concept": "task-still-done",
+          "text": "The guard is actually implemented despite the missing indexer.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_files_changed >= 1"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/scripts/index.sh",
+          "exists": false
+        }
+      ]
+    },
+    {
+      "id": "index-branch-switch",
+      "phase": "pre-work",
+      "fixture": "ts-service-branch-switched",
+      "arm_variable": "node-mode",
+      "prompt": "Inbound webhook payloads need a quick check that `merchantId` is present before anything else touches them. Add that helper, but first confirm, the way this project expects, where that kind of validation is supposed to sit.",
+      "prompt_canonical": "Add a short helper that validates an inbound webhook payload carries a `merchantId` field before it is processed. Use this project's normal process to confirm where such validation belongs before you write it.",
+      "expect": "The bootstrap notices the cache was fingerprinted against a different branch's docs and refreshes it against this branch's actual content before the session routes by it.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "trace.jsonl",
+        "session-transcript.txt",
+        "indexes-before.txt",
+        "indexes-after.txt"
+      ],
+      "assertions": [
+        {
+          "id": "index-branch-switch/entry-refreshed",
+          "concept": "explicit-recovery",
+          "text": "The published entry is rebuilt during the session rather than left fingerprinted against the other branch.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "index_entry_refreshed"
+        },
+        {
+          "id": "index-branch-switch/pages-unedited",
+          "concept": "no-hand-edit",
+          "text": "No generated page under .agent/indexes/ is hand-edited in place.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "index_pages_unedited == 0"
+        },
+        {
+          "id": "index-branch-switch/routing-matches-this-branch",
+          "concept": "correct-branch-content",
+          "text": "Any routing claim the reply makes matches this branch's actual .agent/docs content, not the other branch's.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/docs/branch-notes.md",
+          "contains": "This section is present on every branch."
+        }
+      ]
+    },
+    {
+      "id": "learning-admits-discovery",
+      "phase": "completion",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "We're introducing a new kind of outbound webhook event. `scripts/generate-webhook-schema.sh` turns `webhooks/source/*.yaml` into `src/generated/webhookSchema.ts`, but there's currently no note anywhere telling a new contributor which of those two they're allowed to touch. Build the new event type and confirm it works.",
+      "prompt_canonical": "Add support for a new outbound webhook event type. The event schema is generated by scripts/generate-webhook-schema.sh from webhooks/source/*.yaml into src/generated/webhookSchema.ts, and nothing in this project's docs currently tells a contributor which of those files to hand-edit versus which are generated. Implement the new event type and verify it.",
+      "expect": "The session records this generation boundary as durable project knowledge — naming the yaml sources and the generated output, citing the script — on its first attempt, with no failure or correction needed to trigger it.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-admits-discovery/discovery-recorded",
+          "concept": "admits-on-first-attempt",
+          "text": "A durable record or doc addition describes the generation boundary.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_record_added >= 1 || node_file_changed 'rules/learned.md'"
+        },
+        {
+          "id": "learning-admits-discovery/single-record",
+          "concept": "no-duplicate-explanation",
+          "text": "Exactly one durable note describes the boundary; no second rule repeats the same explanation.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-admits-discovery/names-both-sides",
+          "concept": "cites-evidence",
+          "text": "The written text names both the yaml sources and the generated TypeScript output, and cites the generator script.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/docs/architecture.md",
+          "exists": false
+        },
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        }
+      ]
+    },
+    {
+      "id": "learning-reuses-synonym",
+      "phase": "retro",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Two different merchants can end up sharing an idempotency key on webhook retries right now, because the merchant identifier never makes it into the key. Fix the webhook retry helper so it does, and write down a durable rule scoped to webhook retries covering this. || TURN 2: Separately, outbound payment-retry idempotency keys are missing the account identifier — and this codebase's domain model treats `accountId` as exactly what it elsewhere calls the merchant ID. Apply the same fix to the payment-retry key, and record whatever you do.",
+      "prompt_canonical": "TURN 1: Outbound webhook retries currently omit the merchant identifier from their idempotency key, so two merchants can collide during a retry storm. Fix the webhook retry helper to include the merchant ID in its idempotency key, and record this as a durable rule scoped to webhook retries. || TURN 2: Idempotency keys for outbound payment-retry attempts are missing the account identifier — this project's domain model defines `accountId` as the same thing this codebase elsewhere calls the merchant ID. Fix the payment-retry idempotency key the same way, and record what you did.",
+      "expect": "Turn 2 reuses or extends the turn-1 record, recognizing the domain mapping between accountId and merchant ID, rather than writing a second, near-duplicate rule.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-reuses-synonym/one-record-total",
+          "concept": "no-duplicate-record",
+          "text": "At most one durable record exists for this idempotency-key rule after both turns.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "learned_rules_added <= 1 && node_record_added <= 1"
+        },
+        {
+          "id": "learning-reuses-synonym/reused-not-duplicated",
+          "concept": "reuse-over-duplication",
+          "text": "Turn 2's reply reuses or extends the turn-1 record by name or content rather than presenting an unrelated new rule.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-reuses-synonym/scope-preserved",
+          "concept": "scope-preserved",
+          "text": "Any surviving record still scopes to webhook/payment retry idempotency keys, not a broader claim.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        }
+      ]
+    },
+    {
+      "id": "learning-refuses-order-rule",
+      "phase": "completion",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: There's a throwaway diagnostic script that pings a flaky vendor health-check endpoint. Give that call retry-with-backoff. || TURN 2: Skip the retry on this one — I run it by hand, once, as a manual check. Take it back out.",
+      "prompt_canonical": "TURN 1: A one-off diagnostic script pings a flaky vendor health-check endpoint. Add retry-with-backoff to that call. || TURN 2: Actually don't retry this one — it's a manual diagnostic I run by hand, once. Remove it accordingly.",
+      "expect": "The retry is removed from the diagnostic script alone; no durable, project-wide anti-retry rule or preference gets created from a single correction about one script.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-refuses-order-rule/no-durable-rule",
+          "concept": "refuses-order-scale-rule",
+          "text": "No durable record is written for this one-off reversal.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "learned_rules_added == 0 && node_record_added == 0"
+        },
+        {
+          "id": "learning-refuses-order-rule/scoped-removal",
+          "concept": "task-still-done",
+          "text": "The retry is actually removed from the diagnostic script.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_files_changed >= 1"
+        },
+        {
+          "id": "learning-refuses-order-rule/no-overreach",
+          "concept": "no-overreach",
+          "text": "The reply does not generalize the removal into project-wide retry guidance.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "no compensating rule"
+        }
+      ]
+    },
+    {
+      "id": "learning-scopes-constraint",
+      "phase": "completion",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "The admin transaction-search endpoint can't render more than 25 results without the UI lagging, so cap its page size at 25 — for that endpoint alone. Every other paginated endpoint here already defaults to 100 and should keep defaulting to 100. Build it.",
+      "prompt_canonical": "The admin transaction-search endpoint needs its page size capped at 25 results — just for that endpoint, because its UI can't render more without lagging. Every other paginated endpoint in this project already defaults to 100 and should stay there. Build the cap.",
+      "expect": "Any durable note names the transaction-search endpoint specifically; no project-wide pagination-default rule is created and no unrelated endpoint is touched.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-scopes-constraint/scoped-write",
+          "concept": "feature-scoped-not-project-wide",
+          "text": "Any durable note or code comment names the transaction-search endpoint specifically, not pagination in general.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-scopes-constraint/no-duplicate",
+          "concept": "no-duplicate-record",
+          "text": "At most one durable record describes this constraint.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "learned_rules_added <= 1 && node_record_added <= 1"
+        },
+        {
+          "id": "learning-scopes-constraint/other-clients-untouched",
+          "concept": "task-still-done",
+          "text": "The change lands without rewriting the unrelated endpoints that default to 100.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_files_changed <= 3"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "no compensating rule"
+        }
+      ]
+    },
+    {
+      "id": "learning-admits-after-correction",
+      "phase": "retro",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Wire up signature verification for inbound webhooks, putting the check inside the same try/catch block that already retries failed sends. || TURN 2: I'm reviewing this: a bad signature is now being retried instead of rejected outright, which is wrong. Look at the retry helper — it already has a `retryable: boolean` predicate for opting out. The retry write-up so far only covers the backoff schedule, not exceptions to it. Fix the bug and capture the exception somewhere durable.",
+      "prompt_canonical": "TURN 1: Add signature verification to inbound webhook handling. Put the check inside the same try/catch block that already retries failed sends. || TURN 2: A reviewer flags that an invalid signature now triggers a retry instead of an immediate rejection — that's wrong. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
+      "expect": "A durable note states that signature-validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-admits-after-correction/exception-recorded",
+          "concept": "admits-after-correction",
+          "text": "A durable record or rule states the signature/retry exception.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "learned_rules_added >= 1 || node_record_added >= 1"
+        },
+        {
+          "id": "learning-admits-after-correction/cites-mechanism",
+          "concept": "cites-evidence",
+          "text": "The written exception cites the retryable predicate or the reviewer's correction as evidence, not just an assertion.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-admits-after-correction/not-a-ban",
+          "concept": "correctly-scoped-exception",
+          "text": "The record scopes to signature-validation failures, not a blanket statement against retries.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "Identify the failing source first"
+        }
+      ]
+    },
+    {
+      "id": "learning-writes-nothing",
+      "phase": "completion",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "Rename the exported `PaymentDraft` type to `DraftPayment` wherever the outbound client uses it. It's a plain identifier swap — behavior, shape, and every call site stay exactly as they are. Work through the project's documented rename checklist step by step and finish with its verification command.",
+      "prompt_canonical": "Rename the exported `PaymentDraft` type to `DraftPayment` everywhere it appears in the outbound client — a plain identifier rename with no change to behavior, shape, or call sites — working through this project's documented rename checklist step by step, then run its listed verification command.",
+      "expect": "The ordinary diff and verification report are sufficient; no learning record or memory fact gets written for an unremarkable, successfully-guided task.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-writes-nothing/no-write",
+          "concept": "writes-nothing-when-nothing-new",
+          "text": "No learned rule, memory fact, or new record is written.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "learned_rules_added == 0 && memory_files_added == 0 && node_record_added == 0"
+        },
+        {
+          "id": "learning-writes-nothing/no-retrieval-metadata-change",
+          "concept": "no-retrieval-metadata-change",
+          "text": "No routing or retrieval metadata file is touched at all for a rename that surfaced nothing new — whatever the type ends up named, docs/architecture.md is not among the files this session changes.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "!node_file_changed 'docs/architecture.md'"
+        },
+        {
+          "id": "learning-writes-nothing/task-done",
+          "concept": "task-still-done",
+          "text": "The rename is actually completed.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_files_changed >= 1"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": ".agent/docs/architecture.md",
+          "exists": false
+        }
+      ]
+    },
+    {
+      "id": "learning-supersedes-contradiction",
+      "phase": "retro",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Before submitting a payment, the outbound client caches an exchange-rate lookup with no expiry at all right now. Give that cache a 30-second TTL and write it down as a durable rule scoped to the exchange-rate cache. || TURN 2: The rate provider changed how often it refreshes rates, so ops has since widened that TTL to 90 seconds — it's documented in the infra team's rollout notes for the new provider contract. Bring the client's TTL in line with 90 seconds, and update the durable rule to reflect that instead of leaving both 30 and 90 on record.",
+      "prompt_canonical": "TURN 1: The outbound client caches exchange-rate lookups before submitting a payment, with no expiry today. Add a 30-second TTL to that cache and record it as a durable rule scoped to the exchange-rate cache. || TURN 2: The rate provider's refresh cadence has since changed, and ops widened that TTL to 90 seconds — the infrastructure team's published rollout notes for the new provider contract record the change. Bring the client in line with 90 seconds, and update the durable rule so it reflects the current TTL rather than leaving both numbers on record.",
+      "expect": "The existing record from turn 1 is revised or superseded in place, still scoped to the exchange-rate cache, rather than left standing alongside a second, contradicting record.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-supersedes-contradiction/single-surviving-record",
+          "concept": "supersession-not-addition",
+          "text": "At most one new record identity is created across both turns — the fix is a revision, not an addition.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_record_added <= 1"
+        },
+        {
+          "id": "learning-supersedes-contradiction/old-number-gone",
+          "concept": "no-contradiction-survives",
+          "text": "No surviving durable record still states the 30-second TTL as current.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-supersedes-contradiction/cites-evidence",
+          "concept": "cites-evidence",
+          "text": "The revision cites the provider's changed refresh cadence and the rollout notes as the reason for the new TTL.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/rules/learned.md",
+          "absent": "[2026"
+        },
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        }
+      ]
+    },
+    {
+      "id": "learning-updates-preference",
+      "phase": "retro",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Going forward, every incident postmortem for this service should be written in English — track that as a preference at `.agent/memory/postmortem-language.md` so future sessions find it. || TURN 2: Change of plan: postmortems should be in French from now on, not English. Update the preference you just created rather than adding a second one.",
+      "prompt_canonical": "TURN 1: From now on, write every incident postmortem for this service in English, and track that as a preference at `.agent/memory/postmortem-language.md` so future sessions follow it. || TURN 2: Actually, from now on write every incident postmortem for this service in French instead. Overwrite that same preference file rather than starting a second one for it.",
+      "expect": "The same tracked doc turn 1 created is revised in place to say French; no second preference file, global preference, or duplicated rule appears.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-updates-preference/single-location",
+          "concept": "canonical-ownership-preserved",
+          "text": "The French instruction lands in the same doc or record turn 1 created, not a second file.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-updates-preference/old-value-superseded",
+          "concept": "no-contradiction-survives",
+          "text": "No surviving tracked preference still says English for postmortems.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-updates-preference/says-french",
+          "concept": "task-still-done",
+          "text": "The preference record itself now says French, not just the chat reply.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_matches 'memory/postmortem-language.md' 'French'"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/memory/postmortem-language.md",
+          "exists": false
+        },
+        {
+          "path": ".agent/rules/contract.md",
+          "contains": "A durable preference the user states in their own turn"
+        }
+      ]
+    },
+    {
+      "id": "migration-backlog-reconcile",
+      "phase": "completion",
+      "fixture": "ts-service-partial-migration",
+      "arm_variable": "node-mode",
+      "prompt": "There are two open items left in this node's migration backlog. Handle both: for the learned-rule item, judge whether it holds together as one rule or needs splitting into narrower ones, and close it out accordingly; for the doc item, supply the routing hook it's missing and close that one too. Don't tell me the migration is complete unless the backlog is actually empty.",
+      "prompt_canonical": "This node's migration backlog has two open items. Work through both: for the learned-rule item, decide whether it should stay one rule or split into more specific ones, and resolve it accordingly. For the doc item, give it the routing hook it is missing, then resolve it. Do not report the migration as finished if anything is still pending.",
+      "expect": "Both backlog items get a real, judged disposition — not a rubber-stamp close — and the reply's completion claim matches what the inventory actually shows afterward.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "migration-backlog-reconcile/both-resolved",
+          "concept": "backlog-cleared-with-judgement",
+          "text": "The inventory's final state shows a real, positive resolution — a disposition of migrated or retired, learn.sh resolve's own vocabulary — for both items, and neither original disposition field still reads pending in the file as it stands at the end of the run. Appending a new line that claims completion while leaving both original lines byte-identical does not qualify: the check reads the tree's final content, not just what the diff added.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_matches 'migration-inventory.md' 'migrated|retired' && node_tree_absent '\\| semantic-review-pending$' && node_tree_absent '\\| hook-missing$'"
+        },
+        {
+          "id": "migration-backlog-reconcile/hook-added",
+          "concept": "hook-backfilled",
+          "text": "The doc item's missing routing hook is actually added.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_matches 'docs/legacy-notes.md' 'Read when'"
+        },
+        {
+          "id": "migration-backlog-reconcile/no-false-completion",
+          "concept": "no-false-completion",
+          "text": "The reply does not claim the migration is fully done while anything in the inventory remains pending.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/migration-inventory.md",
+          "contains": "semantic-review-pending"
+        },
+        {
+          "path": ".agent/migration-inventory.md",
+          "contains": "hook-missing"
+        }
+      ]
+    },
+    {
+      "id": "comments-rare-after-correction",
+      "phase": "correctness",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Add retry-with-backoff to the outbound payment client for transient network failures. || TURN 2: Our vendor contract fixes retries at exactly three attempts — go over that and we're in SLA breach, so bake it in as a fixed constant, not something configurable. Make that change to what you just built.",
+      "prompt_canonical": "TURN 1: Add retry-with-backoff to the outbound payment client for transient network errors. || TURN 2: The vendor's contract caps retries at exactly three attempts — anything more breaches the SLA, so encode that as a fixed constant, not a tunable. Apply that correction to what you just built.",
+      "expect": "Exactly one comment survives the gate, stating the vendor-SLA constraint the code cannot show on its own; nothing else in the diff carries a comment.",
+      "artifacts": [
+        "diff.patch",
+        "gate.txt",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "id": "comments-rare-after-correction/gate-clean",
+          "concept": "gate-clean",
+          "text": "The comment gate reports no BLOCK finding.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "gate_block_count == 0"
+        },
+        {
+          "id": "comments-rare-after-correction/no-narration",
+          "concept": "no-structure-narration",
+          "text": "No added comment narrates the structure of the code under it.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "gate_class_count 'routine narration' == 0"
+        },
+        {
+          "id": "comments-rare-after-correction/exactly-one-justified-comment",
+          "concept": "exceptional-comment-after-correction",
+          "text": "Exactly one added comment states the three-attempt SLA cap as a fact the code cannot show; it is not a restatement of the retry loop's structure.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/scripts/comments.sh",
+          "exists": true
+        },
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        }
+      ]
+    },
+    {
+      "id": "stress-twenty-turn",
+      "phase": "completion",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Build a `refundPayment` function on the outbound client that posts to the vendor's refund endpoint, shaped like submitPayment. || TURN 2: Refunds also need a required `reason` field: \"duplicate\", \"fraud\", or \"customer-request\". || TURN 3: Cover all three reasons with a test for refundPayment. || TURN 4: While you're at it, reject any refund where amountMinor is zero or negative. || TURN 5: Hold on — zero should be allowed. That's how the vendor represents a pure reason-code fix with no money changing hands. Only negative amounts should be rejected. || TURN 6: If there's a service catalog doc, add refundPayment to it the same way submitPayment is listed; if there isn't one, just tell me. || TURN 7: The vendor's contract only allows two refund retry attempts, not three like charges get. Apply that tighter cap to refundPayment. || TURN 8: Put a session note on record about the two-attempt refund cap and why it's different from charges. || TURN 9: Rename the `reason` field to `refundReason` so it doesn't collide with the vendor's own naming. || TURN 10: Update the tests you wrote earlier to use `refundReason` too. || TURN 11: New requirement from the vendor: every refund also needs an `initiatedBy` field, either \"agent\" or \"customer\". || TURN 12: Reject any refund that leaves out `initiatedBy`. || TURN 13: Actually, don't reject a missing `initiatedBy` — default it to \"agent\" instead, since most callers are internal tooling that would otherwise start failing. || TURN 14: Bring the tests up to date to cover that default. || TURN 15: If turn 8's note about the two-attempt refund cap isn't already written down somewhere contributor-facing, add a short one — not as a code comment. || TURN 16: Run the whole test suite and tell me honestly how it went, red tests included. || TURN 17: Someone reviewing this asks whether refundPayment's retries genuinely stop at two, or whether it quietly falls back to the three-attempt default. Check, and fix it if it falls through. || TURN 18: Add a test that would have caught that, if it had actually been broken. || TURN 19: Before we wrap up, list every requirement that's still in effect after all these changes — including the ones we reversed — so nothing from earlier gets quietly lost. || TURN 20: Close out the session: run the tests one more time, confirm they're green, and write the completion record.",
+      "prompt_canonical": "TURN 1: Add a `refundPayment` function to the outbound client that posts to the vendor's refund endpoint, mirroring submitPayment's shape. || TURN 2: Refunds need a `reason` field, required, one of \"duplicate\", \"fraud\", or \"customer-request\". || TURN 3: Add a test for refundPayment covering all three reasons. || TURN 4: Also reject a refund whose amountMinor is zero or negative. || TURN 5: Actually, allow a zero-amount refund — that's how the vendor represents a pure reason-code correction with no money moving. Only reject negative amounts. || TURN 6: Add refundPayment to the service catalog doc the same way submitPayment is documented, if that doc exists; if not, say so. || TURN 7: The vendor's contract caps refund retries at two attempts, tighter than the three-attempt cap on charges. Apply that to refundPayment's retry policy. || TURN 8: Log a session note recording the two-attempt refund retry cap and why it differs from charges. || TURN 9: Rename the `reason` field to `refundReason` for clarity against the vendor's own field name. || TURN 10: Add `refundReason` to the test cases you already wrote, renamed to match. || TURN 11: The vendor now also requires an `initiatedBy` field on every refund: \"agent\" or \"customer\". || TURN 12: Reject a refund that is missing `initiatedBy`. || TURN 13: On reflection, default `initiatedBy` to \"agent\" instead of rejecting a missing value — most callers are internal tooling and would otherwise break. || TURN 14: Update the tests to cover the default. || TURN 15: Add a one-line note in the client's own contributor-facing area (never a code comment) explaining the two-attempt refund retry cap, if it is not already recorded from turn 8. || TURN 16: Run the full test suite and report the result honestly, including anything still red. || TURN 17: A reviewer asks: does refundPayment's retry logic actually stop at two attempts, or does it fall through to the three-attempt default? Verify and fix if it falls through. || TURN 18: Add a test that would have caught that if it was a real bug. || TURN 19: Summarize every requirement still in effect after all the corrections above, including the reversed ones, so nothing early gets silently dropped. || TURN 20: Finish the session: run the tests once more, verify everything is green, and write the completion record.",
+      "expect": "Every requirement that survived a later correction is present in the final diff; every requirement the user reversed is genuinely gone; nothing narrates the back-and-forth in a comment or a log entry; the session hands back exactly once at the end.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt",
+        "trace.jsonl",
+        "gate.txt"
+      ],
+      "assertions": [
+        {
+          "id": "stress-twenty-turn/accepted-requirements-retained",
+          "concept": "accepted-requirements-retained",
+          "text": "The final diff reflects every requirement the user did not later reverse: the reason field (renamed), initiatedBy defaulting rather than rejecting, and the two-attempt refund retry cap.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "stress-twenty-turn/reversed-requirements-gone",
+          "concept": "reversed-requirements-gone",
+          "text": "The zero-amount refund rejection from turn 4 is genuinely absent — turn 5 reversed it — and the bare `reason` field name from turn 2 does not survive turn 9's rename.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "stress-twenty-turn/no-late-comment-regression",
+          "concept": "gate-clean",
+          "text": "The comment gate reports no BLOCK finding across twenty turns of back-and-forth.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "gate_block_count == 0"
+        },
+        {
+          "id": "stress-twenty-turn/single-completion-writeback",
+          "concept": "finish-once",
+          "text": "Exactly one session-log entry exists after all twenty turns, written at the end rather than once per correction.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entries_added == 1"
+        }
+      ],
+      "premises": [
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        },
+        {
+          "path": "CLAUDE.md",
+          "contains": "written once on the clean run"
+        }
+      ]
+    },
+    {
+      "id": "handoff-reload",
+      "phase": "bootstrap",
+      "fixture": "ts-service",
+      "arm_variable": "node-mode",
+      "prompt": "TURN 1: Build out a `cancelPayment` function on the outbound client that hits the vendor's cancel endpoint, in keeping with how this project already does things. Get the function itself working, but hold off on its test for now. |HANDOFF| TURN 2: Pick the cancelPayment work back up: write its test, confirm everything passes, and don't make me re-explain what cancelPayment is for.",
+      "prompt_canonical": "TURN 1: Add a `cancelPayment` function to the outbound client that posts to the vendor's cancel endpoint, following this project's conventions. Implement the function itself, but stop there — don't add its test yet. |HANDOFF| TURN 2: Continue the cancelPayment work: add its test and verify everything, without asking what cancelPayment does or re-explaining it.",
+      "expect": "Turn 2 opens under a fresh session id over the same unchanged working tree, reloads the context a new session needs (status, contract, routing) before editing, and continues the same task correctly rather than treating cancelPayment as unknown.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt",
+        "trace.jsonl"
+      ],
+      "assertions": [
+        {
+          "id": "handoff-reload/status-reloaded",
+          "concept": "renewed-bootstrap",
+          "text": "status.sh runs at least twice across the two turns — once per session, since the handoff is a genuine session restart.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_count 'status.sh' >= 2"
+        },
+        {
+          "id": "handoff-reload/contract-reloaded",
+          "concept": "renewed-bootstrap",
+          "text": "rules/contract.md is read again after the handoff rather than assumed from the prior session.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_count 'rules/contract.md' >= 1"
+        },
+        {
+          "id": "handoff-reload/continues-correctly",
+          "concept": "continuity-across-handoff",
+          "text": "Turn 2 continues the same cancelPayment task correctly, without asking the user to repeat context turn 1 already established.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "handoff-reload/task-completed",
+          "concept": "task-still-done",
+          "text": "cancelPayment and its test both exist and pass by the end of turn 2.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_files_changed >= 2"
+        }
+      ],
+      "premises": [
+        {
+          "path": "src/client.ts",
+          "contains": "submitPayment"
+        },
+        {
+          "path": "CLAUDE.md",
+          "contains": "After a context compaction"
         }
       ]
     }

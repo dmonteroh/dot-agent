@@ -22,7 +22,7 @@ The list is the point. Each item is a checkable claim — "one session-log entry
 
 A single score means nothing on its own, because most of what any session does well it would have done with no corpus at all. So every eval runs at least twice with one thing varied: the corpus revision, or the agent. The result is the difference between the arms, assertion by assertion, and the report says which assertions moved, which regressed, and which stayed the same in both arms. The last bucket is usually the largest, and that is expected.
 
-Two prompt sets exist. `spec.json` is the canonical set: twenty evals, sixty-three assertions, frozen. `heldout.json` is the same twenty situations with every prompt reworded, written after the corpus changes it judges were frozen. A corpus that passes the first and fails the second was tuned to the wording, not to the rule.
+Two prompt sets exist. `spec.json` is the canonical set: thirty-six evals, one hundred thirteen assertions, frozen. The first twenty (sixty-three assertions) cover manual-mode routing, write-back, and the comment gate; the other sixteen (fifty assertions) add generated-index routing and its fault states, the eight learning-admission cases, the migration backlog, the exceptional-comment case, a twenty-turn stress session, and a handoff. `heldout.json` is the same thirty-six situations with every prompt reworded, written after the corpus changes it judges were frozen. A corpus that passes the first and fails the second was tuned to the wording, not to the rule.
 
 ## Keeping it honest
 
@@ -39,6 +39,7 @@ Every one of these exists because a run without it produced a wrong conclusion a
 | **An assertion measures the prompt, not the rule** | Every arm passed the vendor-comment row on the canonical wording and failed it on the paraphrase. That row was rewritten to accept a named constant, and any row that behaves that way is reported as a wording probe, not a result. |
 | **The fixture measures itself** | A fixture guardrail named a linter the fixture did not have, and every session in every arm spent steps discovering it. Premises a prompt makes about the fixture are checked at build time; the fixture no longer names tools it lacks. |
 | **The result depends on one model** | A cheap cross-model check on a second model (Haiku 4.5, the seven-eval subset) is run before a shape is adopted; direction has to hold. |
+| **A flag is trusted instead of verified** | A feasibility pass found Codex loading a personal writing-style skill despite `--ignore-user-config`. `run.sh` now writes an isolation block into every cell's `run-meta.json` — the disposable config directory, the stripped provider variables, and any name from a fixed list that turned up in the trace anyway — so a run whose block is non-empty is reported as configuration-specific evidence rather than trusted as isolated. |
 
 What the bench does not do: it does not vary the scenarios (a paraphrase is not a new situation; that needs a new fixture), it does not run on a real repository (the fixture is ten lines of TypeScript), and its manual grades are made by the same lineage that writes the corpus. Those limits are stated in every report.
 
@@ -50,8 +51,9 @@ Paired control. Each eval prompt runs under a single arm variable, and the resul
 | --- | --- | --- | --- |
 | `corpus` (default) | node bootstrapped from the revision under test | node bootstrapped from a pinned baseline revision | did this change to the corpus change behavior? |
 | `agent` | the candidate agent | the baseline agent, named in `run-config.json` | does this corpus work on that harness too? |
+| `node-mode` | the node built `--indexes generated` | the same node, same corpus ref, same agent, built `--indexes manual` | does generated-file routing behave differently from the current file-based routing? |
 
-Vary one, never both. A delta from two moving variables is attributable to neither.
+Vary one, never both. A delta from two moving variables is attributable to neither. `node-mode` is the one exception that locks three things at once — agent, model, *and* corpus ref — rather than two, because neither pinned control revision (`2f779b7`, `5001189`) ships `index.sh` or `learn.sh`: a corpus arm against either would measure the absence of a file, not the behavior of a mechanism. Four evals whose fault state has no manual-mode counterpart at all (a corrupted cache, a missing indexer, a branch-switched cache, a migration backlog) run generated-only and are reported as feasibility evidence, never a delta.
 
 Two shapes of control are in use. `spec.json` names the paired control, `2f779b7`, the tree the operator was running in the field when the failures these evals encode were reported; `run.sh` and `rollup.py` implement that two-arm shape inside one workspace. Once a baseline corpus has run several times, the better control is all of those runs pooled: `pooled.py` takes any number of baseline workspaces and any number of candidate workspaces and joins them on assertion id. Round two ran each candidate in a single-arm workspace against four pooled baseline runs, then reran the adopted corpus (commit `5001189`) at three repeats on both prompt sets so the next round's control is contemporaneous. A control is reproduced, not shared: `run-arm.sh --jobs 6 <workspace> base 5001189`, once per prompt set, and `pooled.py --baseline <workspace>` from there.
 
@@ -63,11 +65,11 @@ The set is organized by the **trust-contract phase** the operating model already
 
 | Phase | The claim under test | Evals |
 | --- | --- | --- |
-| Bootstrap | load context before working, once per session | `bootstrap-once` · `bootstrap-complete` · `entry-point-boundary` |
-| Pre-work | load project context before editing, scaled to the task | `routing-catalog-first` · `routing-scales` · `routing-finds-doc` |
-| Correctness | verify before claiming; comments state what code cannot | `verify-no-false-done` · `verify-baseline-failure` · `comments-feature` · `comments-docstrings` |
-| Completion | write context back before finishing | `continuity-writes-back` · `continuity-supersede` · `continuity-docs-not-memory` · `memory-admission` |
-| Retro | distill durable rules, and only those | `retro-source-gate` · `retro-rule-expiry` |
+| Bootstrap | load context before working, once per session | `bootstrap-once` · `bootstrap-complete` · `entry-point-boundary` · `handoff-reload` |
+| Pre-work | load project context before editing, scaled to the task | `routing-catalog-first` · `routing-scales` · `routing-finds-doc` · `index-routing-generated` · `index-cache-fault-fallback` · `index-missing-indexer` · `index-branch-switch` |
+| Correctness | verify before claiming; comments state what code cannot | `verify-no-false-done` · `verify-baseline-failure` · `comments-feature` · `comments-docstrings` · `comments-rare-after-correction` |
+| Completion | write context back before finishing | `continuity-writes-back` · `continuity-supersede` · `continuity-docs-not-memory` · `memory-admission` · `learning-admits-discovery` · `learning-refuses-order-rule` · `learning-scopes-constraint` · `learning-writes-nothing` · `migration-backlog-reconcile` · `stress-twenty-turn` |
+| Retro | distill durable rules, and only those | `retro-source-gate` · `retro-rule-expiry` · `learning-reuses-synonym` · `learning-admits-after-correction` · `learning-supersedes-contradiction` · `learning-updates-preference` |
 | Security | the origin gate, and the leak surface | `security-origin-gate` · `security-no-secrets` |
 | Grooming | flags handled in the session that printed them | `groom-acts-on-flags` |
 | Scope control | answer a question without editing | `scope-question-no-edit` |
@@ -76,28 +78,34 @@ Two carry a note on why they exist at all. `routing-catalog-first` tests the fai
 
 `bootstrap-once` is the one eval that must run with the **agent** as the variable. Its failure was agent-specific — reported on `gpt-5.6-*`, never observed on Claude Code — so a corpus arm on the agent that never had it measures nothing. Run it against both harnesses with the corpus held at the treatment revision. For the foreign arm, hand over content rather than paths, delimit the payload against injection, bound the run, and fail closed when no verdict comes back.
 
+`handoff-reload` carries a turn separator, `|HANDOFF|`, instead of the ordinary `||`: the turn after it starts under a fresh session id over the same unchanged working tree, a genuine session discontinuity rather than a resumed one. This models a handoff, never a provider-side context compaction — neither CLI exposes a way to force the latter on demand — and the assertions measure whether the required context gets reloaded before the session edits anything further.
+
+The eight `learning-*` evals correspond one-to-one with the eight admission cases (successful discovery, rediscovered synonym, a current-order correction, a feature-specific constraint, a durable discovery after a correction, no new learning, a contradiction to supersede, and a durable preference update); each is a single-prompt eval so one case's outcome can never leak into another's. Five of the eight use two turns in one session — never a `|HANDOFF|` restart — so the "existing record" a case assumes is real and written by the same session, on whichever surface that arm actually offers, rather than pre-seeded into the fixture.
+
 ## Fixtures
 
-Nine, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Eight arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. The ninth, `ts-service-flagged`, exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token.
+Thirteen, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Most arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. `ts-service-flagged` exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token. `ts-service-partial-migration` is flagged too, deliberately: its whole point is an open migration backlog. Four more exist only on a generated node, each seeding a specific fault `--indexes generated` can reach: `ts-service-index-fault` (a truncated, non-verifying published entry), `ts-service-no-indexer` (the indexer itself removed after the cache warmed), `ts-service-branch-switched` (a cache built on a second branch, checkout left on this one — index.sh's own `.gitignore` of `.agent/indexes/` means a checkout never touches it), and `ts-service-partial-migration` (a migration-inventory.md carrying both an open `semantic-review-pending` rule and an open `hook-missing` doc).
+
+`--indexes <manual|generated>` (default `manual`, so every existing fixture still builds byte-identically) selects `node.sh init`'s own flag. On `generated`, the fixture also runs the fresh node's own `.agent/scripts/index.sh ensure` once after every other seeding step, so it arrives with a warm cache rather than a cold one — the state every generated-index eval actually measures. `run.sh` threads its own `--index-mode manual|generated` into this flag, mirroring `--harness` exactly, and records it in `run-config.json` beside `harness` under the same drift check.
 
 Two modifier flags build harness-free control arms on the same fixtures: `--no-harness` moves the node aside and ships no entry point; `--generic-claude` replaces it with an ordinary hand-written instructions file. Both are restricted to the evals whose assertions never touch the `.agent/` tree, and two of those seven measure information availability rather than behavior, because their answer only exists inside `.agent/docs/`.
 
 ## Assertions
 
-Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Twelve of the sixty-three are trace assertions.
+Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Sixteen of the one hundred thirteen are trace assertions.
 
 Each assertion carries a stable `id` (joins the arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind. A third file, `assertion-kinds.json`, tags each id as behavior, conformance, or information; it is kept beside the spec rather than inside it so the frozen spec stays frozen.
 
 The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once. The grading copies of `status.sh` and `comments.sh` are snapshotted from this repository, never taken from the node under test, so a corpus revision cannot grade itself.
 
-That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Twelve of the sixty-three are manual.
+That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content, whether a durable write is correctly scoped, deduplicated, or superseded. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Thirty-three of the one hundred thirteen are manual.
 
 ## What is wired
 
 | Piece | State |
 | --- | --- |
-| `spec.json` — 20 evals, 63 assertions; `heldout.json` — the same, reworded | complete |
-| `fixtures.sh` — 9 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
+| `spec.json` — 36 evals, 113 assertions; `heldout.json` — the same, reworded | complete |
+| `fixtures.sh` — 13 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
 | `fixture_seed.py` — the contract and routing-table edits a fixture needs, and the premise check | complete |
 | `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades; `EVALS_SPEC` selects the prompt set | complete |
 | `grade.py` — executes the check language, writes evidence per assertion | complete |
@@ -187,11 +195,21 @@ Three choices to make before the first live call, each recorded as a chosen budg
       fixture/               # the tree the session actually worked in
       run-meta.json          # model, effort, corpus ref, fixture base, resolved
                               # binary path/digest and version output, turn count,
-                              # timings, token usage and USD, exit status
+                              # timings, token usage and USD, exit status, and an
+                              # isolation block: the disposable config directory,
+                              # the provider variables stripped, and every skill or
+                              # hook name from a fixed list that turned up in the
+                              # trace anyway
       outputs/
         diff.patch           # project tree, fixture base -> end
         node-diff.patch      # .agent/ tree, fixture base -> end
         node-tree.txt        # every .agent/ file with content, for absence checks
+        indexes-before.txt   # one "path digest" line per .agent/indexes/ file,
+                              # taken right after the fixture build
+        indexes-after.txt    # the same manifest, taken at capture time — the only
+                              # way to see a hand-edit of a generated page, since
+                              # node-diff.patch is staged and .gitignore hides that
+                              # whole tree from it on a generated node
         session-transcript.txt   # `## Turn N` sections containing final text
         trace.jsonl          # one {"seq","event","tool","action","text"} object per
                               # tool call, action in read|write|execute|search|other
@@ -208,7 +226,7 @@ Note one thing the transcript cannot show: only each turn's final text is captur
 
 ## Filling in the manual assertions
 
-Twelve of sixty-three need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
+Thirty-three of one hundred thirteen need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
 
 Run `evals/triage.py <iteration-dir>`: it prints, per ungraded record, a proposed verdict and the quotation that produced it, applying one fixed rule per assertion. Read the quotations. `--apply` writes the PASS and FAIL proposals with their evidence; UNSURE ones, and any proposal you disagree with, are filled by hand with a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. Never open `arm-map.json` while grading.
 

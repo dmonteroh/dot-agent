@@ -250,8 +250,26 @@ def p_memory_files_modified(op, n):
         len(mod), ", ".join(mod) if mod else "none")
 
 
+# A generated node's canonical record surface is rules/learned/*.md, one
+# file per rule; rules/learned.md there is index.sh's own derived aggregate,
+# gitignored and never diffed. status.sh reads the record directory when it
+# holds at least one *.md file and falls back to rules/learned.md otherwise
+# (learned_dir_active); this mirrors the same rule against the node diff, so
+# a generated-node learning assertion no longer grades against an empty
+# delta by construction.
+LEARNED_RECORD = re.compile(r"^rules/learned/[^/]+\.md$")
+
+
 def _learned_delta():
-    f = node_files().get("rules/learned.md", {"added": [], "removed": []})
+    fs = node_files()
+    dir_files = {k: v for k, v in fs.items() if LEARNED_RECORD.match(k)}
+    if dir_files:
+        add, rem = [], []
+        for f in dir_files.values():
+            add.extend(l for l in f["added"] if l.startswith("- ["))
+            rem.extend(l for l in f["removed"] if l.startswith("- ["))
+        return add, rem
+    f = fs.get("rules/learned.md", {"added": [], "removed": []})
     add = [l for l in f["added"] if l.startswith("- [")]
     rem = [l for l in f["removed"] if l.startswith("- [")]
     return add, rem
@@ -276,6 +294,16 @@ def p_learned_rule_kept(pattern):
     hits = [r for r in rem if re.search(pattern, r)]
     return (not hits), ("no removed rule matches %r, so it survived the pass" % pattern) \
         if not hits else ("the pass removed it: " + hits[0][:160])
+
+
+def p_node_record_added(op, n):
+    """A real learn.sh write: a new file under rules/learned/, in the node
+    diff — not a bullet count, which _learned_delta already covers, but the
+    file-level trace a reviewer opens first."""
+    fs = node_files()
+    new = [k for k in fs if LEARNED_RECORD.match(k) and fs[k]["new"]]
+    return cmp_num(len(new), op, int(n)), "%d new record(s) under rules/learned/: %s" % (
+        len(new), ", ".join(sorted(new)) if new else "none")
 
 
 def p_node_file_changed(path):
@@ -304,6 +332,42 @@ def p_node_tree_absent(pattern):
     t = need("node-tree.txt")
     hits = [l for l in t.splitlines() if re.search(pattern, l)]
     return (not hits), ("nothing under .agent/ matches %r" % pattern) if not hits else ("found under .agent/: " + hits[0][:160])
+
+
+# ---- generated-index manifests ------------------------------------------
+# run.sh captures indexes-before.txt right after the fixture build (a
+# generated fixture already carries a warm cache by then) and
+# indexes-after.txt at capture time, each one "<path> <digest>" line per
+# file under .agent/indexes/ — the only way to see an edit to a generated
+# page at all, since node-diff.patch is staged and .gitignore hides that
+# whole tree from it on a generated node.
+
+INDEX_ENTRY_PATH = ".agent/indexes/current.md"
+
+
+def _index_manifest(name):
+    m = {}
+    for line in need(name).splitlines():
+        if not line:
+            continue
+        path, _, digest = line.partition(" ")
+        m[path] = digest
+    return m
+
+
+def p_index_pages_unedited(op, n):
+    before, after = _index_manifest("indexes-before.txt"), _index_manifest("indexes-after.txt")
+    changed = sorted(p for p in before
+                      if p != INDEX_ENTRY_PATH and p in after and before[p] != after[p])
+    return cmp_num(len(changed), op, int(n)), "%d generated page(s) changed in place: %s" % (
+        len(changed), ", ".join(changed) if changed else "none")
+
+
+def p_index_entry_refreshed():
+    before, after = _index_manifest("indexes-before.txt"), _index_manifest("indexes-after.txt")
+    b, af = before.get(INDEX_ENTRY_PATH), after.get(INDEX_ENTRY_PATH)
+    refreshed = af is not None and af != b
+    return refreshed, "entry digest %s -> %s" % (b or "absent", af or "absent")
 
 
 def p_product_files_changed(op, n):

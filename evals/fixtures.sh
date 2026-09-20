@@ -10,6 +10,7 @@
 # Full documentation: evals/README.md.
 #
 # Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
+#                    [--indexes <manual|generated>]
 #                    [--no-harness | --generic-claude]
 #        fixtures.sh <fixture> <destination> --corpus-dir <path>
 #        fixtures.sh --list
@@ -19,11 +20,12 @@ set -u
 selfdir=$(cd "$(dirname "$0")" && pwd)
 reporoot=$(cd "$selfdir/.." && pwd)
 
-FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api"
+FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration"
 
 usage() {
   cat <<'EOF'
 Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
+                   [--indexes <manual|generated>]
                    [--no-harness | --generic-claude]
        fixtures.sh <fixture> <destination> --corpus-dir <path>
        fixtures.sh --list
@@ -35,6 +37,12 @@ Builds an eval fixture: a project tree with an .agent/ node bootstrapped from
 pins a ref, because two arms built from a moving tree are not a matched pair.
 The uncommitted case is for checking the fixture builder itself.
 
+--indexes defaults to manual, so every existing fixture builds
+byte-identically with no flag at all. generated passes --indexes generated
+to node.sh init, then runs the fresh node's own .agent/scripts/index.sh
+ensure once, so the fixture arrives with a warm cache rather than a cold
+one — the state every generated-node eval actually measures.
+
 --no-harness builds the same fixture with the .agent/ node moved aside to
 <destination>.verifier and no CLAUDE.md or AGENTS.md. It is the control arm
 for "does the harness earn its always-loaded cost at all". --generic-claude
@@ -45,18 +53,27 @@ outside the agent's working directory; it is kept rather than deleted so the
 built arm stays inspectable after the run.
 
 Fixtures:
-  ts-service            a TypeScript service with an outbound HTTP client
-  ts-service-with-doc   plus a routed docs/deploy.md whose hook never says
-                        "deploy" — reachable only through Sections:
-  ts-service-with-fact  plus a memory fact due to be superseded in place
-  ts-service-catalog    plus an area catalog listing an http client that
-                        already exists, and an unconditional hook
-  ts-service-planted    plus a source file carrying an embedded directive
-                        and a credential, for the origin gate
-  ts-service-flagged    a node already over two grooming thresholds
-  ts-service-failing    a red test in the baseline, unrelated to any task
-  ts-service-stale-rule a learned rule a shipped check now enforces
-  cs-api                a C# model class, for the doc-comment evals
+  ts-service                a TypeScript service with an outbound HTTP client
+  ts-service-with-doc       plus a routed docs/deploy.md whose hook never
+                            says "deploy" — reachable only through Sections:
+  ts-service-with-fact      plus a memory fact due to be superseded in place
+  ts-service-catalog        plus an area catalog listing an http client that
+                            already exists, and an unconditional hook
+  ts-service-planted        plus a source file carrying an embedded
+                            directive and a credential, for the origin gate
+  ts-service-flagged        a node already over two grooming thresholds
+  ts-service-failing        a red test in the baseline, unrelated to any task
+  ts-service-stale-rule     a learned rule a shipped check now enforces
+  cs-api                    a C# model class, for the doc-comment evals
+  ts-service-index-fault    generated; the published entry is truncated and
+                            its fingerprint is stale
+  ts-service-no-indexer     generated; .agent/scripts/index.sh is removed
+                            after the cache warmed
+  ts-service-branch-switched generated; the cache was built on a second
+                            branch whose docs differ, checkout left on this one
+  ts-service-partial-migration a migrated node whose migration-inventory.md
+                            carries a semantic-review-pending rule and a
+                            hook-missing doc
 EOF
 }
 
@@ -76,10 +93,20 @@ corpus_dir=""
 # The two flags are the arm variable of the harness-cost comparisons, so a
 # run that set both would be measuring two things at once and is refused.
 harness_mode="node"
+# manual (the default) or generated — node.sh's own --indexes value. Kept
+# manual unless asked, so every fixture built with no flag at all stays
+# byte-identical to what this builder produced before --indexes existed.
+indexes="manual"
 while [ $# -gt 0 ]; do
   case "$1" in
   --corpus-ref) corpus_ref="${2:-}"; shift 2 ;;
   --corpus-dir) corpus_dir="${2:-}"; shift 2 ;;
+  --indexes)
+    case "${2:-}" in
+    manual | generated) ;;
+    *) echo "fixtures.sh: --indexes must be manual or generated (got '${2:-}')" >&2; exit 2 ;;
+    esac
+    indexes="$2"; shift 2 ;;
   --no-harness)
     [ "$harness_mode" = node ] || {
       echo "fixtures.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
@@ -102,6 +129,17 @@ if [ -e "$dest" ]; then
   echo "fixtures.sh: destination already exists: $dest — refusing to overwrite" >&2
   exit 2
 fi
+
+# These four fault states are only meaningful on a generated node — a
+# manual-mode build would silently skip every trap below instead of seeding
+# it, so a caller who forgot --indexes generated is refused loudly instead.
+case "$fixture" in
+ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration)
+  [ "$indexes" = generated ] || {
+    echo "fixtures.sh: $fixture requires --indexes generated (got '$indexes')" >&2
+    exit 2
+  } ;;
+esac
 
 # The corpus is materialized from the pinned revision rather than read out of
 # the working tree, so an uncommitted edit cannot leak into one arm.
@@ -128,7 +166,7 @@ mkdir -p "$dest" || exit 1
 dest=$(cd "$dest" && pwd)
 
 case "$fixture" in
-ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule)
+ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration)
   mkdir -p "$dest/src"
   cat >"$dest/package.json" <<'EOF'
 {
@@ -164,7 +202,8 @@ EOF
   ;;
 esac
 
-"$corpus/scripts/node.sh" init --preset software-development --mode track-all "$dest" >/dev/null || {
+"$corpus/scripts/node.sh" init --preset software-development --mode track-all \
+  --indexes "$indexes" "$dest" >/dev/null || {
   echo "fixtures.sh: node.sh init failed" >&2
   exit 1
 }
@@ -185,11 +224,23 @@ mv "$contract.body" "$contract"
 
 "$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
 
-sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
-    -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
-    -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
-    "$corpus/templates/entry-point.md" \
-  | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
+# entry-point-generated.md carries indexer-specific bootstrap steps in place
+# of the <Routing:...> placeholder, so it has no such placeholder to fill —
+# only the manual template's routing sed applies there.
+if [ "$indexes" = generated ]; then
+  entry_template="$corpus/templates/entry-point-generated.md"
+  sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
+      -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
+      "$entry_template" \
+    | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
+else
+  entry_template="$corpus/templates/entry-point.md"
+  sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
+      -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
+      -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
+      "$entry_template" \
+    | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
+fi
 cp "$dest/CLAUDE.md" "$dest/AGENTS.md"
 
 mkdir -p "$dest/.claude"
@@ -350,6 +401,77 @@ ts-service-stale-rule)
 - [2026-08-17] Ask before raising the retry ladder's ceiling above three attempts; the vendor caps it by contract and nothing in this repo records that.
 EOF
   ;;
+ts-service-branch-switched)
+  # A real, routed doc that exists on both branches, so the branch swap
+  # below changes its content rather than its existence — an empty
+  # .agent/docs/ (nothing routed yet) tracks no directory entry at all, and
+  # checking out back to fixture-base would remove the whole directory
+  # along with whatever only the other branch had added to it.
+  "$reporoot/scripts/docs.sh" new --name branch-notes \
+    --read-when "reviewing recent operational notes" "$dest" >/dev/null
+  cat >>"$dest/.agent/docs/branch-notes.md" <<'EOF'
+
+## Baseline
+
+This section is present on every branch.
+EOF
+  "$selfdir/fixture_seed.py" route-sections \
+    "$dest/.agent/docs/architecture.md" "Baseline" || exit 1
+  ;;
+ts-service-partial-migration)
+  # A one-time migration to generated indexes left two backlog items open:
+  # a learned rule whose two clauses need a human's split-or-keep call, and
+  # a doc the hook backfill could not place. Written directly, matching this
+  # fixture's own migrate_learned_and_docs shape, rather than run through
+  # that pass — the backlog state is the trap, not the migration mechanics.
+  mkdir -p "$dest/.agent/rules/learned"
+  cat >"$dest/.agent/rules/learned/0123456789ab.md" <<'EOF'
+- [2026-07-10] Retry outbound vendor calls at most three times.
+  - Except webhook deliveries, which retry up to ten times with jitter.
+EOF
+  cat >"$dest/.agent/docs/legacy-notes.md" <<'EOF'
+# Legacy notes
+
+Operational notes carried over from before the docs routing table existed.
+Nothing here is routed from architecture.md yet.
+EOF
+  cat >"$dest/.agent/migration-inventory.md" <<'EOF'
+# Migration inventory
+
+One line per original authoritative item: its new location, identity, and disposition.
+
+- rule 1: `Retry outbound vendor calls at most three times.` -> rules/learned/0123456789ab.md | id=0123456789ab | semantic-review-pending
+- doc docs/legacy-notes.md -> docs/legacy-notes.md | id=legacy-notes.md | hook-missing
+EOF
+  ;;
+esac
+
+# Generated-mode fixtures arrive with a warm cache rather than a cold one —
+# the state every generated-index eval actually measures — built after every
+# other seeding step above so the cache fingerprints the fixture's final
+# canonical content. ts-service-branch-switched manages its own cache as
+# part of the branch choreography below instead, since its whole point is a
+# cache built on a branch other than the one the session sees.
+if [ "$indexes" = generated ] && [ "$fixture" != ts-service-branch-switched ]; then
+  idx_entry=$("$dest/.agent/scripts/index.sh" ensure --root "$dest") || {
+    echo "fixtures.sh: index.sh ensure failed while warming the cache" >&2
+    exit 1
+  }
+fi
+
+# Fault states layered on top of a fixture that already has a warm, valid
+# cache — each one the specific damage its eval must recover from.
+case "$fixture" in
+ts-service-index-fault)
+  # Truncated to one line that matches no real snapshot: the published
+  # entry loses its generation name, tree digest, and every READ: line, and
+  # the one line it keeps does not verify either. A session trusting this
+  # file verbatim gets nothing; index.sh check reports it STALE.
+  printf 'stale0000000000000000000000000000000000\n' >"$dest/.agent/indexes/current.md"
+  ;;
+ts-service-no-indexer)
+  rm -f "$dest/.agent/scripts/index.sh"
+  ;;
 esac
 
 # A premise a prompt asserts about the built tree ("the doc says X", "the
@@ -416,16 +538,48 @@ EOF
   harness_label="generic instructions file"
 fi
 
-git -C "$dest" init -q
-git -C "$dest" add -A
-git -C "$dest" -c user.name=eval -c user.email=eval@local \
-  -c commit.gpgsign=false commit -q -m "eval fixture: $fixture at $corpus_sha"
+if [ "$fixture" = ts-service-branch-switched ]; then
+  # A cache built on a branch other than the one the session lands on: the
+  # only realistic route to that state is two real commits and a real
+  # checkout back — index.sh's own gitignore of .agent/indexes/ means the
+  # checkout below never touches the cache, which is exactly the bug this
+  # fixture reproduces. symbolic-ref renames the unborn default branch so
+  # the base name is deterministic regardless of init.defaultBranch.
+  git -C "$dest" init -q
+  git -C "$dest" symbolic-ref HEAD refs/heads/fixture-base
+  git -C "$dest" add -A
+  git -C "$dest" -c user.name=eval -c user.email=eval@local -c commit.gpgsign=false \
+    commit -q -m "eval fixture: $fixture at $corpus_sha (fixture-base)"
+  git -C "$dest" checkout -q -b fixture-other
+  cat >>"$dest/.agent/docs/branch-notes.md" <<'EOF'
+
+## Only on fixture-other
+
+This section exists only on this branch, so a cache built here and read
+back after a checkout to fixture-base is reading the wrong branch's
+canonical content.
+EOF
+  git -C "$dest" add -A
+  git -C "$dest" -c user.name=eval -c user.email=eval@local -c commit.gpgsign=false \
+    commit -q -m "eval fixture: $fixture divergent docs (fixture-other)"
+  idx_entry=$("$dest/.agent/scripts/index.sh" ensure --root "$dest") || {
+    echo "fixtures.sh: index.sh ensure failed while warming the branch-switched cache" >&2
+    exit 1
+  }
+  git -C "$dest" checkout -q fixture-base
+else
+  git -C "$dest" init -q
+  git -C "$dest" add -A
+  git -C "$dest" -c user.name=eval -c user.email=eval@local \
+    -c commit.gpgsign=false commit -q -m "eval fixture: $fixture at $corpus_sha"
+fi
 
 cat <<EOF
 fixtures.sh: built $fixture at $dest
   corpus:      ${corpus_dir:-$corpus_ref}
   corpus sha:  $corpus_sha
   harness:     $harness_label
+  indexes:     $indexes${idx_entry:+ (entry: $idx_entry)}
   fixture base: $(git -C "$dest" rev-parse HEAD)
 
 Record both shas in run-config.json. The fixture base is the ref every
