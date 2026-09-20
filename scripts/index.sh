@@ -233,11 +233,12 @@ tree_digest() {
 }
 
 mtime_epoch() {
-  if stat -f '%m' "$1" >/dev/null 2>&1; then
-    stat -f '%m' "$1"
-  else
-    stat -c '%Y' "$1"
-  fi
+  # GNU-first: GNU's `-f` means "filesystem status", not a BSD format
+  # flag, so `stat -f '%m' file` succeeds on Linux without erroring and
+  # prints an unrelated filesystem report instead of the mtime — the
+  # reverse order can never detect that failure. `-c` is GNU-only and
+  # BSD stat rejects it outright, so trying `-c` first is safe on both.
+  stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"
 }
 
 # Builds the exact byte content a valid, matching entry file must have for

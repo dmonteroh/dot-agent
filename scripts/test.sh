@@ -160,16 +160,21 @@ Body text describing the alpha area.
 EOF
 }
 
-# path -> epoch mtime, BSD or GNU stat.
+# path -> epoch mtime, BSD or GNU stat. GNU-first: GNU's `-f` means
+# "filesystem status", not a BSD format flag, so `stat -f '%m'` succeeds
+# on Linux without erroring and prints an unrelated filesystem report
+# instead of the mtime — trying it first can never detect that failure.
+# `-c` is GNU-only and BSD stat rejects it outright, so trying `-c`
+# first is safe on both.
 idx_mtime() {
-  stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1"
+  stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1"
 }
 
 # path -> a snapshot of every file's relative path, byte count, and mtime
 # under it, sorted — used to prove a warm run touches nothing at all.
 idx_snapshot() {
   find "$1" -type f -exec sh -c 'for f; do
-    sz=$(wc -c <"$f"); mt=$(stat -f "%m" "$f" 2>/dev/null || stat -c "%Y" "$f"); printf "%s %s %s\n" "$f" "$sz" "$mt"
+    sz=$(wc -c <"$f"); mt=$(stat -c "%Y" "$f" 2>/dev/null || stat -f "%m" "$f"); printf "%s %s %s\n" "$f" "$sz" "$mt"
   done' sh {} + | sort
 }
 
