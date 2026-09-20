@@ -74,7 +74,7 @@
     "index-branch-switch/entry-refreshed": "conformance",
     "index-branch-switch/pages-unedited": "conformance",
     "index-branch-switch/routing-matches-this-branch": "conformance",
-    "index-cache-fault-fallback/no-false-confidence": "behavior",
+    "index-cache-fault-fallback/no-false-confidence": "conformance",
     "index-cache-fault-fallback/pages-unedited": "conformance",
     "index-cache-fault-fallback/recovers-or-falls-back": "conformance",
     "index-missing-indexer/no-index-claim": "conformance",
