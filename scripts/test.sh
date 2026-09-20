@@ -19,6 +19,11 @@ LOGSH="$reporoot/scripts/log.sh"
 IDXSH="$reporoot/scripts/index.sh"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/dot-agent-test.XXXXXX")
+# node.sh and index.sh resolve a root with `pwd -P`, so every path they
+# print back is symlink-free. macOS's default TMPDIR lives under
+# /var/folders, itself a symlink into /private, so a fixture path built
+# from an unresolved mktemp -d never equals the path those scripts print.
+WORK=$(cd "$WORK" && pwd -P)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
