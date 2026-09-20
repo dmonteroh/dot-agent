@@ -6794,7 +6794,16 @@ mkdir -p "$i47long/.agent/docs"
 printf '# A\n' >"$i47long/.agent/docs/a.md"
 "$IDXSH" ensure --root "$i47long" >/dev/null 2>&1
 cp "$i47long/.agent/indexes/current.md" "$WORK/i47.long-entry"
-i47smallbudget=$((${#i47long} + 80))
+# One byte under the entry's own measured size, not root length plus an
+# assumed constant: the fixed per-entry overhead (fingerprint, generation
+# name, tree digest, the READ line's own directory prefix) runs well past
+# a guessed +80 on some hosts, and a short TMPDIR prefix (bare /tmp on a
+# CI runner vs a longer local one) can then put root-length-plus-80 below
+# index.sh's own 256-byte floor, hitting the usage-error path instead of
+# the overflow fallback this test means to exercise.
+i47priorbytes=$(wc -c <"$WORK/i47.long-entry")
+i47smallbudget=$((i47priorbytes - 1))
+[ "$i47smallbudget" -ge 256 ] || i47smallbudget=256
 "$IDXSH" ensure --root "$i47long" --budget "$i47smallbudget" >/dev/null 2>"$WORK/i47.long.err"
 grep -q 'entry exceeds page budget' "$WORK/i47.long.err" && grep -q 'FALLBACK:' "$WORK/i47.long.err" \
   && cmp -s "$WORK/i47.long-entry" "$i47long/.agent/indexes/current.md" \
