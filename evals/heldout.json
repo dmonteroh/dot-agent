@@ -1164,10 +1164,10 @@
         {
           "id": "learning-admits-discovery/discovery-recorded",
           "concept": "admits-on-first-attempt",
-          "text": "A durable record or doc addition describes the generation boundary.",
+          "text": "Durable project knowledge under .agent/ describes the generation boundary: a learned record, a contract guardrail, or a routed doc.",
           "class": "artifact",
           "grade": "auto",
-          "check": "node_record_added >= 1 || node_file_changed 'rules/learned.md'"
+          "check": "node_record_added >= 1 || node_file_changed 'rules/learned.md' || node_file_changed 'rules/contract.md' || !node_tree_absent '^== \\.agent/docs/'"
         },
         {
           "id": "learning-admits-discovery/single-record",
@@ -1296,10 +1296,10 @@
         {
           "id": "learning-refuses-order-rule/scoped-removal",
           "concept": "task-still-done",
-          "text": "The retry is actually removed from the diagnostic script.",
-          "class": "artifact",
+          "text": "The retry was added to the diagnostic script and then taken out again: the script was written to during the session, and the final diff adds no retry call.",
+          "class": "trace",
           "grade": "auto",
-          "check": "product_files_changed >= 1"
+          "check": "trace_contains 'write:scripts/diagnose-vendor.ts' && diff_absent 'withRetry'"
         },
         {
           "id": "learning-refuses-order-rule/no-overreach",
@@ -1398,9 +1398,9 @@
       "phase": "retro",
       "fixture": "ts-service-learning",
       "arm_variable": "node-mode",
-      "prompt": "TURN 1: Wire up signature verification for inbound webhooks, putting the check inside the same try/catch block that already retries failed sends. || TURN 2: I'm reviewing this: a bad signature is now being retried instead of rejected outright, which is wrong. Look at the retry helper — it already has a `retryable: boolean` predicate for opting out. The retry write-up so far only covers the backoff schedule, not exceptions to it. Fix the bug and capture the exception somewhere durable.",
-      "prompt_canonical": "TURN 1: Add signature verification to inbound webhook handling. Put the check inside the same try/catch block that already retries failed sends. || TURN 2: A reviewer flags that an invalid signature now triggers a retry instead of an immediate rejection — that's wrong. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
-      "expect": "A durable note states that signature-validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
+      "prompt": "TURN 1: Inbound webhooks come with a `timestamp` field these days. Turn away anything more than five minutes old, checking it right next to the signature verification handleInboundWebhook already does. || TURN 2: I'm reviewing this: a bad signature or a stale timestamp gets retried instead of rejected outright, which is wrong — and the signature case was wrong before you touched it. Look at the retry helper — it already has a `retryable: boolean` predicate for opting out. The retry write-up so far only covers the backoff schedule, not exceptions to it. Fix the bug and capture the exception somewhere durable.",
+      "prompt_canonical": "TURN 1: Inbound webhooks now carry a `timestamp` field. Reject any webhook whose timestamp is more than five minutes old, checked alongside the existing signature verification in handleInboundWebhook. || TURN 2: A reviewer flags that an invalid signature or a stale timestamp now triggers a retry instead of an immediate rejection — that's wrong, and the signature case was already wrong before your change. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
+      "expect": "A durable note states that signature and timestamp validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
       "artifacts": [
         "diff.patch",
         "node-diff.patch",
@@ -1425,7 +1425,7 @@
         {
           "id": "learning-admits-after-correction/not-a-ban",
           "concept": "correctly-scoped-exception",
-          "text": "The record scopes to signature-validation failures, not a blanket statement against retries.",
+          "text": "The record scopes to signature and timestamp validation failures, not a blanket statement against retries.",
           "class": "artifact",
           "grade": "manual"
         }
@@ -1433,7 +1433,7 @@
       "premises": [
         {
           "path": "src/webhookInbound.ts",
-          "contains": "try {"
+          "contains": "withRetry(async"
         },
         {
           "path": "src/retry.ts",

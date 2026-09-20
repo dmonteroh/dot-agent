@@ -92,7 +92,7 @@ Two modifier flags build harness-free control arms on the same fixtures: `--no-h
 
 ## Assertions
 
-Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Fifteen of the one hundred eleven are trace assertions.
+Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Sixteen of the one hundred eleven are trace assertions.
 
 Each assertion carries a stable `id` (joins the arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind. A third file, `assertion-kinds.json`, tags each id as behavior, conformance, or information; it is kept beside the spec rather than inside it so the frozen spec stays frozen.
 

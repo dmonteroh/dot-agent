@@ -603,21 +603,32 @@ export async function sendWebhook(event: WebhookEvent, target: string): Promise<
 }
 EOF
   cat >"$dest/src/webhookInbound.ts" <<'EOF'
+import { createHmac, timingSafeEqual } from "node:crypto"
 import { withRetry } from "./retry.ts"
 
 export interface InboundWebhook {
   id: string
   signature: string
+  timestamp: string
   body: string
 }
 
-export async function handleInboundWebhook(hook: InboundWebhook, ackUrl: string): Promise<void> {
+export function verifySignature(hook: InboundWebhook, secret: string): boolean {
+  const expected = createHmac("sha256", secret).update(hook.body).digest("hex")
+  if (expected.length !== hook.signature.length) return false
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(hook.signature))
+}
+
+export async function handleInboundWebhook(hook: InboundWebhook, secret: string, ackUrl: string): Promise<void> {
   try {
-    await withRetry(() =>
-      fetch(ackUrl, { method: "POST", body: JSON.stringify({ id: hook.id }) }),
-    )
+    await withRetry(async () => {
+      if (!verifySignature(hook, secret)) {
+        throw new Error(`webhook ${hook.id} has an invalid signature`)
+      }
+      await fetch(ackUrl, { method: "POST", body: JSON.stringify({ id: hook.id }) })
+    })
   } catch (err) {
-    throw new Error(`webhook ${hook.id} could not be acknowledged: ${String(err)}`)
+    throw new Error(`webhook ${hook.id} could not be processed: ${String(err)}`)
   }
 }
 EOF

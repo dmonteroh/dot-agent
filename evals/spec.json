@@ -452,7 +452,7 @@
       "expect": "The session records this generation boundary as durable project knowledge \u2014 naming the yaml sources and the generated output, citing the script \u2014 on its first attempt, with no failure or correction needed to trigger it.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
-        { "id": "learning-admits-discovery/discovery-recorded", "concept": "admits-on-first-attempt", "text": "A durable record or doc addition describes the generation boundary.", "class": "artifact", "grade": "auto", "check": "node_record_added >= 1 || node_file_changed 'rules/learned.md'" },
+        { "id": "learning-admits-discovery/discovery-recorded", "concept": "admits-on-first-attempt", "text": "Durable project knowledge under .agent/ describes the generation boundary: a learned record, a contract guardrail, or a routed doc.", "class": "artifact", "grade": "auto", "check": "node_record_added >= 1 || node_file_changed 'rules/learned.md' || node_file_changed 'rules/contract.md' || !node_tree_absent '^== \\.agent/docs/'" },
         { "id": "learning-admits-discovery/single-record", "concept": "no-duplicate-explanation", "text": "Exactly one durable note describes the boundary; no second rule repeats the same explanation.", "class": "artifact", "grade": "manual" },
         { "id": "learning-admits-discovery/names-both-sides", "concept": "cites-evidence", "text": "The written text names both the yaml sources and the generated TypeScript output, and cites the generator script.", "class": "artifact", "grade": "manual" }
       ],
@@ -498,7 +498,7 @@
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
         { "id": "learning-refuses-order-rule/no-durable-rule", "concept": "refuses-order-scale-rule", "text": "No durable record is written for this one-off reversal.", "class": "artifact", "grade": "auto", "check": "learned_rules_added == 0 && node_record_added == 0" },
-        { "id": "learning-refuses-order-rule/scoped-removal", "concept": "task-still-done", "text": "The retry is actually removed from the diagnostic script.", "class": "artifact", "grade": "auto", "check": "product_files_changed >= 1" },
+        { "id": "learning-refuses-order-rule/scoped-removal", "concept": "task-still-done", "text": "The retry was added to the diagnostic script and then taken out again: the script was written to during the session, and the final diff adds no retry call.", "class": "trace", "grade": "auto", "check": "trace_contains 'write:scripts/diagnose-vendor.ts' && diff_absent 'withRetry'" },
         { "id": "learning-refuses-order-rule/no-overreach", "concept": "no-overreach", "text": "The reply does not generalize the removal into project-wide retry guidance.", "class": "artifact", "grade": "manual" }
       ],
       "premises": [
@@ -537,23 +537,23 @@
       "phase": "retro",
       "fixture": "ts-service-learning",
       "arm_variable": "node-mode",
-      "prompt": "TURN 1: Add signature verification to inbound webhook handling. Put the check inside the same try/catch block that already retries failed sends. || TURN 2: A reviewer flags that an invalid signature now triggers a retry instead of an immediate rejection \u2014 that's wrong. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
-      "expect": "A durable note states that signature-validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
+      "prompt": "TURN 1: Inbound webhooks now carry a `timestamp` field. Reject any webhook whose timestamp is more than five minutes old, checked alongside the existing signature verification in handleInboundWebhook. || TURN 2: A reviewer flags that an invalid signature or a stale timestamp now triggers a retry instead of an immediate rejection \u2014 that's wrong, and the signature case was already wrong before your change. Check the retry helper: it already accepts a `retryable: boolean` predicate to opt out. Existing retry guidance only documents the backoff schedule, not what should skip it. Fix the bug and record the exception.",
+      "expect": "A durable note states that signature and timestamp validation failures are not retryable, citing the retry helper's predicate and the reviewer's correction, without banning retries broadly.",
       "artifacts": ["diff.patch", "node-diff.patch", "session-transcript.txt"],
       "assertions": [
         { "id": "learning-admits-after-correction/exception-recorded", "concept": "admits-after-correction", "text": "A durable record or rule states the signature/retry exception.", "class": "artifact", "grade": "auto", "check": "learned_rules_added >= 1 || node_record_added >= 1" },
         { "id": "learning-admits-after-correction/cites-mechanism", "concept": "cites-evidence", "text": "The written exception cites the retryable predicate or the reviewer's correction as evidence, not just an assertion.", "class": "artifact", "grade": "manual" },
-        { "id": "learning-admits-after-correction/not-a-ban", "concept": "correctly-scoped-exception", "text": "The record scopes to signature-validation failures, not a blanket statement against retries.", "class": "artifact", "grade": "manual" }
+        { "id": "learning-admits-after-correction/not-a-ban", "concept": "correctly-scoped-exception", "text": "The record scopes to signature and timestamp validation failures, not a blanket statement against retries.", "class": "artifact", "grade": "manual" }
       ],
       "premises": [
-        { "path": "src/webhookInbound.ts", "contains": "try {" },
+        { "path": "src/webhookInbound.ts", "contains": "withRetry(async" },
         { "path": "src/retry.ts", "contains": "retryable" },
         { "path": "docs/retries.md", "contains": "Backoff schedule" },
         { "path": "docs/retries.md", "absent": "retryable" },
         { "path": ".agent/rules/learned.md", "absent": "[2026" },
         { "path": ".agent/rules/contract.md", "contains": "Identify the failing source first" }
       ],
-      "why": "a defect a reviewer catches, once verified against the actual mechanism, is exactly the kind of exception that should survive the session that found it \u2014 the durable-discovery-after-correction case CASES.md encodes. Split into two turns so turn 1 builds the actual defect live and turn 2 delivers the reviewer's correction as a genuine second turn, rather than narrating both as already-past events in one turn."
+      "why": "a defect a reviewer catches, once verified against the actual mechanism, is exactly the kind of exception that should survive the session that found it \u2014 the durable-discovery-after-correction case CASES.md encodes. The fixture ships the defect: verification already runs inside the retried closure, so a failed check is retried. Turn 1 asks for a second check beside it, turn 2 delivers the reviewer's correction as a genuine second turn against a bug that really exists (the first calibration run's version asked turn 1 to build the bug, and every session built it correctly instead), rather than narrating both as already-past events in one turn."
     },
     {
       "id": "learning-writes-nothing",
