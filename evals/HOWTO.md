@@ -117,7 +117,14 @@ Two groups of evals don't belong in that loop, because each names a different va
 evals/rollup.py "$W/iteration-1"
 ```
 
-Run it once per iteration you built: `iteration-1` for the corpus pass above, and the same command against `iteration-2` or `iteration-3` if you also ran the node-mode or bootstrap-once passes. This refuses to run while any manual assertion under that iteration is still ungraded. `grade.py` writes those `passed: null`. For each one, open `$W/iteration-<n>/eval-<id>/<run-id>/outputs/`, read the artifacts, and fill in `passed` and a quoted `evidence` string by hand — blind to which run is which arm. `arm-map.json` holds that mapping, and `rollup.py` voids the pass if a grading record leaks it.
+Run it once per iteration you built: `iteration-1` for the corpus pass above, and the same command against `iteration-2` or `iteration-3` if you also ran the node-mode or bootstrap-once passes. `rollup.py` requires every graded assertion to be paired across both arms, and the four generated-only evals (`index-cache-fault-fallback`, `index-missing-indexer`, `index-branch-switch`, `migration-backlog-reconcile`) never have a manual-arm counterpart, so a plain run against `iteration-2` dies naming one of them as unpaired. Drop them from that call with `--exclude-eval`:
+
+```
+evals/rollup.py --exclude-eval index-cache-fault-fallback --exclude-eval index-missing-indexer \
+  --exclude-eval index-branch-switch --exclude-eval migration-backlog-reconcile "$W/iteration-2"
+```
+
+The excluded ids land in the report's own `excluded_evals` list and are printed, so their feasibility-only status stays visible rather than silently dropped. This refuses to run while any manual assertion under that iteration is still ungraded. `grade.py` writes those `passed: null`. For each one, open `$W/iteration-<n>/eval-<id>/<run-id>/outputs/`, read the artifacts, and fill in `passed` and a quoted `evidence` string by hand — blind to which run is which arm. `arm-map.json` holds that mapping, and `rollup.py` voids the pass if a grading record leaks it.
 
 ## 5. Read the result
 
