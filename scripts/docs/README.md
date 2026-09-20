@@ -2,7 +2,7 @@
 
 One file per script under `scripts/`. These describe what each script does, what it reports, and how a node tunes it.
 
-**These files stay in the source repo.** `node.sh` copies executables and starter confs into a node, never this folder — a node's `.agent/scripts/` holds the nine shipped scripts plus their confs and nothing else. That is the point: a script that lands in someone's repository carries the code and its usage line, not this repo's design notes.
+**These files stay in the source repo.** `node.sh` copies executables and starter confs into a node, never this folder — a node's `.agent/scripts/` holds the nine canonical scripts, the `finish.sh` compatibility alias for `checkpoint.sh`, and their confs, and nothing else (`scripts/node.sh`'s copy loop names all ten by file). That is the point: a script that lands in someone's repository carries the code and its usage line, not this repo's design notes.
 
 So the split is:
 
@@ -25,12 +25,13 @@ A node needing more than its conf explains reads these files upstream.
 | `checkpoint.sh` | yes | [checkpoint.md](checkpoint.md) |
 | `index.sh` | yes | [index.md](index.md) |
 | `learn.sh` | yes | [learn.md](learn.md) |
+| `finish.sh` | yes — compatibility shim, forwards unchanged to `checkpoint.sh` | [checkpoint.md](checkpoint.md) |
 | `node.sh` | no — run from this repo | [node.md](node.md) |
 | `test.sh` | no — this repo's gate | [test.md](test.md) |
 
 ## Arguments
 
-Seven of the shipped scripts end with an optional `[root]` — the project root holding `.agent/`, defaulting to `.`. `comments.sh` does not: its one argument is a git base ref. It audits a diff in the repository it is run from rather than a node's tree, so there is no root for it to take. A `[root]` habit carried over to it gets `base ref '.' not found` and a non-zero exit, not a silent wrong answer. `index.sh` is the second exception, with its own shape: an optional `--root <path>` flag plus an optional `--budget <bytes>` flag, not a trailing positional and not `comments.sh`'s base ref.
+Seven of the nine canonical scripts end with an optional `[root]` — the project root holding `.agent/`, defaulting to `.`. `comments.sh` does not: its one argument is a git base ref. It audits a diff in the repository it is run from rather than a node's tree, so there is no root for it to take. A `[root]` habit carried over to it gets `base ref '.' not found` and a non-zero exit, not a silent wrong answer. `index.sh` is the second exception, with its own shape: an optional `--root <path>` flag plus an optional `--budget <bytes>` flag, not a trailing positional and not `comments.sh`'s base ref. `finish.sh` takes whatever `checkpoint.sh` takes: it forwards its arguments unchanged.
 
 ## Exit status
 

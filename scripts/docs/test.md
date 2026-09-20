@@ -12,7 +12,7 @@ Written bash 3.2 / BSD portable: no associative arrays, no GNU-only flags. CI ru
 
 ## Three conventions worth keeping
 
-**The expected set is written out here, not read from the script under test.** The presence loop names all eight shipped scripts, the `finish.sh` compatibility alias, and all three starter confs literally. Deriving the list from `node.sh` would drop with it and pass.
+**The expected set is written out here, not read from the script under test.** The presence loop names all nine canonical shipped scripts, the `finish.sh` compatibility alias, and all three starter confs literally. Deriving the list from `node.sh` would drop with it and pass.
 
 **Fixtures that are written to be blocked are C-family files.** Section 34 plants comments into `.ts`, `.cs` and `.py` fixtures. The suite itself is shell, where `//` opens no comment, so the gate scanning this repo does not read its own fixture strings back as findings.
 
