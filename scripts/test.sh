@@ -9371,6 +9371,36 @@ grep -qF 'rules/learned.md' "$WORK/lrn73-manual-new.err" \
   && pass "learn.sh: the manual-mode refusal names rules/learned.md as the node's surface" \
   || fail "learn.sh: the manual-mode refusal names rules/learned.md as the node's surface"
 
+# A fresh generated-mode node has no rules/learned/ either — only the
+# migration creates it — and its rules/learned.md is gitignored. The first
+# `new` must create the directory and land a tracked record, or the node's
+# first learned rule has nowhere git can see. The 2026-09-20 calibration
+# rerun found eight sessions hand-editing the ignored aggregate after this
+# refusal.
+lrn73_gen="$WORK/learn-fresh-generated"
+mkdir -p "$lrn73_gen"
+"$NODE" init --preset software-development --mode track-all --indexes generated "$lrn73_gen" >/dev/null 2>&1
+finish_bootstrap "$lrn73_gen"
+git -C "$lrn73_gen" init -q 2>/dev/null
+LRNG="$lrn73_gen/.agent/scripts/learn.sh"
+printf -- '- [2026-01-02] Never retry a payment POST without an idempotency key.\n' >"$WORK/lrn73-gen-cand.md"
+[ ! -e "$lrn73_gen/.agent/rules/learned" ] \
+  && pass "learn.sh: a fresh generated-mode init has no rules/learned/ directory yet" \
+  || fail "learn.sh: a fresh generated-mode init has no rules/learned/ directory yet"
+"$LRNG" new --file "$WORK/lrn73-gen-cand.md" "$lrn73_gen" >"$WORK/lrn73-gen-new.out" 2>"$WORK/lrn73-gen-new.err"
+lrn73_gennew_rc=$?
+lrn73_gen_records=$(find "$lrn73_gen/.agent/rules/learned" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+[ "$lrn73_gennew_rc" -eq 0 ] && [ "$lrn73_gen_records" -eq 1 ] \
+  && pass "learn.sh: the first new on a fresh generated-mode node creates rules/learned/ and writes one record" \
+  || fail "learn.sh: the first new on a fresh generated-mode node creates rules/learned/ and writes one record (rc=$lrn73_gennew_rc records=$lrn73_gen_records; $(cat "$WORK/lrn73-gen-new.err"))"
+grep -qF 'idempotency key' "$lrn73_gen/.agent/rules/learned.md" \
+  && pass "learn.sh: the regenerated rules/learned.md carries the first record after the write" \
+  || fail "learn.sh: the regenerated rules/learned.md carries the first record after the write"
+lrn73_gen_untracked=$(git -C "$lrn73_gen" status --porcelain --untracked-files=all -- .agent/rules/learned 2>/dev/null | grep -c '\.md$')
+[ "${lrn73_gen_untracked:-0}" -eq 1 ] \
+  && pass "learn.sh: the first record on a generated node is visible to git, unlike the ignored aggregate" \
+  || fail "learn.sh: the first record on a generated node is visible to git, unlike the ignored aggregate (untracked=$lrn73_gen_untracked)"
+
 "$LRNM" revise deadbeefcafe --file "$WORK/lrn73-manual-cand.md" --expected absent "$lrn73_manual" >/dev/null 2>&1
 [ "$?" -eq 7 ] \
   && pass "learn.sh: revise on a manual-mode node with no rules/learned/ refuses at exit 7" \
@@ -9908,7 +9938,7 @@ ran=$((PASS + FAIL))
 # — a fixture that failed to build, a variable gone empty — used to lower
 # the total silently and still report every check passing. Update this
 # number when you add or remove a check, deliberately.
-EXPECTED_CHECKS=1327
+EXPECTED_CHECKS=1331
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

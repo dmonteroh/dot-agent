@@ -384,8 +384,20 @@ new)
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
-    echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
-    exit 7
+    # A node that runs generated indexes but has never held a record — a
+    # fresh init, since only the migration creates the directory — has
+    # rules/learned.md gitignored and nowhere tracked for its first rule.
+    # Refusing here sent sessions to hand-edit the ignored aggregate, where
+    # the rule survived until the next index rebuild and never reached git.
+    # The first record creates the directory; index.sh then treats it as
+    # canonical and regenerates the aggregate from it. A manual-mode node
+    # still refuses: there rules/learned.md is the hand-kept source.
+    if [ "$(lrn_indexes_mode "$root")" = generated ] && [ ! -e "$learned_dir" ]; then
+      mkdir -p "$learned_dir" || { echo "learn.sh: could not create $learned_dir" >&2; exit 1; }
+    else
+      echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
+      exit 7
+    fi
   fi
 
   read_candidate "$file"
