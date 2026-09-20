@@ -669,7 +669,7 @@
       ],
       "premises": [
         { "path": "src/client.ts", "contains": "submitPayment" },
-        { "path": "CLAUDE.md", "contains": "After a context compaction or handoff, run step 1 again" }
+        { "path": "CLAUDE.md", "contains": "After a context compaction" }
       ],
       "why": "neither CLI can force a provider-side context compaction on demand; this models the boundary as a real session restart over one unchanged working tree and measures renewed loading, never claiming to measure compaction itself."
     }
