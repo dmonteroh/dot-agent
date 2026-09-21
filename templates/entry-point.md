@@ -1,34 +1,18 @@
-<!-- Canonical entry-point template. Copy into each tool's entry-point
-filename (CLAUDE.md, AGENTS.md, .cursorrules, .github/copilot-instructions.md),
-fill every <…> placeholder, and delete this comment. Root nodes write every
-path absolute (bash ~/.agent/scripts/status.sh ~, ~/.agent/rules/…) since
-sessions run from project directories. Keep all entry points identical. -->
+<!-- Canonical entry-point template — manual indexes mode (the default). Copy into each tool's entry-point filename (CLAUDE.md and AGENTS.md, plus .github/copilot-instructions.md when the team uses Copilot Chat or code review). Use templates/entry-point-generated.md instead when the node's purpose.md manifest carries `indexes: generated`; the two stay identical mirrors only within one node's own set of tool files, never across the two modes. The operating model's wiring matrix records what each tool reads. Fill every <…> placeholder, then delete this comment. Root nodes write every path absolute (bash ~/.agent/scripts/status.sh ~, ~/.agent/rules/…) since sessions run from project directories. Keep all entry points identical. This file is wiring — the load path and nothing else. Never grow it into a second copy of `.agent/purpose.md`: `status.sh` flags any heading below the title, because a new section here is project content that never reached `.agent/`. -->
 # <Project> — Session Bootstrap
 
-<One line: stack, key dirs, package managers.> Binding rules and state load
-in the steps below — do not answer, plan, or edit before completing them.
+<One line: stack, key dirs, package managers.> Everything else lives in `.agent/` and loads below. Never restate it here and never add a section.
 
-Execute with tools, in order:
+**One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Do not answer, plan, or edit before the steps have run; a one-line request — remember this, summarise that, handle that — is a task like any other.
 
-1. Run `bash .agent/scripts/status.sh` — prints recent session-log entries
-   plus any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes; handle flags as
-   part of this session, treat TOOLS: notes as advisory. GROOM: work may
-   go to one dispatched subagent (a small model is fine) explicitly
-   assigned to write only the flagged files; re-run status.sh to confirm.
-2. Read `.agent/rules/learned.md` — accumulated corrections; binding.
-3. Read `.agent/rules/contract.md` — binding.
-4. Read `.agent/purpose.md` — scope and boundaries.
-5. Read `.agent/memory.md` — the fact index; open the `memory/` fact
-   files whose hooks match the task.
-6. <Routing: pick area docs via the table in `.agent/docs/architecture.md`;
-   read only what the task needs.>
+1. Run `bash .agent/scripts/status.sh --load` — recent log entries, GROOM:/REPAIR:/INDEX: flags (handle them this session; GROOM: may go to one subagent writing only the flagged files — wait, then re-run), TOOLS: notes (advisory), then `rules/learned.md` and `rules/contract.md` (binding), `purpose.md`, `memory.md`. Read them from that output; never open them again.
+2. Open the `memory/` fact files whose hooks match the task.
+3. <Routing: pick area docs via the table in `.agent/docs/architecture.md`. Read only what the task needs.>
 
-After a context compaction or handoff, re-run steps 1–5 before continuing.
-These steps run once at session start, so a compacted session is a session
-operating without them; re-route step 6 only if the work moved.
+After a context compaction or handoff, run step 1 again; re-route step 3 if the work moved.
 
-Exception — subagents: skip step 1 (flags are the orchestrator's to
-handle); read everything else. Never edit `.agent/` unless explicitly
-assigned — the orchestrator is the single session-log writer.
+Before handing back a turn that changed files, run `bash .agent/scripts/checkpoint.sh --tool <tool> --area <area> --verify <pass|fail|n/a> --summary "<task, outcome, ≤25 words>"` — the comment gate (`--base <ref>` for committed work), the status check, then the log entry, written once on the clean run. Fix what it names and run it again. A turn that only answered writes no entry: checkpoint.sh refuses one over an unchanged tree. Your final message is the report itself, never a wrap-up line.
 
-Keep this file and AGENTS.md identical; when editing one, mirror the other.
+Subagents: flags and `checkpoint.sh` are the orchestrator's; read the rest; edit `.agent/` only when assigned.
+
+Keep every entry-point mirror identical.

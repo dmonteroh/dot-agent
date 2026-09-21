@@ -16,13 +16,13 @@ Two costs follow the knowledge that does get written down. It drifts, because a 
 
 A `.agent/` directory of markdown at the project root. Any agent reads it, any agent writes it, and it travels with the code through git.
 
-**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. Each tool's native memory gets switched off at the setting, leaving one store instead of several.
+**Portable across providers.** The format is files, so Claude Code, Cursor, Copilot, and Codex all read the same context through a thin entry point in each tool's own filename. The operating model's wiring matrix records what is actually verified per tool, with dates, instead of asserting it. Native tool memory's setting is switched off where the tool has one for it (Claude Code's is shipped and checked, and the matrix tracks the rest), requesting a single store rather than several.
 
 **Shareable without a platform.** A tracking mode, chosen once, decides what enters git. `track-shared` publishes purpose, rules, and docs for the team to review in a pull request, while memory and session logs stay personal to each developer.
 
-**Checked, so it drifts less.** The agent writes context back as part of finishing work, and a check on the load path reads the node's files rather than the agent's claims: files past their grooming thresholds, a routing table that disagrees with the docs it routes, an index out of sync with its facts, bootstrap steps left half-done, native memory still switched on.
+**Checked, so it drifts less.** The agent writes context back as part of finishing work. A check on the load path reads the node's files rather than the agent's claims. It finds files past their grooming thresholds, a routing table that disagrees with the docs it routes, an index out of sync with its facts, bootstrap steps left half-done, and the native-memory setting still on.
 
-**Bounded at load.** What every session reads is a small fixed set: the rules and the indexes. A memory fact opens when its hook matches the task, an area doc when the routing table sends the session there, and reference material only when a doc hands out the path.
+**Bounded at load.** What every session reads is a small fixed set. In the default, manual-index mode that's the rules, purpose, and the memory index; a node opted into `--indexes generated` (see [Get started](#get-started)) reads a generated index cache in their place instead, rebuilt from the same `rules/` and `docs/` sources. A memory fact opens when its hook matches the task, an area doc when the routing table sends the session there, and reference material only when a doc hands out the path.
 
 ```
 Monday     Claude Code finishes a task and writes what it learned to .agent/
@@ -30,7 +30,7 @@ Tuesday    Cursor reads the same .agent/ and picks up where that left off
 Thursday   A teammate pulls the repo; purpose, rules, and docs came with it
 ```
 
-The design takes what native tool memory gets right, an index over one fact per file with write-back at the end of a task, and adds what a shared repository needs: review, version history, and a format no vendor owns.
+The design takes what native tool memory gets right: an index over one fact per file, with write-back at the end of a task. It adds what a shared repository needs: review, version history, and a format no vendor owns.
 
 It stops there on purpose. Working agreements, team methodology, and how people decide things are not `.agent/`'s to hold. The goal is a harness that stays out of their way.
 
@@ -41,17 +41,26 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 ├── rules/          # Behavior rules (adapted from a preset)
 ├── purpose.md      # What this project is, who it's for + the dot-agent manifest
 ├── memory.md       # Index of durable facts — one line per file in memory/
-├── memory/         # One durable fact per file (decision, preference, constraint)
-├── session-log.md  # Meeting notes (appended every session)
+├── memory/         # Current state or user context absent from canonical artifacts
+├── session-log.md  # Meeting notes (appended per turn that changed files)
 ├── docs/           # Architecture, features, data flows; docs/<area>/references/
 │                   # holds depth that is never routed or auto-loaded
 ├── archive/        # Groomed history — archived log entries, retired facts
-├── scripts/        # status.sh + the typed writers (log.sh, memory.sh, docs.sh)
+├── scripts/        # status.sh (--load prints the always-loaded set) + the typed
+│                   # writers (log.sh, memory.sh, docs.sh) + checkpoint.sh, the hand-back call
 │                   # + links.sh, the on-demand orphan/broken-link audit
+│                   # + comments.sh, the diff comment gate (node vocabulary
+│                   # in comments.conf, never refreshed by update)
+│                   # + index.sh, the generated-index builder (indexes: generated only)
+│                   # + learn.sh, the learned-rule admission helper
+├── indexes/        # indexes: generated only — rendered from rules/ and docs/,
+│                   # gitignored, disposable, rebuilt by index.sh
 └── skills/         # Optional — installed skills, symlinked into tool dirs
 ```
 
-Two contracts hold it together. The self-maintenance contract covers what gets written: before finishing any task, the agent writes context back, a session-log entry every session, memory and docs when what they hold changed. The load contract covers what gets read, and keeps the always-loaded set small enough that a session opening does not cost more than the task. The binding rules live in the preset, and each file's header carries its own format contract.
+`.agent/indexes/` and, in generated mode, the aggregate `.agent/rules/learned.md` are both regenerable and gitignored — never hand-edit either. See [`scripts/docs/index.md`](scripts/docs/index.md) for the index cache and [`scripts/docs/learn.md`](scripts/docs/learn.md) for the learned-record helper that owns `rules/learned/`.
+
+Two contracts hold it together. The self-maintenance contract covers what gets written: before finishing any task, the agent writes a session-log entry, qualifying current state to memory, and stable system knowledge to docs. The load contract covers what gets read, and keeps the always-loaded set small enough that a session opening does not cost more than the task. The binding rules live in the preset, and each file's header carries its own format contract.
 
 ## Presets
 
@@ -61,38 +70,28 @@ Rule presets for different domains. Pick one during bootstrap or let the agent a
 - **[Academic research](presets/academic-research.md)**: evidence-first writing, source traceability, no unsupported claims
 - **[Domain knowledge](presets/domain-knowledge.md)**: accumulating and organizing information over time
 
-Each preset is self-contained — bootstrap copies exactly one into `rules/contract.md`. Editing them? [`presets/_shared.md`](presets/_shared.md) lists the text that must stay word-for-word identical across all three (the rules describing the operating model rather than a domain); `scripts/test.sh` fails if any of it drifts.
+Each preset is self-contained — bootstrap copies exactly one into `rules/contract.md`. Editing them? [`presets/_shared.md`](presets/_shared.md) lists the text that must stay word-for-word identical across all three (the rules describing the operating model rather than a domain). `scripts/test.sh` fails if any of it drifts.
 
 ## Get started
 
-Two prompts, one per node type. Either works standalone: a project node is self-contained; add the root when you want memory that follows you across projects.
+Two prompts, one per node type. Either works standalone: a project node is self-contained. Add the root when you want memory that follows you across projects. Running either prompt means trusting the checked-out revision of this repo, whose scripts every later session runs — see [the trust contract](operating-model.md#the-trust-contract) in the operating model.
 
 ### Your root node: `~/.agent/` documents you
 
 Copy this into any capable agent:
 
 ```
-Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
-then set up my root node at ~/.agent/. Its subject is me, not a codebase.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then set up my root node at ~/.agent/. Its subject is me, not a codebase. Do the steps in order. Finish each one before starting the next.
 
-1. Interview me first, one question at a time, prioritizing questions
-   whose answers change what you'll write: role, active projects, how I
-   work and communicate, preferences that should hold across every
-   project, and the tracking mode — ignore-all, track-shared, or
-   track-all (see Tracking modes in the operating model). Don't invent
-   facts about me.
-2. Clone the source repo. Choose the preset that matches my work, then
-   from the clone run `bash scripts/node.sh init --preset <name> --mode
-   <mode> ~` to create ~/.agent/, stamp its manifest, and copy the
-   scripts.
-3. Adapt the preset copied into rules/contract.md; keep its Kernel
-   intact.
-4. List any existing project nodes in the manifest's children.
-5. Wire my tools at the root from the canonical entry-point template
-   (templates/entry-point.md in the clone; Claude Code:
-   ~/.claude/CLAUDE.md), with every path absolute
-   (~/.agent/...) since sessions run from project directories, and
-   disable Claude Code's native memory in ~/.claude/settings.json.
+1. Interview me first, before you clone anything or write any file. Ask one question at a time. Prioritize questions whose answers change what you'll write. Cover my role, my active projects, how I work and communicate, and preferences that should hold across every project. Ask for the tracking mode too: ignore-all, track-shared, or track-all (see Tracking modes in the operating model). Also ask whether I want a generated index (`--indexes generated`) instead of the default manual mode (`--indexes manual`) — generated mode adds a rebuildable index cache over rules/ and docs/, at the cost of running `bash .agent/scripts/index.sh ensure` before each session's other reads. Don't invent facts about me.
+2. Clone the source repo. Choose the preset that matches my work: software-development, academic-research, or domain-knowledge, and no other name. Then run `bash scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated] ~` from the clone. It creates ~/.agent/, stamps its manifest, and copies the scripts and their starter confs. Read what it prints before going on. If it refuses because ~/.agent/ already exists, stop and tell me. An existing node takes the update prompt, not this one. Expect its note about skipping the gitignore at ~. Don't write one by hand.
+3. Adapt the preset that node.sh copied into rules/contract.md. Keep its Kernel intact.
+4. Move contract.md's `## Quality bar` section into rules/quality-bar.md. After the move, that section is gone from contract.md and the rubric loads on demand.
+5. Write purpose.md from what I told you in step 1: what this node is for and what it holds. Leave the dot-agent frontmatter block at the top of the file untouched.
+6. List any existing project nodes in the manifest's children.
+7. Wire my tools at the root from the canonical entry-point template. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. For Claude Code, the entry point is ~/.claude/CLAUDE.md. Fill every <…> placeholder. Delete the template's own header comment. Write every path absolute, since sessions run from project directories. That means ~/.agent/..., and `bash ~/.agent/scripts/status.sh ~` for the status step. Keep every entry point you write byte-identical to the others of the same kind.
+8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in ~/.claude/settings.json.
+9. Last, run `bash ~/.agent/scripts/status.sh ~`. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
 Ask me anything you can't infer.
 ```
@@ -102,67 +101,58 @@ Ask me anything you can't infer.
 Run this inside the project:
 
 ```
-Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
-then bootstrap .agent/ for this project.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then bootstrap .agent/ for this project. Do the steps in order. Finish each one before starting the next.
 
-1. Explore the project (README, configs, source, git history) and confirm
-   your findings with me — including which preset fits, and what you
-   could not infer — before writing anything.
-2. Ask me the tracking mode once — ignore-all (.agent/ fully gitignored),
-   track-shared (purpose/rules/docs shared, memory.md/memory/ and logs
-   ignored), or track-all (everything committed).
-3. Clone the source repo, then from the clone run `bash scripts/node.sh
-   init --preset <name> --mode <mode> <this project's path>` to create
-   .agent/, stamp its manifest, and write the matching gitignore
-   entries.
-4. Adapt the preset copied into rules/contract.md: keep its Kernel
-   intact and fill Project guardrails with exact commands ("run the
-   tests" is not filled in; the real test command is).
-5. Wire my tools from the canonical entry-point template
-   (templates/entry-point.md in the clone) into CLAUDE.md, AGENTS.md, …;
-   keep every entry point identical, and disable Claude Code's native
-   memory in .claude/settings.json.
-6. If I have a root ~/.agent/, add this node to its manifest's children.
+1. Explore the project: README, configs, source, and git history. Confirm your findings with me before writing anything. Include which preset fits, and what you could not infer.
+2. Ask me the tracking mode once. The three modes are ignore-all (.agent/ fully gitignored), track-shared (purpose/rules/docs shared, memory.md/memory/ and logs ignored), and track-all (everything committed). Also ask whether I want a generated index (`--indexes generated`) instead of the default manual mode (`--indexes manual`) — generated mode adds a rebuildable index cache over rules/ and docs/, at the cost of running `bash .agent/scripts/index.sh ensure` before each session's other reads.
+3. Clone the source repo. Then run `bash scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated] <this project's path>` from the clone. It creates .agent/, stamps its manifest, and writes the matching gitignore entries. <name> is the preset we settled in step 1: software-development, academic-research, or domain-knowledge, and no other name. Give an absolute path, since you are running from the clone. Read what it prints before going on. If it refuses because .agent/ already exists, stop and tell me. An existing node takes the update prompt, not this one.
+4. Adapt the preset that node.sh copied into rules/contract.md. Keep its Kernel intact. Fill Project guardrails with exact commands ("run the tests" is not filled in — the real test command is).
+5. Move contract.md's `## Quality bar` section into rules/quality-bar.md. After the move, that section is gone from contract.md and the rubric loads on demand.
+6. Write purpose.md from what step 1 established. Cover what this project is, who it's for, its key constraints, and where to change what. Leave the dot-agent frontmatter block at the top of the file untouched.
+7. Wire my tools from the canonical entry-point template into CLAUDE.md and AGENTS.md. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. Add .github/copilot-instructions.md if I use Copilot Chat or code review. Fill every <…> placeholder: the project line and the doc routing. Delete the template's own header comment. Keep every entry point of the same kind byte-identical.
+8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in .claude/settings.json.
+9. If I have a root ~/.agent/, add this node to its manifest's children.
+10. Last, run `bash .agent/scripts/status.sh` from this project's root. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
-Ask me anything you can't infer; don't guess.
+Ask me anything you can't infer. Don't guess.
 ```
 
-The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap; `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
+The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap, and `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
 
 ### Updating an existing node
 
 When the operating model evolves, run this inside the node's project (or at the root):
 
 ```
-Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent,
-then update this project's existing .agent/ node to match it.
+Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then update this project's existing .agent/ node to match it.
 
-1. Clone the source repo, then from the clone run `bash scripts/node.sh
-   update <this node's path>` — it reads the manifest, compares version,
-   backs up the node first unless its mode is track-all, and applies
-   the mechanical migration baseline. Read its output: if it says the
-   node is current, stop here. If it reports no manifest (a pre-V6
-   node), update the node by hand instead: work through CHANGELOG.md
-   from the V6 entry forward as the migration checklist, and if you
-   restore the manifest, stamp it with the node's real prior version
-   before re-running the script.
-2. Reconcile: apply what the operating model adds — including splitting
-   `memory/legacy.md` into fact files per its GROOM flag — while
-   preserving accumulated content: memory, learned rules,
-   project-specific adaptations. If existing content directly conflicts,
-   flag it and let me decide; never silently overwrite.
-3. Refresh the entry points against the canonical template
-   (templates/entry-point.md in the clone), and keep them identical.
-4. Repeat this process for each child node listed in the manifest's
-   children.
-5. Report what changed, what was preserved, and anything flagged.
+1. Clone the source repo and read the node's `indexes` value in `.agent/purpose.md`. If it is `manual`, ask whether to keep it or adopt generated indexes. Run `bash scripts/node.sh update [--indexes generated] <this node's path>` from the clone, passing the flag only when I choose adoption. Give an absolute path, since you are running from the clone. The script reads the manifest and compares version. It backs up the node first, unless its mode is track-all. It then applies the mechanical migration baseline, recording the version it's migrating toward without bumping the node's version yet — that happens at `finalize`, once the node checks clean. Read its output before going on:
+   - If it says generated indexes were adopted, continue to step 2 so the new migration inventory and entry-point wiring are reconciled.
+   - Otherwise, if it says the node is current, any recognized same-version shape refresh is complete and there is nothing pending. Skip to step 5.
+   - If it reports no manifest (a pre-V6 node), update the node by hand instead. Work through CHANGELOG.md from the V6 entry forward as the migration checklist. If you restore the manifest, stamp it with the node's real prior version before re-running the script.
+   - If its output says it resumed an interrupted update from an existing backup, that is not a stop — it already proceeded. Continue to step 2.
+   - If it stops for any other reason, stop and tell me. Those reasons include no .agent directory at that path, or a backup path already there that it did not resume. Never delete, move, or rename anything to get past it.
+2. Reconcile. Apply what the operating model adds, while preserving accumulated content: memory, learned rules, and project-specific adaptations. That includes splitting `memory/legacy.md` into fact files per its GROOM flag. If existing content directly conflicts, flag it and let me decide. Never silently overwrite.
+3. Refresh the entry points against the canonical template. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. Carry this node's own filled-in values into the refreshed copy: the project line and the doc routing. Never leave the template's <…> placeholders. Keep every entry point of the same kind byte-identical.
+4. Run `bash scripts/node.sh finalize <this node's path>` from the clone. It checks the node and, if reconciliation is complete, stamps its version and clears the pending migration. If it refuses with outstanding REPAIR: findings, reconcile those and run it again — do not skip ahead with a migration still pending.
+5. Repeat steps 1–4 for each child node listed in the manifest's children, one node at a time.
+6. Run the node's status check: `bash .agent/scripts/status.sh` from its project root, or `bash ~/.agent/scripts/status.sh ~` for a root node. Clear the REPAIR: lines it prints.
+7. Report what changed, what you preserved, anything you flagged for me, whether the node finalized (or why it's still pending), and any REPAIR: line still standing.
 ```
 
-Every session opens with a status check: the entry point's first step runs `.agent/scripts/status.sh`, which prints recent session-log entries, `GROOM:` flags when files breach their grooming thresholds, `REPAIR:` flags for missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, native memory still enabled), `INDEX:` flags for doc-routing drift, and advisory `TOOLS:` notes; the agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. There is no completion-time gate; grooming rides the load path.
+Each conversation opens with one status check: in manual mode, the entry point's first step runs `.agent/scripts/status.sh --load`, which prints the findings and then the four always-loaded files, so the bootstrap is one tool call. In generated mode the first step is `index.sh ensure` instead, reading whichever pages it lists (or the canonical `rules/`/`docs/` sources on a build failure); `status.sh --load` then covers purpose and memory only, since rule and doc bodies come from the index pages. Later user messages continue the same session and do not reopen the entry point or reload its files; after a compaction or handoff the steps run again. The check prints recent session-log entries and `GROOM:` flags when files breach their grooming thresholds. `REPAIR:` flags cover missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, the native-memory setting still on). It also prints `INDEX:` flags for doc-routing drift, advisory `TOOLS:` notes, and an advisory `LOAD:` line measuring what the always-loaded set costs. The agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. Flags are discovered on the load path, not held for hand-back: `scripts/checkpoint.sh` runs the same status check again before writing the session-log entry, and writes none while a `GROOM:`, `REPAIR:`, or `INDEX:` line still stands or when the status check itself fails to run cleanly.
 
 One check is deliberately not on that path: `.agent/scripts/links.sh` audits the node's own link graph on demand, reporting `ORPHAN:` (a file nothing cites) and `BROKEN:` (a cited node path that doesn't exist). Run it when grooming or after a restructuring pass. It matters most for `docs/<area>/references/`, which carries no routing entry by design, so an uncited reference file is unreachable and nothing on the load path can tell.
 
-If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading; they are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
+A third check runs at diff time. `.agent/scripts/comments.sh` gates comments added by the diff against the change's true parent. `.agent/scripts/checkpoint.sh` calls that gate before the status check and log entry. It writes the entry once after a clean run, and writes nothing when the turn changed no files.
+
+The gate blocks six decidable kinds: dead citations, commented-out code, change narration, replies to the request, review chat residue, and short structure narration. It lists every other added comment for the author to justify or delete. A heuristic label identifies comments that merely restate the code below them.
+
+Team-specific vocabulary lives in `comments.conf` beside the gate. It covers the base ref, ticket, narration, chat-residue, constraint, extension, and exclusion patterns. The file is plain `KEY=value`, parsed and never executed. Init seeds a starter, while update preserves an existing file.
+
+The status check uses `status.conf`, and the log writer uses `log.conf`. `LOG_INCLUDE_BRANCH=true` stamps the checked-out branch on each entry. Conf edits survive update, while script edits do not. The operating model's "The comment gate" section documents every key.
+
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 
@@ -181,7 +171,7 @@ If you use **Claude Code**, optional [skills](tools/skills/) package the rare in
 
 The root documents the operator: preferences, working patterns, cross-project decisions. Branches document codebases. Leaves document specific areas. Agents observe how you work at every level and record patterns in the appropriate node.
 
-Wire a tool to the root (Claude Code via `~/.claude/CLAUDE.md`) and it works across projects; it knows how they relate and how you think. Wire a tool only to a leaf (Cursor via `.cursorrules`) and it focuses deeply without distraction. Root agents coordinate. Leaf agents specialize.
+Wire a tool to the root (Claude Code via `~/.claude/CLAUDE.md`) and it works across projects. It knows how they relate and how you think. Wire a tool only to a leaf (Cursor via `.cursorrules`) and it focuses deeply without distraction. Root agents coordinate. Leaf agents specialize.
 
 The tree grows as needed. Start with one node. Add a root when you work on a second project. The topology is yours: solo dev with many repos, monorepo with package nodes, or a single project with no root at all.
 
@@ -205,7 +195,13 @@ Read **[operating-model.md](operating-model.md)** for the full operating model: 
 
 ## Working on this repo
 
-Changing anything under `scripts/`? Run `bash scripts/test.sh`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, and `links.sh`. It must pass before a change ships.
+Rationale has one home per story. `CHANGELOG.md` states what a release changed in this repo, `operating-model.md` states the rule plus at most a one-line pointer, and a code comment states only the constraint it enforces. For a tunable, the comment states the provenance of its number. Field observations from private nodes are evidence for a decision, never content: a shipped number cites them anonymously where it lives, and nothing in the corpus retells them. Trim the other copies whenever a change touches them.
+
+Every script is documented in [`scripts/docs/`](scripts/docs/) — one file each, covering what it reports and how a node tunes it. Those docs stay in this repo: a node receives the executables and their starter confs, never this repo's design notes.
+
+Run `bash scripts/test.sh` after any change under `scripts/`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. It must pass before a change ships.
+
+That suite checks the corpus as an artifact, and every check in it passes on a corpus no agent obeys. [`evals/`](evals/) covers the other half: paired runs that measure whether a session under this corpus behaves differently from one without it. It belongs to this repository and never to a node — nothing under `evals/` is installed by `node.sh` or copied into a project adopting `.agent/`. It is not in CI either, since a run costs model tokens and returns a distribution rather than a bit, but `test.sh` validates its spec, builds its fixtures and drives its grader, so the eval set cannot rot between runs.
 
 ## License
 

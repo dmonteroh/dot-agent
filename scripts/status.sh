@@ -1,66 +1,107 @@
 #!/usr/bin/env bash
-# .agent/ status check — run as the entry point's first step.
-#
-# Prints the recent session-log entries, then one line per finding:
-#   GROOM:  a file crossed its grooming threshold
-#   REPAIR: a canonical file is missing, lost its manifest, or a bootstrap
-#           step was never completed
-#   INDEX:  a docs/ file and the routing table disagree
-#   TOOLS:  environment availability note — advisory, not actionable
-# Nothing prints on pass. Always exits 0: this is information on the load
-# path, not a completion gate — the binding instruction ("handle flags as
-# part of this session") lives in the entry point.
-#
-# Usage: status.sh [root]    # root defaults to . ; checks <root>/.agent/
 
 set -u
 
-# Tunable per project. Thresholds are review triggers, not caps: nothing
-# refuses a write, and each number states its source. Log: ~120 entries
-# is a heavy week at the field's peak pace; the 5,000-word trigger sits
-# just under the 5,834-word log that caused the lost-history incident.
-# Memory file: 300 sits well above the largest
-# field fact (~130 words), so a flag means "probably more than one fact".
-# Index: chosen default — a proposed 30 proved unusable against real
-# V5-era memory volume (a field instance holds ~30 facts after two
-# weeks); 100 gives months of headroom, and grooming, not the cap, is
-# what regulates it. Learned: the healthiest instances run 31-44 rules;
-# the word trigger is that 60-rule ceiling times the file's own ~40-word
-# entry target, and it fires first when entries bloat past that target
-# (the field instance averages ~47 words a rule, so 60 of them would run
-# ~2,800). learned.md is always-loaded and has no disclosure tier, so
-# every word of it is paid on every session.
-# Docs: chosen default set just under the smaller of the two field docs
-# (2,200 and 3,200 words) whose density forced a manual restructuring
-# pass. Tail: covers the busiest logged day (23 entries).
 LOG_MAX_ENTRIES=120
 LOG_MAX_WORDS=5000
+LOG_ENTRY_MAX_WORDS=50
 MEMORY_MAX_WORDS=300
 MEMORY_MAX_ENTRIES=100
 LEARNED_MAX_RULES=60
 LEARNED_MAX_WORDS=2400
 DOCS_MAX_WORDS=2000
+ENTRYPOINT_MAX_WORDS=600
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
+PAYLOAD_MAX_BYTES=30000
 
-root="${1:-.}"
+root="."
+load=0
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help)
+    cat <<'EOF'
+Usage: status.sh [--load] [root]
+
+Prints the recent session-log entries, then one line per finding: GROOM: (a
+file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
+step is missing), INDEX: (a docs/ file and the routing table disagree), plus
+advisory TOOLS: and LOAD: lines. No finding prints on pass.
+
+--load then prints the always-loaded set, each under a "==== <path> ===="
+marker, so the bootstrap is one call. In manual mode (indexes: manual, the
+default) that set is rules/learned.md, rules/contract.md, purpose.md,
+memory.md. In generated mode (indexes: generated) it is purpose.md and
+memory.md only, preceded by one line pointing at the index pages that carry
+the rule bodies instead. A PAYLOAD: line reports the exact bytes this set
+would write against PAYLOAD_MAX_BYTES; over budget, --load prints one line
+(REPAIR:, naming the mode's paths) instead, with no marker and no file
+content written.
+
+root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
+root holding no .agent/ is a usage error and exits 1.
+EOF
+    exit 0 ;;
+  --load) load=1 ;;
+  *) root="$arg" ;;
+  esac
+done
+
 agent="$root/.agent"
+if [ ! -d "$agent" ]; then
+  echo "status.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+  exit 1
+fi
+
+conf="$agent/scripts/status.conf"
+conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
+conf_repairs=""
+conf_num() { # $1: key name — the current value is its shipped default
+  local v
+  v=$(conf_get "$1")
+  [[ -n "$v" ]] || return 0
+  case "$v" in
+  *[!0-9]*)
+    conf_repairs="${conf_repairs}REPAIR: status.conf $1=$v is not a whole number — the default ${!1} is in use; fix the line, which takes digits only (no inline comment, no units)"$'\n'
+    return 0 ;;
+  esac
+  printf -v "$1" '%s' "$v"
+}
+if [[ -f "$conf" ]]; then
+  conf_num LOG_MAX_ENTRIES
+  conf_num LOG_MAX_WORDS
+  conf_num LOG_ENTRY_MAX_WORDS
+  conf_num MEMORY_MAX_WORDS
+  conf_num MEMORY_MAX_ENTRIES
+  conf_num LEARNED_MAX_RULES
+  conf_num LEARNED_MAX_WORDS
+  conf_num DOCS_MAX_WORDS
+  conf_num ENTRYPOINT_MAX_WORDS
+  conf_num TAIL_LINES
+  conf_num PAYLOAD_MAX_BYTES
+  v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
+fi
 log="$agent/session-log.md"
 memory="$agent/memory.md"
 memdir="$agent/memory"
 learned="$agent/rules/learned.md"
+learned_dir="$agent/rules/learned"
 contract="$agent/rules/contract.md"
 qualitybar="$agent/rules/quality-bar.md"
 purpose="$agent/purpose.md"
+indexes_line=$(grep -m1 '^  indexes:' "$purpose" 2>/dev/null)
+indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
+[ -n "$indexes" ] || indexes=manual
+indexer="$agent/scripts/index.sh"
+load_mode="$indexes"
+if [[ "$indexes" == generated ]] && [[ ! -f "$indexer" ]]; then
+  load_mode=manual
+fi
 docs="$agent/docs"
 arch="$docs/architecture.md"
 
 words() { wc -w <"$1" | tr -d '[:space:]'; }
 
-# Word count of a file's body: YAML frontmatter and <!-- --> header
-# comments excluded, so fixed per-file overhead never eats the fact budget.
-# Approximation: with two comments on one line the greedy strip also drops
-# the words between them — a slight undercount on a review trigger.
 body_words() {
   awk '
     NR == 1 && $0 == "---" { infm = 1; next }
@@ -72,7 +113,11 @@ body_words() {
   ' "$1" | wc -w | tr -d '[:space:]'
 }
 
-# Recent session-log entries — printed even when every check passes.
+learned_dir_active() {
+  [[ -d "$learned_dir" ]] && [[ ! -L "$learned_dir" ]] || return 1
+  [[ -n "$(find "$learned_dir" -type f -name '*.md' -print -quit 2>/dev/null)" ]]
+}
+
 if [[ -s "$log" ]]; then
   recent=$(grep '^- \[' "$log" | tail -n "$TAIL_LINES")
   if [[ -n "$recent" ]]; then
@@ -80,25 +125,28 @@ if [[ -s "$log" ]]; then
   fi
 fi
 
-# REPAIR: canonical files present and stamped.
+[[ -n "$conf_repairs" ]] && printf '%s' "$conf_repairs"
+
 [[ -s "$memory" ]] || echo "REPAIR: memory.md missing/empty"
 [[ -s "$log" ]] || echo "REPAIR: session-log.md missing/empty"
+[[ -s "$contract" ]] || echo "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session"
+if ! learned_dir_active && [[ ! -s "$learned" ]]; then
+  echo "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session"
+fi
 if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
 
-# REPAIR: bootstrap steps that produce a file the checks above cannot tell
-# apart from a finished one. Each is a step the operator and agent perform
-# by judgement at bootstrap, so nothing else catches a half-done node:
-# guardrails left as template placeholders, and the Quality bar left inside
-# contract.md instead of split into rules/quality-bar.md.
+migration_target_line=$(grep -m1 '^  migration_target:' "$purpose" 2>/dev/null)
+if [[ -n "$migration_target_line" ]]; then
+  migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
+  echo "REPAIR: purpose.md has migration_target \"$migration_target\" pending — run node.sh finalize to stamp version $migration_target and clear migration_target"
+fi
+
 if [[ -s "$contract" ]]; then
   guardrails=$(awk '/^## Project guardrails/ { inb = 1; next }
                     inb && /^## / { exit }
                     inb { print }' "$contract")
-  # A placeholder spans several words (`<exact command(s)>`); a filled-in
-  # line's own angle brackets are single-token (`--grep <name>`), so the
-  # required space is what keeps a real command from reading as a stub.
   if printf '%s\n' "$guardrails" | grep -qE '^- .*<[^>]* [^>]*>'; then
     echo "REPAIR: contract.md Project guardrails still holds template placeholders — fill them with this project's exact commands"
   fi
@@ -109,9 +157,6 @@ if [[ -s "$contract" ]]; then
   fi
 fi
 
-# REPAIR: entry points drifted. The model requires every tool's entry point
-# to be identical; only files that are actually dot-agent entry points are
-# compared, so a hand-written AGENTS.md of team instructions is left alone.
 entrypoints=()
 for candidate in "$root/CLAUDE.md" "$root/AGENTS.md" "$root/.cursorrules" \
   "$root/.github/copilot-instructions.md" "$root/.claude/CLAUDE.md"; do
@@ -128,18 +173,66 @@ if [[ "${#entrypoints[@]}" -gt 1 ]]; then
   done
 fi
 
-# GROOM: grooming thresholds.
+first_extra_heading() {
+  awk '
+    /^```/ { fence = 1 - fence; next }
+    fence { next }
+    /^#{2,6}[ \t]/ { print; exit }
+    /^#[ \t]/ { if (seen_title++) { print; exit } }
+  ' "$1"
+}
+for ep in "${entrypoints[@]-}"; do
+  [[ -n "$ep" ]] || continue
+  extra=$(first_extra_heading "$ep")
+  if [[ -n "$extra" ]]; then
+    echo "GROOM: ${ep#"$root"/} carries the section \"$extra\" — an entry point is its title and the load path, nothing else: move that content to rules/contract.md's Project guardrails, purpose.md, or a routed doc, and mirror the removal to every other entry point"
+  fi
+  if [[ "$(body_words "$ep")" -gt "$ENTRYPOINT_MAX_WORDS" ]]; then
+    echo "GROOM: ${ep#"$root"/} > $ENTRYPOINT_MAX_WORDS words — an entry point is wiring only: move project scope, constraints, and architecture into purpose.md or docs/, keep the load path, and mirror the trim to every other entry point"
+  fi
+done
+
 if [[ -s "$log" ]]; then
   entries=$(grep -c '^- \[' "$log")
   if [[ "$entries" -gt "$LOG_MAX_ENTRIES" || "$(words "$log")" -gt "$LOG_MAX_WORDS" ]]; then
     echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))"
   fi
+  oversized=$(awk -v max="$LOG_ENTRY_MAX_WORDS" '
+    /^- \[/ { if (inentry && cnt > max) { n++; if (cnt > big) big = cnt }
+              inentry = 1; cnt = 0 }
+    inentry { cnt += NF }
+    END { if (inentry && cnt > max) { n++; if (cnt > big) big = cnt }
+          printf "%d %d", n, big }' "$log")
+  over_n=${oversized% *}
+  over_big=${oversized#* }
+  if [[ "$over_n" -gt 0 ]]; then
+    echo "GROOM: session-log.md entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh"
+  fi
 fi
+keep_tokens() {
+  {
+    grep -oE '`[^`]+`' "$1" 2>/dev/null
+    grep -oE 'npm (run )?[a-z:-]+( -- (--?[a-z-]+( [a-z0-9_.:\/-]+)?)*)?' "$1" 2>/dev/null
+    awk '
+      NR == 1 && $0 == "---" { infm = 1; next }
+      infm { if ($0 == "---") infm = 0; next }
+      {
+      for (i = 1; i <= NF; i++) {
+        t = $i
+        gsub(/^[("\x27\[]+|(\x27s)?[)"\x27\],.;:!?]*$/, "", t)
+        if (t == "") continue
+        if (t ~ /^[A-Z][A-Z0-9]+-[0-9]+$/ || t ~ /^[A-Z][A-Z0-9_]{3,}$/ || t ~ /^[A-Z][a-z]+-[A-Z][a-z]+$/ || t ~ /^[a-z]+:\/\// || t ~ /^[A-Za-z0-9_.-]*\/[A-Za-z0-9_.\/-]+$/ || t ~ /^[a-z0-9.-]+\.[a-z]{2,}(:[0-9]+)?$/ || t ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/ || t ~ /^[0-9]+(ms|s|rps|%)$/) print t
+        if (t ~ /^[0-9]+$/ && i < NF && $(i+1) ~ /^(ms|rps|s|seconds|requests|attempts)[,.;:]?$/) print t " " $(i+1)
+      }
+    }' "$1"
+  } | awk 'NF && !seen[$0]++' | head -n 15 | paste -sd '|' - | sed 's/|/, /g'
+}
 if [[ -d "$memdir" ]]; then
   for f in "$memdir"/*.md; do
     [[ -e "$f" ]] || continue
     if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
-      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split it, or move detail to a docs/ file and keep a pointer fact"
+      keep=$(keep_tokens "$f")
+      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}"
     fi
   done
 fi
@@ -152,7 +245,19 @@ fi
 if [[ -e "$memdir/legacy.md" ]]; then
   echo "GROOM: memory/legacy.md exists — split legacy.md into fact files"
 fi
-if [[ -s "$learned" ]]; then
+if learned_dir_active; then
+  learned_rules=0
+  learned_words=0
+  while IFS= read -r learned_rec; do
+    learned_rules=$((learned_rules + $(grep -c '^- ' "$learned_rec")))
+    learned_words=$((learned_words + $(body_words "$learned_rec")))
+  done < <(find "$learned_dir" -type f -name '*.md')
+  if [[ "$learned_rules" -gt "$LEARNED_MAX_RULES" ]]; then
+    echo "GROOM: rules/learned/ > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
+  elif [[ "$learned_words" -gt "$LEARNED_MAX_WORDS" ]]; then
+    echo "GROOM: rules/learned/ > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
+  fi
+elif [[ -s "$learned" ]]; then
   if [[ "$(grep -c '^- ' "$learned")" -gt "$LEARNED_MAX_RULES" ]]; then
     echo "GROOM: learned.md > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
   elif [[ "$(body_words "$learned")" -gt "$LEARNED_MAX_WORDS" ]]; then
@@ -164,9 +269,6 @@ if [[ -d "$docs" ]]; then
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: no routing entry, no
-    # size trigger. Its files are opened only by explicit path from the area
-    # doc that cites them, so neither check applies.
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
       echo "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
@@ -174,16 +276,6 @@ if [[ -d "$docs" ]]; then
   done
 fi
 
-# INDEX: every area doc carries a routing hint and the routing table agrees
-# with it. Walks one sublevel: an area that outgrew one file splits into
-# docs/<area>/ sub-docs, still routed from the single architecture.md
-# (entries carry the relative path).
-#
-# Three ways a doc and its entry disagree, all checkable: the doc is
-# missing from the index, the hook drifted on one side, or the doc grew a
-# `## ` section the Sections list never learned about. The section check
-# is one-directional on purpose — an entry may say more than the heading
-# (a hand-written gloss routes better than a bare title), never less.
 doc_hook() { # the doc's own routing hook, from its opening lines
   head -n 5 "$1" | sed -n 's/^<!-- Read when: \(.*\) -->$/\1/p' | head -n 1
 }
@@ -199,9 +291,6 @@ if [[ -d "$docs" ]]; then
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
-    # references/ is the never-auto-loaded depth tier: no routing entry, no
-    # size trigger. Its files are opened only by explicit path from the area
-    # doc that cites them, so neither check applies.
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if ! head -n 5 "$doc" | grep -qF "Read when:"; then
       echo "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
@@ -230,9 +319,17 @@ if [[ -d "$docs" ]]; then
   done
 fi
 
-# REPAIR: memory.md index and memory/ fact files agree. Both directions
-# parse only the index line's own link — the first `[title](memory/…)` on
-# the line — so a hook that mentions another memory path is never counted.
+if [[ -d "$docs" && ! -s "$arch" ]]; then
+  for routing_candidate in "$docs"/*.md "$docs"/*/*.md; do
+    [[ -e "$routing_candidate" ]] || continue
+    routing_candidate_rel=${routing_candidate#"$docs"/}
+    [[ "$routing_candidate_rel" == "architecture.md" ]] && continue
+    [[ "$routing_candidate_rel" == references/* || "$routing_candidate_rel" == */references/* ]] && continue
+    echo "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents - recreate the table with scripts/docs.sh new --name <placeholder> --read-when \"...\" using a name NOT already used in docs/ (it refuses to overwrite an existing doc; delete the placeholder's doc file and its table entry afterward), then add an entry for each existing routed doc"
+    break
+  done
+fi
+
 if [[ -s "$memory" ]]; then
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
@@ -252,30 +349,25 @@ if [[ -d "$memdir" ]]; then
   done
 fi
 
-# REPAIR: .agent/ is the sole durable memory only if the tool's own store is
-# off, and that rests on a setting no other check reads. Absent or true both
-# mean a second store can collect knowledge this node will never see; the
-# file is checked textually so the check needs no JSON parser.
 for settings in "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
   [[ -s "$settings" ]] || continue
   if grep -q '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*true' "$settings"; then
-    echo "REPAIR: ${settings#"$root"/} sets autoMemoryEnabled true — .agent/ is not the sole durable memory; set it false and harvest any silo (see retro)"
+    echo "REPAIR: ${settings#"$root"/} sets autoMemoryEnabled true — set it false and harvest any silo (see retro)"
   fi
 done
-# Settings merge user-level over node-level, so a node inherits a setting it
-# does not carry: only a node that sets it nowhere is unconfigured.
 if [[ -d "$root/.claude" ]] \
   && ! grep -qs '"autoMemoryEnabled"' \
     "$root/.claude/settings.json" "$root/.claude/settings.local.json" \
     "${HOME:-/nonexistent}/.claude/settings.json"; then
-  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false so .agent/ stays the sole durable memory"
+  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false to .claude/settings.json so it requests the tool's own store off"
 fi
 
-# TOOLS: availability facts for the environment this session runs in.
 missing=""
+set -f
 for tool in $PROBE_TOOLS; do
   command -v "$tool" >/dev/null 2>&1 || missing="$missing, $tool"
 done
+set +f
 if [[ -n "$missing" ]]; then
   fallbacks=""
   case " $missing" in *" rg"*) fallbacks="grep -rn" ;; esac
@@ -286,6 +378,77 @@ if [[ -n "$missing" ]]; then
 fi
 if ! sed --version >/dev/null 2>&1; then
   echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
+fi
+
+load_total=0
+load_detail=""
+load_add() {
+  [[ -s "$2" ]] || return 0
+  lw=$(words "$2")
+  load_total=$((load_total + lw))
+  load_detail="$load_detail, $1 $lw"
+}
+load_add entry "${entrypoints[0]-}"
+load_add contract "$contract"
+load_add learned "$learned"
+load_add purpose "$purpose"
+load_add memory "$memory"
+load_add routing "$arch"
+if [[ "$load_total" -gt 0 ]]; then
+  tailwords=0
+  [[ -n "${recent:-}" ]] && tailwords=$(printf '%s' "$recent" | wc -w | tr -d '[:space:]')
+  echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
+fi
+
+payload_total=0
+payload_detail=""
+payload_add() { # $1: label  $2: file path
+  [[ -s "$2" ]] || return 0
+  local marker fbytes
+  marker=$(printf '\n==== %s ====\n' "${2#"$root"/}" | wc -c | tr -d '[:space:]')
+  fbytes=$((marker + $(wc -c <"$2" | tr -d '[:space:]')))
+  payload_total=$((payload_total + fbytes))
+  payload_detail="$payload_detail, $1 $fbytes"
+}
+if [[ "$load_mode" == generated ]]; then
+  payload_add purpose "$purpose"
+  payload_add memory "$memory"
+else
+  payload_add learned "$learned"
+  payload_add contract "$contract"
+  payload_add purpose "$purpose"
+  payload_add memory "$memory"
+fi
+if [[ "$payload_total" -gt 0 ]]; then
+  echo "PAYLOAD: --load would write $payload_total bytes of a $PAYLOAD_MAX_BYTES byte budget (${payload_detail#, })"
+fi
+
+if [[ "$load" -eq 1 ]]; then
+  if [[ "$load_mode" == generated ]]; then
+    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+      echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
+    else
+      echo "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md."
+      for f in "$purpose" "$memory"; do
+        [[ -s "$f" ]] || continue
+        printf '\n==== %s ====\n' "${f#"$root"/}"
+        cat "$f"
+      done
+    fi
+  else
+    if [[ "$indexes" == generated ]]; then
+      echo "Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."
+    fi
+    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+      echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+    else
+      for f in "$learned" "$contract" "$purpose" "$memory"; do
+        [[ -s "$f" ]] || continue
+        printf '\n==== %s ====\n' "${f#"$root"/}"
+        cat "$f"
+      done
+    fi
+  fi
 fi
 
 exit 0

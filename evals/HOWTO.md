@@ -1,0 +1,146 @@
+# Evaluating a software-development installation
+
+Every fixture in this set is built with `--preset software-development` (`fixtures.sh:144`). Running the eval suite described here is the software-development check — there is no separate mode to select. This walks through running it once, end to end, to answer one question: does the corpus at the revision you are about to ship behave the way the field release did, or better?
+
+This is not a tool for auditing an already-adopted project's `.agent/` install. It rebuilds its own fixtures from a pinned corpus revision and never touches your project tree. If you adopted `.agent/` somewhere and want to know whether that install is current, that is `node.sh update`'s question, not this one — see the repository root `README.md`.
+
+## What you need
+
+- `python3` on PATH.
+- `claude` and/or `codex`, logged in with a subscription — Claude through a `claude.ai` account, Codex through a ChatGPT account. Neither adapter accepts an API key: `run.sh` strips provider-credential environment variables from its own process before either subprocess launches.
+- `git`, with the revision you want to validate reachable by name — a branch, a tag, or a commit both `--corpus-ref` values below can resolve.
+- A repeat-count decision and a time budget, made before the first run. The full set is 36 evals. One eval, one arm, one repeat is one full agent session. `README.md`'s "Constraints on what a run may claim" covers the tradeoff — decide before you see a result, not after.
+
+## 1. Configure an arm
+
+Open `evals/agents.conf`. Confirm `CLAUDE_BIN`/`CLAUDE_MODEL`/`CLAUDE_EFFORT` (or the `CODEX_*` equivalents) match what you actually run, then check them against the real binary — flags and defaults move between CLI versions:
+
+```
+evals/run.sh --list-arms                 # resolves both binaries, prints versions, no model call
+evals/run.sh --probe-agent claude        # one live call: is claude ready and logged in?
+evals/run.sh --probe-agent codex         # same, for codex
+```
+
+Both must succeed before you spend anything on a real run. A rejected probe names the reason — usually a missing or non-subscription login.
+
+## 2. Smoke-test one eval
+
+```
+W=/a/directory/outside/the/repository/software-development-$(date +%Y%m%d)
+REF=<the branch, tag, or commit you are validating>
+
+evals/run.sh --eval scope-question-no-edit --arm merged --treatment-arm merged \
+  --agent claude --corpus-ref "$REF" --workspace "$W" --dry-run
+```
+
+`--dry-run` builds the fixture and prints every turn without driving the agent. Read it. A wrong prompt or fixture is cheaper to catch here than after a live run.
+
+## 3. Set the repeat count, then run every eval, both arms
+
+`REPEATS` in `agents.conf` sets how many repeat cells `run.sh` builds per eval per arm. One repeat shows whether an assertion passed, never whether that result is stable — at `REPEATS=1` every assertion buckets as stable whether it is or not. Three is the smallest count that can show a split.
+
+There is no `--repeats` flag: `run.sh` reads the count once, from `agents.conf`, and it is locked into `run-config.json` as `repeats_per_cell`, so it cannot change part-way through an iteration either. To raise it for one comparison without editing the checked-in conf, copy it, edit the copy's `REPEATS=` line, and export `EVALS_AGENTS_CONF` pointing at the copy — for **every** invocation of both arms of that iteration:
+
+```
+cp evals/agents.conf /tmp/agents-this-run.conf   # then edit REPEATS= in the copy
+export EVALS_AGENTS_CONF=/tmp/agents-this-run.conf
+```
+
+`run-config.json` locks one comparison design per iteration directory — one arm variable, held for every eval that lands there — so evals that name different variables need different iterations. Most of the set varies the corpus; loop those into `iteration-1` against both arms:
+
+```
+for id in $(python3 -c "
+import json
+for e in json.load(open('evals/spec.json'))['evals']:
+    if e.get('arm_variable', 'corpus') == 'corpus':
+        print(e['id'])
+"); do
+  evals/run.sh --eval "$id" --arm merged --treatment-arm merged \
+    --agent claude --corpus-ref "$REF" --workspace "$W"
+  evals/run.sh --eval "$id" --arm prerelease \
+    --agent claude --corpus-ref 2f779b7 --workspace "$W"
+done
+```
+
+`--treatment-arm merged` only has to be named once per workspace: the first call records it in `run-config.json`, and every later call is checked against what got recorded. Name it on every call and the arms can start together — whichever run gets to a fresh iteration first records the same design, whether it is the treatment or the control. `2f779b7` is the fixed control — the exact tree the operator was running in the field when the failures this eval set encodes were reported. Do not point the control at a different revision: a moving control answers a different question than "did this revision regress the field baseline."
+
+Two groups of evals don't belong in that loop, because each names a different variable and a comparison already recorded for one variable refuses a call that turns up with another:
+
+- `bootstrap-once` carries `arm_variable: agent` — its reported failure was never seen on Claude Code, so a corpus-only comparison on Claude Code measures nothing for it. Give it its own iteration, corpus held at the treatment `$REF` for both arms, and vary the agent instead:
+
+  ```
+  evals/run.sh --eval bootstrap-once --arm claude --treatment-arm claude \
+    --agent claude --corpus-ref "$REF" --workspace "$W" --iteration 3
+  evals/run.sh --eval bootstrap-once --arm codex \
+    --agent codex --corpus-ref "$REF" --workspace "$W" --iteration 3
+  ```
+
+  See `README.md`'s "The eval set" for why, and its note on handing the foreign arm content rather than paths.
+
+- The sixteen generated-index, learning-admission, migration, comments, stress, and handoff evals carry `arm_variable: node-mode` — neither pinned control revision (`2f779b7`, `5001189`) ships `index.sh` or `learn.sh`, so a corpus-arm comparison against either would measure the absence of a file, not the behavior of a mechanism. Give them their own iteration too, corpus held at `$REF` for both arms, and vary `--index-mode` instead. Four of the sixteen — `index-cache-fault-fallback`, `index-missing-indexer`, `index-branch-switch`, and `migration-backlog-reconcile` — build on a fixture `fixtures.sh` refuses outside `--indexes generated` (a corrupted cache, a missing indexer, a branch-switched cache, and a migration backlog all presuppose a generated cache that exists to be faulty), so they have no manual-mode counterpart at all: run them generated-only, reported as feasibility evidence rather than a delta. Running either against `--index-mode manual` hard-fails with `fixtures.sh: <name> requires --indexes generated (got 'manual')` — exclude them from the dual-arm loop below rather than hitting that.
+
+  Twelve genuinely run both arms:
+
+  ```
+  for id in $(python3 -c "
+  import json
+  skip = {'index-cache-fault-fallback', 'index-missing-indexer', 'index-branch-switch', 'migration-backlog-reconcile'}
+  for e in json.load(open('evals/spec.json'))['evals']:
+      if e.get('arm_variable') == 'node-mode' and e['id'] not in skip:
+          print(e['id'])
+  "); do
+    evals/run.sh --eval "$id" --arm generated --treatment-arm generated --index-mode generated \
+      --agent claude --corpus-ref "$REF" --workspace "$W" --iteration 2
+    evals/run.sh --eval "$id" --arm manual --index-mode manual \
+      --agent claude --corpus-ref "$REF" --workspace "$W" --iteration 2
+  done
+  ```
+
+  The other four run generated-only, one arm, no manual counterpart:
+
+  ```
+  for id in index-cache-fault-fallback index-missing-indexer index-branch-switch migration-backlog-reconcile; do
+    evals/run.sh --eval "$id" --arm generated --treatment-arm generated --index-mode generated \
+      --agent claude --corpus-ref "$REF" --workspace "$W" --iteration 2
+  done
+  ```
+
+  `--index-mode` threads into `fixtures.sh`'s own `--indexes` flag, mirroring `--harness` exactly, and is recorded in `run-config.json` beside `harness` under the same drift check. `node-mode` locks agent, model, *and* corpus ref together, rather than just two of them the way `corpus` and `agent` each do — name the two arms for what they are (`generated`, `manual`) so a rollup reads as behavior rather than as a coin flip. See `README.md`'s "The method" for the full picture.
+
+  Each generated-mode cell also writes `indexes-before.txt` and `indexes-after.txt` under `outputs/` — one path-and-digest line per `.agent/indexes/` file, the first taken right after the fixture build, the second at capture time. Diff the two when a generated-index assertion looks wrong: `node-diff.patch` is staged, so `.gitignore` hides the whole `.agent/indexes/` tree from it on a generated node, and the manifest pair is the only place a hand-edit of a generated page actually shows up.
+
+  One of the sixteen, `handoff-reload`, also carries a turn separator baked into its prompt, `|HANDOFF|` in place of the ordinary `||`: the turn after it starts under a fresh session id, over the same unchanged working tree, instead of resuming the session in progress. Nothing to pass on the command line for this — the prompt already encodes it — but expect `session-transcript.txt` and `trace.jsonl` to show a real discontinuity partway through. Read it as a handoff, a session restart this harness can force, never as the provider actually compacting context, which neither CLI exposes a way to trigger on demand.
+
+## 4. Roll it up
+
+```
+evals/rollup.py "$W/iteration-1"
+```
+
+Run it once per iteration you built: `iteration-1` for the corpus pass above, and the same command against `iteration-2` or `iteration-3` if you also ran the node-mode or bootstrap-once passes. `rollup.py` requires every graded assertion to be paired across both arms, and the four generated-only evals (`index-cache-fault-fallback`, `index-missing-indexer`, `index-branch-switch`, `migration-backlog-reconcile`) never have a manual-arm counterpart, so a plain run against `iteration-2` dies naming one of them as unpaired. Drop them from that call with `--exclude-eval`:
+
+```
+evals/rollup.py --exclude-eval index-cache-fault-fallback --exclude-eval index-missing-indexer \
+  --exclude-eval index-branch-switch --exclude-eval migration-backlog-reconcile "$W/iteration-2"
+```
+
+The excluded ids land in the report's own `excluded_evals` list and are printed, so their feasibility-only status stays visible rather than silently dropped. This refuses to run while any manual assertion under that iteration is still ungraded. `grade.py` writes those `passed: null`. For each one, open `$W/iteration-<n>/eval-<id>/<run-id>/outputs/`, read the artifacts, and fill in `passed` and a quoted `evidence` string by hand — blind to which run is which arm. `arm-map.json` holds that mapping, and `rollup.py` voids the pass if a grading record leaks it.
+
+## 5. Read the result
+
+Every assertion lands in one bucket. Each bucket names a different fact about the two arms' pass bits:
+
+- Discriminating (arms differ, treatment ahead): the corpus produced the behavior it claims to on this assertion.
+- Non-discriminating (identical in both arms): the model does this regardless of the corpus. Not a failure — expected for some share of a first checklist.
+- Regression (control passed, treatment failed): this revision failed an assertion the field baseline passed. Open a fix before shipping it.
+- Unstable (repeats disagree within an arm): no verdict at this repeat count. Raise `REPEATS` and re-run before concluding anything about that assertion.
+
+Zero regressions is the bar, not a rising aggregate pass rate. Check `rollup.json`'s `concentration_pct_of_delta` (`top_assertion`, `top_two_assertions`) so one loud assertion is not standing in for the whole set. Check `duration_s` too, if one arm visibly took a different number of turns to get there.
+
+## When something fails and the cause isn't obvious
+
+Triage layer by layer rather than editing prose by hand: standing instructions, memory admission, routing, tooling, harness. Order the fixes so enforcement moves into code before any prompt is reworded.
+
+## What this does not tell you
+
+One pass, one revision, against one pinned control. It does not tell you the corpus works on a harness this set has no adapter for, on prompts the eval set has not encoded, or that this result holds at a different repeat count. `README.md`'s "Constraints on what a run may claim" covers the full list — read it before reporting a result to anyone else.

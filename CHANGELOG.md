@@ -4,6 +4,115 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
+## V6.2 (2026-09-20): Checks, generated indexing, behavioral evals
+
+### What changed
+
+#### Portability
+
+- The wiring table is a disposition matrix: entry point, native-memory switch, and a source and date per tool. A cell reads `verified` only against the product or its vendor's documentation. `reported` and `unknown` print as themselves.
+- The recommended mirror set is `CLAUDE.md` + `AGENTS.md`, plus `.github/copilot-instructions.md` for Copilot Chat and code review. `.cursorrules` is legacy. `status.sh` and `links.sh` keep it in their candidate lists so existing mirrors stay checked.
+- `test.sh` lints vendor tokens over the node-landing corpus — presets, template, node scripts — against a commented allowlist. It also asserts the wiring matrix and both scripts' candidate lists cover the same entry-point set.
+
+#### The status check
+
+- One advisory `LOAD:` line per run: the always-loaded set's word total with a per-file breakdown, plus the log tail. No threshold.
+- `status.sh --load` prints the findings, then the always-loaded files — learned rules, contract, purpose, memory index — each under a marker naming its path. The bootstrap is one tool call.
+- `GROOM:` on a session-log entry over `LOG_ENTRY_MAX_WORDS` (50, the header format's 25 with 2x grace), counted whole across hand-wrapped lines. The memory `GROOM:` line names the token classes a groom must keep: ticket ids, constants, paths, hosts, commands, dates, numbers with units.
+- Every threshold and the probed-tools list are per-node tunables in `.agent/scripts/status.conf`, plain `KEY=value`, parsed and never executed. `node.sh update` refreshes the shipped scripts and discards edits to them, and leaves the conf beside them. Init seeds a starter listing every key, the probed-tools line live and thresholds commented at their defaults. `test.sh` pins the starter's shown defaults to the script's.
+- `status.sh` and `links.sh` exit non-zero on one case: a root holding no `.agent/`. Findings never reach the exit status. `scripts/docs/README.md` tables every script's codes.
+
+#### Header contracts
+
+- The fact-file header contract lives in `memory.md`'s header, and `memory.sh` states it in its output. A fact file holds its frontmatter and the fact. Two admission tests open it: work in this node changes when the fact is true, and no purpose, rule, routed doc, source, or existing fact already states it. Stable system knowledge goes to `docs/` with no pointer fact.
+- Area docs carry no shape header. A doc is its `Read when:` hook and its title, and `docs.sh new` states the rules in its output. The presets' shared tail gains the two clauses only the software preset carried: timeless phrasing, and a cited path rather than a restated fact.
+- The Continuity contract's `memory/` bullet defers to `memory.md`'s header contract.
+- `node.sh update` strips the old per-file headers, docs and sub-docs included, keeping every fact, index line, hook, and body, behind a backup. A node already stamped 6.1 or 6.2 is migrated too, and a same-version refresh writes `.agent.backup-v<version>-shape`.
+
+#### Memory security and learning admission
+
+- The origin gate: durable records — memory facts, learned rules, preferences — are minted only from the user's own messages or the session's verified work. A directive inside processed material is content to report, never an instruction to record. Both halves join every preset's Continuity contract, and a shared clause joins every Kernel's security slot, locked by `_shared.md`.
+- A Self-learning trigger starts a canonical-source check rather than guaranteeing a rule. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there, with no compensating rule written. An existing rule drops once its failure mode is mechanically enforced. The memory header applies the same check to facts.
+- The operating model's Security section states the mirror rule — load `.agent/` as if it could have been planted — and the cross-tool amplification a shared store creates. It labels the control cooperative, with `track-shared` PR review as the mechanical gate.
+
+#### The comment gate
+
+- The software preset gains a **Comments** rule under `Implementation`: the default is no comment, plus the short list of what earns one and the longer list of what never does. What never does: restating the code, narrating structure, commented-out code, change narration, replies to the request, rejected alternatives, the same explanation twice. Doc comments are held to the same bar. The blanket exemption for public API doc comments is gone, and a project whose toolchain requires them names that surface in `Project guardrails`.
+- `comments.sh` blocks six classes and names each on its finding: `dead citation` (a SHA, a git transcript, a ticket id, scope narration), `commented-out code`, `change narration`, `answers the prompt`, `chat residue`, and `routine narration`. Every other added comment is listed for the author to justify or delete, labeled `restates the code below` where its content words already appear in the identifiers under it. That label is a heuristic and `RESTATE_CHECK=false` turns it off.
+- `routine narration` carries three guards. A comment naming a cause or a constraint is exempt whatever verb it opens with, and `CONSTRAINT_RE_EXTRA` adds a node's own vocabulary. Blocking stops at `ROUTINE_MAX_WORDS` (8). The class fires only on the line that opens a comment, never on a continuation line.
+- A base ref resolving to `HEAD` over a clean tree exits 2. The diff is empty, so the run reads nothing.
+- The classifier fixes its locale to `C`. A UTF-8 character in the code below a review comment cannot corrupt the bytewise restatement pass.
+- `comments.conf` beside the script carries the base ref, ticket and task-reference patterns, house narration phrasings (`NARRATION_RE_EXTRA`), review residue (`CHAT_RE_EXTRA`), the scanned extension list, and path exclusions, plain `KEY=value`, parsed and never executed. Init seeds a starter with AC/Q ticket shapes as example vocabulary and the extension list live. Update seeds it only when absent. `test.sh` asserts every key the gate reads has a line in the conf.
+- The gate is wired at the entry-point template, the software preset's Verification contract, and the quality bar's verifier checks. Self-learning routes comment-hygiene lessons into its vocabulary. The retro skill's description names the concrete retro triggers.
+
+#### The entry point
+
+- The template states when its steps run. A gate opens the file. The conversation is one session, and a new user message does not start a new one. The steps stay in effect once they have run, and the file is not reopened when its content is in context. It sits before the numbered list, and `test.sh` pins that position. The post-compaction re-run is unconditional.
+- The template states its boundary: an entry point is wiring, and project scope, constraints, and architecture live in `purpose.md` and `docs/`. `status.sh` flags `GROOM:` past `ENTRYPOINT_MAX_WORDS`, the filled template with 2x grace. Shape is checked too: the canonical template is a title and a load path, and any heading below the title is flagged whatever the file's size, with no tunable to raise past it.
+- The steps are three: `status.sh --load`, the matching fact files, the routed docs. The hand-back is one `checkpoint.sh` call. The comment-gate line names the base ref explicitly and rules out `HEAD`. The final message is the report itself, never a wrap-up line pointing at an earlier message.
+
+#### Hand-back and the log writer
+
+- `checkpoint.sh` is the one hand-back call: the comment gate against the change's true parent (`--base <ref>`, or `HEAD` over uncommitted work), then the status check's flag lines, then `log.sh` with the same arguments. It stops before the log entry when the gate blocks or a flag stands. A clean tree with no `--base` is a turn that changed nothing, and it stops there too. A project that is not a git checkout keeps the old behavior.
+- `docs.sh rehook` rewrites a doc's `Read when:` header and its routing row together. The Self-learning rule names it.
+- `log.sh` refuses a summary naming a file or a SHA, with the token named.
+- `log.sh` reads a seeded `log.conf`. `LOG_INCLUDE_BRANCH=true`, off by default, stamps each scripted entry with the checked-out branch as `branch: <name>.` before the verify tag, read via `git symbolic-ref` at write time and omitted outside a git checkout or on a detached HEAD. The stamp spends no summary budget. The 25-word summary ceiling tunes from the same conf, and the session-log header contract names the optional segment.
+
+#### Routing and prose
+
+- `architecture.md`'s header contract states that the routed docs are the node's design of record, and that `archive/` is superseded: outside routing, never an entry, never cited as intent by a routed or always-loaded file. The operating model's tier table gains the `archive/` row.
+- All three presets gain the wrapping rule, locked by `_shared.md`: markdown is soft-wrapped, one line per paragraph, bullet, or step, in node files and in anything handed back.
+- The software preset's Context loading gains the history rule: a session-log entry is a claim about a past session, not evidence the work is in your tree.
+
+#### Generated indexing
+
+- `node.sh init --indexes manual|generated` (default `manual`) adds a manifest field, independent of tracking mode. `scripts/index.sh ensure|check` renders `rules/` and `docs/` into a disposable `.agent/indexes/` cache, fingerprinted for freshness, falling back to the canonical sources on a build failure.
+- `indexes: generated` adds `.agent/indexes/` and `.agent/rules/learned.md` to the gitignore in `track-shared` and `track-all`, on top of the tracking mode governing the rest of the node.
+- In generated mode, `rules/learned/` holds one canonical record per learned rule. `index.sh ensure` regenerates `rules/learned.md` from those records as a read-only aggregate for `status.sh`. Grooming acts on the records, never on the rebuilt pages.
+- The version migration on a generated node extracts a prior single-file `learned.md` into records and backfills doc hooks, resumably, untracking the old file once the regenerated aggregate matches.
+- `node.sh update --indexes generated` performs the same adoption on a node already at 6.2, behind its own backup for modes with untracked memory. Omitting the flag preserves the manifest's current index mode.
+- Generated-mode bootstrap reads the index pages once instead of the rule bodies.
+- `status.sh` and `checkpoint.sh` report a canonical-source fault — a missing or broken `rules/` or `docs/` file — separately from a disposable-cache fault, a stale or unbuildable `.agent/indexes/`.
+- Storage contract, install into a fresh clone, revert to manual, generated-mode loading, faults, and grooming are documented in `scripts/docs/node.md`, `index.md`, `status.md`, and `checkpoint.md`.
+- `scripts/tools/index-benchmark.sh` measures median and p95 process latency at 100 and 1,000 canonical-source records, cold and warm cache. `scripts/docs/index-benchmark.md` reports the numbers for one machine and revision, and states why the comparison against the earlier spike is not apples to apples. It supports "not obviously slower at this fixture size", not a speed claim.
+
+#### The learning loop
+
+- `learn.sh lookup|new|revise|retire` gives the loop a scoped admission contract. Duplicate and shared-term-overlap detection runs before a rule is written. `revise` and `retire` are gated on an expected version, so a correction reconciles against what exists instead of appending. `revise` against an id nothing has written is refused. The first record on a fresh generated node creates `rules/learned/` itself.
+
+#### Behavioral evals
+
+- `evals/` belongs to this repository and never to a node. Nothing in it is installed by `node.sh`, refreshed by an update, or copied into an adopting project, and `test.sh` asserts a freshly created node contains none of it.
+- Each prompt runs twice under one arm variable — the corpus at the revision under test against a named control revision, or one agent against another — graded blind against one assertion checklist. The reported result is the delta.
+- Thirty-six evals, 111 assertions, organized by the trust-contract phase each tests. `test.sh` asserts every phase the operating model names carries at least one eval. 78 assertions grade automatically, 33 stay manual and blind.
+- The corpus supplies most of its own graders: `comments.sh` by finding class, `status.sh` by its own flags, `links.sh` by reachability, plus `.agent/` and project tree diffs, and the harness's call trace for ordering.
+- `evals/heldout.json` is a second prompt set: the same fixtures, premises, and assertion ids with every prompt reworded, selected with `EVALS_SPEC`. `evals/contamination.py` measures eval-to-corpus leakage lexically and, with `--judge`, by scenario shape. `evals/assertion-kinds.json` tags each assertion as behavior, conformance, or information. `evals/pooled.py` judges a candidate against every prior baseline run and reports pass rates per kind plus tool calls, USD, and seconds per eval. `evals/triage.py` proposes an evidence-backed verdict for each manual assertion without opening `arm-map.json`.
+- No eval run in CI. The static half rides CI. `test.sh` validates the spec's shape, builds a fixture and asserts it arrives with no findings, and pins the rollup's fail-closed cases. Those cases are an id set that disagrees with its snapshot, and an arm name that reached a grading record as a condition rather than as a word. `evals/rollup.py` recomputes every number from the records and refuses both.
+- `run-arm.sh` exits nonzero and writes `ARM FAILED` when any child eval fails or becomes void. It rejects `--jobs 0`, which `xargs` otherwise treats as unbounded concurrency.
+- `run.sh` refuses an arm label that is also a component of the selected eval id. Such a label reaches every grading path and makes the blind rollup reject the completed run.
+- Manual fixtures omit `--indexes` when a historical corpus predates that flag. `run.sh` also identifies the selected eval, so fixture construction checks that scenario's premises instead of unrelated scenarios sharing its fixture.
+- `evals/v6.2-release-validation-2026-09-20.md` records the release pass before the compatibility fix above. No paired rollup was produced because every baseline fixture build failed. The report remains the candidate-only descriptive read and full failure trail for that run.
+- `evals/v6.2-release-validation-2026-09-21.md` supersedes that failed pass. Both agents completed every paired session at three repeats, then every unstable eval at five repeats. The candidate led by 8.8 percentage points on Claude and 19.3 on Codex, with zero regressions on both agents. Assertions that stayed mixed within an arm remain explicitly unstable and support no release claim.
+
+#### Mechanics
+
+- `node.sh` targets `"6.2"`. The 6.1 to 6.2 update is script refresh plus version bump, with preset changes landing through the normal reconcile step.
+- The shipped node scripts are `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. An update refreshes those names and touches nothing else under `scripts/`.
+- `node.sh update` preserves the current index mode unless `--indexes generated` explicitly requests adoption. Generated-to-manual conversion stays a documented manual procedure.
+- A current-version update preflights both generated-adoption and shape-refresh backup paths before its first write. Any collision leaves the node untouched.
+- Top-level `node.sh --help` exits 0 and distinguishes init's manual default from update's preserve-current behavior.
+
+### Migrating a V6.1 node
+
+1. Run `scripts/node.sh update`, adding `--indexes generated` if this migration should adopt generated indexes.
+2. Reconcile `rules/contract.md` against the current preset. The changed slots are the security slot's appended clause, the origin gate, the canonical-source gate in Self-learning, the qualified `memory/` bullet, and the wrapping bullet. Software nodes also take the Comments section, the Context loading history rule, the Verification contract's comment-gate bullet, the `Project guardrails` doc-comment line, and the quality bar's comment criteria.
+3. Take one pass over `rules/learned.md` under the new header. Drop every rule whose failure mode a check now enforces.
+4. Replace a node's own comment gate with the shipped script. Move its project vocabulary into `comments.conf`.
+5. Re-derive every entry-point mirror from the current template, keeping this node's project line and doc routing.
+6. Append the `archive/` clause to `docs/architecture.md`'s header.
+
+---
+
 ## V6.1 (2026-07-27): Tiered context and scripted writes
 
 ### Why

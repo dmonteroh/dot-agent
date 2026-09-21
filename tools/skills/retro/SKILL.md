@@ -1,26 +1,43 @@
 ---
 name: retro
-description: Use at end of session when deciding whether to distill a behavioral rule into rules/learned.md, or when a tool-native memory silo needs harvesting into .agent/.
+description: Triages session corrections and failures against their canonical source before retaining durable lessons. Use after a user correction, non-obvious verification fix, agreed-plan deviation, or comment-hygiene breach, and at session close. Routes surviving lessons to rules/learned.md, a docs Gotchas entry, or comments.conf vocabulary. Also harvests a tool-native memory silo into .agent/.
 ---
 
 # Retro
 
-The binding rule, that retro happens and what it produces, lives in the
-preset's Self-learning section (part of `rules/contract.md`) and in
-`rules/learned.md`'s own header, which is the curation law itself. This
-skill is an optional walkthrough of *how* to run retro well; it adds no
-obligation beyond what those two sources already state.
+The binding rule — that retro happens, and what it produces — lives in the preset's Self-learning section, part of `rules/contract.md`. It also lives in `rules/learned.md`'s own header, which is the curation law itself.
 
-## When to distill a rule
+This skill is an optional walkthrough of _how_ to run retro well. It adds no obligation beyond what those two sources already state.
 
-When one of the retro triggers named in the preset's Self-learning section
-(part of `rules/contract.md`) fires, ask what check or behavior would have
-prevented it (for a plan deviation: what the plan missed). If the answer
-generalizes past this one session, draft a rule; if it doesn't, the outcome
-belongs in the session log, not `learned.md`. A useful test: try to state
-the rule in one imperative sentence before writing anything down. If it
-only makes sense with a paragraph of backstory attached, keep asking the
-question until the generalizable version surfaces.
+## Use this skill when
+
+A retro trigger from the Self-learning section fires:
+
+- a user correction
+- a failed verification that needed a non-obvious fix
+- a mid-task deviation from an agreed plan
+- a comment-hygiene breach reaching review
+
+Or the session is closing and a lesson may be worth keeping.
+
+## Do not use this skill when
+
+- The outcome is a one-off: it goes in the session log, and no rule is written.
+- The task is the session-log entry itself — that is `log.sh`'s job, not retro's.
+- The lesson already has a `learned.md` entry and its failure mode is still unenforced — merge or broaden that entry in place (see below). Remove it when code or tooling now prevents the failure.
+- No tool-native memory silo exists — don't go looking for one. The harvesting section states its own gate.
+
+## Find the failing source before distilling
+
+The preset's Self-learning section is part of `rules/contract.md`. A trigger starts this check. It does not guarantee a new rule.
+
+Search the contract, routed docs, relevant source, tooling, and existing learned rules for the behavior and its cause. If one already owns it, fix that source and write no compensating rule. If this session made the behavior mechanically enforceable, remove any learned rule that only asked the agent to do the same thing. Version control keeps the incident history.
+
+A doc that exists and was never opened is a failing source too. Check its `Read when:` hook and its `architecture.md` routing row against the words the task actually used. A hook that names the occasion — "shipping a release" — and never the thing asked about — "deploy" — is the defect: fix the routing line, and write no rule telling the agent to search harder.
+
+Only after that source check, ask what check or behavior would have prevented the failure. For a plan deviation, ask what the plan missed.
+
+If the answer generalizes past the source fix and this session, draft a rule. Otherwise the outcome belongs in the session log. A useful test: try to state the rule in one imperative sentence before writing anything down. If it only makes sense with a paragraph of backstory attached, keep asking until the generalizable version surfaces.
 
 ## The format
 
@@ -28,34 +45,26 @@ question until the generalizable version surfaces.
 
 `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>.`
 
-Draft the rule clause first; add the trigger clause only if a future
-session would otherwise not know when the rule applies.
+Draft the rule clause first. Add the trigger clause only if a future session would otherwise not know when the rule applies.
 
 ## Merge, don't append
 
-Before adding a new entry, search `learned.md` for existing entries on the
-same subject or trigger; a quick `grep` on a keyword from the draft rule
-is enough. If a near-duplicate exists, edit it in place (broaden the
-imperative or fold in the new trigger) and drop the old line, rather than
-leaving both to be reconciled later at the grooming threshold.
+On a node running `indexes: generated`, run `.agent/scripts/learn.sh lookup` against the draft rule before adding a new entry. If it names a duplicate or an overlapping record, revise the record it names with `.agent/scripts/learn.sh revise` — broaden the imperative, or fold in the new trigger — rather than leaving both for the grooming threshold to reconcile later. Pass `--distinct` only after reading the records the refusal names and confirming the draft is genuinely a separate rule.
+
+On a manual-mode node, `rules/learned/` does not exist and `learn.sh` refuses there, so merge near-duplicates by hand in `rules/learned.md` instead: read the file first, and edit the existing entry rather than adding a new one that says the same thing.
 
 ## Route by scope
 
-Behavioral rules stay in `learned.md`. A rule that's really an
-area-specific mechanic (a library quirk, an API gotcha, a SQL or CSS
-behavior) belongs in the matching `.agent/docs/<area>.md` file under a
-`## Gotchas` heading instead, same entry format, with at most a one-line
-pointer left in `learned.md` for cross-area hazards.
+What you found becomes one of four kinds, each owned by one surface and one writer: a task requirement stays in the task's own artifacts and the session log, at its stated scope, with no durable record; a project fact goes to `.agent/scripts/memory.sh new`, or the owning doc when it is stable knowledge about how the system works; a durable preference the user states in their own turn updates the existing canonical record with `.agent/scripts/memory.sh supersede --slug <slug>`; a behavioral lesson that generalizes past this session is a learned record, written with `.agent/scripts/learn.sh`.
+
+Behavioral rules stay in `learned.md`. Some rules are really an area-specific mechanic: a library quirk, an API gotcha, a SQL or CSS behavior. Those belong in the matching `.agent/docs/<area>.md` file instead, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer in `learned.md` for cross-area hazards.
+
+A comment-hygiene lesson first routes to `comments.sh`. If the gate already catches the shape, write nothing. Otherwise add a project-specific repeatable shape to `.agent/scripts/comments.conf`, so the next occurrence is mechanical: a citation format goes to `BLOCK_RE_EXTRA`, a house narration phrasing to `NARRATION_RE_EXTRA`, a generated path the gate should skip to `EXCLUDE_RE_EXTRA`. When the gate blocked something real, the fix is `CONSTRAINT_RE_EXTRA`, not an exception.
+
+Write a `learned.md` rule for it only when no pattern can express what went wrong. This is the fix ladder in miniature. A rule that was already written and breached anyway needs a check, not a restatement.
 
 ## Harvesting a tool-native memory silo
 
-This is a repair path, not a routine step; see operating-model.md's Native
-tool memory section for why. It applies only when retro finds a
-tool-collected silo, because the native-memory setting wasn't applied to
-this node or another tool populated its own store. Concretely: check the
-tool's native memory location (for Claude Code, wherever
-`autoMemoryEnabled` would have written) for entries about this project; if
-any exist, fold their content into the right `.agent/` file (a fact into
-`memory/`, a behavioral rule into `learned.md`) and delete the silo. A
-node with the setting correctly applied has nothing to harvest; don't go
-looking for one.
+This is a repair path, not a routine step. See operating-model.md's Native tool memory section for why. It applies only when retro finds a tool-collected silo. That happens when the native-memory setting wasn't applied to this node, or when another tool populated its own store.
+
+Check the tool's native memory location for entries about this project. For Claude Code, that is wherever `autoMemoryEnabled` would have written. If any entries exist, fold their content into the right `.agent/` file: a fact into `memory/`, a behavioral rule into `learned.md`. Then delete the silo. A node with the setting correctly applied has nothing to harvest. Don't go looking for one.
