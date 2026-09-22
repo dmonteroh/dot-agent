@@ -49,9 +49,15 @@ re_require() {
             >/dev/null 2>&1 ;;
     grep) printf '' | grep -E "$3" >/dev/null 2>&1 ;;
   esac
-  [ $? -le 1 ] && return 0
-  echo "comments.sh: $2 is not a valid regular expression: $3" >&2
-  exit 2
+  [ $? -le 1 ] || {
+    echo "comments.sh: $2 is not a valid regular expression: $3" >&2
+    exit 2
+  }
+  if [ "$1" = awk ] && printf '%s' "$3" | grep -qE '\{[0-9]+(,[0-9]*)?\}' \
+    && ! awk 'BEGIN { exit !("aa" ~ /^a{2}$/) }' 2>/dev/null; then
+    echo "comments.sh: $2 uses a {n,m} interval, which this awk ($(command -v awk)) silently never matches: spell the repetition out instead: $3" >&2
+    exit 2
+  fi
 }
 re_require awk EXCLUDE_RE "$EXCLUDE_RE"
 [ -n "$EXCLUDE_RE_EXTRA" ]    && re_require awk EXCLUDE_RE_EXTRA "$EXCLUDE_RE_EXTRA"
@@ -152,7 +158,9 @@ added=$(printf '%s\n' "$added" \
 pragma_re='eslint|prettier|stylelint|@ts-|<reference|istanbul|jest-environment|#!/|shellcheck|noqa|type: ignore|pylint|biome-ignore'
 [ -n "$PRAGMA_RE_EXTRA" ] && pragma_re="$pragma_re|$PRAGMA_RE_EXTRA"
 
-block_re='git (show|log|diff|blame|bisect|merge-base|rev-parse)([^[:alnum:]]|$)|(^|[^[:alnum:]])[0-9a-f]{8,40}([^[:alnum:]]|$)|out of scope|for this pass'
+hex8='[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+hex_opt32=$(printf '[0-9a-f]?%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32)
+block_re="git (show|log|diff|blame|bisect|merge-base|rev-parse)([^[:alnum:]]|\$)|(^|[^[:alnum:]])$hex8$hex_opt32([^[:alnum:]]|\$)|out of scope|for this pass"
 [ -n "$BLOCK_RE_EXTRA" ] && block_re="$block_re|$BLOCK_RE_EXTRA"
 
 narration_re='(^|[^[:alnum:]])(previously|formerly|used to be|no longer|renamed (from|to)|moved (from|to) (the|its)|changed from|as of this (change|commit|pr|version)|(in|for) this (task|change|request|commit|pr|pull request|pass|iteration|implementation|ticket|issue)|this (task|change|request|commit|pr|patch|implementation) (adds|added|removes|removed|changes|changed|fixes|fixed|makes|introduces|updates|updated|supports|supported|handles|handled)|now (returns|supports|uses|handles|takes|accepts|includes|also|correctly|sets|creates|builds|loads|reads|writes)|instead of the (old|previous|former)|was (renamed|moved|replaced|removed|inlined)|(we|i) (added|changed|updated|removed|refactored|implemented|decided|considered|tried)([^[:alnum:]_]|$)|(added|removed|replaced|updated|refactored|migrated|kept) (in|as part of|for) (this|the) (change|commit|pr|pass|task|ticket|refactor))'

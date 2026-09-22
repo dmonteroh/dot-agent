@@ -177,7 +177,7 @@ first_extra_heading() {
   awk '
     /^```/ { fence = 1 - fence; next }
     fence { next }
-    /^#{2,6}[ \t]/ { print; exit }
+    /^###?#?#?#?[ \t]/ { print; exit }
     /^#[ \t]/ { if (seen_title++) { print; exit } }
   ' "$1"
 }
@@ -221,7 +221,7 @@ keep_tokens() {
         t = $i
         gsub(/^[("\x27\[]+|(\x27s)?[)"\x27\],.;:!?]*$/, "", t)
         if (t == "") continue
-        if (t ~ /^[A-Z][A-Z0-9]+-[0-9]+$/ || t ~ /^[A-Z][A-Z0-9_]{3,}$/ || t ~ /^[A-Z][a-z]+-[A-Z][a-z]+$/ || t ~ /^[a-z]+:\/\// || t ~ /^[A-Za-z0-9_.-]*\/[A-Za-z0-9_.\/-]+$/ || t ~ /^[a-z0-9.-]+\.[a-z]{2,}(:[0-9]+)?$/ || t ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/ || t ~ /^[0-9]+(ms|s|rps|%)$/) print t
+        if (t ~ /^[A-Z][A-Z0-9]+-[0-9]+$/ || t ~ /^[A-Z][A-Z0-9_][A-Z0-9_][A-Z0-9_]+$/ || t ~ /^[A-Z][a-z]+-[A-Z][a-z]+$/ || t ~ /^[a-z]+:\/\// || t ~ /^[A-Za-z0-9_.-]*\/[A-Za-z0-9_.\/-]+$/ || t ~ /^[a-z0-9.-]+\.[a-z][a-z]+(:[0-9]+)?$/ || t ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/ || t ~ /^[0-9]+(ms|s|rps|%)$/) print t
         if (t ~ /^[0-9]+$/ && i < NF && $(i+1) ~ /^(ms|rps|s|seconds|requests|attempts)[,.;:]?$/) print t " " $(i+1)
       }
     }' "$1"
@@ -296,8 +296,11 @@ if [[ -d "$docs" ]]; then
       echo "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
     fi
     if [[ -s "$arch" ]]; then
+      entry_count=$(grep -cxF "### \`$rel\`" "$arch")
       if ! grep -qF "### \`$rel\`" "$arch"; then
         echo "INDEX: docs/$rel not in the architecture.md routing table — add an entry from its \"Read when:\" header"
+      elif [[ "$entry_count" -gt 1 ]]; then
+        echo "INDEX: docs/$rel has $entry_count entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest"
       else
         block=$(entry_block "$arch" "$rel")
         entry_hook=$(printf '%s\n' "$block" | sed -n 's/^- \*\*Read when:\*\* //p' | head -n 1)

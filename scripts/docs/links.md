@@ -37,6 +37,7 @@ Files exempt from the `ORPHAN:` check, and why each is reached by a route the li
 | `memory/` | already checked both directions by `status.sh`'s `REPAIR:` pass |
 | `archive/` | retired content, on purpose |
 | `scripts/` | executables wired by the entry point, which lives outside the node |
+| `indexes/` | the generated cache: `index.sh ensure` prints its entry path and the entry point says to read it, so no node file cites it |
 | `skills/` and its siblings | the operating model places them outside itself: never loaded, never groomed, never audited |
 
 Three sources are excluded from the `BROKEN:` walk because they name files in a different genre than citation:
