@@ -257,6 +257,10 @@ grep -qxF '  indexes: generated        # manual | generated' "$idxgen/.agent/pur
 [ -x "$idxgen/.agent/scripts/index.sh" ] \
   && pass "init --indexes generated: index.sh is installed" \
   || fail "init --indexes generated: index.sh is installed"
+finish_bootstrap "$idxgen"
+"$idxgen/.agent/scripts/index.sh" ensure --root "$idxgen" >/dev/null 2>&1
+idx_links=$("$idxgen/.agent/scripts/links.sh" "$idxgen" 2>&1)
+[ -e "$idxgen/.agent/indexes/current.md" ] && ! printf '%s\n' "$idx_links" | grep -q 'ORPHAN: indexes/' && pass "links.sh: the generated index cache is not an orphan" || fail "links.sh: the generated index cache is not an orphan ($idx_links)"
 
 v6root="$WORK/update-v6"
 mkdir -p "$v6root"
@@ -893,6 +897,7 @@ finish_bootstrap "$groomroot"
 "$groomroot/.agent/scripts/memory.sh" new --slug vendor --title Vendor --hook "vendor calls" --fact "Vendor limit measured on 2026-07-02 for PAY-318 against sandbox.vendor.example:8443; repro with npm run test:integration -- --grep vendor and VENDOR_SANDBOX_KEY set." "$groomroot" >/dev/null 2>&1
 printf '\n%s\n' "$(words_n 320)" >>"$groomroot/.agent/memory/vendor.md"
 groom8=$("$groomroot/.agent/scripts/status.sh" "$groomroot" 2>&1 | grep '^GROOM: memory/vendor.md')
+groom8_missing=""
 for tok in PAY-318 sandbox.vendor.example:8443 "npm run test:integration -- --grep vendor" VENDOR_SANDBOX_KEY 2026-07-02; do
   printf '%s' "$groom8" | grep -qF -- "$tok" || groom8_missing="$groom8_missing $tok"
 done
@@ -1523,6 +1528,10 @@ printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with it
 subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: refreshing both sides clears the hook flag" || fail "routing: refreshing both sides clears the hook flag ($(status_flags "$rt"))"
 
+printf '\n### `payments.md`\n\n- **Read when:** refund disputes only\n- **Sections:**\n' >>"$rtarch"
+f21c=$(status_flags "$rt")
+printf '%s\n' "$f21c" | grep -qF 'INDEX: docs/payments.md has 2 entries in architecture.md' && pass "routing: a second entry for one doc draws an INDEX flag even when the first matches" || fail "routing: a second entry for one doc draws an INDEX flag even when the first matches ($f21c)"
+
 missrepair='REPAIR: docs/architecture.md missing/empty'
 
 rtm1="$WORK/routing-table-missing-empty"
@@ -1927,6 +1936,12 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
 printf 'When stuck, ask SomeVendor to run it in Cursor.\n' >"$WORK/leak.md"
 hits30b=$(grep -inE "$lint_re" "$WORK/leak.md" | grep -vF -f "$lint_allow")
 [ -n "$hits30b" ] && pass "portability: the lint catches an injected vendor token" || fail "portability: the lint catches an injected vendor token"
+
+iv_hits=$(cd "$reporoot" && grep -nE '\{[0-9]+(,[0-9]*)?\}' \
+  scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
+  scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
+  scripts/learn.sh scripts/node.sh scripts/comments.conf | grep -v 'grep' | grep -vF '/^a{2}$/')
+[ -z "$iv_hits" ] && pass "portability: no {n,m} interval reaches awk, which mawk 1.3.4 20200120 silently never matches" || fail "portability: no {n,m} interval reaches awk, which mawk 1.3.4 20200120 silently never matches ($(printf '%s' "$iv_hits" | tr '\n' ';' | cut -c1-200))"
 
 eps_from() { grep -oE '"\$root/([^"]*\.md|\.cursorrules)"' "$1" | sort -u; }
 eps_status=$(eps_from "$reporoot/scripts/status.sh")
@@ -2838,6 +2853,16 @@ printf 'BLOCK_RE_EXTRA=[unclosed\n' >>"$fo/.agent/scripts/comments.conf"
 fo_bad=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
 fo_rc=$?
 [ "$fo_rc" -ne 0 ] && [ -z "$fo_bad" ] && pass "comments.sh: a conf regex that will not compile fails closed" || fail "comments.sh: a conf regex that will not compile fails closed (rc=$fo_rc)"
+
+grep -v '^BLOCK_RE_EXTRA=' "$fo/.agent/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agent/scripts/comments.conf"
+printf 'BLOCK_RE_EXTRA=(^|[^[:alnum:]])TKT-[0-9]{3}\n' >>"$fo/.agent/scripts/comments.conf"
+noiv="$WORK/no-interval-awk"
+mkdir -p "$noiv"
+printf '#!/bin/sh\ncase "$*" in *"{2}"*) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v awk)" >"$noiv/awk"
+chmod +x "$noiv/awk"
+fo_iv=$(cd "$fo" && PATH="$noiv:$PATH" "$fo/.agent/scripts/comments.sh" base 2>&1 >/dev/null)
+fo_rc=$?
+[ "$fo_rc" -eq 2 ] && printf '%s' "$fo_iv" | grep -qF 'interval' && pass "comments.sh: a conf interval regex fails closed under an awk that cannot match intervals" || fail "comments.sh: a conf interval regex fails closed under an awk that cannot match intervals (rc=$fo_rc; $fo_iv)"
 
 hp="$WORK/helpcontract"
 mkdir -p "$hp"
@@ -8704,7 +8729,7 @@ rec75_after_update=$(rec75_snapshot "$rec75")
 
 ran=$((PASS + FAIL))
 
-EXPECTED_CHECKS=1356
+EXPECTED_CHECKS=1360
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

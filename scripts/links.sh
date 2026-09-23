@@ -26,7 +26,7 @@ is_exempt() {
   case "$1" in
   purpose.md | memory.md | session-log.md) return 0 ;;
   rules/* | docs/architecture.md) return 0 ;;
-  memory/* | archive/* | scripts/*) return 0 ;;
+  memory/* | archive/* | scripts/* | indexes/*) return 0 ;;
   skills/* | workflows/* | agents/* | others/* | tmp/*) return 0 ;;
   esac
   return 1
