@@ -42,9 +42,15 @@ need_value() {
 
 candidate_tmp=""
 resolve_tmp=""
+writer_lock=""
 cleanup() {
   [ -n "$candidate_tmp" ] && rm -f "$candidate_tmp"
   [ -n "$resolve_tmp" ] && rm -f "$resolve_tmp"
+  if [ -n "$writer_lock" ] && [ -d "$writer_lock" ] \
+    && [ "$(cat "$writer_lock/owner" 2>/dev/null)" = "$$" ]; then
+    rm -f "$writer_lock/owner"
+    rmdir "$writer_lock" 2>/dev/null || :
+  fi
 }
 trap cleanup EXIT
 
@@ -86,47 +92,69 @@ lrn_warn_word_ceiling() {
   fi
 }
 
-lrn_related() {
-  awk '
-    function words(s, a,   n, i, t) {
-      s = tolower(s)
-      gsub(/[^abcdefghijklmnopqrstuvwxyz0123456789]+/, " ", s)
-      n = split(s, t, " ")
-      for (i = 1; i <= n; i++)
-        if (length(t[i]) > 2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/)
-          a[t[i]] = 1
+lrn_scan_records() {
+  sr_candidate="$1"
+  sr_dir="$2"
+  set -- "$sr_candidate"
+  for sr_f in "$sr_dir"/*.md; do
+    [ -e "$sr_f" ] || continue
+    set -- "$@" "$sr_f"
+  done
+  awk -v candidate="$sr_candidate" '
+    function words(s,a, n,i,t) {
+      s=tolower(s); gsub(/[^abcdefghijklmnopqrstuvwxyz0123456789]+/," ",s)
+      n=split(s,t," "); for(i=1;i<=n;i++) if(length(t[i])>2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/) a[t[i]]=1
     }
-    FNR == 1 { sub(/^- \[[^]]*\] /, "") }
-    FNR == NR { words($0, a); next }
-    { words($0, b) }
-    END {
-      for (k in a) if (k in b) hit++
-      exit(hit ? 0 : 1)
+    function finish( k,hit) {
+      if(name=="") return
+      if(name==candidate) { cand=body; for(k in curterms) cterms[k]=1 }
+      else {
+        hit=0; for(k in curterms) if(k in cterms) hit=1
+        if(body==cand) print "duplicate\t" name
+        else if(hit) print "overlap\t" name
+      }
     }
-  ' "$1" "$2"
+    FNR==1 { finish(); name=FILENAME; body=""; first=1; delete curterms }
+    {
+      line=$0
+      if(first) { sub(/^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] /,"",line); first=0 }
+      body=body (body=="" ? "" : "\n") line; words(line,curterms)
+    }
+    END { finish() }
+  ' "$@" || return 2
 }
 
 lrn_find_duplicate() {
-  for fd_f in "$2"/*.md; do
-    [ -e "$fd_f" ] || continue
-    if cmp -s "$1" "$fd_f"; then
-      printf '%s\n' "$fd_f"
-      return 0
-    fi
-  done
-  return 1
+  fd_all=$(lrn_scan_records "$1" "$2") || return 2
+  fd_one=$(printf '%s\n' "$fd_all" | awk -F '\t' '$1=="duplicate" {print $2; exit}')
+  [ -n "$fd_one" ] || return 1
+  printf '%s\n' "$fd_one"
 }
 
 lrn_overlap_scan() {
-  os_found=1
-  for os_f in "$2"/*.md; do
-    [ -e "$os_f" ] || continue
-    if lrn_related "$1" "$os_f"; then
-      printf '%s\n' "$os_f"
-      os_found=0
-    fi
-  done
-  return "$os_found"
+  os_all=$(lrn_scan_records "$1" "$2") || return 2
+  printf '%s\n' "$os_all" | awk -F '\t' '$1=="overlap" {print $2}'
+}
+
+lrn_manual_lookup() {
+  ml_candidate="$1"
+  ml_file="$2"
+  ml_rel="$3"
+  ml_version=$(git hash-object --no-filters -- "$ml_file") || return 2
+  awk -v path="$ml_rel" -v version="$ml_version" '
+    function words(s,a, n,i,t) { s=tolower(s); gsub(/[^abcdefghijklmnopqrstuvwxyz0123456789]+/," ",s); n=split(s,t," "); for(i=1;i<=n;i++) if(length(t[i])>2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/) a[t[i]]=1 }
+    function normfirst(s) { sub(/^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] /,"",s); return s }
+    function emit( k,hit,kind) {
+      if(rec=="") return
+      hit=0; for(k in rt) if(k in ct) hit=1
+      kind=(rec==cand ? "duplicate" : (hit ? "overlap" : ""))
+      if(kind!="") print kind "\t" path "\t" version
+    }
+    NR==FNR { line=$0; if(FNR==1) line=normfirst(line); cand=cand (cand==""?"":"\n") line; words(line,ct); next }
+    /^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] / { emit(); delete rt; rec=normfirst($0); firstline=$0; words(rec,rt); next }
+    rec!="" { rec=rec "\n" $0; words($0,rt) }
+    END { emit() }
+  ' "$ml_candidate" "$ml_file"
 }
 
 lrn_current_version() {
@@ -135,6 +163,22 @@ lrn_current_version() {
   else
     printf 'absent'
   fi
+}
+
+lrn_lock_writers() {
+  lw_lock="$1/.learn-writer.lock"
+  if mkdir "$lw_lock" 2>/dev/null; then
+    if printf '%s\n' "$$" >"$lw_lock/owner"; then
+      writer_lock="$lw_lock"
+      return 0
+    fi
+    rmdir "$lw_lock" 2>/dev/null || :
+    echo "learn.sh: could not initialize writer lock $lw_lock" >&2
+    return 1
+  fi
+  lw_owner=$(cat "$lw_lock/owner" 2>/dev/null || printf 'unknown')
+  echo "learn.sh: another record writer holds $lw_lock (owner $lw_owner)" >&2
+  return 1
 }
 
 lrn_mint_and_write() {
@@ -168,6 +212,17 @@ lrn_publish_replace() {
     echo "learn.sh: could not write $pr_tmp — $2 is unchanged" >&2
     rm -f "$pr_tmp"
     return 1
+  fi
+  if [ "$#" -ge 4 ]; then
+    pr_actual=$(lrn_current_version "$2") || {
+      rm -f "$pr_tmp"
+      return 2
+    }
+    if [ "$3" != "$pr_actual" ]; then
+      echo "learn.sh: stale --expected for $4 — current version: $pr_actual" >&2
+      rm -f "$pr_tmp"
+      return 3
+    fi
   fi
   if mv "$pr_tmp" "$2"; then
     return 0
@@ -245,16 +300,16 @@ lookup)
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if lrn_dir_is_real "$learned_dir"; then
-    for lk_f in "$learned_dir"/*.md; do
-      [ -e "$lk_f" ] || continue
-      if cmp -s "$candidate_tmp" "$lk_f"; then
-        lk_v=$(git hash-object --no-filters -- "$lk_f")
-        printf 'duplicate\t%s\t%s\n' "$lk_f" "$lk_v"
-      elif lrn_related "$candidate_tmp" "$lk_f"; then
-        lk_v=$(git hash-object --no-filters -- "$lk_f")
-        printf 'overlap\t%s\t%s\n' "$lk_f" "$lk_v"
-      fi
+    lk_results=$(lrn_scan_records "$candidate_tmp" "$learned_dir") || exit 2
+    for lk_kind in duplicate overlap; do
+      printf '%s\n' "$lk_results" | while IFS="$(printf '\t')" read -r lk_type lk_f; do
+        [ "$lk_type" = "$lk_kind" ] || continue
+        lk_v=$(git hash-object --no-filters -- "$lk_f") || exit 2
+        printf '%s\t%s\t%s\n' "$lk_type" "$lk_f" "$lk_v"
+      done
     done
+  elif [ -f "$agent/rules/learned.md" ]; then
+    lrn_manual_lookup "$candidate_tmp" "$agent/rules/learned.md" "$agent/rules/learned.md"
   fi
   exit 0
   ;;
@@ -300,6 +355,7 @@ new)
       exit 7
     fi
   fi
+  lrn_lock_writers "$learned_dir" || exit 2
 
   read_candidate "$file"
   lrn_grammar_ok "$candidate_tmp" || {
@@ -323,7 +379,7 @@ new)
 
   if new_dup=$(lrn_find_duplicate "$candidate_tmp" "$learned_dir"); then
     new_dup_v=$(git hash-object --no-filters -- "$new_dup")
-    echo "learn.sh: candidate is byte-identical to $new_dup (version $new_dup_v) — refusing to write a duplicate" >&2
+    echo "learn.sh: candidate body (ignoring its leading date) duplicates $new_dup (version $new_dup_v) — refusing to write a duplicate" >&2
     exit 5
   fi
 
@@ -379,6 +435,7 @@ revise)
     exit 7
   fi
   target="$learned_dir/$id.md"
+  lrn_lock_writers "$learned_dir" || exit 2
 
   read_candidate "$file"
   lrn_grammar_ok "$candidate_tmp" || {
@@ -389,7 +446,7 @@ revise)
 
   if rv_dup=$(lrn_find_duplicate "$candidate_tmp" "$learned_dir"); then
     rv_dup_v=$(git hash-object --no-filters -- "$rv_dup")
-    echo "learn.sh: candidate is byte-identical to $rv_dup (version $rv_dup_v) — refusing to write a duplicate" >&2
+    echo "learn.sh: candidate body (ignoring its leading date) duplicates $rv_dup (version $rv_dup_v) — refusing to write a duplicate" >&2
     exit 5
   fi
 
@@ -403,7 +460,13 @@ revise)
     exit 2
   fi
 
-  lrn_publish_replace "$candidate_tmp" "$target" || exit 2
+  if lrn_publish_replace "$candidate_tmp" "$target" "$expected" "$id"; then
+    :
+  else
+    rv_status=$?
+    [ "$rv_status" -eq 3 ] && exit 3
+    exit 2
+  fi
   rv_version=$(git hash-object --no-filters -- "$target")
   lrn_refresh_index "$root"
   printf 'revised\t%s\t%s\n' "$id" "$rv_version"
@@ -439,6 +502,7 @@ retire)
     exit 7
   fi
   target="$learned_dir/$id.md"
+  lrn_lock_writers "$learned_dir" || exit 2
 
   rt_actual=$(lrn_current_version "$target")
   if [ "$expected" != "$rt_actual" ]; then
@@ -448,6 +512,12 @@ retire)
   if [ "$rt_actual" = absent ]; then
     echo "learn.sh: $target does not exist — nothing to retire" >&2
     exit 2
+  fi
+
+  rt_publish_actual=$(lrn_current_version "$target")
+  if [ "$expected" != "$rt_publish_actual" ]; then
+    echo "learn.sh: stale --expected for $id — current version: $rt_publish_actual" >&2
+    exit 3
   fi
 
   if rm -f "$target"; then

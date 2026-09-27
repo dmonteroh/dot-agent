@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "concept": "supersede-in-place",
+      "evidence": "1 memory file(s) modified in place: memory/vendor-rate-limit.md AND 1 memory file(s) written: memory/vendor-production-credentials.md",
+      "grade": "auto",
+      "id": "continuity-supersede/in-place",
+      "passed": false
+    },
+    {
+      "concept": "supersede-in-place",
+      "evidence": "date: 2026-09-27",
+      "grade": "auto",
+      "id": "continuity-supersede/date-bumped",
+      "passed": true
+    },
+    {
+      "concept": "supersede-in-place",
+      "evidence": "no added line in memory/vendor-rate-limit.md matches 'previously|used to|was 10'",
+      "grade": "auto",
+      "id": "continuity-supersede/no-history",
+      "passed": true
+    },
+    {
+      "concept": "index-integrity",
+      "evidence": "no status flag matches 'no index line|indexes'",
+      "grade": "auto",
+      "id": "continuity-supersede/index-line-kept",
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+Historical execution receipts captured after the session. This is not a fresh receipt validation after the runner stages outputs.
+
+Configured project check driver:
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+
+
+Receipt 20260927T153341Z-84717-1119-a1debf1422cdb075c7acc2c3dd037e72f0e634c6.receipt
+version=2
+id=20260927T153341Z-84717-1119-a1debf1422cdb075c7acc2c3dd037e72f0e634c6
+check=test
+status=inconclusive
+exit=0
+count=unknown
+fingerprint=23e21dd7abeb28a38752e6136dd5c3b5a11721cb
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-continuity-writes-back/re7581ddb4ffcf0db3407c07218d8f3dd/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:33:41Z
+
+
+Receipt 20260927T153410Z-93625-14407-4aa6da0ab4e1aa13ce45f945ad39001f1b8a3fbf.receipt
+version=2
+id=20260927T153410Z-93625-14407-4aa6da0ab4e1aa13ce45f945ad39001f1b8a3fbf
+check=test
+status=pass
+exit=0
+count=2
+fingerprint=c79c273690ff9d2747e560fd1d037d1a90eaed1d
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-continuity-writes-back/re7581ddb4ffcf0db3407c07218d8f3dd/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:34:10Z
+
+
+Receipt 20260927T153428Z-97063-27555-44921c4500f7076612e84c3af2fd66b29b00a114.receipt
+version=2
+id=20260927T153428Z-97063-27555-44921c4500f7076612e84c3af2fd66b29b00a114
+check=test
+status=pass
+exit=0
+count=2
+fingerprint=4beebec1e2fd5cc01d4db00d633f95903627d63c
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-continuity-writes-back/re7581ddb4ffcf0db3407c07218d8f3dd/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:34:28Z
+

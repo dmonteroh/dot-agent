@@ -1,0 +1,110 @@
+{
+  "rounds": {
+    "claude": {
+      "statuses": {
+        "ok": 54
+      },
+      "attempts": 54,
+      "workspace": "/tmp/dot-agent-prose-followup/claude"
+    },
+    "codex": {
+      "statuses": {
+        "cancelled": 4,
+        "ok": 22,
+        "timeout": 1
+      },
+      "attempts": 27,
+      "workspace": "/tmp/dot-agent-prose-followup/codex"
+    },
+    "codex-isolated": {
+      "statuses": {
+        "timeout": 4,
+        "ok": 49,
+        "void": 1
+      },
+      "attempts": 54,
+      "workspace": "/tmp/dot-agent-prose-followup/codex-isolated"
+    },
+    "claude-continuity": {
+      "statuses": {
+        "ok": 12
+      },
+      "attempts": 12,
+      "workspace": "/tmp/dot-agent-prose-followup/claude-continuity"
+    },
+    "claude-length": {
+      "statuses": {
+        "ok": 6
+      },
+      "attempts": 6,
+      "workspace": "/tmp/dot-agent-prose-followup/claude-length"
+    },
+    "claude-language": {
+      "statuses": {
+        "timeout": 2,
+        "ok": 4
+      },
+      "attempts": 6,
+      "workspace": "/tmp/dot-agent-prose-followup/claude-language"
+    },
+    "claude-language-recovery": {
+      "statuses": {
+        "ok": 6
+      },
+      "attempts": 6,
+      "workspace": "/tmp/dot-agent-prose-followup/claude-language-recovery"
+    },
+    "claude-content-recovery": {
+      "statuses": {
+        "ok": 6
+      },
+      "attempts": 6,
+      "workspace": "/tmp/dot-agent-prose-followup/claude-content-recovery"
+    },
+    "codex-recovery": {
+      "statuses": {
+        "ok": 6
+      },
+      "attempts": 6,
+      "workspace": "/tmp/dot-agent-prose-followup/codex-recovery"
+    },
+    "claude-core": {
+      "statuses": {
+        "ok": 3,
+        "cancelled": 1
+      },
+      "attempts": 4,
+      "workspace": "/tmp/dot-agent-prose-followup/claude-core"
+    },
+    "codex-core": {
+      "statuses": {
+        "ok": 4
+      },
+      "attempts": 4,
+      "workspace": "/tmp/dot-agent-prose-followup/codex-core"
+    }
+  },
+  "total_statuses": {
+    "ok": 172,
+    "cancelled": 5,
+    "timeout": 7,
+    "void": 1
+  },
+  "notes": [
+    "The first codex round was interrupted after remote plugin startup errors. It is excluded from contract claims.",
+    "The isolated Terra round has 49 complete sessions and five runtime failures. Three affected task pairs were rerun once with a 600-second limit.",
+    "The first Sonnet language comparison timed out on both security cells. The complete pair was rerun separately.",
+    "One current-contract Sonnet quality-pilot session was cancelled after a stuck test and a broad pkill command. The entire task pair is excluded from its paired score.",
+    "While the runner changed, some active Sonnet shells reported errors after artifact capture. All 54 canonical Sonnet run records and output sets completed.",
+    "Interrupted processes left four temporary Codex homes. Session paths identified them, and cleanup removed those four owned directories."
+  ],
+  "runner_sha256": {
+    "evals/run.sh": "f4889b9aa85a77068eaa2101b2c879b4b3e810f7f79304e035da895c25dd30f1",
+    "evals/run_lib.py": "820d493f47887273fff794c52bdf5aa6e8f003b7414a6471b383e08689c9ca0c",
+    "evals/fixtures.sh": "4970b3a206eeb298c684207c82f76fa7b47fb4bf0085412d14578940dd42fc0d",
+    "evals/grade.py": "4cdc59abe1ad93f3fcd76c5e252c4af5243b5aeffd21862c8d003e7e10ad4ecb",
+    "evals/triage.py": "b02d8e625e7dddad19d66f38147158d0ded852953a8993c67db811d86d3238b5"
+  },
+  "remaining_recorded_config_dirs": 0,
+  "interrupted_round_config_cleanup_count": 4
+}

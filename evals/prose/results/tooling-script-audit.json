@@ -1,0 +1,166 @@
+{
+  "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+  "machine": "macOS-26.7-arm64-arm-64bit-Mach-O",
+  "bash": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
+  "fixture": "ts-service; one changed source file; manual indexes",
+  "reproduction": {
+    "verification_commands_executed": [],
+    "checkpoints": [
+      {
+        "exit_code": 0,
+        "stdout": "== comment gate (comments.sh HEAD)\n== status check\nclean\n== session log\nlog.sh: appended session-log entry for 2026-09-27\n",
+        "stderr": ""
+      },
+      {
+        "exit_code": 0,
+        "stdout": "== comment gate (comments.sh HEAD)\n== status check\nclean\n== session log\nlog.sh: appended session-log entry for 2026-09-27\n",
+        "stderr": ""
+      }
+    ],
+    "log_entries_added": 2
+  },
+  "timing": {
+    "status": {
+      "samples_ms": [
+        176.11533298622817,
+        204.21595801599324,
+        219.27724999841303,
+        157.0147080346942,
+        160.7276250142604,
+        149.82262498233467,
+        141.7852920712903,
+        154.59254197776318,
+        164.20162504073232,
+        184.79495798237622,
+        154.0855000494048,
+        175.0638340599835,
+        168.2716659270227,
+        199.2288330802694,
+        167.47995803598315,
+        174.1700420388952,
+        164.56449998077005,
+        219.99979193788022,
+        230.54254101589322,
+        231.2594170216471
+      ],
+      "median_ms": 171.22085398295894,
+      "p95_ms": 230.54254101589322,
+      "stdout_bytes": 496
+    },
+    "status_load": {
+      "samples_ms": [
+        187.1765840332955,
+        194.3480420159176,
+        176.40733299776912,
+        170.287209097296,
+        166.72679199837148,
+        203.1472499947995,
+        177.55224998109043,
+        212.51216705422848,
+        198.6214159987867,
+        186.52812496293336,
+        171.93416703958064,
+        189.35891694854945,
+        178.58395795337856,
+        309.84895897563547,
+        233.1490000942722,
+        193.26345797162503,
+        167.85470803733915,
+        154.66624998953193,
+        202.62791705317795,
+        169.3914170609787
+      ],
+      "median_ms": 186.85235449811444,
+      "p95_ms": 233.1490000942722,
+      "stdout_bytes": 21569
+    },
+    "comments": {
+      "samples_ms": [
+        116.3513750070706,
+        118.19654190912843,
+        119.08879200927913,
+        117.95345798600465,
+        118.50454192608595,
+        114.34612504672259,
+        136.11770805437118,
+        121.22724996879697,
+        120.74616609606892,
+        184.03754092287272,
+        129.6295418869704,
+        113.74158307444304,
+        127.85845797043294,
+        119.16120897512883,
+        160.83820804487914,
+        118.10712504666299,
+        141.70337503310293,
+        122.84091697074473,
+        147.342334035784,
+        117.86587489768863
+      ],
+      "median_ms": 119.95368753559887,
+      "p95_ms": 160.83820804487914,
+      "stdout_bytes": 0
+    }
+  },
+  "script_sha256": {
+    "learn.sh": "02bf35dc3fd1ac9a73b81480b3dcd40abedda86f36d9f38c139a55d22347730b",
+    "status.sh": "94b3cd8dd8424a976c95dced8f4cf69f6f31fb648828b14e234889f012139b6d",
+    "comments.sh": "5a77e5665b1b4d969a839ac5c4336f48b4ef9068101b3cec073b0bce5fe9a537",
+    "index.sh": "682598d75218b7e5a5369f0e2b20770c720477f8e84366e1dd0d3428cd0f62bf",
+    "log.sh": "3951fb739477db724c7fde28440bdd510f1a1626cad68c85ccd5c93d99b994ab",
+    "memory.sh": "f54ada96b82aa52113544ed852936f3f79c1c087f41c1837fa2d40ba72422397",
+    "checkpoint.sh": "abef3e8f6819413024c76ae4be9405ea5e3789d8478e524de46444ef09c7ea0e",
+    "docs.sh": "1dd092e0341f60e0aea29a9cf47e9937552ce487b5a8e23a40411d86081f7330",
+    "links.sh": "9bfa7752ae3e031aabca6e381bd221ba12482479245f518f0249ab1e4c0cbb3b"
+  },
+  "lookup_timing": [
+    {
+      "records": 10,
+      "body_bytes": 890,
+      "matching_records": 0,
+      "samples_ms": [
+        62.582916929386556,
+        94.63537496048957,
+        64.27141593303531,
+        61.551042017526925,
+        59.79158298578113,
+        57.92095803190023,
+        281.7690420197323,
+        246.56108301132917,
+        102.91979205794632,
+        90.86970798671246
+      ],
+      "median_ms": 77.57056195987388,
+      "p95_ms": 281.7690420197323
+    },
+    {
+      "records": 100,
+      "body_bytes": 8990,
+      "matching_records": 0,
+      "samples_ms": [
+        834.5842499984428,
+        749.4996250607073,
+        478.3491670386866,
+        467.52249996643513,
+        447.7722500450909,
+        404.95654207188636,
+        418.30699995625764,
+        434.1059169964865,
+        672.8246660204604,
+        672.5089170504361
+      ],
+      "median_ms": 472.93583350256085,
+      "p95_ms": 834.5842499984428
+    }
+  ],
+  "lookup_fixture": "Synthetic lookup-only tree. Short learned records, no term overlap. Ten warm repetitions per size.",
+  "date": "2026-09-27",
+  "method": "Python perf_counter wall time around Bash subprocesses, capturing stdout/stderr. One warmup before each timed case. p95 uses nearest rank.",
+  "scope": "Measurement harness only uses Python. Proposed shipped tools require Bash, Git, and standard Unix utilities.",
+  "limitations": [
+    "One Mac and one run.",
+    "Small synthetic fixtures.",
+    "No measurements of proposed implementations.",
+    "The 100-record lookup case has no matches and 8,990 body bytes."
+  ]
+}

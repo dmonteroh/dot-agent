@@ -5,6 +5,7 @@
 # Usage: run-arm.sh [--jobs N] [--agent claude|codex] [--spec <spec.json>]
 #                   [--evals <id,id,...>] [--harness node|generic|none]
 #                   [--index-mode manual|generated]
+#                   [--contract-file <variant.md>]
 #                   [--treatment-arm <name>] <workspace> <arm> <corpus-ref>
 #
 # run.sh locks only its metadata writes (arm-map.json, run-config.json), so
@@ -38,6 +39,7 @@ usage() {
 Usage: run-arm.sh [--jobs N] [--agent claude|codex] [--spec <spec.json>]
                   [--evals <id,id,...>] [--harness node|generic|none]
                   [--index-mode manual|generated]
+                  [--contract-file <variant.md>]
                   [--treatment-arm <name>] <workspace> <arm> <corpus-ref>
 
 Runs every eval in the spec (default: spec.json; --evals narrows it) for one
@@ -49,6 +51,8 @@ fixtures generated or manual — the node-mode arm variable's own comparison.
 --treatment-arm defaults to <arm>; pass it on every arm of a workspace so
 both arms agree on which one is the treatment, and either may create the
 workspace.
+--contract-file installs a pinned prose variant into each fixture before
+the agent runs. Use it with a spec whose arm variable is contract.
 USAGE
 }
 
@@ -59,6 +63,7 @@ only=""
 harness=node
 index_mode=manual
 treatment=""
+contract_file=""
 while [ $# -gt 0 ]; do
   case "$1" in
   --jobs) jobs="${2:-}"; shift 2 ;;
@@ -68,6 +73,9 @@ while [ $# -gt 0 ]; do
   --harness) harness="${2:-}"; shift 2 ;;
   --index-mode) index_mode="${2:-}"; shift 2 ;;
   --treatment-arm) treatment="${2:-}"; shift 2 ;;
+  --contract-file)
+    [ -n "${2:-}" ] || { echo "run-arm.sh: --contract-file needs a path" >&2; exit 2; }
+    contract_file="$2"; shift 2 ;;
   -h | --help) usage; exit 0 ;;
   --*) echo "run-arm.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
   *) break ;;
@@ -87,6 +95,10 @@ case "$index_mode" in
 manual | generated) ;;
 *) echo "run-arm.sh: --index-mode must be manual or generated (got '$index_mode')" >&2; exit 2 ;;
 esac
+if [ -n "$contract_file" ]; then
+  contract_file=$(cd "$(dirname "$contract_file")" && pwd)/$(basename "$contract_file")
+  [ -f "$contract_file" ] || { echo "run-arm.sh: no such contract: $contract_file" >&2; exit 2; }
+fi
 
 if [ -n "$spec" ]; then
   spec=$(cd "$(dirname "$spec")" && pwd)/$(basename "$spec")
@@ -114,15 +126,17 @@ slow = ["groom-acts-on-flags", "routing-catalog-first", "continuity-writes-back"
 print("\n".join([i for i in slow if i in ids] + [i for i in ids if i not in slow]))
 ' "$specfile" "$only") || exit 2
 
-export RUN_ARM_WORKSPACE="$workspace" RUN_ARM_ARM="$arm" RUN_ARM_REF="$ref" RUN_ARM_AGENT="$agent" RUN_ARM_LOG="$log" RUN_ARM_ROOT="$reporoot" RUN_ARM_HARNESS_FLAG="$harness_flag" RUN_ARM_INDEX_MODE="$index_mode" RUN_ARM_TREATMENT="$treatment"
+export RUN_ARM_WORKSPACE="$workspace" RUN_ARM_ARM="$arm" RUN_ARM_REF="$ref" RUN_ARM_AGENT="$agent" RUN_ARM_LOG="$log" RUN_ARM_ROOT="$reporoot" RUN_ARM_HARNESS_FLAG="$harness_flag" RUN_ARM_INDEX_MODE="$index_mode" RUN_ARM_TREATMENT="$treatment" RUN_ARM_CONTRACT_FILE="$contract_file"
 run_one() {
   local id="$1" rc
+  local contract_args=()
+  [ -z "$RUN_ARM_CONTRACT_FILE" ] || contract_args=(--contract-file "$RUN_ARM_CONTRACT_FILE")
   # Unquoted on purpose: empty means the default node fixture, and an empty
   # quoted word would reach run.sh as an argument it rejects.
   # shellcheck disable=SC2086
   (cd "$RUN_ARM_ROOT" && evals/run.sh --eval "$id" --arm "$RUN_ARM_ARM" --treatment-arm "$RUN_ARM_TREATMENT" \
     --agent "$RUN_ARM_AGENT" --corpus-ref "$RUN_ARM_REF" --workspace "$RUN_ARM_WORKSPACE" \
-    --index-mode "$RUN_ARM_INDEX_MODE" \
+    --index-mode "$RUN_ARM_INDEX_MODE" "${contract_args[@]}" \
     $RUN_ARM_HARNESS_FLAG) \
     >"$RUN_ARM_WORKSPACE/logs/$RUN_ARM_ARM/$id.log" 2>&1
   rc=$?

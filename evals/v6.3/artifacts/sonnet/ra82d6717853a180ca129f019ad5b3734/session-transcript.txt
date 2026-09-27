@@ -1,0 +1,3 @@
+## Turn 1
+Updated `.agent/memory/vendor-rate-limit.md`: now records production credentials (moved off the vendor sandbox) and a 50 rps rate limit, replacing the old 10 rps sandbox fact. No code changed, so no checkpoint is needed for this memory-only update.
+

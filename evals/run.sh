@@ -23,7 +23,7 @@
 # Usage: run.sh --eval <id> --arm <name> --agent <claude|codex>
 #                --corpus-ref <ref> --workspace <dir> [--iteration <n>]
 #                [--treatment-arm <name>] [--no-harness | --generic-claude]
-#                [--index-mode <manual|generated>]
+#                [--index-mode <manual|generated>] [--contract-file <path>]
 #        run.sh --dry-run ...        # build and print every turn, drive nothing
 #        run.sh --list-arms          # resolved executables and versions, no model call
 #        run.sh --probe-agent <claude|codex>   # one live readiness call
@@ -619,7 +619,7 @@ claude_auth_check() {
       AUTH_ERR="Claude credentials in the macOS Keychain (service \"Claude Code-credentials\") are not a claude.ai subscription login (no active subscriptionType) — API-key auth is not accepted"
       return 1
     fi
-    AUTH_ERR="no Claude credentials at $cred or in the macOS Keychain — run 'claude login' with a claude.ai account"
+    AUTH_ERR="Claude credentials absent or inaccessible at $cred and in macOS Keychain. Check 'claude auth status' outside the sandbox before logging in again."
     return 1
   fi
   AUTH_ERR="no Claude credentials at $cred — run 'claude login' with a claude.ai account"
@@ -992,6 +992,8 @@ codex_run() {
       [ -n "$effort" ] && args+=(-c "model_reasoning_effort=\"$effort\"")
       args+=(exec resume --json --ignore-user-config --model "$model" "$thread_id")
     fi
+    # A disposable home does not disable account-synced plugins or app connectors.
+    args+=(-c features.apps=false -c features.plugins=false -c features.remote_plugin=false)
     args+=(-)
 
     promptfile="$outdir/.codex-turn-$turnindex.prompt"
@@ -1093,10 +1095,11 @@ extract_codex_trace() {
 
 lock_run_config() {
   local iterdir arm_variable treatment agent arm model corpus_ref repeats bin ver effort cfgfile
-  local bin_real bin_hash ver_output harness index_mode
+  local bin_real bin_hash ver_output harness index_mode contract_hash
   iterdir="$1"; arm_variable="$2"; treatment="$3"; agent="$4"; arm="$5"; model="$6"
   corpus_ref="$7"; repeats="$8"; bin="$9"; ver="${10}"; effort="${11}"
   bin_real="${12}"; bin_hash="${13}"; ver_output="${14}"; harness="${15}"; index_mode="${16}"
+  contract_hash="${17}"
   cfgfile="$iterdir/run-config.json"
 
   if [ ! -f "$cfgfile" ]; then
@@ -1113,14 +1116,14 @@ lock_run_config() {
     # guessed one.
     IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
       CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-      AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" \
+      AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" CH="$contract_hash" \
       "$selfdir/run_lib.py" lock-run-config-create || return 2
     return 0
   fi
 
   IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
     CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
-    AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" \
+    AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" CH="$contract_hash" \
     "$selfdir/run_lib.py" lock-run-config-update
   return $?
 }
@@ -1157,6 +1160,7 @@ if [ "${1:-}" = "--list-arms" ]; then
   echo "  corpus     locks agent and model; varies the corpus revision"
   echo "  agent      locks the corpus ref; varies the candidate agent"
   echo "  node-mode  locks agent, model, and corpus ref; varies --index-mode"
+  echo "  contract   locks agent, model, corpus ref, harness, and index mode; varies --contract-file"
   exit 0
 fi
 
@@ -1243,12 +1247,16 @@ case "${1:-}" in -h | --help | "") usage; exit 0 ;; esac
 evalid=""; arm=""; agent=""; corpus_ref=""; workspace=""; iteration=""; dry=0; treatment=""
 harness_mode="node"
 index_mode="manual"
+contract_file=""
 while [ $# -gt 0 ]; do
   case "$1" in
   --eval) evalid="${2:-}"; shift 2 ;;
   --arm) arm="${2:-}"; shift 2 ;;
   --agent) agent="${2:-}"; shift 2 ;;
   --corpus-ref) corpus_ref="${2:-}"; shift 2 ;;
+  --contract-file)
+    [ -n "${2:-}" ] || { echo "run.sh: --contract-file needs a path" >&2; exit 2; }
+    contract_file="$2"; shift 2 ;;
   --workspace) workspace="${2:-}"; shift 2 ;;
   --iteration) iteration="${2:-}"; shift 2 ;;
   --treatment-arm) treatment="${2:-}"; shift 2 ;;
@@ -1294,6 +1302,16 @@ done
 fixture=$(printf '%s' "$entry" | "$selfdir/run_lib.py" fixture-name)
 
 arm_variable=$(printf '%s' "$entry" | SPEC="$spec" "$selfdir/run_lib.py" arm-variable)
+contract_hash="none"
+if [ "$arm_variable" = contract ] && [ "$harness_mode" != node ]; then
+  echo "run.sh: contract-variable evals require the node harness" >&2; exit 2
+fi
+if [ -n "$contract_file" ]; then
+  [ "$arm_variable" = contract ] || { echo "run.sh: --contract-file requires an eval with arm_variable contract" >&2; exit 2; }
+  [ "$harness_mode" = node ] || { echo "run.sh: --contract-file requires the node harness" >&2; exit 2; }
+  [ -f "$contract_file" ] || { echo "run.sh: contract file not found: $contract_file" >&2; exit 2; }
+  contract_hash=$(file_sha256 "$contract_file")
+fi
 
 # Turns: a "turns" array if the spec entry carries one, else the current
 # bootstrap-once " || TURN n: " delimiter split into turns, else the prompt
@@ -1367,7 +1385,7 @@ mkdir -p "$iterdir" || exit 1
 acquire_iter_lock "$iterdir/.metadata.lock" || exit 2
 lock_run_config "$iterdir" "$arm_variable" "$treatment" "$agent" "$arm" "$agent_model" \
   "$corpus_ref" "$REPEATS" "$agent_bin" "$agent_ver" "$agent_effort" \
-  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode" "$index_mode"
+  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode" "$index_mode" "$contract_hash"
 lock_run_config_rc=$?
 release_iter_lock
 [ "$lock_run_config_rc" -eq 0 ] || exit 2
@@ -1397,7 +1415,7 @@ while [ "$rep" -le "$repeats_eff" ]; do
     MODEL="${agent_model:-not recorded}" EFFORT="${agent_effort:-not recorded}" \
     TRACE_FORMAT="$trace_format" TURNS="${#turns[@]}" ARM_VARIABLE="$arm_variable" \
     TIMEOUT_S="$TIMEOUT" REPEATS_PER_CELL="$REPEATS" STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    META_PATH="$rundir/run-meta.json" "$selfdir/run_lib.py" run-meta-init
+    CONTRACT_SHA256="$contract_hash" META_PATH="$rundir/run-meta.json" "$selfdir/run_lib.py" run-meta-init
 
   acquire_iter_lock "$iterdir/.metadata.lock" || exit 1
   "$selfdir/run_lib.py" arm-map-update "$iterdir/arm-map.json" "$runid" "$arm"
@@ -1421,6 +1439,22 @@ while [ "$rep" -le "$repeats_eff" ]; do
     mark_stage_void "$rundir" fixture_build_failed \
       "fixture build failed (exit $stage_rc)" "$stage_rc"
     any_void=1; rep=$((rep + 1)); continue
+  fi
+  if [ -n "$contract_file" ]; then
+    [ "$(file_sha256 "$contract_file")" = "$contract_hash" ] || {
+      mark_stage_void "$rundir" contract_changed "contract file changed after run configuration was locked" 2
+      any_void=1; rep=$((rep + 1)); continue
+    }
+    "$selfdir/run_lib.py" install-contract "$contract_file" "$fixdir/.agent/rules/contract.md" \
+      >"$rundir/contract-install.txt" 2>&1 && \
+      git -C "$fixdir" add .agent/rules/contract.md && \
+      git -C "$fixdir" -c user.name=eval -c user.email=eval@local \
+        -c commit.gpgsign=false commit -q -m "eval fixture: contract variant"
+    stage_rc=$?
+    if [ "$stage_rc" -ne 0 ]; then
+      mark_stage_void "$rundir" fixture_build_failed "contract installation failed (exit $stage_rc)" "$stage_rc"
+      any_void=1; rep=$((rep + 1)); continue
+    fi
   fi
   base=$(git -C "$fixdir" rev-parse HEAD 2>/dev/null)
   stage_rc=$?

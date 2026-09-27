@@ -1,0 +1,5 @@
+## Turn 1
+Added `Idempotency-Key: p.id` to the payment POST request.
+
+`npm test` is not green: `legacy currency rounding` fails with `1 !== 1.01` in `test/legacy.test.js`, unrelated to this client change.
+

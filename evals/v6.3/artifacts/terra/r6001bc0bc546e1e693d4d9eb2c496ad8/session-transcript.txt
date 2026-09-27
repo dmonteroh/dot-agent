@@ -1,0 +1,5 @@
+## Turn 1
+`submitPayment` is locally safe to invoke concurrently: it holds no shared state and issues independent `fetch` requests.
+
+It is not safe against duplicate payment creation, though. Concurrent calls with the same payment ID each send a separate POST, with no idempotency key or client-side deduplication. Whether that double-charges depends on the vendor API’s deduplication behavior, which this code does not request or enforce.
+

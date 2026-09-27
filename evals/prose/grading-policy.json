@@ -1,0 +1,9 @@
+{
+  "date": "2026-09-27",
+  "grader": "Codex primary agent, manual artifact review",
+  "model": "not exposed as a verifiable API identifier",
+  "blinding": "Condition labels hidden during grading. Runtime paths and output style remain residual cues.",
+  "catalog-entry-added": "A new named exported reusable helper needs a catalog entry even when added to an existing module. The prior triage helper proposed a vacuous pass when no module was created. This interpretation is stricter than the first report.",
+  "no-green-claim": "Use the manual semantic assertion alongside the lexical check. Record lexical false positives separately.",
+  "comparison": "Both arms use the same policy. Do not compare absolute scores against the prior report without accounting for this grading correction."
+}

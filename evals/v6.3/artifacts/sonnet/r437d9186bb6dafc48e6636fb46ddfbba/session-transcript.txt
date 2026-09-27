@@ -1,0 +1,3 @@
+## Turn 1
+Updated the memory fact at `.agent/memory/vendor-rate-limit.md`: production credentials now, rate limit 50 rps (was sandbox/10 rps). No source code referenced the old value, so this was a memory-only update; logged the session.
+

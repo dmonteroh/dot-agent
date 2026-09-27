@@ -254,6 +254,17 @@ mv "$contract.body" "$contract"
 
 "$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
 
+if [ -f "$dest/.agent/scripts/verify.sh" ]; then
+  cat >"$dest/.agent/scripts/checks.sh" <<'CHECKS'
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+CHECKS
+  chmod +x "$dest/.agent/scripts/checks.sh"
+fi
+
 # entry-point-generated.md carries indexer-specific bootstrap steps in place
 # of the <Routing:...> placeholder, so it has no such placeholder to fill —
 # only the manual template's routing sed applies there.

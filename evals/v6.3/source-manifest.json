@@ -1,0 +1,239 @@
+{
+  "candidate_ref": "b4fc1dd2fffdfde37c020897cf06dc9a2d41488f",
+  "files": [
+    {
+      "path": "scripts/capture.sh",
+      "sha256": "e875b7cc806d59967d6e57cd3a934a2c56aa600d07ab289f16a58da2aa22dbf2"
+    },
+    {
+      "path": "scripts/checkpoint.conf",
+      "sha256": "2d4fd06583f1e05861e6d3633ccb8e5ea18ba16b71903e59aee27451a97f7224"
+    },
+    {
+      "path": "scripts/checkpoint.sh",
+      "sha256": "cfadbbdbd83f8c9f431b73b4309933feecc9780c138d9b45e826395789643fcc"
+    },
+    {
+      "path": "scripts/checks.sh",
+      "sha256": "de64dcb0018bbe8c6f44b3c69df742806a32521b531775a8c732c6bcd6dd2066"
+    },
+    {
+      "path": "scripts/comments.conf",
+      "sha256": "5c12f99bf6949a2f164b0e70ce3b0ae9a66cef25849ebbbe8c41fae8fe9eb09f"
+    },
+    {
+      "path": "scripts/comments.sh",
+      "sha256": "5a77e5665b1b4d969a839ac5c4336f48b4ef9068101b3cec073b0bce5fe9a537"
+    },
+    {
+      "path": "scripts/docs/README.md",
+      "sha256": "fbcf785cda41f00c13dba832f763325e67c13ef3207c35650becac0427c88a7f"
+    },
+    {
+      "path": "scripts/docs/capture.md",
+      "sha256": "6e622d30c844be0603a2f66e0b0df0d4bf8256d545e1e91a7bc1e5e5e7a1f4df"
+    },
+    {
+      "path": "scripts/docs/checkpoint.md",
+      "sha256": "00b5a90dcfffee1625d28a946087da1294eb7ac2b7a9592b2ef13346c7ade616"
+    },
+    {
+      "path": "scripts/docs/comments.md",
+      "sha256": "9f8e966e8a330a58fdde9f649eb437db20641c2106108a9bbf7c1d88ca025bfc"
+    },
+    {
+      "path": "scripts/docs/docs.md",
+      "sha256": "90e8f82669e0385b3bdd29800b741926b4edf2a15350b43f3ddf4cde3491632a"
+    },
+    {
+      "path": "scripts/docs/index-benchmark.md",
+      "sha256": "fd863d3685426024df19c01f0be7acf75599b1cd227ba64a701a75b7cd5dea04"
+    },
+    {
+      "path": "scripts/docs/index.md",
+      "sha256": "e7ae638add41334371ffdc43b2ec080400f32cf30bc0781832b22860bcafc4e6"
+    },
+    {
+      "path": "scripts/docs/learn.md",
+      "sha256": "15def2f5f9f80c08bb6622fea6d6f3155127dbfd3a81d5573e3718a6567bd682"
+    },
+    {
+      "path": "scripts/docs/links.md",
+      "sha256": "ef4bca43872a79dd96ba6ec10bce6c951abb227fd09b9bd085ce90d7d1f6f3e8"
+    },
+    {
+      "path": "scripts/docs/log.md",
+      "sha256": "facc9476b880fdf097da07189f3f472c383d2256d053ae00a3210da6c2a57b0d"
+    },
+    {
+      "path": "scripts/docs/memory.md",
+      "sha256": "886907fe664d5a2e63b15aa9e919f6f16b49f723d818e63a6bc07fb32cb8b19c"
+    },
+    {
+      "path": "scripts/docs/node.md",
+      "sha256": "85887868ca98fe20e9192f11adb4e534707233a5d63498867f28a87523748bdb"
+    },
+    {
+      "path": "scripts/docs/review.md",
+      "sha256": "63bfe7f7077a3e6e7492d2ad4df9253a722658dcfd4afa70aec09182d0727c1a"
+    },
+    {
+      "path": "scripts/docs/runtime.md",
+      "sha256": "117a71d75781b259ffbbd5b9457bf522ee4b854509190962d1fad847dc157bf3"
+    },
+    {
+      "path": "scripts/docs/status.md",
+      "sha256": "3f04e41a5b2165664534e443f615966d3d86b4d756bac9b730bfca4c41a5879b"
+    },
+    {
+      "path": "scripts/docs/test.md",
+      "sha256": "bde467c5049644726107bf408227faea9da9cb33a259fd644e9d048c1b1512e2"
+    },
+    {
+      "path": "scripts/docs/v6.3-trial.md",
+      "sha256": "89ce6473bcbee0bc9317bcba9fc6c871155a03325bae66b5ac9973784ae0edfa"
+    },
+    {
+      "path": "scripts/docs/verify.md",
+      "sha256": "cba3bb4379fbb77105ee28f4e36008a524ded3eb9009818d373ecb292a4afd00"
+    },
+    {
+      "path": "scripts/docs.sh",
+      "sha256": "a5c6fe146201382a15ad1d93c289d1b863390830900b8efba74ae5dd6f462962"
+    },
+    {
+      "path": "scripts/index.sh",
+      "sha256": "682598d75218b7e5a5369f0e2b20770c720477f8e84366e1dd0d3428cd0f62bf"
+    },
+    {
+      "path": "scripts/learn.sh",
+      "sha256": "51ac464168a7929600f6c0ef86dac31d8c302bb7d9f6e49fe284afce96c2a956"
+    },
+    {
+      "path": "scripts/links.sh",
+      "sha256": "9bfa7752ae3e031aabca6e381bd221ba12482479245f518f0249ab1e4c0cbb3b"
+    },
+    {
+      "path": "scripts/log.conf",
+      "sha256": "e9beef64cb13495de5e3a3f72017eb06749d5c213083af1fc23c212eb9927205"
+    },
+    {
+      "path": "scripts/log.sh",
+      "sha256": "1f6b435610ff958789c60bb39db66c87972cec5c61f1e4aec4d8a2f59b4444ec"
+    },
+    {
+      "path": "scripts/memory.sh",
+      "sha256": "288a41bd2e1384d108bd85dec311e2fd0e1533f2908dd3f1bee1cd073cff5c96"
+    },
+    {
+      "path": "scripts/node.sh",
+      "sha256": "c776c500984309d8546bac9ae86a27765b40de66efbd74b6801cbddedfb8917c"
+    },
+    {
+      "path": "scripts/review.conf",
+      "sha256": "6ea6f57253669067ac0ad17dc7241352175af0c26ad139bb4216bf0992eb4131"
+    },
+    {
+      "path": "scripts/review.sh",
+      "sha256": "3b7b116ae1c55f1a44d870ca663638b7bf88e55b1b37c585209d37c2f8e15ff0"
+    },
+    {
+      "path": "scripts/runtime.sh",
+      "sha256": "9a46b8483cd8587fb15678a037c0b2a48b9076aac07aaa45d0186db9026408e2"
+    },
+    {
+      "path": "scripts/status.conf",
+      "sha256": "d6bce14331b23f5bb8111f93916d16f15fd5798e6207ff8bcb43f89aa2efbfaa"
+    },
+    {
+      "path": "scripts/status.sh",
+      "sha256": "bc682d90edd7467af74d98b06ef4b69d435f5c80e8fc220462f3aff76df00150"
+    },
+    {
+      "path": "scripts/test.sh",
+      "sha256": "8804e142d98533774f2cca2faf05722168c84255db4530687711dcca04b3dc65"
+    },
+    {
+      "path": "scripts/tests/capture-v63.sh",
+      "sha256": "bf62a68240555e514d28541e31bda8bce632f325a430545647b3463e347a9718"
+    },
+    {
+      "path": "scripts/tests/checkpoint-v63.sh",
+      "sha256": "5c89e3b6c382d37209ca6e026326963fe894b551b5de56f0ce8791317b8c405d"
+    },
+    {
+      "path": "scripts/tests/fingerprint-v63.sh",
+      "sha256": "fd61567250c109b38ba5dcd8e9fc0d41bcfd7d1bc1f20a98cd66a30cd255078e"
+    },
+    {
+      "path": "scripts/tests/install-v63.sh",
+      "sha256": "46afa1d9306f2688f5e441e1840e3c1167704ef9b460663d74de0c310d81e453"
+    },
+    {
+      "path": "scripts/tests/records-v63.sh",
+      "sha256": "d3e14ba62f8bf3b1023255f79a73e51dc3673d3415a105af77cf2aa211a9486c"
+    },
+    {
+      "path": "scripts/tests/review-v63.sh",
+      "sha256": "82fcc4c7be298580bed24c670f7db3169029f4a967a4c49dbdf6bc7a77b27d39"
+    },
+    {
+      "path": "scripts/tests/tracking-v63.sh",
+      "sha256": "1ddd6500c0a6afd5cc2a7f9a64fe7ea828bcbdfb3d53c816f680029ada0d4486"
+    },
+    {
+      "path": "scripts/tests/verify-v63.sh",
+      "sha256": "6704f939d84c3abcab26167fc39d0ac27a39a905bf33d632b8adff7bb1b07fac"
+    },
+    {
+      "path": "scripts/tools/index-benchmark.sh",
+      "sha256": "f978d53f1790ac7a0bfca0d45275214125585ddc791d964593abaddeafe9c0b6"
+    },
+    {
+      "path": "scripts/verify.conf",
+      "sha256": "1a1894799117920a9c26a9e5948483e39d225d2b8100d4a4c1413481231432cb"
+    },
+    {
+      "path": "scripts/verify.sh",
+      "sha256": "f2a6d78fe02f334033769d5da6d394ab59a963b5c1b8dfb5235dd56a2811c8d5"
+    },
+    {
+      "path": "presets/_shared.md",
+      "sha256": "2f93017a324f858d97640044ce5e44379cedc7a6bc86490609eb6abb4a69d467"
+    },
+    {
+      "path": "presets/academic-research.md",
+      "sha256": "cb5c972a49a1060073506d70cb318191963bf5058d6df75c7e0c3f9f03f22fed"
+    },
+    {
+      "path": "presets/domain-knowledge.md",
+      "sha256": "91011a9466560ba7ca555d59e6f33cdd56aa6b465039df3c5a12f8e19a174c33"
+    },
+    {
+      "path": "presets/software-development.md",
+      "sha256": "07e08840efcbe8ea72d87d281ce3346a4a29753125224462394cd27d9e84dfad"
+    },
+    {
+      "path": "templates/entry-point-generated.md",
+      "sha256": "e659e44b8023f06d73c09187ac6b88a1dfe9cbe40ab187d6d5975f4df634b6ee"
+    },
+    {
+      "path": "templates/entry-point.md",
+      "sha256": "f978981ca70073f9c677cb9978a6fc7b1981bca1a61a7e792edbfc91dc693f0f"
+    }
+  ],
+  "post_evaluation_documentation_changes": [
+    {
+      "path": "scripts/docs/v6.3-trial.md",
+      "evaluated_sha256": "89ce6473bcbee0bc9317bcba9fc6c871155a03325bae66b5ac9973784ae0edfa",
+      "delivered_sha256": "0be54a8f60768139a30eb89da478b1a27b5644017e5c576781a1dcdf4020e564",
+      "reason": "Documentation-only trial instructions updated after observing the smoke results."
+    },
+    {
+      "path": "scripts/docs/verify.md",
+      "evaluated_sha256": "cba3bb4379fbb77105ee28f4e36008a524ded3eb9009818d373ecb292a4afd00",
+      "delivered_sha256": "0229c09acf7797f73bbbd2fc8cad96dd7f146dd08c0be4e602214b3517123dc2",
+      "reason": "Removed two trailing spaces during commit preflight. Documentation meaning and evaluated code are unchanged."
+    }
+  ]
+}

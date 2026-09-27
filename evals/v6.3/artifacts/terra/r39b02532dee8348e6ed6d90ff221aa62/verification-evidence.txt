@@ -1,0 +1,61 @@
+Historical execution receipts captured after the session. This is not a fresh receipt validation after the runner stages outputs.
+
+Configured project check driver:
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+
+
+Receipt 20260927T153218Z-53844-27852-786829f5d1edd53da3a98c80f15716d7e3522e19.receipt
+version=2
+id=20260927T153218Z-53844-27852-786829f5d1edd53da3a98c80f15716d7e3522e19
+check=test
+status=inconclusive
+exit=0
+count=unknown
+fingerprint=4fe62f1361a0b60ba3bca745471ab7fe5b69e0be
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r39b02532dee8348e6ed6d90ff221aa62/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:32:18Z
+
+
+Receipt 20260927T153304Z-72910-27035-ba5f53fcd1273d507012db306b365716dede84e8.receipt
+version=2
+id=20260927T153304Z-72910-27035-ba5f53fcd1273d507012db306b365716dede84e8
+check=test
+status=inconclusive
+exit=0
+count=unknown
+fingerprint=c88c3d89f994e241a64f05b29b149040ea24a320
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r39b02532dee8348e6ed6d90ff221aa62/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:33:04Z
+
+
+Receipt 20260927T153324Z-77978-12017-dcee65fb2a9a5f04da7723b3ad6a3766c933d121.receipt
+version=2
+id=20260927T153324Z-77978-12017-dcee65fb2a9a5f04da7723b3ad6a3766c933d121
+check=test
+status=pass
+exit=0
+count=1
+fingerprint=c328cf65a7ed6891e2c13dbc7ed8594b41f8f13c
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r39b02532dee8348e6ed6d90ff221aa62/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:33:24Z
+
+
+Receipt 20260927T153338Z-83165-16023-9414de01f4b21d051c9ced44455cf0d396612637.receipt
+version=2
+id=20260927T153338Z-83165-16023-9414de01f4b21d051c9ced44455cf0d396612637
+check=test
+status=pass
+exit=0
+count=1
+fingerprint=60fa78e43c82260aa5cfdd2caac9362339cfb855
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r39b02532dee8348e6ed6d90ff221aa62/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:33:38Z
+

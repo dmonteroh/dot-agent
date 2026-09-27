@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 6.2 (2026-08-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
+> **Version 6.3 (2026-09-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -42,14 +42,14 @@ project-root/
 │   │                       # memory.sh, docs.sh — the typed writers —
 │   │                       # + links.sh, the on-demand link audit
 │   │                       # + comments.sh, the diff comment gate
-│   │                       # + checkpoint.sh, the hand-back call: gate, status
-│   │                       # check, log entry, in that order
+│   │                       # + checkpoint.sh: verification, diff review,
+│   │                       # status, and log publication
 │   │                       # + index.sh (indexes: generated only), the
 │   │                       # disposable Markdown index cache: ensure|check
 │   │                       # + learn.sh, the learned-rule admission
 │   │                       # helper: lookup|new|revise|retire —
 │   │                       # node-owned tunables seeded at init:
-│   │                       # comments.conf, status.conf, log.conf.
+│   │                       # comments, status, log, verify, review, and checkpoint confs.
 │   │                       # Each script's usage is its own header; each
 │   │                       # conf lists every key it reads. Full docs stay
 │   │                       # in the source repo, under scripts/docs/
@@ -87,7 +87,7 @@ Every canonical file opens with a short comment that is its own format contract,
 
 ```markdown
 # Session log
-<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag is this change's own verification result: a baseline failure that predates the change goes in the summary text, not the tag. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
 ```
 
 `memory.md` — the index, not a fact store:
@@ -200,7 +200,7 @@ Deciding *whether a name addresses the node at all* is the other half, and shape
 
 ### The comment gate
 
-`scripts/comments.sh` checks the comments a diff adds to source files against the software preset's **Comments** rule, run against the change's true parent before a diff is handed back — by `checkpoint.sh`, which calls it first (see [The checkpoint call](#the-checkpoint-call)). The preset's Verification contract names the run, and the quality bar cites it. It splits the rule at the line judgement actually sits on:
+`scripts/comments.sh` checks the comments a diff adds to source files against the software preset's on-demand **Comment judgment** rubric, run against the change's true parent before a diff is handed back — through `review.sh`, which checkpoint invokes (see [The checkpoint call](#the-checkpoint-call)). The preset's Verification contract names the run, and the quality bar cites it. It splits the rule at the line judgement actually sits on:
 
 | Finding | Means |
 | --- | --- |
@@ -245,11 +245,15 @@ The vocabulary grows through retro, not by hand-tuning. A shape the gate already
 
 ### The checkpoint call
 
-`scripts/checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>]` is the one command a session runs before handing back. It runs the comment gate against the change's true parent (`--base` for a committed branch; uncommitted work gates against `HEAD`), then the status check printing only its flag lines, then `log.sh` with the same arguments. It stops before the log entry when the gate blocks, a flag stands, or the status check itself exits nonzero or writes to stderr — an inspection that did not run cleanly is treated as a node whose state was never read, not a clean one — so a session fixes and runs it again, and the entry is appended once, on the clean run.
+`checkpoint.sh --checks <check> --tool <name> --area <name> --summary "…"` runs configured verification, diff review, status, and logging. `--verification <receipt-id>` reuses evidence for unchanged inputs. A bare `--verify pass` is refused. Failed and manual-only work can use `--verify fail` or `--verify n/a`.
 
-A clean tree with no `--base` stops it too, because that is a turn that changed nothing. The session log holds one entry per turn that changed files, not one per session: a stated decision, not a mismatch the runtime merely tolerates. Bootstrap is scoped to the conversation, but a hand-back happens on every message, so "before handing back, run `checkpoint.sh`" fires per turn — and no session or conversation identifier is reachable from inside one to key the log on instead. (Checked during this decision: the eval driver's `--session-id`/`--resume` and the Codex thread id live on the outer CLI process's command line, invisible to a shell command running as a tool call, so no stable cross-harness session ID exists to use.) The end of a session is not observable to the agent; whether the turn changed anything is, so that is the boundary the log uses. Measured on a three-turn session before this rule: three calls, three entries, two of them a question answered and nothing else — the evidence for why the boundary is "changed files," not "every hand-back." That boundary is not "an answering turn never logs": the observable is a clean tree with no `--base`, so a turn that only answers but follows uncommitted prior work still writes an entry. Committed work still logs, naming its parent with `--base`, and a project that is not a git checkout gives no signal either way, so it keeps the old behavior rather than being refused on a guess. Three calls became one because a session's cost scales with its tool calls, not its words: every call re-reads the whole context. The work each step does is unchanged and lives in the script it calls.
+The check driver, `.agent/scripts/checks.sh`, holds the project's actual commands. `verify.conf` declares test-count expectations. A zero or unknown count cannot satisfy a configured positive-count requirement. Receipts remain private execution evidence, outside loaded context. They do not prove semantic coverage or form a security boundary against an agent that can edit local files.
 
-`log.sh` refuses a summary that names a file or a SHA, with the token named, for the same reason it refuses a second `verify:` tag: the header contract's "no file lists, SHAs" was the sentence sessions applied least, and a rejection at write time costs one retry where a rule costs every reader. The memory `GROOM:` line lists the tokens a groom must keep — ticket ids, constants, paths, hosts, commands, dates, numbers with units — so "shape, never content" is a checklist rather than a memory; and `docs.sh rehook` rewrites a doc's `Read when:` hook and its routing row together, which is the fix for a routed doc a session failed to reach.
+`review.sh` calls the existing comment gate once and reports catalog and test-coverage candidates. New helpers inside existing modules are included. These additional findings remain advisory because Bash patterns cannot establish reuse or coverage.
+
+Checkpoint reads stable codes from `status.sh --format tsv`. Strict policy blocks every actionable finding. Completion policy defers size-only maintenance while structural defects still block. Repeated successful calls over unchanged content write one log entry. Publication recovery handles an interrupted log replacement.
+
+Use `--base <ref>` for committed work. Explicit ignored-node writes use `--node-only`. A read-only turn needs no entry. Dirty status alone cannot identify a user turn. See [checkpoint documentation](scripts/docs/checkpoint.md) and the [v6.3 trial guide](scripts/docs/v6.3-trial.md).
 
 ### The node manifest
 
@@ -260,7 +264,7 @@ Every node carries its identity as YAML frontmatter on `purpose.md`, the least-r
 # Do not remove or rewrite this block; update passes may set `migration_target` — version changes only at finalize.
 dot-agent:
   source: https://github.com/dmonteroh/dot-agent
-  version: "6.2"
+  version: "6.3"
   preset: software-development
   mode: track-shared        # ignore-all | track-shared | track-all
   indexes: manual           # manual | generated — absent reads as manual
@@ -377,8 +381,8 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
-6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated]`**: creates the skeleton, stamps the manifest (including `indexes`, default `manual`), and writes the matching gitignore entries (see [Tracking modes](#tracking-modes)). It copies the nine canonical shipped node scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`), and the starter confs (`comments.conf`, `status.conf`, `log.conf`), and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
-7. **Agent adapts the preset** that `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment. Split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
+6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated]`**: creates the skeleton, stamps the manifest (including `indexes`, default `manual`), and writes the matching gitignore entries (see [Tracking modes](#tracking-modes)). It copies the thirteen managed helpers, six starter configurations, and the project-owned `checks.sh` driver, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
+7. **Agent adapts the preset** that `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, configure `checks.sh` with exact project commands and name those checks in `## Project guardrails`. Split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
 8. **Agent wires your tools**: writes the canonical entry-point template — `templates/entry-point.md` for `indexes: manual`, `templates/entry-point-generated.md` for `indexes: generated` (see [Wiring your tools](#wiring-your-tools)) — into each tool's filename, filling the placeholders: project line, doc routing. All entry points of the same kind stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
@@ -391,15 +395,15 @@ The operating model evolves. Existing `.agent/` setups don't automatically updat
 
 A version migration is two phases, and only the second one moves `version`: `scripts/node.sh update` does the mechanical part and deliberately leaves the node mid-migration; `scripts/node.sh finalize` closes it out once the mechanical part and the agent's own reconciliation are both done.
 
-Run `scripts/node.sh update [--indexes generated]`. It reads the manifest, compares `version` by version-sort semantics, and backs up nodes whose memory is untracked. It refreshes exactly nine shipped scripts: `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. Anything else under `.agent/scripts/` belongs to the node and remains untouched.
+Run `scripts/node.sh update [--indexes generated]`. It reads the manifest, compares `version` by version-sort semantics, and backs up nodes whose memory is untracked. It atomically refreshes the helpers named by `SHIPPED_SCRIPTS`. Existing check drivers and configuration remain project-owned. Other project scripts remain untouched.
 
 Omitting `--indexes` preserves the manifest value. Passing `--indexes generated` selects generated mode during migration or adopts it on a current-version node. The command extracts learned-rule records, backfills doc hooks, adds ignore rules, regenerates the aggregate, and checks it before untracking. Generated-to-manual conversion remains the explicit procedure in `scripts/docs/node.md#reverting-to-manual-mode`.
 
-A fresh `track-shared` clone or worktree carries no `.agent/scripts/`. On a current-version node, ordinary update installs `index.sh`. Explicit generated adoption also installs `learn.sh`. A version migration refreshes all nine scripts. Missing starter confs are seeded without overwriting existing confs.
+A fresh `track-shared` clone or worktree carries no `.agent/scripts/`. Both current-version refreshes and version migrations install all managed helpers. Missing starter confs are seeded without overwriting existing confs.
 
 For a version gap, update applies the mechanical migrations and writes `migration_target`. It leaves `version` unchanged until `finalize`, so an interrupted migration remains visible. The closing output names the remaining reconciliation work and the final command.
 
-A node newer than the script's target is left untouched. A target-version node receives recognized shape refreshes and explicitly requested generated adoption. Otherwise it is a no-op.
+A node newer than the script's target is left untouched. A target-version node receives runtime refreshes, recognized shape refreshes, and explicitly requested generated adoption.
 
 A version migration backs up to `.agent.backup-v<old-version>`. Shape refresh uses `.agent.backup-v<version>-shape`, while generated adoption uses `.agent.backup-v<version>-indexes-generated`. A matching `migration_target` makes the version-migration backup resumable. Any other collision aborts without changes.
 
@@ -575,7 +579,7 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 
 **How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment. Ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path.
 
-The entry point runs it first. It prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach. It also emits advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, and no finding in the exit status either). The binding instruction ("handle flags as part of this session") lives in the entry point. The entry point also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents).
+The entry point runs it first. It prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach. It also emits advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, and no finding in the exit status either). The entry point requires repair before relying on affected context. Checkpoint consumes structured findings. Strict policy blocks advisory maintenance, while completion policy permits deferral.
 
 Thresholds are defaults at the top of the script:
 
@@ -619,7 +623,7 @@ The 2026-09-21 release validation closes F9 against the confirmed historical con
 
 ## Appendix: optional tooling
 
-Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check. There is no mechanical enforcement layer. The V4/V5-era Claude Code compliance hooks were removed in V6.1, because a Stop-time file-diff check cannot tell whether durable facts changed this session; the load-path status check and `scripts/checkpoint.sh` replaced them, not nothing. See `CHANGELOG.md` for the removal rationale.
+Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check. The shipped scripts enforce observable checks within the cooperative trust boundary. The V4/V5-era Claude Code compliance hooks were removed in V6.1, because a Stop-time file-diff check cannot tell whether durable facts changed this session; the load-path status check and `scripts/checkpoint.sh` replaced them, not nothing. See `CHANGELOG.md` for the removal rationale.
 
 **Claude Code settings:** [`tools/claude-code/`](tools/claude-code/) ships `settings-example.json` — `"autoMemoryEnabled": false` (see [Native tool memory](#native-tool-memory)) plus a permissions allowlist for `.agent/**` writes.
 

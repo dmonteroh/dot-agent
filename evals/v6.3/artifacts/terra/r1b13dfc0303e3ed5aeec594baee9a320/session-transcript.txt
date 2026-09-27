@@ -1,0 +1,7 @@
+## Turn 1
+Implemented three-attempt exponential retry for rejected outbound calls, with 100 ms then 200 ms delays.
+
+Added coverage for recovery on attempt three and final failure after three attempts.
+
+Verification: `npm test` and `git diff --check` passed.
+

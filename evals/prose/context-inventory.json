@@ -1,0 +1,128 @@
+{
+  "method": "Whitespace word count, not tokens. Headings excluded. Unfilled preset, before fixture guardrail substitution.",
+  "components": [
+    {
+      "section": "Preset introduction",
+      "words": 66,
+      "always_loaded": true,
+      "classification": "rarely needed after bootstrap",
+      "always_words": 66,
+      "on_demand_words": 0,
+      "reason": "Applies during a specific phase or kind of work."
+    },
+    {
+      "section": "Kernel",
+      "words": 176,
+      "always_loaded": true,
+      "classification": "always needed",
+      "always_words": 176,
+      "on_demand_words": 0,
+      "reason": "Names the node protocol or project constraints."
+    },
+    {
+      "section": "Context loading",
+      "words": 208,
+      "always_loaded": true,
+      "classification": "always needed",
+      "always_words": 208,
+      "on_demand_words": 0,
+      "reason": "Names the node protocol or project constraints."
+    },
+    {
+      "section": "Scope control",
+      "words": 81,
+      "always_loaded": true,
+      "classification": "sometimes needed",
+      "always_words": 81,
+      "on_demand_words": 0,
+      "reason": "Applies during a specific phase or kind of work."
+    },
+    {
+      "section": "Implementation",
+      "words": 678,
+      "always_loaded": true,
+      "classification": "sometimes needed",
+      "always_words": 678,
+      "on_demand_words": 0,
+      "reason": "Applies during a specific phase or kind of work."
+    },
+    {
+      "section": "Verification contract",
+      "words": 238,
+      "always_loaded": true,
+      "classification": "always needed",
+      "always_words": 238,
+      "on_demand_words": 0,
+      "reason": "Names the node protocol or project constraints."
+    },
+    {
+      "section": "Quality bar",
+      "words": 396,
+      "always_loaded": false,
+      "classification": "sometimes needed",
+      "always_words": 0,
+      "on_demand_words": 396,
+      "reason": "Applies during a specific phase or kind of work."
+    },
+    {
+      "section": "Continuity contract",
+      "words": 749,
+      "always_loaded": true,
+      "classification": "always needed",
+      "always_words": 749,
+      "on_demand_words": 0,
+      "reason": "Names the node protocol or project constraints."
+    },
+    {
+      "section": "Self-learning",
+      "words": 536,
+      "always_loaded": true,
+      "classification": "always needed",
+      "always_words": 536,
+      "on_demand_words": 0,
+      "reason": "Names the node protocol or project constraints."
+    },
+    {
+      "section": "Git and commits",
+      "words": 35,
+      "always_loaded": true,
+      "classification": "sometimes needed",
+      "always_words": 35,
+      "on_demand_words": 0,
+      "reason": "Applies during a specific phase or kind of work."
+    },
+    {
+      "section": "Project guardrails",
+      "words": 124,
+      "always_loaded": true,
+      "classification": "always needed",
+      "always_words": 124,
+      "on_demand_words": 0,
+      "reason": "Names the node protocol or project constraints."
+    }
+  ],
+  "unmeasured": [
+    "Runtime system instructions",
+    "Tool schemas",
+    "Skill descriptions",
+    "Exact model tokenizer",
+    "Empty-session occupied context",
+    "Model context-window percentage"
+  ],
+  "load_path": [
+    "templates/entry-point.md",
+    "scripts/status.sh --load",
+    "rules/contract.md",
+    "rules/learned.md",
+    "purpose.md",
+    "memory.md"
+  ],
+  "on_demand": [
+    "rules/quality-bar.md",
+    "memory/*.md",
+    "docs/*.md",
+    "docs/*/references/*.md"
+  ],
+  "total_source_body_words": 3287,
+  "always_source_body_words": 2891
+}

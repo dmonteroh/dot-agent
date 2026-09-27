@@ -1,0 +1,5 @@
+## Turn 1
+Done. `src/client.ts` now sends an `Idempotency-Key` header (set to the payment id) on the outbound POST, with a new test in `test/client.test.ts` verifying it.
+
+Suite status: `npm test` — 2 tests, 1 pass (new idempotency test), 1 fail. The failing one (`legacy currency rounding` in `test/legacy.test.js`) is a pre-existing, unrelated baseline failure — the file's own comment marks it "Red in the baseline," a floating-point rounding bug unrelated to this change. So the suite is not fully green, but the only failure is a documented pre-existing issue outside this task's scope.
+

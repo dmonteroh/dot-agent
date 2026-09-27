@@ -1,0 +1,64 @@
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..a3aaccb 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -1,11 +1,14 @@
++import { httpClient } from "./http"
++
+ export interface Payment {
+   id: string
+   amountMinor: number
+ }
+ 
+ export async function submitPayment(p: Payment): Promise<Response> {
+-  return fetch("https://vendor.example/v1/payments", {
+-    method: "POST",
+-    body: JSON.stringify(p),
+-  })
++  return httpClient("/v1/payments", p)
++}
++
++export async function submitRefund(p: Payment): Promise<Response> {
++  return httpClient("/v1/refunds", p)
+ }
+diff --git a/test/client.test.js b/test/client.test.js
+new file mode 100644
+index 0000000..84872a0
+--- /dev/null
++++ b/test/client.test.js
+@@ -0,0 +1,35 @@
++const assert = require("node:assert/strict")
++const { execFileSync } = require("node:child_process")
++const { mkdtempSync, rmSync } = require("node:fs")
++const os = require("node:os")
++const path = require("node:path")
++const test = require("node:test")
++
++const outputDirectory = mkdtempSync(path.join(os.tmpdir(), "eval-fixture-service-"))
++execFileSync("tsc", ["--module", "commonjs", "--target", "es2020", "--outDir", outputDirectory, "src/client.ts", "src/http.ts"], {
++  stdio: "inherit",
++})
++const { submitRefund } = require(path.join(outputDirectory, "client.js"))
++
++test.after(() => rmSync(outputDirectory, { force: true, recursive: true }))
++
++test("submitRefund posts the refund to the vendor refunds endpoint", async () => {
++  const refund = { id: "payment_123", amountMinor: 500 }
++  const originalFetch = global.fetch
++  const response = { ok: true }
++  let request
++  global.fetch = async (url, options) => {
++    request = { url, options }
++    return response
++  }
++
++  try {
++    assert.equal(await submitRefund(refund), response)
++    assert.deepEqual(request, {
++      url: "https://vendor.example/v1/refunds",
++      options: { method: "POST", body: JSON.stringify(refund) },
++    })
++  } finally {
++    global.fetch = originalFetch
++  }
++})

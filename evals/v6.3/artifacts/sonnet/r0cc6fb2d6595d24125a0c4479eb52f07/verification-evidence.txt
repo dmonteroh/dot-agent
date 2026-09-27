@@ -1,0 +1,35 @@
+Historical execution receipts captured after the session. This is not a fresh receipt validation after the runner stages outputs.
+
+Configured project check driver:
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+
+
+Receipt 20260927T153233Z-58260-25651-d907b08171088de9c448944855c9c6cb3e0f37bf.receipt
+version=2
+id=20260927T153233Z-58260-25651-d907b08171088de9c448944855c9c6cb3e0f37bf
+check=test
+status=inconclusive
+exit=0
+count=unknown
+fingerprint=d0efc9b5821bda6d912602a059f54132b7a500e5
+worktree=/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-continuity-writes-back/r0cc6fb2d6595d24125a0c4479eb52f07/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:32:33Z
+
+
+Receipt 20260927T153317Z-75194-21546-ca1dea1dad8beb16589dc6ea27a2894aa35a72a9.receipt
+version=2
+id=20260927T153317Z-75194-21546-ca1dea1dad8beb16589dc6ea27a2894aa35a72a9
+check=test
+status=pass
+exit=0
+count=2
+fingerprint=72c172add428fd4a0d9e4fb3842f1386080f08ac
+worktree=/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-continuity-writes-back/r0cc6fb2d6595d24125a0c4479eb52f07/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:33:17Z
+

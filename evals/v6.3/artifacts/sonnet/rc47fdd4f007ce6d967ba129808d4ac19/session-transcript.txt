@@ -1,0 +1,7 @@
+## Turn 1
+Coverage finding resolved (new test added, TEST_COVERAGE flag gone). Checkpoint recorded.
+
+Summary:
+- Added an `Idempotency-Key` header (set to the payment's `id`) to the outbound POST in `src/client.ts`, and added `test/client.test.ts` covering it.
+- Suite is **not** fully green: `test/legacy currency rounding` in `test/legacy.test.js` still fails (`1 !== 1.01`) — this is a pre-existing failure unrelated to this change (untouched file, explicitly commented as an intentional baseline red test), not something introduced by the idempotency-key change. My new test passes.
+

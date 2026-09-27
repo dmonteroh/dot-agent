@@ -3,11 +3,36 @@
 set -u
 unset CDPATH
 
-TARGET_VERSION="6.2"
+TARGET_VERSION="6.3"
 SOURCE_URL="https://github.com/dmonteroh/dot-agent"
 
 selfdir=$(cd "$(dirname "$0")" && pwd)
 srcroot=$(cd "$selfdir/.." && pwd)
+
+SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh)
+SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf review.conf)
+
+install_node_scripts() {
+  local target script conf temp
+  target="$1/scripts"
+  mkdir -p "$target" || return 1
+  for script in "${SHIPPED_SCRIPTS[@]}"; do
+    temp="$target/.$script.update.$$"
+    if ! cp "$srcroot/scripts/$script" "$temp" || ! chmod +x "$temp" || ! mv -f "$temp" "$target/$script"; then
+      rm -f "$temp"
+      echo "node.sh: could not refresh $script" >&2
+      return 1
+    fi
+  done
+  for conf in "${SHIPPED_CONFIGS[@]}" checks.sh; do
+    [ ! -e "$target/$conf" ] || continue
+    temp="$target/.$conf.update.$$"
+    cp "$srcroot/scripts/$conf" "$temp" && mv -f "$temp" "$target/$conf" || {
+      rm -f "$temp"; echo "node.sh: could not seed $conf" >&2; return 1;
+    }
+    [ "$conf" != checks.sh ] || chmod +x "$target/$conf"
+  done
+}
 
 usage() {
   cat <<'EOF'
@@ -129,7 +154,7 @@ remove_migration_target() {
 write_session_log_header() {
   cat >"$1" <<'EOF'
 # Session log
-<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag is this change's own verification result: a baseline failure that predates the change goes in the summary text, not the tag. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
 EOF
 }
 
@@ -225,6 +250,7 @@ session_log_header_stale() {
   slh_log="$1"
   [ -f "$slh_log" ] || return 1
   grep -qF 'One entry per turn that changed files, newest last.' "$slh_log" || return 0
+  grep -qF 'The verify tag records the observed check outcome.' "$slh_log" || return 0
   return 1
 }
 
@@ -608,15 +634,7 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
-    cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
-      || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
-    chmod +x "$agent/scripts/$script"
-  done
-  for conffile in comments.conf status.conf log.conf; do
-    cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile" \
-      || { echo "node.sh: $conffile copy failed" >&2; exit 1; }
-  done
+  install_node_scripts "$agent" || exit 1
 
   if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
     { [ "$mode" = "track-all" ] && [ "$indexes" != generated ]; } \
@@ -669,6 +687,7 @@ EOF
   fi
 
   echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes)"
+  echo 'node.sh: configure scripts/checks.sh and verify.conf for project checks; existing drivers and configuration survive updates'
   exit 0
   ;;
 
@@ -742,13 +761,34 @@ EOF
   fi
   desired_indexes="${requested_indexes:-$indexes}"
 
-  lowest=$(printf '%s\n%s\n' "$oldversion" "$TARGET_VERSION" | sort -V | head -n1)
-  if [ "$lowest" != "$oldversion" ]; then
+  version_order=$(awk -v old="$oldversion" -v target="$TARGET_VERSION" 'BEGIN {
+    a=split(old,x,"."); b=split(target,y,"."); n=(a>b?a:b)
+    for(i=1;i<=n;i++) {
+      if((x[i]+0)<(y[i]+0)) {print -1; exit}
+      if((x[i]+0)>(y[i]+0)) {print 1; exit}
+    }
+    print 0
+  }') || { echo 'node.sh: version comparison failed' >&2; exit 1; }
+  case "$version_order" in
+  -1|0|1) ;;
+  *) echo 'node.sh: version comparison returned an invalid result' >&2; exit 1 ;;
+  esac
+  if [ "$version_order" -gt 0 ]; then
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
 
-  if [ "$oldversion" = "$TARGET_VERSION" ]; then
+  if [ "$version_order" -lt 0 ] && [ "$migration_target" != "$TARGET_VERSION" ]; then
+    for new_helper in runtime.sh verify.sh review.sh capture.sh; do
+      existing="$agent/scripts/$new_helper"
+      if [ -L "$existing" ] || { [ -e "$existing" ] && ! cmp -s "$existing" "$srcroot/scripts/$new_helper"; }; then
+        echo "node.sh: $existing occupies a new managed helper name; preserve and relocate the custom helper before updating" >&2
+        exit 1
+      fi
+    done
+  fi
+
+  if [ "$version_order" -eq 0 ]; then
     shape_stale=0
     if memory_headers_stale "$agent" || doc_headers_stale "$agent" || session_log_header_stale "$agent/session-log.md"; then
       shape_stale=1
@@ -780,6 +820,11 @@ EOF
       fi
     fi
 
+    if [ "$shape_stale" -eq 1 ] && [ "$mode" != track-all ]; then
+      cp -R "$agent" "$shape_backup" || { echo "node.sh: shape backup failed" >&2; exit 1; }
+      echo "node.sh: backed up node to $shape_backup"
+    fi
+
     if [ -z "$indexes_line" ] || [ "$desired_indexes" != "$indexes" ]; then
       write_indexes "$purpose" "$desired_indexes" \
         || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
@@ -791,26 +836,14 @@ EOF
       indexes="$desired_indexes"
     fi
 
-    mkdir -p "$agent/scripts" \
-      || { echo "node.sh: could not create $agent/scripts" >&2; exit 1; }
-    cp "$srcroot/scripts/index.sh" "$agent/scripts/index.sh" \
-      || { echo "node.sh: index.sh copy failed" >&2; exit 1; }
-    chmod +x "$agent/scripts/index.sh"
+    install_node_scripts "$agent" || exit 1
 
     if [ "$requested_indexes" = generated ]; then
-      cp "$srcroot/scripts/learn.sh" "$agent/scripts/learn.sh" \
-        || { echo "node.sh: learn.sh copy failed" >&2; exit 1; }
-      chmod +x "$agent/scripts/learn.sh"
       enable_generated_indexes "$root" "$agent" "$mode" || exit 1
       echo "node.sh: generated indexes adopted for $agent"
     fi
 
     if [ "$shape_stale" -eq 1 ]; then
-      if [ "$mode" != "track-all" ]; then
-        cp -R "$agent" "$shape_backup" \
-          || { echo "node.sh: backup to $shape_backup failed — aborting before touching the node" >&2; exit 1; }
-        echo "node.sh: backed up node to $shape_backup"
-      fi
       migrate_memory_headers "$agent"
       echo "node.sh: $migrate_note"
       migrate_doc_headers "$agent"
@@ -904,17 +937,7 @@ EOF
   migrate_session_log_header "$agent"
   header_note="$migrate_note; $migrate_doc_note; $migrate_log_note"
 
-  mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
-    cp "$srcroot/scripts/$script" "$agent/scripts/$script"
-    chmod +x "$agent/scripts/$script"
-  done
-  for conffile in comments.conf status.conf log.conf; do
-    if [ ! -f "$agent/scripts/$conffile" ]; then
-      cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile"
-      echo "node.sh: $conffile seeded with the starter (node-owned from here on)"
-    fi
-  done
+  install_node_scripts "$agent" || exit 1
 
   if [ "$indexes" = generated ]; then
     enable_generated_indexes "$root" "$agent" "$mode" || exit 1
@@ -923,7 +946,9 @@ EOF
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, checkpoint.sh, index.sh, and learn.sh refreshed from source repo"
+  echo "node.sh: runtime scripts refreshed atomically: ${SHIPPED_SCRIPTS[*]}"
+  echo 'node.sh: check driver and existing configuration preserved'
+  echo 'node.sh: configure checks.sh and verify.conf, reconcile entry-point checkpoint flags, and retain customized contract rules'
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
   exit 0
   ;;

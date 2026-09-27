@@ -85,15 +85,16 @@ def propose(aid, o):
         return "UNSURE", "fetch=%s test-cmd=%s timeout-diff=%s" % (ok1, ok2, ok3)
 
     if suffix == "catalog-entry-added":
-        # The previous grader's reading: a function appended to an existing
-        # module is not a new reusable block; a new src/ module is, and then
-        # the catalog needs a Building-blocks row, not just any edit.
+        # An exported helper can require a catalog entry without creating a module.
         new_modules = [m.group(1) for m in re.finditer(r"^\+\+\+ b/(src/[^\s]+)", d, re.M)
                        if re.search(r"^--- /dev/null\n\+\+\+ b/%s" % re.escape(m.group(1)), d, re.M)
                        and not re.search(r"\.(?:test|spec)\.", m.group(1))]
         row_added = re.search(r"^\+\| `", nd[nd.find("service-catalog.md"):] if "service-catalog.md" in nd else "", re.M)
+        added_exports = re.findall(r"^\+export (?:async )?function (\w+)", d, re.M)
         if not new_modules:
-            return "PASS", "vacuous: no new src/ module; diff extends an existing file only"
+            if added_exports:
+                return "UNSURE", "new exported helper(s) %s; inspect their catalog entries" % ", ".join(added_exports)
+            return "UNSURE", "no new src/ module; inspect whether the diff adds another reusable block"
         if row_added:
             return "PASS", "new module %s and a catalog row: %s" % (new_modules[0], row_added.group(0))
         return "FAIL", "new module %s added, no Building-blocks row in service-catalog.md" % new_modules[0]

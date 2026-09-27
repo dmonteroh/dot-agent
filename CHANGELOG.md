@@ -4,6 +4,28 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
+## V6.3 (2026-09-27): Compact contracts and verified checkpoints
+
+### What changed
+
+- Presets retain scope, evidence, and continuity admission while moving detailed comment judgment into the on-demand rubric.
+- `verify.sh` runs project-owned checks and records results tied to current inputs. Configure `checks.sh` and `verify.conf` before using `checkpoint.sh --checks test`.
+- Checkpoint accepts current verification receipts, reviews the diff, and records unchanged completed content once. A bare `--verify pass` is refused.
+- `review.sh` adds advisory catalog and test-coverage findings, including helpers added inside existing modules.
+- The opt-in `capture.sh` prototype preserves a session-start fingerprint for interruption checks. Runtime adapters supply session IDs. It creates no memory or log entries.
+- Status offers stable TSV finding codes. Strict policy remains the default. Completion policy defers size-only maintenance.
+- Memory lookup searches canonical context with bounded results. Fact updates accept file input and expected versions. Learned lookup supports both index modes and ignores dates for duplicate-body checks.
+- `docs.sh sync` reconciles routing metadata. `docs.sh catalog` validates and updates reusable-block entries.
+- Updates refresh managed scripts atomically, including same-version refreshes. Existing check drivers, configuration, rules, docs, and memory are preserved.
+
+See the [v6.3 trial guide](scripts/docs/v6.3-trial.md) for installation and migration. Verification records remain local, outside loaded memory. Pattern-based review still requires agent judgment.
+
+### Contributor validation
+
+Focused shell suites cover receipts, record writers, structured findings, checkpoint recovery, and migration. The evaluation fixtures configure project checks when the tested corpus provides verification tooling. Historical research and smoke comparisons remain under `evals/` and are never installed into a node.
+
+---
+
 ## V6.2 (2026-09-20): Checks, generated indexing, behavioral evals
 
 ### What changed

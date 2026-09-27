@@ -1,0 +1,16 @@
+{
+  "runtime": "CommonJS, compiled with the command introduced by the produced test",
+  "compile_exit": 0,
+  "compile_stderr": "",
+  "oracle": {
+    "passed": true,
+    "cases": [
+      "refund route",
+      "POST method",
+      "payload",
+      "response"
+    ]
+  },
+  "direct_import_oracle": "quality-oracle.json retains the direct TypeScript import failure",
+  "limitation": "The produced test relies on a globally available tsc without declaring a package dependency."
+}

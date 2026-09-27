@@ -1,0 +1,3 @@
+## Turn 1
+Already recorded in [.agent/docs/architecture.md](/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-memory-admission/ra011c3e057b86bb71fc4e94cf7627b52/fixture/.agent/docs/architecture.md:11): routed docs are the design of record; archive material is superseded and never cited as intent.
+

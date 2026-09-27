@@ -68,6 +68,7 @@ CONTRACT_ANSWERS = {
     "Generated files": "none",
     "Doc comments": "no surface requires them; the Comments rule applies with no exemption",
     "Project constraints": "no new runtime dependencies without asking",
+    "Verification driver": "`test` in `.agent/scripts/checks.sh` runs `npm test`",
 }
 
 PLACEHOLDER = re.compile(r"^- ([A-Za-z][^:]*): <[^>]*>$", re.M)

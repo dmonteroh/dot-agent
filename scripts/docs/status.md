@@ -3,7 +3,7 @@
 Runs as the entry point's first step, on the load path rather than at the end of a session. It prints the recent session-log entries, then one line per finding. Grooming rides the load path because routine end-of-task checks breed fatigue and agent-claimed compliance can be phantom. This checks artifacts, not claims.
 
 ```
-Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agent/
+Usage: status.sh [--load] [--format tsv] [root]    # root defaults to .
 ```
 
 ## What it reports
@@ -17,11 +17,17 @@ Usage: status.sh [--load] [root]    # root defaults to . — checks <root>/.agen
 | `LOAD:` | what the always-loaded set costs, in words — an advisory measurement printed every run, deliberately without a threshold |
 | `PAYLOAD:` | the exact bytes `--load` would write — the mode's own emitted set, markers included — against `PAYLOAD_MAX_BYTES` |
 
-No finding prints on pass. The recent entries and the `LOAD:` and `PAYLOAD:` lines are information, not flags. **No finding reaches the exit status**, which is 0 for every node the check can read: this is information on the load path, not a completion gate. The one non-zero exit is a usage error — a root holding no `.agent/` — which is not a finding about a node and must never be reported as one. The binding instruction ("handle flags as part of this session") lives in the entry point, which also names the delegation path. `GROOM:` work may go to one subagent scoped to the flagged files.
+No finding prints on pass. The recent entries and the `LOAD:` and `PAYLOAD:` lines are information, not flags. **No finding reaches the exit status**, which is 0 for every node the check can read: this is information on the load path, not a completion gate. The one non-zero exit is a usage error — a root holding no `.agent/` — which is not a finding about a node and must never be reported as one. The entry point requires repair before relying on affected context. Checkpoint policy determines whether advisory maintenance blocks completion.
+
+## Structured findings
+
+`--format tsv` prints findings only, one per line as `severity<TAB>CODE<TAB>PATH<TAB>MESSAGE`. Tabs, carriage returns, and newlines inside fields are escaped as `\t`, `\r`, and `\n`. Recent log entries and the informational `LOAD:` and `PAYLOAD:` measurements are omitted. Codes are stable identifiers emitted by the check that owns each finding. Consumers do not need to parse the compatible human text. `--format tsv` refuses `--load` because file payloads are not findings.
+
+Canonical-state faults, routing defects, unsafe load state, and migration state use severity `block`. Pure size/volume grooming uses `advisory`. Environment tool availability and flavor remain informational `TOOLS:` lines in default text and are omitted from findings-only TSV. The format does not change historical exit semantics: a readable node exits 0 even when blocking findings are present, and usage or invocation errors exit 1.
 
 ## Thresholds
 
-Review triggers, not caps: nothing refuses a write for size. Every number is either a derivation from another stated value or an explicit chosen default.
+Direct writers do not refuse writes for size. Strict checkpoint policy blocks completion on advisory size findings. Every number is either a derivation from another stated value or an explicit chosen default.
 
 | Key | Default | Where the number comes from |
 |---|---|---|
@@ -33,7 +39,7 @@ Review triggers, not caps: nothing refuses a write for size. Every number is eit
 | `LEARNED_MAX_RULES` | 60 | chosen default |
 | `LEARNED_MAX_WORDS` | 2400 | the 60-rule ceiling × the file's own ~40-word entry target, so it fires first when entries bloat past that target |
 | `DOCS_MAX_WORDS` | 2000 | chosen default |
-| `ENTRYPOINT_MAX_WORDS` | 600 | the canonical template's ~289-word body, ~300 once filled, with 2× grace |
+| `ENTRYPOINT_MAX_WORDS` | 600 | the original template's ~289-word body, ~300 once filled, with 2× grace |
 | `TAIL_LINES` | 25 | chosen default |
 | `PAYLOAD_MAX_BYTES` | 30000 | the harness's tool-result cap — "about 30 KB on Claude Code, measured" (see `--load` below and `operating-model.md`) — not a chosen headroom figure |
 | `PROBE_TOOLS` | `rg fd jq gh python3 curl tree` | the tools a session is expected to have |

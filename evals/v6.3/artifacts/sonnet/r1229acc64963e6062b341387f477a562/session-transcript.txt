@@ -1,0 +1,10 @@
+## Turn 1
+`submitPayment` (src/client.ts:6-11) has no shared mutable state — it just builds a request from its argument and calls `fetch`. So calling it concurrently from multiple call sites is safe in the sense that one call can't corrupt another's data.
+
+Two caveats that live outside this function, not in it:
+
+- No idempotency key is sent, so if two concurrent calls happen to use the same `Payment.id` (or a caller retries a call while another is in flight), the vendor could receive two POSTs for the same logical payment — that's a caller-side/vendor-side duplicate-submission risk, not a race in this code.
+- There's no error handling or retry logic here, so concurrent failures are just independent unhandled rejections/responses; nothing shared to worry about.
+
+This is just an answer to your question — no code changed, per the fixture's rules (no build/lint configured; `npm test` is the test command if you want me to verify anything).
+

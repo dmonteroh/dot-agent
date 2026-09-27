@@ -7,7 +7,7 @@ LOG_INCLUDE_BRANCH=false
 
 usage() {
   cat <<'EOF'
-Usage: log.sh --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
+Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
 
 root defaults to . — appends to <root>/.agent/session-log.md
 EOF
@@ -18,6 +18,7 @@ area=""
 verify=""
 summary=""
 root="."
+print_entry=0
 
 need_value() {
   case "${2-}" in
@@ -35,6 +36,10 @@ need_value() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
+  --print-entry)
+    print_entry=1; shift ;;
+  --version)
+    echo 'dot-agent log 6.3'; exit 0 ;;
   --tool)
     need_value "$@"
     tool="$2"; shift 2 ;;
@@ -165,10 +170,25 @@ if [ "$LOG_INCLUDE_BRANCH" = "true" ]; then
   branch=$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)
 fi
 if [ -n "$branch" ]; then
-  printf -- '- [%s] (%s) %s (%s). branch: %s. verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$branch" "$verify" >>"$log"
+  entry=$(printf -- '- [%s] (%s) %s (%s). branch: %s. verify: %s.' "$date_stamp" "$tool" "$summary" "$area" "$branch" "$verify")
 else
-  printf -- '- [%s] (%s) %s (%s). verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$verify" >>"$log"
+  entry=$(printf -- '- [%s] (%s) %s (%s). verify: %s.' "$date_stamp" "$tool" "$summary" "$area" "$verify")
 fi
+
+if [ "$print_entry" -eq 1 ]; then
+  printf '%s\n' "$entry"
+  exit 0
+fi
+selfdir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
+if [ -f "$selfdir/runtime.sh" ]; then
+  # shellcheck source=runtime.sh
+  . "$selfdir/runtime.sh"
+  state=$(da_state_dir "$root") || exit 1
+  log_lock="$state/checkpoint.lock"
+  da_lock "$log_lock" || exit 1
+  trap 'da_unlock "$log_lock"' EXIT
+fi
+printf '%s\n' "$entry" >>"$log" || { echo 'log.sh: could not append the entry' >&2; exit 1; }
 
 echo "log.sh: appended session-log entry for $date_stamp"
 exit 0

@@ -1,0 +1,8 @@
+## Turn 1
+Recorded for the next session:
+
+- Production vendor credentials are now in use (no credentials stored).
+- Outbound vendor rate limit is now 50 rps, replacing sandbox 10 rps.
+
+Checkpoint logged. `npm test` ran but contains zero tests, so verification was recorded as not applicable.
+

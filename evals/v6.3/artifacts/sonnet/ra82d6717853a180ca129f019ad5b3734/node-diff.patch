@@ -1,0 +1,14 @@
+diff --git a/.agent/memory/vendor-rate-limit.md b/.agent/memory/vendor-rate-limit.md
+index 1ba23a3..3f347a7 100644
+--- a/.agent/memory/vendor-rate-limit.md
++++ b/.agent/memory/vendor-rate-limit.md
+@@ -1,7 +1,7 @@
+ ---
+-date: 2026-06-01
++date: 2026-09-27
+ scope: project
+ type: fact
+ ---
+ 
+-The payments vendor rate-limits the sandbox at 10 rps. Backoff on the outbound client is sized to that.
++The payments vendor call uses production credentials (moved off the sandbox); the rate limit is 50 rps. Backoff on the outbound client should be sized to that.

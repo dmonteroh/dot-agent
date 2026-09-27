@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "concept": "memory-admission",
+      "evidence": "0 memory file(s) written: none",
+      "grade": "auto",
+      "id": "memory-admission/no-duplicate-fact",
+      "passed": true
+    },
+    {
+      "concept": "memory-admission",
+      "evidence": "The reply names .agent/docs/architecture.md and repeats its routed-docs authority and archive restriction.",
+      "grade": "manual",
+      "id": "memory-admission/says-where-it-lives",
+      "passed": true
+    }
+  ]
+}

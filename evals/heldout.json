@@ -1321,10 +1321,6 @@
         {
           "path": ".agent/rules/learned.md",
           "absent": "[2026"
-        },
-        {
-          "path": ".agent/rules/contract.md",
-          "contains": "no compensating rule"
         }
       ]
     },
@@ -1386,10 +1382,6 @@
         {
           "path": ".agent/rules/learned.md",
           "absent": "[2026"
-        },
-        {
-          "path": ".agent/rules/contract.md",
-          "contains": "no compensating rule"
         }
       ]
     },
@@ -1450,10 +1442,6 @@
         {
           "path": ".agent/rules/learned.md",
           "absent": "[2026"
-        },
-        {
-          "path": ".agent/rules/contract.md",
-          "contains": "Identify the failing source first"
         }
       ]
     },
@@ -1620,10 +1608,6 @@
         {
           "path": ".agent/memory/postmortem-language.md",
           "exists": false
-        },
-        {
-          "path": ".agent/rules/contract.md",
-          "contains": "A durable preference the user states in their own turn"
         }
       ]
     },
@@ -1768,10 +1752,6 @@
         {
           "path": "src/client.ts",
           "contains": "submitPayment"
-        },
-        {
-          "path": "CLAUDE.md",
-          "contains": "written once on the clean run"
         }
       ]
     },

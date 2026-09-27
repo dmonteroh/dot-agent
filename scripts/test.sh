@@ -47,6 +47,12 @@ finish_bootstrap() {
     "$fb_contract" >"$1/.agent/rules/quality-bar.md"
   mv "$fb_contract.body" "$fb_contract"
   subst "$fb_contract" 's/^\(- [A-Za-z][^:]*:\) <.*>$/\1 filled at bootstrap/'
+  if [ -f "$1/.agent/scripts/verify.sh" ]; then
+    cat >"$1/.agent/scripts/checks.sh" <<'CHECKS'
+#!/usr/bin/env bash
+printf 'TAP version 13\n1..1\nok 1 - controlled fixture check\n'
+CHECKS
+  fi
 }
 
 make_v6_fixture() {
@@ -160,7 +166,7 @@ for preset in $PRESETS; do
     [ -z "$flags" ] && pass "init $preset/$mode: status.sh clean once bootstrap completes" || fail "init $preset/$mode: status.sh clean once bootstrap completes ($flags)"
 
     missing=""
-    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
+    for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh checks.sh; do
       [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
@@ -283,8 +289,8 @@ grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:'
 grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pa-noversion"
 diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version, migration_target, and indexes lines" || fail "update: manifest diff touches only the version, migration_target, and indexes lines"
 grep -q '^  version: 6$' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version stays at 6 (unbumped) — finalize's job" || fail "update: version stays at 6 (unbumped) — finalize's job"
-grep -q '^  migration_target: "6.2"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.2\"" || fail "update: migration_target is now \"6.2\""
-[ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.2"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
+grep -q '^  migration_target: "6.3"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.3\"" || fail "update: migration_target is now \"6.3\""
+[ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.3"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
 grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names the pending finalize step" || fail "update: closing message names the pending finalize step"
 
 grep -qxF '  indexes: manual        # manual | generated' "$v6root/.agent/purpose.md" \
@@ -373,7 +379,7 @@ git -C "$adopt_current" -c user.name=Fixture -c user.email=fixture@example.com c
 "$NODE" update --indexes generated "$adopt_current" >"$WORK/adopt-generated-current.out" 2>&1
 rc_adopt_current=$?
 [ "$rc_adopt_current" -eq 0 ] && pass "update --indexes generated adopts generated mode on a version-current node" || fail "update --indexes generated adopts generated mode on a version-current node (rc=$rc_adopt_current; $(cat "$WORK/adopt-generated-current.out"))"
-[ -d "$adopt_current/.agent.backup-v6.2-indexes-generated" ] \
+[ -d "$adopt_current/.agent.backup-v6.3-indexes-generated" ] \
   && pass "generated-mode adoption backs up a version-current track-shared node" \
   || fail "generated-mode adoption backs up a version-current track-shared node"
 grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agent/purpose.md" \
@@ -419,8 +425,8 @@ adopt_collision="$WORK/adopt-generated-shape-collision"
 mkdir -p "$adopt_collision"
 "$NODE" init --preset software-development --mode track-shared --indexes manual "$adopt_collision" >/dev/null 2>&1
 subst "$adopt_collision/.agent/memory.md" 's/This contract covers memory\/ too/This older header lacks the directory contract/'
-mkdir -p "$adopt_collision/.agent.backup-v6.2-shape"
-printf 'pre-existing shape backup\n' >"$adopt_collision/.agent.backup-v6.2-shape/marker"
+mkdir -p "$adopt_collision/.agent.backup-v6.3-shape"
+printf 'pre-existing shape backup\n' >"$adopt_collision/.agent.backup-v6.3-shape/marker"
 cp -R "$adopt_collision/.agent" "$WORK/adopt-collision-agent-before"
 cp "$adopt_collision/.gitignore" "$WORK/adopt-collision-gitignore-before"
 "$NODE" update --indexes generated "$adopt_collision" >"$WORK/adopt-collision.out" 2>&1
@@ -430,7 +436,7 @@ rc_adopt_collision=$?
   || fail "generated adoption preflights a conflicting shape backup (rc=$rc_adopt_collision; $(cat "$WORK/adopt-collision.out"))"
 if diff -r "$WORK/adopt-collision-agent-before" "$adopt_collision/.agent" >/dev/null 2>&1 \
   && diff -q "$WORK/adopt-collision-gitignore-before" "$adopt_collision/.gitignore" >/dev/null 2>&1 \
-  && [ ! -e "$adopt_collision/.agent.backup-v6.2-indexes-generated" ]; then
+  && [ ! -e "$adopt_collision/.agent.backup-v6.3-indexes-generated" ]; then
   pass "a generated-adoption backup collision leaves the node untouched"
 else
   fail "a generated-adoption backup collision leaves the node untouched"
@@ -439,7 +445,7 @@ fi
 flags4=$(status_flags "$v6root")
 printf '%s\n' "$flags4" | grep -q '^GROOM: memory/legacy\.md' && pass "update: status.sh flags legacy.md with GROOM" || fail "update: status.sh flags legacy.md with GROOM"
 flags4_repairs=$(printf '%s\n' "$flags4" | grep '^REPAIR:')
-[ "$flags4_repairs" = 'REPAIR: purpose.md has migration_target "6.2" pending — run node.sh finalize to stamp version 6.2 and clear migration_target' ] \
+[ "$flags4_repairs" = 'REPAIR: purpose.md has migration_target "6.3" pending — run node.sh finalize to stamp version 6.3 and clear migration_target' ] \
   && pass "update: status.sh shows only the pending-migration REPAIR" \
   || fail "update: status.sh shows only the pending-migration REPAIR ($flags4_repairs)"
 
@@ -456,7 +462,7 @@ mkdir -p "$interrupt"
 make_v6_fixture "$interrupt"
 cp -R "$interrupt/.agent" "$interrupt/.agent.backup-v6"
 printf 'pre-existing backup marker\n' >"$interrupt/.agent.backup-v6/.marker"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$interrupt/.agent/purpose.md" >"$interrupt/.agent/purpose.md.tmp"
 mv "$interrupt/.agent/purpose.md.tmp" "$interrupt/.agent/purpose.md"
 "$NODE" update "$interrupt" >"$WORK/update-interrupt.out" 2>&1
@@ -475,7 +481,7 @@ splitA="$WORK/update-split-interrupted-a"
 mkdir -p "$splitA/.agent/memory"
 make_v6_fixture "$splitA"
 cp -R "$splitA/.agent" "$splitA/.agent.backup-v6"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$splitA/.agent/purpose.md" >"$splitA/.agent/purpose.md.tmp"
 mv "$splitA/.agent/purpose.md.tmp" "$splitA/.agent/purpose.md"
 "$NODE" update "$splitA" >"$WORK/update-splitA.out" 2>&1
@@ -493,7 +499,7 @@ printf 'This project uses a custom auth flow with rotating tokens. The staging\n
   >"$splitB/.agent/memory/legacy.md"
 : >"$splitB/.agent/memory/.split-in-progress"
 cp -R "$splitB/.agent" "$splitB/.agent.backup-v6"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$splitB/.agent/purpose.md" >"$splitB/.agent/purpose.md.tmp"
 mv "$splitB/.agent/purpose.md.tmp" "$splitB/.agent/purpose.md"
 "$NODE" update "$splitB" >"$WORK/update-splitB.out" 2>&1
@@ -517,7 +523,7 @@ cat >"$splitC/.agent/memory.md" <<'MEMEOF'
 MEMEOF
 : >"$splitC/.agent/memory/.split-in-progress"
 cp -R "$splitC/.agent" "$splitC/.agent.backup-v6"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$splitC/.agent/purpose.md" >"$splitC/.agent/purpose.md.tmp"
 mv "$splitC/.agent/purpose.md.tmp" "$splitC/.agent/purpose.md"
 "$NODE" update "$splitC" >"$WORK/update-splitC.out" 2>&1
@@ -564,15 +570,15 @@ cp -R "$current_root" "$stale62"
 "$stale62/.agent/scripts/memory.sh" new --slug keep --title Keep --hook "keep this hook" --fact "Keep this fact body." "$stale62" >/dev/null 2>&1
 subst "$stale62/.agent/memory.md" 's/ Before writing, search purpose.*architecture\.md already routes it\.//'
 subst "$stale62/.agent/purpose.md" 's/mode: track-all/mode: track-shared/'
-mkdir -p "$stale62/.agent.backup-v6.2"
-printf 'earlier backup\n' >"$stale62/.agent.backup-v6.2/marker"
-grep -qF 'If one already states it' "$stale62/.agent/memory.md" && fail "update: stale 6.2 fixture actually lacks the new admission test" || pass "update: stale 6.2 fixture lacks the new admission test"
+mkdir -p "$stale62/.agent.backup-v6.3"
+printf 'earlier backup\n' >"$stale62/.agent.backup-v6.3/marker"
+grep -qF 'If one already states it' "$stale62/.agent/memory.md" && fail "update: stale 6.3 fixture actually lacks the new admission test" || pass "update: stale 6.3 fixture lacks the new admission test"
 "$NODE" update "$stale62" >/dev/null 2>&1
 grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$stale62/.agent/memory.md" && pass "update: a version-current node refreshes a stale memory header" || fail "update: a version-current node refreshes a stale memory header"
 grep -qxF -- '- [Keep](memory/keep.md) — keep this hook' "$stale62/.agent/memory.md" && grep -qF 'Keep this fact body.' "$stale62/.agent/memory/keep.md" && pass "update: refreshing the stale memory header keeps facts and index lines" || fail "update: refreshing the stale memory header keeps facts and index lines"
-if [ -f "$stale62/.agent.backup-v6.2/marker" ] \
-  && [ -f "$stale62/.agent.backup-v6.2-shape/memory.md" ] \
-  && ! grep -qF 'If one already states it' "$stale62/.agent.backup-v6.2-shape/memory.md"; then
+if [ -f "$stale62/.agent.backup-v6.3/marker" ] \
+  && [ -f "$stale62/.agent.backup-v6.3-shape/memory.md" ] \
+  && ! grep -qF 'If one already states it' "$stale62/.agent.backup-v6.3-shape/memory.md"; then
   pass "update: same-version shape backup does not collide with an earlier backup"
 else
   fail "update: same-version shape backup does not collide with an earlier backup"
@@ -585,7 +591,7 @@ make_v6_fixture "$finroot"
 cp "$finroot/.agent/purpose.md" "$WORK/fin-purpose-pending.md"
 
 flags_pending=$(status_flags "$finroot")
-printf '%s\n' "$flags_pending" | grep -qF 'REPAIR: purpose.md has migration_target "6.2" pending' && pass "status.sh: a pending migration_target draws a REPAIR finding naming the target" || fail "status.sh: a pending migration_target draws a REPAIR finding naming the target ($flags_pending)"
+printf '%s\n' "$flags_pending" | grep -qF 'REPAIR: purpose.md has migration_target "6.3" pending' && pass "status.sh: a pending migration_target draws a REPAIR finding naming the target" || fail "status.sh: a pending migration_target draws a REPAIR finding naming the target ($flags_pending)"
 printf '%s\n' "$flags_pending" | grep -q 'REPAIR: purpose.md has migration_target.*finalize' && pass "status.sh: the pending-migration REPAIR finding names the finalize command" || fail "status.sh: the pending-migration REPAIR finding names the finalize command ($flags_pending)"
 
 grep -vF '[Legacy memory](memory/legacy.md)' "$finroot/.agent/memory.md" >"$finroot/.agent/memory.md.tmp"
@@ -606,7 +612,7 @@ flags_reconciled=$(status_flags "$finroot" | grep '^REPAIR:' | grep -v '^REPAIR:
 "$NODE" finalize "$finroot" >"$WORK/finalize2.out" 2>"$WORK/finalize2.err"
 rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: succeeds once the node is reconciled (zero REPAIR findings)" || fail "finalize: succeeds once the node is reconciled (zero REPAIR findings) (rc=$rc, err=$(cat "$WORK/finalize2.err"))"
-grep -q '^  version: "6.2"$' "$finroot/.agent/purpose.md" && pass "finalize: version is stamped to the pending target" || fail "finalize: version is stamped to the pending target"
+grep -q '^  version: "6.3"$' "$finroot/.agent/purpose.md" && pass "finalize: version is stamped to the pending target" || fail "finalize: version is stamped to the pending target"
 grep -q '^  migration_target:' "$finroot/.agent/purpose.md" && fail "finalize: migration_target is removed" || pass "finalize: migration_target is removed"
 
 "$NODE" finalize "$finroot" >"$WORK/finalize3.out" 2>&1
@@ -739,7 +745,7 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a failed marker removal returns nonzero" || fail "finalize: a failed marker removal returns nonzero (rc=$rc)"
 grep -qF "failed to remove the pending migration_target marker" "$WORK/rmf.err" && pass "finalize: a failed marker removal prints an actionable error" || fail "finalize: a failed marker removal prints an actionable error"
 grep -qiF "finalized" "$WORK/rmf.out" && fail "finalize: a failed marker removal prints no success message" || pass "finalize: a failed marker removal prints no success message"
-grep -q '^  version: "6.2"$' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal still leaves version stamped (removal runs after the stamp)" || fail "finalize: a failed marker removal still leaves version stamped"
+grep -q '^  version: "6.3"$' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal still leaves version stamped (removal runs after the stamp)" || fail "finalize: a failed marker removal still leaves version stamped"
 grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal retains a detectable pending migration" || fail "finalize: a failed marker removal retains a detectable pending migration"
 
 "$NODE" finalize "$rmfail" >"$WORK/rmf-retry.out" 2>"$WORK/rmf-retry.err"
@@ -825,7 +831,7 @@ PATH="$fakebin_grep:$PATH" "$NODE" finalize "$rmcfail" >"$WORK/rmc.out" 2>"$WORK
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a corrupted marker-removal write (transform exits 0, line not actually removed) returns nonzero" || fail "finalize: a corrupted marker-removal write (transform exits 0, line not actually removed) returns nonzero (rc=$rc)"
 grep -qF "failed to remove the pending migration_target marker" "$WORK/rmc.err" && pass "finalize: a corrupted marker-removal write prints the same actionable error as an OS-level failure" || fail "finalize: a corrupted marker-removal write prints the same actionable error as an OS-level failure"
-grep -q '^  version: "6.2"$' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write still leaves version stamped" || fail "finalize: a corrupted marker-removal write still leaves version stamped"
+grep -q '^  version: "6.3"$' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write still leaves version stamped" || fail "finalize: a corrupted marker-removal write still leaves version stamped"
 grep -q '^  migration_target:' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write retains a detectable pending migration" || fail "finalize: a corrupted marker-removal write retains a detectable pending migration"
 
 logroot="$WORK/log-tests"
@@ -877,7 +883,7 @@ after8c=$(cat "$sessionlog")
 out8d=$("$logcopy" --tool claude --area testing --verify pass --summary "Backoff landed in commit 47feccc" "$logroot" 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] && printf '%s' "$out8d" | grep -qF '47feccc' && pass "log.sh: a summary naming a SHA is rejected and the token named" || fail "log.sh: a summary naming a SHA is rejected and the token named"
-"$logcopy" --tool claude --area testing --verify pass --summary "Added exponential backoff, three attempts, ticket PAY-318, version 6.2" "$logroot" >/dev/null 2>&1
+"$logcopy" --tool claude --area testing --verify pass --summary "Added exponential backoff, three attempts, ticket PAY-318, version 6.3" "$logroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: a ticket id and a version number are not read as a file or a SHA" || fail "log.sh: a ticket id and a version number are not read as a file or a SHA"
 
@@ -929,25 +935,25 @@ rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'nothing changed' && [ "$n8f" -eq 0 ] && pass "checkpoint.sh: an unchanged tree writes no entry" || fail "checkpoint.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
 printf '// const old = fetch(url)\nexport const b = 2\n' >>"$finroot/src/a.ts"
-out8f=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" 2>&1)
+out8f=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" 2>&1)
 rc=$?
 n8f2=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 0 ] && pass "checkpoint.sh: a BLOCK finding stops it before the log entry" || fail "checkpoint.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$finroot/src/a.ts"
-"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "added b" "$finroot" >/dev/null 2>&1
+"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" >/dev/null 2>&1
 rc=$?
 n8f3=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8f3" -eq 1 ] && pass "checkpoint.sh: on the clean run the entry is written once" || fail "checkpoint.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
 git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m work
-"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
+"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
 rc=$?
 n8f3b=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8f3b" -eq 2 ] && pass "checkpoint.sh: committed work still logs, against --base" || fail "checkpoint.sh: committed work still logs, against --base (rc=$rc entries=$n8f3b)"
 i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agent/session-log.md"; i8f=$((i8f + 1)); done
-out8g=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "added c" "$finroot" 2>&1)
+out8g=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added c" "$finroot" 2>&1)
 rc=$?
 n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q '^GROOM:' && [ "$n8f4" -eq 5 ] && pass "checkpoint.sh: a standing flag stops it before the log entry" || fail "checkpoint.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q 'LOG_.*OVERSIZE\|^GROOM:' && [ "$n8f4" -eq 5 ] && pass "checkpoint.sh: a standing flag stops it before the log entry" || fail "checkpoint.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
 finroot_nogit="$WORK/finish-nogit"
 mkdir -p "$finroot_nogit"
 "$NODE" init --preset software-development --mode ignore-all "$finroot_nogit" >/dev/null 2>&1
@@ -968,25 +974,25 @@ cp "$fsroot/.agent/scripts/status.sh" "$WORK/fs-status-clean.sh"
 n8i0=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 
 printf '#!/usr/bin/env bash\nif [ 1 -eq 1 ]\n  echo "missing then"\n' >"$fsroot/.agent/scripts/status.sh"
-out8i=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "syntax break" "$fsroot" 2>&1)
+out8i=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "syntax break" "$fsroot" 2>&1)
 rc=$?
 n8i=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && [ "$n8i" -eq "$n8i0" ] && printf '%s' "$out8i" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: invalid status.sh syntax blocks completion" || fail "checkpoint.sh: invalid status.sh syntax blocks completion (rc=$rc entries=$n8i)"
 
 printf '#!/usr/bin/env bash\nexit 3\n' >"$fsroot/.agent/scripts/status.sh"
-out8j=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "quiet exit 3" "$fsroot" 2>&1)
+out8j=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "quiet exit 3" "$fsroot" 2>&1)
 rc=$?
 n8j=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && [ "$n8j" -eq "$n8i0" ] && printf '%s' "$out8j" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: a status.sh that quietly exits nonzero blocks completion" || fail "checkpoint.sh: a status.sh that quietly exits nonzero blocks completion (rc=$rc entries=$n8j)"
 
 printf '#!/usr/bin/env bash\necho "unexpected noise" >&2\nexit 0\n' >"$fsroot/.agent/scripts/status.sh"
-out8k=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "unexpected stderr" "$fsroot" 2>&1)
+out8k=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "unexpected stderr" "$fsroot" 2>&1)
 rc=$?
 n8k=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 [ "$rc" -ne 0 ] && [ "$n8k" -eq "$n8i0" ] && printf '%s' "$out8k" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: unexpected status.sh stderr blocks completion" || fail "checkpoint.sh: unexpected status.sh stderr blocks completion (rc=$rc entries=$n8k)"
 
 cp "$WORK/fs-status-clean.sh" "$fsroot/.agent/scripts/status.sh"
-"$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
+"$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
 rc=$?
 n8l=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "checkpoint.sh: a clean status check still allows completion" || fail "checkpoint.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
@@ -999,12 +1005,12 @@ printf 'export const a = 1\n' >"$seqA/src/a.ts"
 git -C "$seqA" init -q && git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 
 printf 'export const b = 2\n' >>"$seqA/src/a.ts"
-"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "turn one edit" "$seqA" >/dev/null 2>&1
+"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "turn one edit" "$seqA" >/dev/null 2>&1
 rc_a1=$?
 git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-one
 
 printf 'export const c = 3\n' >>"$seqA/src/a.ts"
-"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "turn two edit" "$seqA" >/dev/null 2>&1
+"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "turn two edit" "$seqA" >/dev/null 2>&1
 rc_a2=$?
 git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-two
 n_a2=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
@@ -1035,7 +1041,7 @@ n_b1=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
   || fail "sequence: no-edit before any edit exits nonzero and writes nothing (rc=$rc_b1 entries=$n_b1)"
 
 printf 'export const b = 2\n' >>"$seqB/src/a.ts"
-"$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "second turn edits" "$seqB" >/dev/null 2>&1
+"$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "second turn edits" "$seqB" >/dev/null 2>&1
 rc_b2=$?
 n_b2=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
 [ "$rc_b2" -eq 0 ] && [ "$n_b2" -eq 1 ] \
@@ -1084,12 +1090,12 @@ before_ms=$(grep '^- \[' "$migSame/.agent/session-log.md")
 rc_ms1=$?
 after_ms=$(grep '^- \[' "$migSame/.agent/session-log.md")
 [ "$rc_ms1" -eq 0 ] && grep -qF 'One entry per turn that changed files, newest last.' "$migSame/.agent/session-log.md" \
-  && pass "migrate (same-version): a 6.2 node with the old header is refreshed by the shape-refresh branch" \
-  || fail "migrate (same-version): a 6.2 node with the old header is refreshed by the shape-refresh branch"
+  && pass "migrate (same-version): a 6.3 node with the old header is refreshed by the shape-refresh branch" \
+  || fail "migrate (same-version): a 6.3 node with the old header is refreshed by the shape-refresh branch"
 [ "$before_ms" = "$after_ms" ] \
   && pass "migrate (same-version): every existing log entry is preserved byte-identical, in order" \
   || fail "migrate (same-version): every existing log entry is preserved byte-identical, in order"
-[ -f "$migSame/.agent.backup-v6.2-shape/session-log.md" ] && grep -qF 'One entry per session, newest last.' "$migSame/.agent.backup-v6.2-shape/session-log.md" \
+[ -f "$migSame/.agent.backup-v6.3-shape/session-log.md" ] && grep -qF 'One entry per session, newest last.' "$migSame/.agent.backup-v6.3-shape/session-log.md" \
   && pass "migrate (same-version): the pre-refresh header is preserved behind the existing shape backup" \
   || fail "migrate (same-version): the pre-refresh header is preserved behind the existing shape backup"
 out_ms2=$("$NODE" update "$migSame" 2>&1)
@@ -1777,43 +1783,43 @@ done
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl_extract "$reporoot/presets/$p.md" | grep -qF "neither necessary nor sufficient" || sl_bad="$sl_bad $p"
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "does not require a record" || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: a correction alone neither requires nor justifies a record" || fail "self-learning: a correction alone neither requires nor justifies a record ($sl_bad)"
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl27=$(sl_extract "$reporoot/presets/$p.md")
+  sl27=$(cat "$reporoot/presets/$p.md")
   ok27=1
   printf '%s\n' "$sl27" | grep -qF "no durable record" || ok27=0
-  printf '%s\n' "$sl27" | grep -qF ".agent/scripts/memory.sh new" || ok27=0
-  printf '%s\n' "$sl27" | grep -qF ".agent/scripts/memory.sh supersede --slug" || ok27=0
-  printf '%s\n' "$sl27" | grep -qF ".agent/scripts/learn.sh" || ok27=0
+  printf '%s\n' "$sl27" | grep -qF "memory.sh new" || ok27=0
+  printf '%s\n' "$sl27" | grep -qF "supersede" || ok27=0
+  printf '%s\n' "$sl27" | grep -qF "learn.sh new" || ok27=0
   [ "$ok27" -eq 1 ] || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: each of the four kinds names its surface and its writer" || fail "self-learning: each of the four kinds names its surface and its writer ($sl_bad)"
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl_extract "$reporoot/presets/$p.md" | grep -qF "never becomes a project-wide rule" || sl_bad="$sl_bad $p"
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "They create no durable record" || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: a task-scoped constraint stays at its stated scope" || fail "self-learning: a task-scoped constraint stays at its stated scope ($sl_bad)"
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl_extract "$reporoot/presets/$p.md" | grep -qF "On a node running \`indexes: generated\`: run \`.agent/scripts/learn.sh lookup\`" || sl_bad="$sl_bad $p"
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "before adding a lesson" || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: a record is looked up before it is written" || fail "self-learning: a record is looked up before it is written ($sl_bad)"
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl_extract "$reporoot/presets/$p.md" | grep -qF "merge near-duplicates by hand in \`.agent/rules/learned.md\`" || sl_bad="$sl_bad $p"
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "merge near-duplicates in \`rules/learned.md\`" || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: a manual-mode node merges near-duplicates by hand" || fail "self-learning: a manual-mode node merges near-duplicates by hand ($sl_bad)"
 
 sl_bad=""
 for p in software-development academic-research domain-knowledge; do
-  sl_extract "$reporoot/presets/$p.md" | grep -qF "human-facing text check or a comment gate" || sl_bad="$sl_bad $p"
+  sl_extract "$reporoot/presets/$p.md" | grep -qF "Passing a text or comment check does not establish either" || sl_bad="$sl_bad $p"
 done
 [ -z "$sl_bad" ] && pass "self-learning: no prose scan or comment gate admits a record" || fail "self-learning: no prose scan or comment gate admits a record ($sl_bad)"
 
@@ -2451,7 +2457,7 @@ grep -q '^PROBE_TOOLS=' "$cgu2/.agent/scripts/status.conf" 2>/dev/null && pass "
 grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
 
 missing_u=""
-for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
+for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh checks.sh; do
   [ -x "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
 done
 for f in comments.conf status.conf log.conf; do
@@ -2558,7 +2564,7 @@ printf 'export const a = 1\n' >"$cgf34/src/a.ts"
 git -C "$cgf34" init -q && git -C "$cgf34" add -A && git -C "$cgf34" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf 'export const b = 2\n' >>"$cgf34/src/a.ts"
 n34before=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
-out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "should not log" "$cgf34" 2>&1)
+out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "should not log" "$cgf34" 2>&1)
 rc34fc=$?
 n34after=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
 [ "$rc34fc" -ne 0 ] && [ "$n34before" -eq "$n34after" ] && pass "checkpoint.sh: a failed-closed comment gate appends no log entry" || fail "checkpoint.sh: a failed-closed comment gate appends no log entry (rc=$rc34fc before=$n34before after=$n34after; $out34fc)"
@@ -2669,7 +2675,7 @@ infence  { next }
 AWK
 
 hw38=""
-(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './evals/runs/*' -print0) >"$WORK/hw-corpus"
+(cd "$reporoot" && find . -name '*.md' -not -path '*/.git/*' -not -path './tmp/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './evals/runs/*' -not -path './evals/prose/continuity-core.md' -print0) >"$WORK/hw-corpus"
 while IFS= read -r -d '' md; do
   hit=$(cd "$reporoot" && awk -f "$hwawk" "$md")
   [ -n "$hit" ] && hw38="$hw38 $hit"
@@ -2948,7 +2954,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | index.sh | learn.sh | status.conf | log.conf | comments.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | index.sh | learn.sh | runtime.sh | verify.sh | review.sh | capture.sh | checks.sh | status.conf | log.conf | comments.conf | verify.conf | review.conf | checkpoint.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
@@ -3582,7 +3588,13 @@ exec_index = argv.index("exec")
 is_resume = len(argv) > exec_index + 1 and argv[exec_index + 1] == "resume"
 
 approval_index = require_pair("--ask-for-approval", "never")
-effort_index = require_pair("-c", 'model_reasoning_effort="medium"')
+config_indexes = [i for i, arg in enumerate(argv) if arg == "-c"]
+config_values = [argv[i + 1] for i in config_indexes if i + 1 < len(argv)]
+required_config = ['model_reasoning_effort="medium"', 'features.apps=false',
+                   'features.plugins=false', 'features.remote_plugin=false']
+if sorted(config_values) != sorted(required_config):
+    reject("effort and eval isolation overrides must each appear exactly once")
+effort_index = argv.index('model_reasoning_effort="medium"') - 1
 sandbox_index = require_pair("--sandbox", "workspace-write")
 require_flag("-C")
 cwd_index = argv.index("-C")
@@ -5701,28 +5713,16 @@ else
   fail "docs: 'no completion-time gate' does not appear in README.md, operating-model.md, presets/, templates/, or tools/ (found: $(printf '%s' "$stale_hits" | head -n1))"
 fi
 
-checkpointsh_anchor_ok=0
-while IFS= read -r line; do
-  case "$line" in
-  *checkpoint.sh*status.sh*) ;;
-  *status.sh*checkpoint.sh*) ;;
-  *) continue ;;
-  esac
-  after_checkpointsh=${line#*checkpoint.sh}
-  case "$after_checkpointsh" in
-  *GROOM:* | *REPAIR:* | *INDEX:*) checkpointsh_anchor_ok=1 ;;
-  esac
-done < <(grep -F "checkpoint.sh" "$reporoot/README.md")
-if [ "$checkpointsh_anchor_ok" -eq 1 ]; then
-  pass "README.md: a checkpoint.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the checkpoint.sh mention"
+if grep -qF 'status.sh --format tsv' "$reporoot/README.md" && grep -qF 'strict policy' "$reporoot/README.md"; then
+  pass "README.md: checkpoint uses structured status and documents strict policy"
 else
-  fail "README.md: a checkpoint.sh line also names status.sh, with a GROOM:/REPAIR:/INDEX: flag named after the checkpoint.sh mention"
+  fail "README.md: checkpoint uses structured status and documents strict policy"
 fi
 
 flagstands_ok=0
-grep -qF "the flags above are this session's to handle" "$reporoot/scripts/checkpoint.sh" && flagstands_ok=1
+grep -qF "status findings block completion" "$reporoot/scripts/checkpoint.sh" && flagstands_ok=1
 statusrc_ok=0
-grep -qF "status.sh rc=" "$reporoot/scripts/checkpoint.sh" && statusrc_ok=1
+grep -qF "status check failed to run cleanly" "$reporoot/scripts/checkpoint.sh" && statusrc_ok=1
 if [ "$flagstands_ok" -eq 1 ] && [ "$statusrc_ok" -eq 1 ]; then
   pass "scripts/checkpoint.sh: both fail-closed branches (a standing flag, a status check that failed to run cleanly) are present"
 else
@@ -6936,7 +6936,7 @@ mkdir -p "$b1"
 r61mode "$b1" track-shared
 cp -R "$b1/.agent" "$b1/.agent.backup-v6"
 printf 'pre-existing backup marker\n' >"$b1/.agent.backup-v6/.marker"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$b1/.agent/purpose.md" >"$b1/.agent/purpose.md.tmp"
 mv "$b1/.agent/purpose.md.tmp" "$b1/.agent/purpose.md"
 "$NODE" update "$b1" >"$WORK/b1-update.out" 2>&1
@@ -6965,7 +6965,7 @@ b2="$WORK/mig-boundary2"
 mkdir -p "$b2"
 r61mode "$b2" track-shared
 cp -R "$b2/.agent" "$b2/.agent.backup-v6"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$b2/.agent/purpose.md" >"$b2/.agent/purpose.md.tmp"
 mv "$b2/.agent/purpose.md.tmp" "$b2/.agent/purpose.md"
 
@@ -7016,7 +7016,7 @@ git -C "$b3" commit -qm initial
 
 cp -R "$b3/.agent" "$b3/.agent.backup-v6"
 grep '^- ' "$b3/.agent/rules/learned.md" >"$b3/.agent/.learned-bullets-before"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$b3/.agent/purpose.md" >"$b3/.agent/purpose.md.tmp"
 mv "$b3/.agent/purpose.md.tmp" "$b3/.agent/purpose.md"
 
@@ -7065,7 +7065,7 @@ git -C "$b4" commit -qm initial
 
 cp -R "$b4/.agent" "$b4/.agent.backup-v6"
 grep '^- ' "$b4/.agent/rules/learned.md" >"$b4/.agent/.learned-bullets-before"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$b4/.agent/purpose.md" >"$b4/.agent/purpose.md.tmp"
 mv "$b4/.agent/purpose.md.tmp" "$b4/.agent/purpose.md"
 
@@ -7119,7 +7119,7 @@ git -C "$b5" commit -qm initial
 cp -R "$b5/.agent" "$b5/.agent.backup-v6"
 grep '^- ' "$b5/.agent/rules/learned.md" >"$b5/.agent/.learned-bullets-before"
 printf -- '- [2026-01-09] Bogus bullet never present in any record.\n' >>"$b5/.agent/.learned-bullets-before"
-awk '/^  version: 6$/ { print; print "  migration_target: \"6.2\""; next } { print }' \
+awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
   "$b5/.agent/purpose.md" >"$b5/.agent/purpose.md.tmp"
 mv "$b5/.agent/purpose.md.tmp" "$b5/.agent/purpose.md"
 
@@ -7684,11 +7684,11 @@ e68_before=$(idx_mtime "$e68/.agent/indexes/current.md")
 sleep 1
 "$e68/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$e68" >/dev/null 2>&1
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$e68/src/a.ts"
-out68e=$("$e68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "generated hand-back" "$e68" 2>&1)
+out68e=$("$e68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "generated hand-back" "$e68" 2>&1)
 rc68e=$?
 n68e=$(grep -c '^- \[' "$e68/.agent/session-log.md")
 e68_after=$(idx_mtime "$e68/.agent/indexes/current.md")
-[ "$rc68e" -eq 0 ] && [ "$n68e" -eq 1 ] && printf '%s' "$out68e" | grep -qF '== cache refresh' \
+[ "$rc68e" -eq 0 ] && [ "$n68e" -eq 1 ] && printf '%s' "$out68e" | grep -qF 'checkpoint.sh: recorded' \
   && pass "checkpoint.sh: a generated hand-back runs the cache refresh step and logs exactly once" \
   || fail "checkpoint.sh: a generated hand-back runs the cache refresh step and logs exactly once (rc=$rc68e entries=$n68e)"
 [ "$e68_after" -gt "$e68_before" ] \
@@ -7705,7 +7705,7 @@ n68f0=$(grep -c '^- \[' "$f68/.agent/session-log.md")
 
 "$f68/.agent/scripts/docs.sh" new --name frontend --read-when "frontend widgets" "$f68" >/dev/null 2>&1
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$f68/src/a.ts"
-INDEX_FAIL_AT=before-publish "$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "injected index failure" "$f68" >/dev/null 2>"$WORK/f68.err"
+INDEX_FAIL_AT=before-publish "$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "injected index failure" "$f68" >/dev/null 2>"$WORK/f68.err"
 rc68f=$?
 n68f1=$(grep -c '^- \[' "$f68/.agent/session-log.md")
 f68_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68.err")
@@ -7716,7 +7716,7 @@ f68_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68.err")
 
 rm -f "$f68/.agent/scripts/index.sh"
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const c = 3\n' >"$f68/src/a.ts"
-"$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "absent indexer" "$f68" >/dev/null 2>"$WORK/f68g.err"
+"$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "absent indexer" "$f68" >/dev/null 2>"$WORK/f68g.err"
 rc68g=$?
 n68g=$(grep -c '^- \[' "$f68/.agent/session-log.md")
 f68g_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68g.err")
@@ -7732,12 +7732,11 @@ finish_bootstrap "$g68"
 printf 'export const a = 1\n' >"$g68/src/a.ts"
 git -C "$g68" init -q && git -C "$g68" add -A && git -C "$g68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf 'export const a = 1\nexport const b = 2\n' >"$g68/src/a.ts"
-g68_expected=$(printf '== comment gate (comments.sh HEAD)\n== status check\nclean\n== session log\nlog.sh: appended session-log entry for %s' "$(today)")
-g68_actual=$("$g68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "manual mode, no refresh" "$g68" 2>&1)
-rc68g2=$?
-[ "$rc68g2" -eq 0 ] && [ "$g68_actual" = "$g68_expected" ] \
-  && pass "checkpoint.sh: a manual-mode node's output matches its pre-change shape exactly, no cache-refresh step" \
-  || fail "checkpoint.sh: a manual-mode node's output matches its pre-change shape exactly, no cache-refresh step ($g68_actual)"
+g68_actual=$("$g68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "manual mode, no refresh" "$g68" 2>&1)
+printf '%s\n' "$g68_actual" | grep -qF 'checkpoint.sh: recorded' \
+  && ! printf '%s\n' "$g68_actual" | grep -qF 'cache refresh' \
+  && pass "checkpoint.sh: a manual-mode node records completion without a cache refresh" \
+  || fail "checkpoint.sh: a manual-mode node records completion without a cache refresh ($g68_actual)"
 [ ! -d "$g68/.agent/indexes" ] \
   && pass "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory" \
   || fail "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory"
@@ -7750,7 +7749,7 @@ printf 'export const a = 1\n' >"$h68/src/a.ts"
 git -C "$h68" init -q && git -C "$h68" add -A && git -C "$h68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf '\nfor this pass, cache the response for five minutes.\n' >>"$h68/.agent/memory.md"
 n68h0=$(grep -c '^- \[' "$h68/.agent/session-log.md")
-out68h=$("$h68/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify pass --summary "markdown-only change under .agent/" "$h68" 2>&1)
+out68h=$("$h68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "markdown-only change under .agent/" "$h68" 2>&1)
 rc68h=$?
 n68h1=$(grep -c '^- \[' "$h68/.agent/session-log.md")
 [ "$rc68h" -eq 0 ] && [ "$n68h1" -eq "$((n68h0 + 1))" ] && ! printf '%s' "$out68h" | grep -q 'BLOCK' \
@@ -8727,15 +8726,25 @@ rec75_after_update=$(rec75_snapshot "$rec75")
   && pass "reconcile: a second node.sh update rewrites no record and no inventory line, rules/learned.md aside" \
   || fail "reconcile: a second node.sh update rewrites no record and no inventory line, rules/learned.md aside"
 
-ran=$((PASS + FAIL))
+for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
+  [ -f "$v63_test" ] || continue
+  v63_output="$WORK/$(basename "$v63_test").out"
+  if bash "$v63_test" >"$v63_output" 2>&1; then
+    pass "v6.3: $(basename "$v63_test")"
+  else
+    cat "$v63_output"
+    fail "v6.3: $(basename "$v63_test")"
+  fi
+done
 
-EXPECTED_CHECKS=1360
+ran=$((PASS + FAIL))
+EXPECTED_CHECKS=1380
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
 fi
-
 total=$((PASS + FAIL))
+
 printf '\n%d/%d checks passed (%d failed)\n' "$PASS" "$total" "$FAIL"
 [ "$FAIL" -eq 0 ] && exit 0
 exit 1

@@ -1,0 +1,56 @@
+{
+  "date": "2026-09-27",
+  "budget_note": "Chosen exploratory budget. One repeat per cell. No stability claim.",
+  "models": [
+    "claude-sonnet-5",
+    "gpt-5.6-terra"
+  ],
+  "effort": "medium",
+  "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+  "repeats": 1,
+  "timeout_seconds": 240,
+  "continuity": {
+    "spec": "continuity-spec.json",
+    "tasks": 6,
+    "control": null,
+    "treatment": "short-protocol-report.md"
+  },
+  "axes": {
+    "spec": "spec.json",
+    "tasks": [
+      "prose-brief-answer",
+      "continuity-writes-back",
+      "security-origin-gate"
+    ],
+    "pairs": [
+      {
+        "name": "length",
+        "control": "short-protocol-report.md",
+        "treatment": "expanded-protocol.md",
+        "interpretation": "Explanatory expansion. Added wording can change emphasis."
+      },
+      {
+        "name": "language",
+        "control": "short-protocol-report.md",
+        "treatment": "short-natural.md",
+        "interpretation": "Bullets versus paragraphs. Wording is not mechanically equivalent."
+      },
+      {
+        "name": "content",
+        "control": "short-protocol-report.md",
+        "treatment": "short-engineering-report.md",
+        "interpretation": "More engineering detail at a similar word budget. Source-origin reporting retained in both."
+      }
+    ]
+  },
+  "stopping_rule": "One comparison per axis and model. Do not tune candidates against these outcomes. Prepare remaining release checks separately.",
+  "sha256": {
+    "spec.json": "2ff7f1a58bffd427297657bad6e7166f24949fefbec697bf6db54fd63a3e31e7",
+    "continuity-spec.json": "0bc8530d3e1bc1383ccd4deae4a4bedbe5de5ba872ef820e510e3c224580719f",
+    "short-protocol-report.md": "5c6adf60e0983cf89370c3152c0ab1c9d9febcee5e10bbfdd4d9fb19418d41c0",
+    "expanded-protocol.md": "2bc174f6dc817db1cc96168ac6b04895eed5ab3d017a8d1bfc9a3d359124cd65",
+    "short-natural.md": "24c6720536d35f73df67b8c40ac880deaadf9e7a717cf3e44d5979d15db1855e",
+    "short-engineering-report.md": "4003d0b1d74c1ea0cc89694f9f53ec3251ef4dcc86bfffb0e5c68df2128d0b2d"
+  },
+  "execution_note": "The six-task extension and all three prose axes ran on Sonnet. Terra axis and extension matrices remain prepared. Terra ran the canonical comparison, recovery pairs, and quality pilot."
+}

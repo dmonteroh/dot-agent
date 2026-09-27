@@ -20,7 +20,7 @@ Header contracts in `operating-model.md` remain the format authority: this scrip
 
 ## What init writes
 
-The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the nine shipped scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`), and the three starter confs.
+The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the thirteen managed helpers listed by `SHIPPED_SCRIPTS`, six starter configurations, and the project-owned `checks.sh` driver.
 
 The manifest's `indexes` field records `manual` or `generated`, next to `mode`. It defaults to `manual` when `--indexes` is omitted. A manifest with no `indexes` line at all — every node created before this field existed — reads as `manual` too, the same value an absent field already means. Nothing about such a node's behavior changes until it is turned on by hand. `generated` decides which lines `init` and `update` add to the gitignore and, at `update`, whether the learned-rules migration below runs. It also changes what a session reads: `status.sh` and `checkpoint.sh` read the manifest's `indexes` field themselves (each greps `purpose.md` for the `indexes:` line) and switch their own behavior on it, and `learn.sh` reads it to decide whether a write should also refresh the generated cache. The read-path wiring an agent installs is `templates/entry-point-generated.md`, the generated-mode counterpart to `templates/entry-point.md` (`scripts/docs/index.md`).
 
@@ -48,7 +48,7 @@ A node bootstrapped straight at `--indexes generated` has no `rules/learned/` di
 
 `.agent/scripts/` is excluded from git under both `ignore-all` and `track-shared` (under `ignore-all` nothing at all under `.agent/` is tracked). A fresh clone or a `git worktree add` checkout of a `track-shared` node therefore carries the manifest and `rules/` but no scripts, `index.sh` included, even when that node's `indexes` is `generated`.
 
-The fix is the same command that carries any node forward: run `node.sh update <root>` from the source repo, pointing `<root>` at the clone or worktree. On a node already at this script's current version — the ordinary fresh-clone case — `update` does not re-copy all nine shipped scripts. It copies `index.sh` alone, since that is the one script a version-current node can still be missing, and installs it without touching `rules/`, `docs/`, `memory/`, or anything else the node already holds. An explicit `--indexes generated` also installs `learn.sh`. A node whose manifest predates the current version instead takes the full migration path below, which refreshes all nine scripts by name as part of that migration.
+Run `node.sh update <root>` from this source checkout. Version-current nodes also receive every managed runtime helper. Each helper is replaced atomically. Existing check drivers, configuration, rules, docs, memory, and logs remain project-owned.
 
 A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh ensure` and gets a failed build, reads `.agent/rules/` and `.agent/docs/` directly — the same canonical sources `ensure` itself names on stderr when a build fails (`scripts/docs/index.md`). A missing or failing indexer never blocks a session. It only means the generated cache is unavailable until `index.sh` exists and builds one.
 
@@ -56,7 +56,7 @@ A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh
 
 A version migration is two phases: `update` does the mechanical part and leaves the node mid-migration on purpose; `finalize` closes it out once the mechanical part and the agent's own reconciliation are both done. `version` changes at `finalize` only — `update` never writes it.
 
-`update` refreshes the shipped scripts from the source repo **by exactly their nine names** — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`. Anything else under `scripts/` is the node's own and is never overwritten during a version migration. On a version-current node, the ordinary refresh installs `index.sh` only. Explicit generated-mode adoption also installs `learn.sh`. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
+`update` refreshes the managed helpers named by `SHIPPED_SCRIPTS`. It seeds missing configuration and `checks.sh`, while preserving existing copies. Other project scripts remain untouched. Script replacement uses a temporary sibling and rename, so a running shell retains its original file.
 
 A manifest with no `indexes` line is backfilled as `manual` unless `update --indexes generated` selects generated mode. Omitting the flag preserves an existing value.
 
@@ -68,7 +68,7 @@ Every node with untracked memory is backed up first. Version migration uses `.ag
 
 A matching `migration_target` makes the version-migration backup resumable. Any other backup collision aborts without touching the node.
 
-A node already on the current version can still be shape-stale: version-current is not shape-current, so shape migrations run regardless, using the shape-refresh backup path above. This is also the branch that installs `index.sh` and backfills a missing `indexes` line (above). A version-current node has nothing to migrate, so it is the only path a fresh clone or worktree of such a node ever reaches — the one that closes the gap left by `.agent/scripts/` being untracked.
+A node already on the current version can still be shape-stale: version-current is not shape-current, so shape migrations run regardless, using the shape-refresh backup path above. This branch also refreshes managed helpers and backfills a missing `indexes` line. A version-current node has nothing to migrate, so it is the only path a fresh clone or worktree of such a node ever reaches — the one that closes the gap left by `.agent/scripts/` being untracked.
 
 ### Generated mode's migration step
 

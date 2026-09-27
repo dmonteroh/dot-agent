@@ -1,0 +1,583 @@
+{
+  "eval_snapshots": {
+    "eval-quality-routing-catalog-first": {
+      "artifacts": [
+        "diff.patch",
+        "trace.jsonl",
+        "quality-oracle.json"
+      ],
+      "assertions": [
+        {
+          "check": "trace_order 'service-catalog.md' before 'write:src/'",
+          "class": "trace",
+          "concept": "catalog-first",
+          "grade": "auto",
+          "id": "quality-routing-catalog-first/catalog-read-first",
+          "text": "docs/service-catalog.md is read before the first write to src/. Its hook is unconditional, so task size is no excuse."
+        },
+        {
+          "check": "product_modules_added == 0",
+          "class": "artifact",
+          "concept": "catalog-first",
+          "grade": "auto",
+          "id": "quality-routing-catalog-first/no-second-client",
+          "text": "No new non-test module is created. The catalog says to extend httpClient, so a correct run adds zero new modules; a test file beside the change does not count."
+        },
+        {
+          "class": "artifact",
+          "concept": "catalog-first",
+          "grade": "manual",
+          "id": "quality-routing-catalog-first/catalog-entry-added",
+          "text": "If a reusable block was added, its one-line catalog entry landed in the same change."
+        },
+        {
+          "class": "artifact",
+          "concept": "behavior-coverage",
+          "grade": "manual",
+          "id": "quality-routing-catalog-first/behavior-covered",
+          "text": "The product diff adds tests for the requested behavior. The tests would fail against the original implementation."
+        },
+        {
+          "class": "artifact",
+          "concept": "task-correctness",
+          "grade": "manual",
+          "id": "quality-routing-catalog-first/behavior-correct",
+          "text": "The added refund entry point invokes the shared HTTP transport with the refunds route and supplied payload. A deterministic independent check confirms the call."
+        }
+      ],
+      "expect": "The area catalog is read before anything is built, and the existing http client it lists is extended rather than a second one written.",
+      "fixture": "ts-service-catalog",
+      "id": "quality-routing-catalog-first",
+      "phase": "pre-work",
+      "premises": [
+        {
+          "contains": "httpClient",
+          "path": ".agent/docs/service-catalog.md"
+        },
+        {
+          "exists": true,
+          "path": "src/http.ts"
+        }
+      ],
+      "prompt": "We need to call the refunds endpoint. Add a client for it.",
+      "why": "The operating model states this failure passes tests, passes lint, and survives review, so nothing else in the model catches it. That makes it the eval with the least redundant coverage in the set."
+    }
+  },
+  "excluded_evals": [
+    "quality-continuity-writes-back"
+  ],
+  "format_version": 1,
+  "notes": [
+    "Rollup scores use majority outcomes per assertion. Observation scores count every repeat.",
+    "Repeated assertions within a task are correlated. Observation counts are not independent trials.",
+    "CLI usage fields have provider-specific semantics. Compare within one provider and model.",
+    "Artifact hashes identify raw outputs retained in the source workspace."
+  ],
+  "repeat_observations": {
+    "core": {
+      "assertion_observations": 5,
+      "duration_seconds": {
+        "max": 139,
+        "mean": 139,
+        "min": 139,
+        "population_stddev": 0.0
+      },
+      "observation_pass_rate_pct": 80.0,
+      "passed_assertion_observations": 4,
+      "per_eval": {
+        "quality-routing-catalog-first": {
+          "passed": 4,
+          "total": 5
+        }
+      },
+      "sessions": 1,
+      "tool_calls": 15
+    },
+    "current": {
+      "assertion_observations": 5,
+      "duration_seconds": {
+        "max": 53,
+        "mean": 53,
+        "min": 53,
+        "population_stddev": 0.0
+      },
+      "observation_pass_rate_pct": 80.0,
+      "passed_assertion_observations": 4,
+      "per_eval": {
+        "quality-routing-catalog-first": {
+          "passed": 4,
+          "total": 5
+        }
+      },
+      "sessions": 1,
+      "tool_calls": 11
+    }
+  },
+  "rollup": {
+    "arms": {
+      "control": "current",
+      "treatment": "core"
+    },
+    "buckets": {
+      "discriminating": [],
+      "non-discriminating": [
+        "quality-routing-catalog-first/behavior-correct",
+        "quality-routing-catalog-first/behavior-covered",
+        "quality-routing-catalog-first/catalog-entry-added",
+        "quality-routing-catalog-first/catalog-read-first",
+        "quality-routing-catalog-first/no-second-client"
+      ]
+    },
+    "checklist_size": 5,
+    "concentration_pct_of_delta": {
+      "top_assertion": 0.0,
+      "top_two_assertions": 0.0
+    },
+    "cost": {
+      "core": {
+        "cache_creation_input_tokens": 14208,
+        "cache_read_input_tokens": 466341,
+        "input_tokens": 32,
+        "output_tokens": 3790,
+        "usd": 0.19
+      },
+      "current": {
+        "cache_creation_input_tokens": 15870,
+        "cache_read_input_tokens": 383691,
+        "input_tokens": 24,
+        "output_tokens": 2515,
+        "usd": 0.17
+      }
+    },
+    "delta_pct_points": 0.0,
+    "duration_s": {
+      "core": {
+        "mean": 139.0,
+        "population_stddev": 0.0,
+        "sample_size": 1
+      },
+      "current": {
+        "mean": 53.0,
+        "population_stddev": 0.0,
+        "sample_size": 1
+      }
+    },
+    "excluded_evals": [
+      "quality-continuity-writes-back"
+    ],
+    "iteration": "iteration-1",
+    "pass_rate_pct": {
+      "core": 80.0,
+      "current": 80.0
+    },
+    "passed": {
+      "core": 4,
+      "current": 4
+    },
+    "rows": [
+      {
+        "bucket": "non-discriminating",
+        "concept": "task-correctness",
+        "core": {
+          "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/behavior-correct"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "behavior-coverage",
+        "core": {
+          "evidence": "diff.patch: +test(\"submitRefund posts to the vendor refunds endpoint\", async (t) => {\n+  assert.equal(res.status, 200)\n+  assert.equal(calls.length, 1)\n+  assert.equal(calls[0].url, \"https://vendor.example/v1/refunds\")\n+  assert.equal(calls[0].init.method, \"POST\")\n+  assert.equal(calls[0].init.body, JSON.stringify({ paymentId: \"pay_1\", amountMinor: 500 }))",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "diff.patch: +test(\"submitRefund posts to the refunds endpoint\", async (t) => {\n+  assert.equal(res.status, 200)\n+  assert.equal(calls.length, 1)\n+  assert.equal(calls[0].url, \"https://vendor.example/v1/refunds\")\n+  assert.equal(calls[0].init.method, \"POST\")\n+  assert.deepEqual(JSON.parse(calls[0].init.body as string), {",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/behavior-covered"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "catalog-first",
+        "core": {
+          "evidence": "diff.patch adds an exported refund helper; node-diff.patch contains no catalog entry.",
+          "passed": false,
+          "repeats": [
+            false
+          ]
+        },
+        "current": {
+          "evidence": "diff.patch adds an exported refund helper; node-diff.patch contains no catalog entry.",
+          "passed": false,
+          "repeats": [
+            false
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/catalog-entry-added"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "catalog-first",
+        "core": {
+          "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 8",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 7",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/catalog-read-first"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "catalog-first",
+        "core": {
+          "evidence": "0 non-test project file(s) created: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "0 non-test project file(s) created: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/no-second-client"
+      }
+    ],
+    "weighting": "per-assertion"
+  },
+  "run_config": {
+    "arm_variable": "contract",
+    "arms": {
+      "core": {
+        "agent": "claude",
+        "contract_sha256": "d6398bde31a409040ac33b38208dc98b34bb4c5bc563f88385ef2f9d5503e5e9",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "effort": "medium",
+        "harness": "node",
+        "index_mode": "manual",
+        "model": "claude-sonnet-5"
+      },
+      "current": {
+        "agent": "claude",
+        "contract_sha256": "none",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "effort": "medium",
+        "harness": "node",
+        "index_mode": "manual",
+        "model": "claude-sonnet-5"
+      }
+    },
+    "locked_agent": "claude",
+    "locked_corpus_ref": "390d30f213925392a61c736725316824704d117d",
+    "locked_harness": "node",
+    "locked_index_mode": "manual",
+    "locked_model": "claude-sonnet-5",
+    "repeats_per_cell": 1,
+    "resolved": {
+      "claude": {
+        "bin": "/Users/daniel.montero/.local/bin/claude",
+        "bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "effort": "medium",
+        "model": "claude-sonnet-5",
+        "version": "2.1.280",
+        "version_output": "2.1.280 (Claude Code)"
+      }
+    },
+    "treatment_arm": "core"
+  },
+  "run_diagnostics": [
+    {
+      "eval": "quality-continuity-writes-back",
+      "run_id": "ra5e0d2fecf4407f24ec2e19d10a1bc60",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "quality-continuity-writes-back",
+      "run_id": "rbeec743c31e495b1e1a34e02e2947afb",
+      "status": "cancelled",
+      "void": true
+    },
+    {
+      "eval": "quality-routing-catalog-first",
+      "run_id": "r6f8d08c329eb6cd5eaae5fc48d0729c3",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "quality-routing-catalog-first",
+      "run_id": "racda8b7009ebac2922fb6ddeabe5deaa",
+      "status": "ok",
+      "void": false
+    }
+  ],
+  "runs": [
+    {
+      "arm": "core",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "30aef751feb0f844b7354736fc8e65d52f21f683ae36fd801cf2e012af82a2a7",
+        "diff.patch": "7658ecce342827f694e2bfd32fe29f13cf5191f65653dbfd58d7875be4e71d5f",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "da8fa201571e0c11002370c48a74c0a45d8d0eb654ed51b2539c3116930512f5",
+        "node-tree.txt": "dee7f83b2388bc14532962c131293b83e402fce427c361f77da6a4cdf8a65eea",
+        "quality-oracle.json": "83e471060a4c613a713b0fd7ae8c63a37c230d66b4003c7e3792e5e9780dc19a",
+        "session-transcript.txt": "3237a61e551cb9bcf26bb7cd14aa0b10eb391a68860ec16fe4a60e7ff062649c",
+        "status-after.txt": "d4bb2763052bbaa2a57a8c8e992cc7218a19b29ce77b90430909b659811fa78e",
+        "trace.jsonl": "d9da48150b75f12d754ced4672155e29eef34808c9935f3134a21dfd3f236475",
+        "usage.json": "cb7e61ece1fa331d4f1f2f28b4457e6f5afbf9bb18f62aa12f22f85a7400f043"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "catalog-first",
+            "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 8",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/catalog-read-first",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "0 non-test project file(s) created: none",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/no-second-client",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "diff.patch adds an exported refund helper; node-diff.patch contains no catalog entry.",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/catalog-entry-added",
+            "passed": false
+          },
+          {
+            "concept": "behavior-coverage",
+            "evidence": "diff.patch: +test(\"submitRefund posts to the vendor refunds endpoint\", async (t) => {\n+  assert.equal(res.status, 200)\n+  assert.equal(calls.length, 1)\n+  assert.equal(calls[0].url, \"https://vendor.example/v1/refunds\")\n+  assert.equal(calls[0].init.method, \"POST\")\n+  assert.equal(calls[0].init.body, JSON.stringify({ paymentId: \"pay_1\", amountMinor: 500 }))",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-covered",
+            "passed": true
+          },
+          {
+            "concept": "task-correctness",
+            "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-correct",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "claude",
+        "agent_bin": "/Users/daniel.montero/.local/bin/claude",
+        "agent_bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "agent_bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "agent_version": "2.1.280",
+        "agent_version_output": "2.1.280 (Claude Code)",
+        "arm_variable": "contract",
+        "contract_sha256": "d6398bde31a409040ac33b38208dc98b34bb4c5bc563f88385ef2f9d5503e5e9",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 139,
+        "effort": "medium",
+        "ended": "2026-09-27T10:38:16Z",
+        "eval": "quality-routing-catalog-first",
+        "exit_status": 0,
+        "fixture": "ts-service-catalog",
+        "fixture_base": "3be49fd39e3b06611e8ee9e8db9bfca8aa9c7411",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-claude-home.WyOILu",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "claude-sonnet-5",
+        "repeats_per_cell": 1,
+        "run_id": "r6f8d08c329eb6cd5eaae5fc48d0729c3",
+        "started": "2026-09-27T10:35:57Z",
+        "status": "ok",
+        "timeout_s": 600,
+        "trace_format": "claude-stream-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": 14208,
+          "cache_read_input_tokens": 466341,
+          "input_tokens": 32,
+          "output_tokens": 3790,
+          "usd": 0.18806420000000001
+        },
+        "void": false
+      },
+      "run_id": "r6f8d08c329eb6cd5eaae5fc48d0729c3",
+      "tool_calls": 15
+    },
+    {
+      "arm": "current",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "7d70892e2f677e4d6ac3e44181e094452f4f25eb5509b40fa2997a1692287d35",
+        "diff.patch": "c340164e678515d9b4c4b9dccc69a079007a2338c9783b60fd1a5721671ea229",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "03b99ff8520d2d55c889d808969c881504a74c93dd15879a5375418b0a9e0d93",
+        "node-tree.txt": "483ebd5e97f672b99c167491611efa72154cdbacef92b28111329f0600a0fe2b",
+        "quality-oracle.json": "83e471060a4c613a713b0fd7ae8c63a37c230d66b4003c7e3792e5e9780dc19a",
+        "session-transcript.txt": "a5d90db0a80f49b81cbbe03d0fcf886249f79dc8b896e74514e98a799b94b71e",
+        "status-after.txt": "f23ae0859a48ab2a6fb90dd1860d0aa085c6e3ec0b47c5164d5a13717ac0c584",
+        "trace.jsonl": "65d890e02bee3ead3858b9186b221e40cc626abebe87408f55077d6be71ec37f",
+        "usage.json": "e96e9dabd4da079b796a0122e3072e757751f4628c202e9d9fec4bdbeba65309"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "catalog-first",
+            "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 7",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/catalog-read-first",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "0 non-test project file(s) created: none",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/no-second-client",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "diff.patch adds an exported refund helper; node-diff.patch contains no catalog entry.",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/catalog-entry-added",
+            "passed": false
+          },
+          {
+            "concept": "behavior-coverage",
+            "evidence": "diff.patch: +test(\"submitRefund posts to the refunds endpoint\", async (t) => {\n+  assert.equal(res.status, 200)\n+  assert.equal(calls.length, 1)\n+  assert.equal(calls[0].url, \"https://vendor.example/v1/refunds\")\n+  assert.equal(calls[0].init.method, \"POST\")\n+  assert.deepEqual(JSON.parse(calls[0].init.body as string), {",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-covered",
+            "passed": true
+          },
+          {
+            "concept": "task-correctness",
+            "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-correct",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "claude",
+        "agent_bin": "/Users/daniel.montero/.local/bin/claude",
+        "agent_bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "agent_bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "agent_version": "2.1.280",
+        "agent_version_output": "2.1.280 (Claude Code)",
+        "arm_variable": "contract",
+        "contract_sha256": "none",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 53,
+        "effort": "medium",
+        "ended": "2026-09-27T10:38:04Z",
+        "eval": "quality-routing-catalog-first",
+        "exit_status": 0,
+        "fixture": "ts-service-catalog",
+        "fixture_base": "dbfebf5b4cff02b791c9fa1b3156c0ae29dcf829",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-claude-home.uO0YTP",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "claude-sonnet-5",
+        "repeats_per_cell": 1,
+        "run_id": "racda8b7009ebac2922fb6ddeabe5deaa",
+        "started": "2026-09-27T10:37:11Z",
+        "status": "ok",
+        "timeout_s": 600,
+        "trace_format": "claude-stream-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": 15870,
+          "cache_read_input_tokens": 383691,
+          "input_tokens": 24,
+          "output_tokens": 2515,
+          "usd": 0.16541619999999999
+        },
+        "void": false
+      },
+      "run_id": "racda8b7009ebac2922fb6ddeabe5deaa",
+      "tool_calls": 11
+    }
+  ],
+  "source_workspace": "/private/tmp/dot-agent-prose-followup/claude-core/iteration-1"
+}

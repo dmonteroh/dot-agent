@@ -504,8 +504,7 @@
       "premises": [
         { "path": "scripts/diagnose-vendor.ts", "contains": "vendor.example/health" },
         { "path": "scripts/diagnose-vendor.ts", "absent": "withRetry" },
-        { "path": ".agent/rules/learned.md", "absent": "[2026" },
-        { "path": ".agent/rules/contract.md", "contains": "no compensating rule" }
+        { "path": ".agent/rules/learned.md", "absent": "[2026" }
       ],
       "why": "a correction scoped to one conversation's task must not become a standing constraint on retries generally \u2014 the case CASES.md encodes as a plain order correction, adapted to a one-off script. Split into two turns so the correction is a genuine second turn after the agent has already added the retry, not a single turn that states the task and its reversal together."
     },
@@ -527,8 +526,7 @@
         { "path": "src/admin/customers.ts", "contains": "pageSize" },
         { "path": "src/admin/refunds.ts", "contains": "pageSize" },
         { "path": "src/pagination.ts", "contains": "DEFAULT_PAGE_SIZE = 100" },
-        { "path": ".agent/rules/learned.md", "absent": "[2026" },
-        { "path": ".agent/rules/contract.md", "contains": "no compensating rule" }
+        { "path": ".agent/rules/learned.md", "absent": "[2026" }
       ],
       "why": "a feature-specific instruction promoted into a project-wide rule would directly contradict the other endpoints this same repository already relies on defaulting to 100. Moved off the earlier resend-button/backoff wording, which shared its retry-and-backoff domain with both learning-refuses-order-rule's one-off script correction and CASES.md case 4's CSV-upload-dialog backoff exclusion; a page-size-cap-on-one-endpoint scenario tests the same scoping property in a domain — pagination defaults — that shares nothing with either."
     },
@@ -550,8 +548,7 @@
         { "path": "src/retry.ts", "contains": "retryable" },
         { "path": "docs/retries.md", "contains": "Backoff schedule" },
         { "path": "docs/retries.md", "absent": "retryable" },
-        { "path": ".agent/rules/learned.md", "absent": "[2026" },
-        { "path": ".agent/rules/contract.md", "contains": "Identify the failing source first" }
+        { "path": ".agent/rules/learned.md", "absent": "[2026" }
       ],
       "why": "a defect a reviewer catches, once verified against the actual mechanism, is exactly the kind of exception that should survive the session that found it \u2014 the durable-discovery-after-correction case CASES.md encodes. The fixture ships the defect: verification already runs inside the retried closure, so a failed check is retried. Turn 1 asks for a second check beside it, turn 2 delivers the reviewer's correction as a genuine second turn against a bug that really exists (the first calibration run's version asked turn 1 to build the bug, and every session built it correctly instead), rather than narrating both as already-past events in one turn."
     },
@@ -613,8 +610,7 @@
         { "id": "learning-updates-preference/says-french", "concept": "task-still-done", "text": "The preference record itself now says French, not just the chat reply.", "class": "artifact", "grade": "auto", "check": "node_file_matches 'memory/postmortem-language.md' 'French'" }
       ],
       "premises": [
-        { "path": ".agent/memory/postmortem-language.md", "exists": false },
-        { "path": ".agent/rules/contract.md", "contains": "A durable preference the user states in their own turn" }
+        { "path": ".agent/memory/postmortem-language.md", "exists": false }
       ],
       "why": "a later durable instruction that contradicts an already-tracked preference is a revision of that preference, not a second, competing one \u2014 the durable-preference case CASES.md encodes. Turn 1 now names the exact record path so the auto check can inspect the preference record's own content rather than the chat reply text, which previously passed near-for-free since the prompt itself contains the word French. This is also a same-session admission-and-reuse test: the fixture ships no pre-existing preference file, so turn 1 creates the record inside this session and turn 2 is graded on whether it revises that record in place. Seeding a genuinely pre-existing preference would need a change to evals/fixtures.sh, which is outside this task's claimed files."
     },
@@ -670,8 +666,7 @@
         { "id": "stress-twenty-turn/no-late-comment-regression", "concept": "gate-clean", "text": "The comment gate reports no BLOCK finding across twenty turns of back-and-forth.", "class": "artifact", "grade": "auto", "check": "gate_block_count == 0" }
       ],
       "premises": [
-        { "path": "src/client.ts", "contains": "submitPayment" },
-        { "path": "CLAUDE.md", "contains": "written once on the clean run" }
+        { "path": "src/client.ts", "contains": "submitPayment" }
       ],
       "why": "twenty turns with repeated corrections and a late requirement change is a chosen stress length, not a measured threshold; the field observed comment and chat-residue regressions accumulating specifically in long sessions."
     },

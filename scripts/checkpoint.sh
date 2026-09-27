@@ -1,135 +1,236 @@
 #!/usr/bin/env bash
-
 set -u
+unset CDPATH
 
-finish_status_stderr=""
-finish_status_stdout=""
-finish_index_stderr=""
-cleanup() {
-  [ -n "$finish_status_stderr" ] && rm -f "$finish_status_stderr"
-  [ -n "$finish_status_stdout" ] && rm -f "$finish_status_stdout"
-  [ -n "$finish_index_stderr" ] && rm -f "$finish_index_stderr"
-}
-trap cleanup EXIT
+selfdir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
+[ -f "$selfdir/runtime.sh" ] || { echo 'checkpoint.sh: runtime.sh is missing; update this node' >&2; exit 1; }
+# shellcheck source=runtime.sh
+. "$selfdir/runtime.sh"
 
 usage() {
   cat <<'EOF'
-Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
+Usage: checkpoint.sh --tool NAME --area NAME --summary TEXT
+       [--checks CHECK[,CHECK...]] [--verification ID[,ID...]]
+       [--verify fail|n/a] [--base REF] [--node-only] [--policy strict|completion] [ROOT]
 
-Runs, in order: comments.sh against --base (default: HEAD over uncommitted
-work), status.sh printing only its flag lines, then log.sh with the same
---tool/--area/--verify/--summary. Stops before the log entry when the gate
-blocks or a flag stands, so a re-run appends once. A clean tree with no
---base changed nothing: no entry is written and the script exits 1.
+--checks runs configured verification before recording the result.
+--verification reuses valid receipts for unchanged inputs.
+--verify pass requires receipts or --checks. fail and n/a remain explicit reports.
+strict blocks every status finding. completion defers advisory maintenance.
+A successful retry over unchanged content writes no second log entry.
+--node-only records explicitly changed node content hidden by Git ignore rules.
 EOF
 }
 
-base=""
-root="."
-logargs=()
-while [ $# -gt 0 ]; do
+root=.; base=""; policy=""; tool=""; area=""; summary=""
+checks=""; receipts=""; requested_verify=""; node_only=0
+lock=""; status_out=""; status_err=""; publish=""; prepare=""
+cleanup() {
+  [ -z "$publish" ] || rm -f -- "$publish"
+  [ -z "$status_out" ] || rm -f -- "$status_out"
+  [ -z "$status_err" ] || rm -f -- "$status_err"
+  if [ -n "$prepare" ]; then
+    rm -f -- "$prepare/before" "$prepare/after" "$prepare/fingerprint" "$prepare/log"
+    rmdir "$prepare" 2>/dev/null || true
+  fi
+  [ -z "$lock" ] || da_unlock "$lock"
+  return 0
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+die() { printf 'checkpoint.sh: %s\n' "$*" >&2; exit 1; }
+while [ "$#" -gt 0 ]; do
   case "$1" in
-  --tool | --area | --verify | --summary)
-    if [ $# -lt 2 ]; then
-      echo "checkpoint.sh: $1 needs a value" >&2; usage >&2; exit 1
-    fi
-    logargs+=("$1" "$2"); shift 2 ;;
-  --base)
-    if [ $# -lt 2 ]; then
-      echo "checkpoint.sh: --base needs a value" >&2; usage >&2; exit 1
-    fi
-    base="$2"; shift 2 ;;
-  -h | --help)
-    usage; exit 0 ;;
-  --*)
-    echo "checkpoint.sh: unknown flag: $1" >&2; usage >&2; exit 1 ;;
-  *)
-    root="$1"; shift ;;
+    --tool|--area|--summary|--checks|--verification|--verify|--base|--policy)
+      [ "$#" -ge 2 ] || die "$1 needs a value"
+      case "$1" in
+        --tool) tool=$2 ;; --area) area=$2 ;; --summary) summary=$2 ;;
+        --checks) checks=$2 ;; --verification) receipts=$2 ;;
+        --verify) requested_verify=$2 ;; --base) base=$2 ;; --policy) policy=$2 ;;
+      esac
+      shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    --version) echo 'dot-agent checkpoint 6.3'; exit 0 ;;
+    --node-only) node_only=1; shift ;;
+    --*) die "unknown flag: $1" ;;
+    *) root=$1; shift ;;
   esac
 done
-
-if [ "${#logargs[@]}" -lt 8 ]; then
-  echo "checkpoint.sh: --tool, --area, --verify, and --summary are all required" >&2
-  usage >&2
-  exit 1
-fi
-
+[ -n "$tool" ] && [ -n "$area" ] && [ -n "$summary" ] || { usage >&2; die '--tool, --area, and --summary are required'; }
+[ -z "$checks" ] || [ -z "$receipts" ] || die 'choose --checks or --verification'
+case "$requested_verify" in ''|pass|fail|n/a) ;; *) die '--verify must be pass, fail, or n/a' ;; esac
+root=$(da_root "$root") || exit 1
 scripts="$root/.agent/scripts"
-for s in comments.sh log.sh status.sh; do
-  [ -f "$scripts/$s" ] || { echo "checkpoint.sh: $scripts/$s is missing — not an initialized node" >&2; exit 1; }
+for helper in review.sh status.sh log.sh verify.sh; do
+  [ -f "$scripts/$helper" ] || die "$scripts/$helper is missing; update this node"
 done
+if [ -z "$policy" ]; then
+  policy=$(sed -n 's/^POLICY=//p' "$scripts/checkpoint.conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//')
+fi
+policy=${policy:-strict}
+case "$policy" in strict|completion) ;; *) die 'policy must be strict or completion' ;; esac
+bash "$scripts/log.sh" --print-entry --tool "$tool" --area "$area" --verify n/a --summary "$summary" "$root" >/dev/null || exit 1
+is_git=0
+git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && is_git=1
+if [ "$is_git" -eq 0 ]; then
+  [ -z "$base" ] || die '--base requires a Git worktree'
+  non_git_inputs=$(sed -n 's/^NON_GIT_INPUT_ROOTS=//p' "$scripts/verify.conf" 2>/dev/null | head -n 1)
+  export DA_NON_GIT_INPUT_ROOTS=".agent${non_git_inputs:+ $non_git_inputs}"
+fi
 
-gate_rc=0
-unchanged=0
-if [ -z "$base" ]; then
-  if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
-    if [ -n "$(git -C "$root" status --porcelain 2>/dev/null)" ]; then
-      base="HEAD"
-    else
-      unchanged=1
-    fi
+state=$(da_state_dir "$root") || exit 1
+lock="$state/checkpoint.lock"
+da_lock "$lock" || { lock=""; die 'another checkpoint or log writer owns this node'; }
+log="$root/.agent/session-log.md"
+[ -f "$log" ] && [ ! -L "$log" ] || die 'session-log.md must be a regular initialized file'
+pending="$state/checkpoint.pending"
+last="$state/checkpoint.last"
+
+hash_file() { git hash-object --no-filters -- "$1"; }
+record_last() {
+  printf '%s\n' "$1" >"$last.tmp.$$" && mv -f -- "$last.tmp.$$" "$last" || die 'could not record checkpoint identity'
+}
+clear_pending() {
+  rm -f -- "$pending/before" "$pending/after" "$pending/fingerprint" "$pending/log"
+  rmdir "$pending" || die 'checkpoint recovery contains unexpected files'
+}
+publish_log() {
+  publish=$(mktemp "$root/.agent/.session-log.checkpoint.XXXXXX") || die 'could not create log replacement'
+  cp -p -- "$log" "$publish" || die 'could not preserve log metadata'
+  cat "$pending/log" >"$publish" || die 'could not prepare log replacement'
+  [ "$(hash_file "$publish")" = "$pending_after" ] || die 'checkpoint recovery log failed its digest check'
+  [ "$(hash_file "$log")" = "$pending_before" ] || die 'session log changed during checkpoint publication'
+  mv -f -- "$publish" "$log" || die 'could not publish session log'
+  publish=""
+}
+if [ -e "$pending" ]; then
+  [ -d "$pending" ] && [ ! -L "$pending" ] || die 'invalid checkpoint recovery directory'
+  for part in before after fingerprint log; do
+    [ -f "$pending/$part" ] && [ ! -L "$pending/$part" ] || die 'incomplete checkpoint recovery record'
+  done
+  pending_before=$(cat "$pending/before")
+  pending_after=$(cat "$pending/after")
+  pending_fingerprint=$(cat "$pending/fingerprint")
+  [ "$(hash_file "$pending/log")" = "$pending_after" ] || die 'invalid checkpoint recovery digest'
+  actual=$(hash_file "$log") || die 'could not read the current log'
+  if [ "$actual" = "$pending_before" ]; then
+    publish_log
+  elif [ "$actual" != "$pending_after" ]; then
+    die 'session log changed after an interrupted checkpoint; inspect checkpoint.pending before retrying'
   fi
+  record_last "$pending_fingerprint"
+  clear_pending
 fi
 
-if [ "$unchanged" -eq 1 ]; then
-  echo "checkpoint.sh: nothing changed — the working tree is clean and no --base was given, so there is no diff to gate and no work to record. A turn that only answered writes no entry. Pass --base <ref> if this session's work is already committed." >&2
-  exit 1
+identity_base=""
+if [ "$is_git" -eq 1 ]; then
+  identity_base=$(git -C "$root" merge-base "${base:-HEAD}" HEAD 2>/dev/null) || die 'base has no commit shared with HEAD'
+fi
+fingerprint=$(da_fingerprint "$root") || die 'could not fingerprint current inputs'
+identity=$(printf '%s\n%s\n' "$fingerprint" "$identity_base" | git hash-object --stdin) || exit 1
+if [ -f "$last" ] && [ "$(cat "$last")" = "$identity" ]; then
+  echo 'checkpoint.sh: unchanged; this content is already recorded'
+  exit 0
+fi
+if [ "$node_only" -eq 1 ] && [ "$is_git" -eq 1 ]; then
+  product_changes=$(git -C "$root" status --porcelain -- . ':(exclude).agent' 2>/dev/null) || die 'could not inspect product changes'
+  [ -z "$product_changes" ] || die '--node-only cannot skip review of product changes'
+fi
+if [ -z "$base" ] && [ "$is_git" -eq 1 ]; then
+  if [ -z "$(git -C "$root" status --porcelain 2>/dev/null)" ]; then
+    [ "$node_only" -eq 1 ] || die 'nothing changed; use --node-only for an explicit ignored-node write or --base for committed work'
+  fi
+  base=HEAD
 fi
 
-if [ -n "$base" ]; then
-  echo "== comment gate (comments.sh $base)"
-  (cd "$root" && bash "$scripts/comments.sh" "$base")
-  gate_rc=$?
-  case "$gate_rc" in
-  0) ;;
-  1)
-    echo "checkpoint.sh: the comment gate BLOCKED — delete or rewrite the comments above, then run checkpoint.sh again. No log entry written." >&2
-    exit 1 ;;
-  *)
-    echo "checkpoint.sh: comments.sh exited $gate_rc — read its message above; pass --base <ref> for a committed change. No log entry written." >&2
-    exit 1 ;;
-  esac
+verify="$requested_verify"
+if [ -n "$checks" ]; then
+  case "$checks" in ,*|*,|*,,*) die 'empty check name' ;; esac
+  IFS=',' read -r -a check_names <<<"$checks"
+  for check_name in "${check_names[@]}"; do
+    result=$(bash "$scripts/verify.sh" run "$check_name" --root "$root")
+    run_rc=$?
+    IFS=$'\t' read -r tag receipt outcome recorded_check command_exit count extra <<<"$result"
+    [ "$tag" = receipt ] && [ -n "$receipt" ] && [ -z "${extra:-}" ] || die "verification did not produce a receipt (exit $run_rc)"
+    receipts="${receipts:+$receipts,}$receipt"
+  done
+fi
+if [ -n "$receipts" ]; then
+  verify=pass
+  case "$receipts" in ,*|*,|*,,*) die 'empty receipt identity' ;; esac
+  IFS=',' read -r -a receipt_ids <<<"$receipts"
+  for receipt in "${receipt_ids[@]}"; do
+    result=$(bash "$scripts/verify.sh" check "$receipt" --root "$root") || die 'verification receipt is missing, invalid, or stale'
+    IFS=$'\t' read -r tag returned_id outcome recorded_check command_exit count extra <<<"$result"
+    [ "$tag" = receipt ] && [ "$returned_id" = "$receipt" ] && [ -z "${extra:-}" ] || die 'invalid verification result record'
+    case "$outcome" in pass) ;; fail|inconclusive) verify=fail ;; *) die 'unknown verification outcome' ;; esac
+    printf 'VERIFY: %s %s exit=%s tests=%s receipt=%s\n' "$recorded_check" "$outcome" "$command_exit" "$count" "$receipt"
+  done
+  if [ "$requested_verify" = pass ] && [ "$verify" != pass ]; then die 'the receipt does not support --verify pass'; fi
+  if [ "$verify" != pass ] && [ "$requested_verify" != fail ]; then
+    die "checks failed or were inconclusive; fix and retry, or record the final failure with --verification $receipts --verify fail"
+  fi
+  [ "$requested_verify" != fail ] || verify=fail
+elif [ "$verify" = pass ]; then
+  die '--verify pass requires --checks or --verification; run verify.sh for execution evidence'
+elif [ -z "$verify" ]; then
+  die 'supply --checks, --verification, or an explicit --verify fail|n/a'
+fi
+
+if [ "$is_git" -eq 1 ] && [ "$node_only" -eq 0 ]; then
+  review_args=(--root "$root")
+  [ -z "$base" ] || review_args+=(--base "$base")
+  bash "$scripts/review.sh" "${review_args[@]}" || die 'diff review blocked or could not run; no log entry written'
 else
-  echo "== comment gate: skipped — not a git checkout, so no diff can be read (pass --base <ref> to gate a committed branch)"
+  echo 'REVIEW: DIFF_UNAVAILABLE node-only or non-Git work; no product diff inspected'
 fi
+status_out=$(mktemp "${TMPDIR:-/tmp}/checkpoint-status.XXXXXX") || exit 1
+status_err=$(mktemp "${TMPDIR:-/tmp}/checkpoint-status.XXXXXX") || exit 1
+bash "$scripts/status.sh" --format tsv "$root" >"$status_out" 2>"$status_err"
+status_rc=$?
+if [ "$status_rc" -ne 0 ] || [ -s "$status_err" ]; then
+  head -c 1000 "$status_err" >&2
+  die 'status check failed to run cleanly; no log entry written'
+fi
+blocked=0
+while IFS=$'\t' read -r severity code path message; do
+  [ -n "$severity" ] || continue
+  case "$severity" in block|advisory) ;; *) die 'status returned an invalid severity' ;; esac
+  [ -n "$code" ] && [ -n "$path" ] && [ -n "$message" ] || die 'status returned an incomplete finding'
+  printf '%s: %s %s %s\n' "$severity" "$code" "$path" "$message"
+  if [ "$severity" = block ] || [ "$policy" = strict ]; then blocked=1; fi
+done <"$status_out"
+[ "$blocked" -eq 0 ] || die 'status findings block completion; no log entry written'
 
-echo "== status check"
-finish_status_stderr=$(mktemp "${TMPDIR:-/tmp}/finish-status-err.XXXXXX")
-finish_status_stdout=$(mktemp "${TMPDIR:-/tmp}/finish-status-out.XXXXXX")
-bash "$scripts/status.sh" "$root" 2>"$finish_status_stderr" | grep -E '^(GROOM|REPAIR|INDEX):' >"$finish_status_stdout"
-status_rc=${PIPESTATUS[0]}
-flags=$(cat "$finish_status_stdout")
-if [ "$status_rc" -ne 0 ] || [ -s "$finish_status_stderr" ]; then
-  stderr_line=$(tr '\n' ' ' <"$finish_status_stderr" | cut -c1-120)
-  [ -n "$stderr_line" ] || stderr_line="none"
-  echo "checkpoint.sh: status check failed to run cleanly (status.sh rc=$status_rc, stderr: $stderr_line). No log entry written." >&2
-  exit 1
-fi
-if [ -n "$flags" ]; then
-  printf '%s\n' "$flags"
-  echo "checkpoint.sh: the flags above are this session's to handle — fix them, then run checkpoint.sh again. No log entry written." >&2
-  exit 1
-fi
-echo "clean"
-
-indexes_line=$(grep -m1 '^  indexes:' "$root/.agent/purpose.md" 2>/dev/null)
-indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
-[ -n "$indexes" ] || indexes=manual
+indexes=$(sed -n 's/^  indexes:[[:space:]]*\([a-z]*\).*/\1/p' "$root/.agent/purpose.md" | head -n 1)
 if [ "$indexes" = generated ]; then
-  echo "== cache refresh"
-  if [ ! -f "$scripts/index.sh" ]; then
-    echo "checkpoint.sh: indexes: generated but .agent/scripts/index.sh is not installed — run node.sh update to obtain it; read .agent/rules/ and .agent/docs/ directly meanwhile." >&2
+  echo '== cache refresh'
+  if [ -f "$scripts/index.sh" ]; then
+    bash "$scripts/index.sh" ensure --root "$root" >/dev/null || printf '%s\n' 'checkpoint.sh: cache refresh failed; read .agent/rules/ and .agent/docs/ directly' >&2
   else
-    finish_index_stderr=$(mktemp "${TMPDIR:-/tmp}/finish-index-err.XXXXXX")
-    bash "$scripts/index.sh" ensure --root "$root" >/dev/null 2>"$finish_index_stderr"
-    index_rc=$?
-    if [ "$index_rc" -ne 0 ]; then
-      cat "$finish_index_stderr" >&2
-      echo "checkpoint.sh: index refresh failed — the cache no longer reflects this session's writes; read .agent/rules/ and .agent/docs/ directly until the next successful ensure." >&2
-    fi
+    printf '%s\n' 'checkpoint.sh: index.sh is missing; read .agent/rules/ and .agent/docs/ directly' >&2
   fi
 fi
 
-echo "== session log"
-bash "$scripts/log.sh" "${logargs[@]}" "$root" || exit 1
-exit 0
+entry=$(bash "$scripts/log.sh" --print-entry --tool "$tool" --area "$area" --verify "$verify" --summary "$summary" "$root") || exit 1
+if [ -n "$receipts" ]; then
+  for receipt in "${receipt_ids[@]}"; do
+    bash "$scripts/verify.sh" check "$receipt" --root "$root" >/dev/null || die 'inputs changed before logging; run verification again'
+  done
+fi
+fingerprint=$(da_fingerprint "$root") || die 'could not fingerprint the completed change'
+identity=$(printf '%s\n%s\n' "$fingerprint" "$identity_base" | git hash-object --stdin) || exit 1
+prepare=$(mktemp -d "$state/checkpoint.prepare.XXXXXX") || die 'could not create checkpoint recovery record'
+pending_before=$(hash_file "$log") || exit 1
+{ cat "$log" && printf '%s\n' "$entry"; } >"$prepare/log" || die 'could not prepare checkpoint log'
+pending_after=$(hash_file "$prepare/log") || exit 1
+printf '%s\n' "$pending_before" >"$prepare/before" || exit 1
+printf '%s\n' "$pending_after" >"$prepare/after" || exit 1
+printf '%s\n' "$identity" >"$prepare/fingerprint" || exit 1
+mv -- "$prepare" "$pending" || die 'could not publish checkpoint recovery record'
+prepare=""
+publish_log
+record_last "$identity"
+clear_pending
+printf 'checkpoint.sh: recorded verify=%s\n' "$verify"

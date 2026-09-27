@@ -1,49 +1,43 @@
 # Script documentation
 
-One file per script under `scripts/`. These describe what each script does, what it reports, and how a node tunes it.
+These docs remain in the source repository. Nodes receive managed helpers, starter configuration, and a project-owned check driver. `node.sh` defines the installed set in `SHIPPED_SCRIPTS` and `SHIPPED_CONFIGS`.
 
-**These files stay in the source repo.** `node.sh` copies executables and starter confs into a node, never this folder — a node's `.agent/scripts/` holds the nine canonical scripts and their confs, and nothing else (`scripts/node.sh`'s copy loop names all nine by file). That is the point: a script that lands in someone's repository carries the code and its usage line, not this repo's design notes.
+| Script | Role | Documentation |
+| --- | --- | --- |
+| `status.sh` | Node findings and context loading | [status.md](status.md) |
+| `log.sh` | Entry formatting and direct writing | [log.md](log.md) |
+| `memory.sh` | Canonical lookup and fact writing | [memory.md](memory.md) |
+| `docs.sh` | Doc routing and catalog updates | [docs.md](docs.md) |
+| `links.sh` | On-demand link audit | [links.md](links.md) |
+| `comments.sh` | Diff comment gate | [comments.md](comments.md) |
+| `review.sh` | Comment gate plus catalog and coverage candidates | [review.md](review.md) |
+| `verify.sh` | Project check execution and receipts | [verify.md](verify.md) |
+| `capture.sh` | Optional lifecycle snapshot prototype | [capture.md](capture.md) |
+| `runtime.sh` | Internal state, fingerprint, and lock functions | [runtime.md](runtime.md) |
+| `checkpoint.sh` | Completion orchestration and retry-safe logging | [checkpoint.md](checkpoint.md) |
+| `index.sh` | Generated context cache | [index.md](index.md) |
+| `learn.sh` | Learned-record lookup and versioned writing | [learn.md](learn.md) |
+| `checks.sh` | Project-owned check driver | [v6.3-trial.md](v6.3-trial.md) |
+| `node.sh` | Source-repository installer and updater | [node.md](node.md) |
+| `test.sh` | Source-repository regression suite | [test.md](test.md) |
 
-So the split is:
+The thirteen managed helpers are replaced atomically on update. Existing configurations and `checks.sh` are preserved. `node.sh`, `test.sh`, this documentation, and evaluation files are not installed into nodes.
 
-| Where | What it holds |
-|---|---|
-| the script itself | a purpose line, `Usage:`, and comments that state a constraint the code cannot express |
-| the starter conf beside it, in the node | every tunable key, its default, and what changing it does |
-| here | what the script is for, what it reports, and why it is built the way it is |
+## Arguments and output
 
-A node needing more than its conf explains reads these files upstream.
+Read each helper's `--help`. Writers generally accept a trailing root. `index.sh`, `verify.sh`, and `review.sh` use `--root`. `comments.sh` accepts a Git base and runs inside the project. `runtime.sh` is a sourced library.
 
-| Script | Ships into a node | Doc |
-|---|---|---|
-| `status.sh` | yes | [status.md](status.md) |
-| `log.sh` | yes | [log.md](log.md) |
-| `memory.sh` | yes | [memory.md](memory.md) |
-| `docs.sh` | yes | [docs.md](docs.md) |
-| `links.sh` | yes | [links.md](links.md) |
-| `comments.sh` | yes | [comments.md](comments.md) |
-| `checkpoint.sh` | yes | [checkpoint.md](checkpoint.md) |
-| `index.sh` | yes | [index.md](index.md) |
-| `learn.sh` | yes | [learn.md](learn.md) |
-| `node.sh` | no — run from this repo | [node.md](node.md) |
-| `test.sh` | no — this repo's gate | [test.md](test.md) |
+Verification emits a receipt record on stdout and bounded check output on stderr. Status defaults to human text. `--format tsv` emits actionable findings with stable codes and severity. Configurations are plain data and are never executed.
 
-## Arguments
+## Exit meanings
 
-Seven of the nine canonical scripts end with an optional `[root]` — the project root holding `.agent/`, defaulting to `.`. `comments.sh` does not: its one argument is a git base ref. It audits a diff in the repository it is run from rather than a node's tree, so there is no root for it to take. A `[root]` habit carried over to it gets `base ref '.' not found` and a non-zero exit, not a silent wrong answer. `index.sh` is the second exception, with its own shape: an optional `--root <path>` flag plus an optional `--budget <bytes>` flag, not a trailing positional and not `comments.sh`'s base ref.
+| Helper | Result |
+| --- | --- |
+| `status.sh`, `links.sh` | 0 means inspection ran, even when it found issues |
+| `comments.sh`, `review.sh` | 0 means completed without a blocking comment, 1 blocks, 2 means inspection failed |
+| `verify.sh run` | 0 passes, 1 fails or is inconclusive, 2 is an invocation error, 124 times out |
+| `verify.sh check` | 0 means the receipt is valid, even when it records failure |
+| `checkpoint.sh` | 0 means recorded or already recorded, 1 means no entry was written |
+| `index.sh` | 0 succeeds, 1 reports stale/fallback, 2 rejects invocation |
 
-## Exit status
-
-Each script's status answers a question about that script's own run. The codes are read per script and never pooled across them.
-
-| Script | 0 | 1 | 2 |
-|---|---|---|---|
-| `status.sh`, `links.sh` | ran, whatever it found | usage error — a root holding no `.agent/` | — |
-| `log.sh`, `memory.sh`, `docs.sh`, `node.sh` | wrote what was asked | refused or could not write it | — |
-| `comments.sh` | no `BLOCK:` finding | a `BLOCK:` finding | could not run — bad base ref, no merge base, an uncompilable conf regex, or a base that describes an empty diff |
-| `checkpoint.sh` | gate clean or skipped, no flag standing, entry written | stopped — the gate blocked or could not run, a flag stands, or `log.sh` refused; nothing written | — |
-| `index.sh` | `ensure`: HIT or BUILT; `check`: FRESH | not fresh — `ensure` fell back to the canonical sources named on stderr; `check` reports STALE | usage error — bad flags, a budget out of range, or a root with no `.agent/` |
-
-`comments.sh` is the only gate, and the only script whose status reports a verdict on someone else's work rather than on its own health (`checkpoint.sh` forwards that verdict as its own stop, and adds the status check's flags to it) — "the answer is no" and "I could not ask the question" must not arrive as the same number, or a broken conf reads as a clean diff. `index.sh` also uses all three codes, but for a different split: 1 marks a cache that fell out of date, 2 a usage error, and neither is a verdict on someone else's work.
-
-The reporting scripts put no finding in the exit status at all. A caller that branched on `status.sh` would be reading grooming advice as a build failure — the binding instruction to act on flags lives in the entry point, not in a number.
+Writers have their own refusal codes. Their linked docs define version conflicts, duplicate records, and other cases. A passing command exit alone does not establish that a behavior was tested.

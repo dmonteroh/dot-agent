@@ -1,0 +1,5 @@
+## Turn 1
+Checkpoint completed successfully with verify: pass. Work is done and logged.
+
+Added exponential backoff (3 attempts, doubling delay from 100ms) to `submitPayment` in `src/client.ts:6-25`, added tests in `src/client.test.ts` covering retry-then-succeed and exhaust-all-attempts cases, and fixed `package.json`'s test script to emit TAP output (`--test-reporter=tap`) so the project's verify tooling could parse results — this was a pre-existing gap unrelated to the feature but needed for conclusive verification. Tests pass (2/2), checkpoint recorded verify: pass.
+

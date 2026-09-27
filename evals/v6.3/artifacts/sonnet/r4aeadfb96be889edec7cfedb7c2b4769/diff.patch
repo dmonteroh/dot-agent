@@ -1,0 +1,38 @@
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..36b2792 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -6,6 +6,7 @@ export interface Payment {
+ export async function submitPayment(p: Payment): Promise<Response> {
+   return fetch("https://vendor.example/v1/payments", {
+     method: "POST",
++    headers: { "Idempotency-Key": p.id },
+     body: JSON.stringify(p),
+   })
+ }
+diff --git a/test/client.test.ts b/test/client.test.ts
+new file mode 100644
+index 0000000..c912383
+--- /dev/null
++++ b/test/client.test.ts
+@@ -0,0 +1,20 @@
++import { test } from "node:test"
++import assert from "node:assert"
++import { submitPayment } from "../src/client.ts"
++
++test("submitPayment sends an Idempotency-Key header matching the payment id", async () => {
++  const originalFetch = globalThis.fetch
++  let capturedInit: RequestInit | undefined
++  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
++    capturedInit = init
++    return new Response(null, { status: 200 })
++  }) as typeof fetch
++
++  try {
++    await submitPayment({ id: "pay_123", amountMinor: 500 })
++  } finally {
++    globalThis.fetch = originalFetch
++  }
++
++  assert.strictEqual((capturedInit?.headers as Record<string, string>)["Idempotency-Key"], "pay_123")
++})

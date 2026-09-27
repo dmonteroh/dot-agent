@@ -51,11 +51,12 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
   codex-thread-id <stdout-path>
   extract-claude-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
   extract-codex-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
-  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM
-  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM
+  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM CH
+  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM CH
   eval-lookup                            env: EVALID, SPEC
   fixture-name                           stdin: eval entry JSON
   arm-variable                           env: SPEC   stdin: eval entry JSON
+  install-contract <source> <target>     preserve fixture Project guardrails
   split-turns                            stdin: eval entry JSON
   arm-map-update <path> <runid> <arm>
   run-meta-init                          env: RUNID EVALID FIXTURE CORPUS_REF AGENT
@@ -63,6 +64,7 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
                                                AGENT_VERSION AGENT_VERSION_OUTPUT MODEL
                                                EFFORT TRACE_FORMAT TURNS ARM_VARIABLE
                                                TIMEOUT_S REPEATS_PER_CELL STARTED META_PATH
+                                               CONTRACT_SHA256
   run-meta-set-fixture-base              env: META_PATH, FIXTURE_BASE
   agent-usage <stdout-path> <trace-format>  trace-format: claude-stream-json | codex-json
                                              -> stdout: JSON usage totals (null fields, not 0,
@@ -699,16 +701,17 @@ def _arm_variable_locks(av):
 
     `corpus` is the one case that does *not* lock the corpus ref, because the
     corpus ref is what it varies. Every other value — `agent`, `node-mode`,
-    and anything this function has never heard of, including a typo — locks
+    `contract`, and anything this function has never heard of — locks
     the corpus ref by default. That default is the fail-closed case: an
     unrecognized arm_variable still gets a lock and still refuses a run that
     drifts it, rather than silently comparing two cells that were never held
     to the same design. `node-mode` additionally locks agent and model: it is
     a paired control on the node's index mode alone, so all three (agent,
     model, and corpus ref) have to hold still for the comparison to be
-    attributable to node-mode and nothing else.
+    attributable to node-mode and nothing else. `contract` holds the same
+    agent and model fixed while a separate lock holds harness and index mode.
     """
-    lock_agent_model = av in ("corpus", "node-mode")
+    lock_agent_model = av in ("corpus", "node-mode", "contract")
     lock_corpus_ref = av != "corpus"
     return lock_agent_model, lock_corpus_ref
 
@@ -722,12 +725,15 @@ def cmd_lock_run_config_create(args):
         "locked_agent": os.environ["AG"] if lock_agent_model else None,
         "locked_model": os.environ["MD"] if lock_agent_model else None,
         "locked_corpus_ref": os.environ["CR"] if lock_corpus_ref else None,
+        "locked_harness": os.environ.get("HM") if av == "contract" else None,
+        "locked_index_mode": os.environ.get("IM") if av == "contract" else None,
         "repeats_per_cell": int(os.environ["RP"]),
         "arms": {
             os.environ["AM"]: {"agent": os.environ["AG"], "corpus_ref": os.environ["CR"],
                                 "model": os.environ["MD"], "effort": os.environ["AE"] or None,
                                 "harness": os.environ.get("HM") or "node",
-                                "index_mode": os.environ.get("IM") or "manual"}
+                                "index_mode": os.environ.get("IM") or "manual",
+                                "contract_sha256": os.environ.get("CH") or "none"}
         },
         "resolved": {
             os.environ["AG"]: {"bin": os.environ["AB"] or None,
@@ -767,6 +773,11 @@ def cmd_lock_run_config_update(args):
     if lock_corpus_ref:
         if os.environ["CR"] != cfg["locked_corpus_ref"]:
             errs.append("corpus-ref (target revision) %r != recorded %r for a %s-variable comparison" % (os.environ["CR"], cfg["locked_corpus_ref"], av))
+    if av == "contract":
+        if os.environ.get("HM") != cfg.get("locked_harness"):
+            errs.append("harness drifted in a contract-variable comparison")
+        if os.environ.get("IM") != cfg.get("locked_index_mode"):
+            errs.append("index mode drifted in a contract-variable comparison")
     resolved = cfg.setdefault("resolved", {})
     ag = os.environ["AG"]
     arms = cfg.setdefault("arms", {})
@@ -774,7 +785,8 @@ def cmd_lock_run_config_update(args):
     arm_entry = {"agent": ag, "corpus_ref": os.environ["CR"],
                  "model": os.environ["MD"], "effort": os.environ["AE"] or None,
                  "harness": os.environ.get("HM") or "node",
-                 "index_mode": os.environ.get("IM") or "manual"}
+                 "index_mode": os.environ.get("IM") or "manual",
+                 "contract_sha256": os.environ.get("CH") or "none"}
     prior_arm = arms.get(arm)
     if prior_arm is not None and prior_arm != arm_entry:
         errs.append("arm %r configuration drifted: %r != recorded %r" % (arm, arm_entry, prior_arm))
@@ -823,6 +835,23 @@ def cmd_arm_variable(args):
     e = json.load(sys.stdin)
     default = json.load(open(os.environ["SPEC"], encoding="utf-8"))["arms"]["variable"]
     print(e.get("arm_variable") or default)
+    return 0
+
+
+def cmd_install_contract(args):
+    source, target = args
+    with open(source, encoding="utf-8") as f:
+        variant = f.read().rstrip() + "\n"
+    with open(target, encoding="utf-8") as f:
+        original = f.read()
+    marker = "## Project guardrails\n"
+    if marker not in original or marker in variant or "## Quality bar\n" in variant:
+        die("contract variant must omit Project guardrails and Quality bar")
+    if not variant.startswith("# ") or len(variant.split()) < 50:
+        die("contract variant needs a title and substantive text")
+    guardrails = original[original.index(marker):]
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(variant.rstrip() + "\n\n" + guardrails)
     return 0
 
 
@@ -894,6 +923,7 @@ def cmd_run_meta_init(args):
         "trace_format": os.environ["TRACE_FORMAT"],
         "turns": int(os.environ["TURNS"]),
         "arm_variable": os.environ["ARM_VARIABLE"],
+        "contract_sha256": os.environ.get("CONTRACT_SHA256") or "none",
         "timeout_s": int(os.environ["TIMEOUT_S"]),
         "repeats_per_cell": int(os.environ["REPEATS_PER_CELL"]),
         "started": os.environ["STARTED"],
@@ -1040,6 +1070,7 @@ COMMANDS = {
     "eval-lookup": cmd_eval_lookup,
     "fixture-name": cmd_fixture_name,
     "arm-variable": cmd_arm_variable,
+    "install-contract": cmd_install_contract,
     "split-turns": cmd_split_turns,
     "arm-map-update": cmd_arm_map_update,
     "run-meta-init": cmd_run_meta_init,

@@ -17,11 +17,12 @@ PAYLOAD_MAX_BYTES=30000
 
 root="."
 load=0
-for arg in "$@"; do
-  case "$arg" in
+format=text
+while [ $# -gt 0 ]; do
+  case "$1" in
   -h | --help)
     cat <<'EOF'
-Usage: status.sh [--load] [root]
+Usage: status.sh [--load] [--format tsv] [root]
 
 Prints the recent session-log entries, then one line per finding: GROOM: (a
 file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
@@ -40,12 +41,49 @@ content written.
 
 root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
 root holding no .agent/ is a usage error and exits 1.
+
+--format tsv prints findings only as severity<TAB>code<TAB>path<TAB>message.
+Tabs, carriage returns, and newlines in fields are escaped. It cannot be
+combined with --load.
 EOF
     exit 0 ;;
   --load) load=1 ;;
-  *) root="$arg" ;;
+  --format)
+    if [ $# -lt 2 ] || [ "$2" != tsv ]; then
+      echo "status.sh: --format requires tsv" >&2
+      exit 1
+    fi
+    format=tsv
+    shift ;;
+  --*)
+    echo "status.sh: unknown flag: $1" >&2
+    exit 1 ;;
+  *) root="$1" ;;
   esac
+  shift
 done
+
+if [ "$format" = tsv ] && [ "$load" -eq 1 ]; then
+  echo "status.sh: --format tsv cannot be combined with --load" >&2
+  exit 1
+fi
+
+escape_tsv() {
+  REPLY=$1
+  REPLY=${REPLY//$'\t'/\\t}
+  REPLY=${REPLY//$'\r'/\\r}
+  REPLY=${REPLY//$'\n'/\\n}
+}
+
+finding() { # severity code path message default-text
+  if [ "$format" = tsv ]; then
+    escape_tsv "$3"; finding_path=$REPLY
+    escape_tsv "$4"; finding_message=$REPLY
+    printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$finding_path" "$finding_message"
+  else
+    printf '%s\n' "$5"
+  fi
+}
 
 agent="$root/.agent"
 if [ ! -d "$agent" ]; then
@@ -55,14 +93,15 @@ fi
 
 conf="$agent/scripts/status.conf"
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
-conf_repairs=""
+conf_repair_messages=()
 conf_num() { # $1: key name — the current value is its shipped default
   local v
   v=$(conf_get "$1")
   [[ -n "$v" ]] || return 0
   case "$v" in
   *[!0-9]*)
-    conf_repairs="${conf_repairs}REPAIR: status.conf $1=$v is not a whole number — the default ${!1} is in use; fix the line, which takes digits only (no inline comment, no units)"$'\n'
+    conf_message="$1=$v is not a whole number — the default ${!1} is in use; fix the line, which takes digits only (no inline comment, no units)"
+    conf_repair_messages+=("$conf_message")
     return 0 ;;
   esac
   printf -v "$1" '%s' "$v"
@@ -118,29 +157,35 @@ learned_dir_active() {
   [[ -n "$(find "$learned_dir" -type f -name '*.md' -print -quit 2>/dev/null)" ]]
 }
 
-if [[ -s "$log" ]]; then
+if [[ "$format" == text && -s "$log" ]]; then
   recent=$(grep '^- \[' "$log" | tail -n "$TAIL_LINES")
   if [[ -n "$recent" ]]; then
     printf '%s\n\n' "$recent"
   fi
 fi
 
-[[ -n "$conf_repairs" ]] && printf '%s' "$conf_repairs"
+if [[ "${#conf_repair_messages[@]}" -gt 0 ]]; then
+  for conf_i in "${!conf_repair_messages[@]}"; do
+    conf_message=${conf_repair_messages[$conf_i]}
+    finding block STATUS_CONFIG_INVALID status.conf "$conf_message" \
+      "REPAIR: status.conf $conf_message"
+  done
+fi
 
-[[ -s "$memory" ]] || echo "REPAIR: memory.md missing/empty"
-[[ -s "$log" ]] || echo "REPAIR: session-log.md missing/empty"
-[[ -s "$contract" ]] || echo "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session"
+[[ -s "$memory" ]] || finding block CANONICAL_MEMORY_MISSING memory.md "missing/empty" "REPAIR: memory.md missing/empty"
+[[ -s "$log" ]] || finding block CANONICAL_LOG_MISSING session-log.md "missing/empty" "REPAIR: session-log.md missing/empty"
+[[ -s "$contract" ]] || finding block CANONICAL_CONTRACT_MISSING rules/contract.md "missing/empty — restore it, the entry point loads it every session" "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session"
 if ! learned_dir_active && [[ ! -s "$learned" ]]; then
-  echo "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session"
+  finding block CANONICAL_LEARNED_MISSING rules/learned/ "missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session"
 fi
 if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
-  echo "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
+  finding block MANIFEST_INVALID purpose.md "missing dot-agent frontmatter — restore manifest" "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
 
 migration_target_line=$(grep -m1 '^  migration_target:' "$purpose" 2>/dev/null)
 if [[ -n "$migration_target_line" ]]; then
   migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
-  echo "REPAIR: purpose.md has migration_target \"$migration_target\" pending — run node.sh finalize to stamp version $migration_target and clear migration_target"
+  finding block MIGRATION_PENDING purpose.md "has migration_target \"$migration_target\" pending — run node.sh finalize to stamp version $migration_target and clear migration_target" "REPAIR: purpose.md has migration_target \"$migration_target\" pending — run node.sh finalize to stamp version $migration_target and clear migration_target"
 fi
 
 if [[ -s "$contract" ]]; then
@@ -148,12 +193,12 @@ if [[ -s "$contract" ]]; then
                     inb && /^## / { exit }
                     inb { print }' "$contract")
   if printf '%s\n' "$guardrails" | grep -qE '^- .*<[^>]* [^>]*>'; then
-    echo "REPAIR: contract.md Project guardrails still holds template placeholders — fill them with this project's exact commands"
+    finding block GUARDRAILS_PLACEHOLDER rules/contract.md "Project guardrails still holds template placeholders — fill them with this project's exact commands" "REPAIR: contract.md Project guardrails still holds template placeholders — fill them with this project's exact commands"
   fi
   if grep -q '^## Quality bar' "$contract"; then
-    echo "REPAIR: contract.md still contains ## Quality bar — split it into rules/quality-bar.md so it loads on demand, not every session"
+    finding block QUALITY_BAR_UNSPLIT rules/contract.md "still contains ## Quality bar — split it into rules/quality-bar.md so it loads on demand, not every session" "REPAIR: contract.md still contains ## Quality bar — split it into rules/quality-bar.md so it loads on demand, not every session"
   elif [[ ! -s "$qualitybar" ]]; then
-    echo "REPAIR: rules/quality-bar.md missing — the verifier rubric was never split out of the preset"
+    finding block QUALITY_BAR_MISSING rules/quality-bar.md "missing — the verifier rubric was never split out of the preset" "REPAIR: rules/quality-bar.md missing — the verifier rubric was never split out of the preset"
   fi
 fi
 
@@ -168,7 +213,8 @@ if [[ "${#entrypoints[@]}" -gt 1 ]]; then
   first="${entrypoints[0]}"
   for other in "${entrypoints[@]:1}"; do
     if ! cmp -s "$first" "$other"; then
-      echo "REPAIR: ${other#"$root"/} differs from ${first#"$root"/} — entry points must stay identical; mirror the edit"
+      other_rel=${other#"$root"/}; first_rel=${first#"$root"/}
+      finding block ENTRYPOINT_DRIFT "$other_rel" "differs from $first_rel — entry points must stay identical; mirror the edit" "REPAIR: $other_rel differs from $first_rel — entry points must stay identical; mirror the edit"
     fi
   done
 fi
@@ -185,17 +231,19 @@ for ep in "${entrypoints[@]-}"; do
   [[ -n "$ep" ]] || continue
   extra=$(first_extra_heading "$ep")
   if [[ -n "$extra" ]]; then
-    echo "GROOM: ${ep#"$root"/} carries the section \"$extra\" — an entry point is its title and the load path, nothing else: move that content to rules/contract.md's Project guardrails, purpose.md, or a routed doc, and mirror the removal to every other entry point"
+    ep_rel=${ep#"$root"/}
+    finding block ENTRYPOINT_SECTION "$ep_rel" "carries the section \"$extra\" — an entry point is its title and the load path, nothing else: move that content to rules/contract.md's Project guardrails, purpose.md, or a routed doc, and mirror the removal to every other entry point" "GROOM: $ep_rel carries the section \"$extra\" — an entry point is its title and the load path, nothing else: move that content to rules/contract.md's Project guardrails, purpose.md, or a routed doc, and mirror the removal to every other entry point"
   fi
   if [[ "$(body_words "$ep")" -gt "$ENTRYPOINT_MAX_WORDS" ]]; then
-    echo "GROOM: ${ep#"$root"/} > $ENTRYPOINT_MAX_WORDS words — an entry point is wiring only: move project scope, constraints, and architecture into purpose.md or docs/, keep the load path, and mirror the trim to every other entry point"
+    ep_rel=${ep#"$root"/}
+    finding advisory ENTRYPOINT_OVERSIZE "$ep_rel" "> $ENTRYPOINT_MAX_WORDS words — an entry point is wiring only: move project scope, constraints, and architecture into purpose.md or docs/, keep the load path, and mirror the trim to every other entry point" "GROOM: $ep_rel > $ENTRYPOINT_MAX_WORDS words — an entry point is wiring only: move project scope, constraints, and architecture into purpose.md or docs/, keep the load path, and mirror the trim to every other entry point"
   fi
 done
 
 if [[ -s "$log" ]]; then
   entries=$(grep -c '^- \[' "$log")
   if [[ "$entries" -gt "$LOG_MAX_ENTRIES" || "$(words "$log")" -gt "$LOG_MAX_WORDS" ]]; then
-    echo "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))"
+    finding advisory LOG_OVERSIZE session-log.md "> $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))" "GROOM: session-log.md > $LOG_MAX_ENTRIES entries or > $LOG_MAX_WORDS words — move the oldest entries to archive/session-log-archive.md, keep the newest ~$((LOG_MAX_ENTRIES / 2))"
   fi
   oversized=$(awk -v max="$LOG_ENTRY_MAX_WORDS" '
     /^- \[/ { if (inentry && cnt > max) { n++; if (cnt > big) big = cnt }
@@ -206,7 +254,7 @@ if [[ -s "$log" ]]; then
   over_n=${oversized% *}
   over_big=${oversized#* }
   if [[ "$over_n" -gt 0 ]]; then
-    echo "GROOM: session-log.md entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh"
+    finding advisory LOG_ENTRY_OVERSIZE session-log.md "entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh" "GROOM: session-log.md entries over $LOG_ENTRY_MAX_WORDS words: $over_n (largest $over_big; the header format is ≤25) — distill them to format, route surviving detail to memory/ or docs/, write new entries via log.sh"
   fi
 fi
 keep_tokens() {
@@ -232,18 +280,19 @@ if [[ -d "$memdir" ]]; then
     [[ -e "$f" ]] || continue
     if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
       keep=$(keep_tokens "$f")
-      echo "GROOM: memory/$(basename "$f") > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}"
+      memory_rel="memory/$(basename "$f")"
+      finding advisory MEMORY_RECORD_OVERSIZE "$memory_rel" "> $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}" "GROOM: $memory_rel > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}"
     fi
   done
 fi
 if [[ -s "$memory" ]]; then
   mem_entries=$(grep -c '^- \[' "$memory")
   if [[ "$mem_entries" -gt "$MEMORY_MAX_ENTRIES" ]]; then
-    echo "GROOM: memory.md > $MEMORY_MAX_ENTRIES index entries — review for stale or superseded lines; move retired fact files to archive/ and drop their index lines, raise the threshold if all are live"
+    finding advisory MEMORY_INDEX_OVERSIZE memory.md "> $MEMORY_MAX_ENTRIES index entries — review for stale or superseded lines; move retired fact files to archive/ and drop their index lines, raise the threshold if all are live" "GROOM: memory.md > $MEMORY_MAX_ENTRIES index entries — review for stale or superseded lines; move retired fact files to archive/ and drop their index lines, raise the threshold if all are live"
   fi
 fi
 if [[ -e "$memdir/legacy.md" ]]; then
-  echo "GROOM: memory/legacy.md exists — split legacy.md into fact files"
+  finding block MEMORY_LEGACY_UNSPLIT memory/legacy.md "exists — split legacy.md into fact files" "GROOM: memory/legacy.md exists — split legacy.md into fact files"
 fi
 if learned_dir_active; then
   learned_rules=0
@@ -253,15 +302,15 @@ if learned_dir_active; then
     learned_words=$((learned_words + $(body_words "$learned_rec")))
   done < <(find "$learned_dir" -type f -name '*.md')
   if [[ "$learned_rules" -gt "$LEARNED_MAX_RULES" ]]; then
-    echo "GROOM: rules/learned/ > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
+    finding advisory LEARNED_RULES_OVERSIZE rules/learned/ "> $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)" "GROOM: rules/learned/ > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
   elif [[ "$learned_words" -gt "$LEARNED_MAX_WORDS" ]]; then
-    echo "GROOM: rules/learned/ > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
+    finding advisory LEARNED_WORDS_OVERSIZE rules/learned/ "> $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer" "GROOM: rules/learned/ > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
   fi
 elif [[ -s "$learned" ]]; then
   if [[ "$(grep -c '^- ' "$learned")" -gt "$LEARNED_MAX_RULES" ]]; then
-    echo "GROOM: learned.md > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
+    finding advisory LEARNED_RULES_OVERSIZE rules/learned.md "> $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)" "GROOM: learned.md > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
   elif [[ "$(body_words "$learned")" -gt "$LEARNED_MAX_WORDS" ]]; then
-    echo "GROOM: learned.md > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
+    finding advisory LEARNED_WORDS_OVERSIZE rules/learned.md "> $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer" "GROOM: learned.md > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
   fi
 fi
 if [[ -d "$docs" ]]; then
@@ -271,7 +320,7 @@ if [[ -d "$docs" ]]; then
     [[ "$rel" == "architecture.md" ]] && continue
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
-      echo "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
+      finding advisory DOC_OVERSIZE "docs/$rel" "> $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry" "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
     fi
   done
 fi
@@ -286,6 +335,34 @@ entry_block() { # the doc's routing entry in architecture.md ($1 arch, $2 rel)
     inb { print }
   ' "$1"
 }
+doc_headings() { # level-two ATX headings outside Markdown fenced code blocks
+  awk '
+    function fence_run(s, ch,    i) {
+      for (i = 1; i <= length(s) && substr(s, i, 1) == ch; i++) { }
+      return i - 1
+    }
+    {
+      line = $0
+      indent = 0
+      while (indent < 3 && substr(line, 1, 1) == " ") {
+        line = substr(line, 2)
+        indent++
+      }
+      if (fenced) {
+        run = fence_run(line, fence_char)
+        rest = substr(line, run + 1)
+        if (run >= fence_len && rest ~ /^[ \t]*$/) fenced = 0
+        next
+      }
+      fence_char = substr(line, 1, 1)
+      if (fence_char == "`" || fence_char == "~") {
+        fence_len = fence_run(line, fence_char)
+        if (fence_len >= 3) { fenced = 1; next }
+      }
+      if (line ~ /^## /) print substr(line, 4)
+    }
+  ' "$1"
+}
 if [[ -d "$docs" ]]; then
   for doc in "$docs"/*.md "$docs"/*/*.md; do
     [[ -e "$doc" ]] || continue
@@ -293,29 +370,29 @@ if [[ -d "$docs" ]]; then
     [[ "$rel" == "architecture.md" ]] && continue
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
     if ! head -n 5 "$doc" | grep -qF "Read when:"; then
-      echo "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
+      finding block DOC_HOOK_MISSING "docs/$rel" "missing its \"Read when:\" header — add a one-line routing hint" "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
     fi
     if [[ -s "$arch" ]]; then
       entry_count=$(grep -cxF "### \`$rel\`" "$arch")
       if ! grep -qF "### \`$rel\`" "$arch"; then
-        echo "INDEX: docs/$rel not in the architecture.md routing table — add an entry from its \"Read when:\" header"
+        finding block DOC_ROUTE_MISSING "docs/$rel" "not in the architecture.md routing table — add an entry from its \"Read when:\" header" "INDEX: docs/$rel not in the architecture.md routing table — add an entry from its \"Read when:\" header"
       elif [[ "$entry_count" -gt 1 ]]; then
-        echo "INDEX: docs/$rel has $entry_count entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest"
+        finding block DOC_ROUTE_DUPLICATE "docs/$rel" "has $entry_count entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest" "INDEX: docs/$rel has $entry_count entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest"
       else
         block=$(entry_block "$arch" "$rel")
         entry_hook=$(printf '%s\n' "$block" | sed -n 's/^- \*\*Read when:\*\* //p' | head -n 1)
         own_hook=$(doc_hook "$doc")
         if [[ -n "$own_hook" && "$entry_hook" != "$own_hook" ]]; then
-          echo "INDEX: docs/$rel hook disagrees with its architecture.md entry — refresh both to the same text"
+          finding block DOC_HOOK_MISMATCH "docs/$rel" "hook disagrees with its architecture.md entry — refresh both to the same text" "INDEX: docs/$rel hook disagrees with its architecture.md entry — refresh both to the same text"
         fi
         sections=$(printf '%s\n' "$block" | sed -n 's/^- \*\*Sections:\*\* //p' | head -n 1)
         missing=""
         while IFS= read -r heading; do
           [[ -n "$heading" ]] || continue
           printf '%s' "$sections" | grep -qF -- "$heading" || missing="$missing · $heading"
-        done < <(sed -n 's/^## //p' "$doc")
+        done < <(doc_headings "$doc")
         if [[ -n "$missing" ]]; then
-          echo "INDEX: docs/$rel sections missing from its architecture.md entry:${missing# }"
+          finding block DOC_SECTIONS_MISSING "docs/$rel" "sections missing from its architecture.md entry:${missing# }" "INDEX: docs/$rel sections missing from its architecture.md entry:${missing# }"
         fi
       fi
     fi
@@ -328,7 +405,7 @@ if [[ -d "$docs" && ! -s "$arch" ]]; then
     routing_candidate_rel=${routing_candidate#"$docs"/}
     [[ "$routing_candidate_rel" == "architecture.md" ]] && continue
     [[ "$routing_candidate_rel" == references/* || "$routing_candidate_rel" == */references/* ]] && continue
-    echo "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents - recreate the table with scripts/docs.sh new --name <placeholder> --read-when \"...\" using a name NOT already used in docs/ (it refuses to overwrite an existing doc; delete the placeholder's doc file and its table entry afterward), then add an entry for each existing routed doc"
+    finding block ROUTING_TABLE_MISSING docs/architecture.md "missing/empty but docs/ holds routed documents - recreate the table with scripts/docs.sh new --name <placeholder> --read-when \"...\" using a name NOT already used in docs/ (it refuses to overwrite an existing doc; delete the placeholder's doc file and its table entry afterward), then add an entry for each existing routed doc" "REPAIR: docs/architecture.md missing/empty but docs/ holds routed documents - recreate the table with scripts/docs.sh new --name <placeholder> --read-when \"...\" using a name NOT already used in docs/ (it refuses to overwrite an existing doc; delete the placeholder's doc file and its table entry afterward), then add an entry for each existing routed doc"
     break
   done
 fi
@@ -337,7 +414,7 @@ if [[ -s "$memory" ]]; then
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
     if [[ ! -e "$agent/$target" ]]; then
-      echo "REPAIR: memory.md indexes $target — file missing"
+      finding block MEMORY_TARGET_MISSING "$target" "memory.md indexes $target — file missing" "REPAIR: memory.md indexes $target — file missing"
     fi
   done < <(sed -nE 's|^- \[[^]]*\]\((memory/[^)]+)\).*|\1|p' "$memory")
 fi
@@ -347,7 +424,7 @@ if [[ -d "$memdir" ]]; then
     name="memory/$(basename "$f")"
     if [[ ! -s "$memory" ]] \
       || ! sed -nE 's|^- \[[^]]*\]\((memory/[^)]+)\).*|\1|p' "$memory" | grep -qxF "$name"; then
-      echo "REPAIR: $name has no index line in memory.md"
+      finding block MEMORY_RECORD_UNINDEXED "$name" "has no index line in memory.md" "REPAIR: $name has no index line in memory.md"
     fi
   done
 fi
@@ -355,14 +432,15 @@ fi
 for settings in "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
   [[ -s "$settings" ]] || continue
   if grep -q '"autoMemoryEnabled"[[:space:]]*:[[:space:]]*true' "$settings"; then
-    echo "REPAIR: ${settings#"$root"/} sets autoMemoryEnabled true — set it false and harvest any silo (see retro)"
+    settings_rel=${settings#"$root"/}
+    finding block NATIVE_MEMORY_ENABLED "$settings_rel" "sets autoMemoryEnabled true — set it false and harvest any silo (see retro)" "REPAIR: $settings_rel sets autoMemoryEnabled true — set it false and harvest any silo (see retro)"
   fi
 done
 if [[ -d "$root/.claude" ]] \
   && ! grep -qs '"autoMemoryEnabled"' \
     "$root/.claude/settings.json" "$root/.claude/settings.local.json" \
     "${HOME:-/nonexistent}/.claude/settings.json"; then
-  echo "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false to .claude/settings.json so it requests the tool's own store off"
+  finding block NATIVE_MEMORY_UNSET .claude/ "present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false to .claude/settings.json so it requests the tool's own store off" "REPAIR: .claude/ present but autoMemoryEnabled is set nowhere — add \"autoMemoryEnabled\": false to .claude/settings.json so it requests the tool's own store off"
 fi
 
 missing=""
@@ -377,10 +455,14 @@ if [[ -n "$missing" ]]; then
   case " $missing" in *" fd"*) fallbacks="${fallbacks:+$fallbacks / }find" ;; esac
   line="TOOLS: not installed: ${missing#, }"
   [[ -n "$fallbacks" ]] && line="$line — use $fallbacks instead"
-  echo "$line"
+  if [[ "$format" == text ]]; then
+    printf '%s\n' "$line"
+  fi
 fi
 if ! sed --version >/dev/null 2>&1; then
-  echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
+  if [[ "$format" == text ]]; then
+    echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
+  fi
 fi
 
 load_total=0
@@ -397,7 +479,7 @@ load_add learned "$learned"
 load_add purpose "$purpose"
 load_add memory "$memory"
 load_add routing "$arch"
-if [[ "$load_total" -gt 0 ]]; then
+if [[ "$format" == text && "$load_total" -gt 0 ]]; then
   tailwords=0
   [[ -n "${recent:-}" ]] && tailwords=$(printf '%s' "$recent" | wc -w | tr -d '[:space:]')
   echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
@@ -422,14 +504,14 @@ else
   payload_add purpose "$purpose"
   payload_add memory "$memory"
 fi
-if [[ "$payload_total" -gt 0 ]]; then
+if [[ "$format" == text && "$payload_total" -gt 0 ]]; then
   echo "PAYLOAD: --load would write $payload_total bytes of a $PAYLOAD_MAX_BYTES byte budget (${payload_detail#, })"
 fi
 
 if [[ "$load" -eq 1 ]]; then
   if [[ "$load_mode" == generated ]]; then
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
-      echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
+      finding block LOAD_PAYLOAD_OVERSIZE purpose.md "--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}" "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
     else
       echo "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md."
       for f in "$purpose" "$memory"; do
@@ -443,7 +525,7 @@ if [[ "$load" -eq 1 ]]; then
       echo "Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."
     fi
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
-      echo "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+      finding block LOAD_PAYLOAD_OVERSIZE rules/learned.md "--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}" "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
     else
       for f in "$learned" "$contract" "$purpose" "$memory"; do
         [[ -s "$f" ]] || continue

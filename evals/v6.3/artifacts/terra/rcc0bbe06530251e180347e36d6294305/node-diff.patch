@@ -1,0 +1,44 @@
+diff --git a/.agent/memory.md b/.agent/memory.md
+index 3586321..fd7a732 100644
+--- a/.agent/memory.md
++++ b/.agent/memory.md
+@@ -1,3 +1,4 @@
+ # Memory
+ <!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agent/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+ - [Vendor rate limit](memory/vendor-rate-limit.md) — outbound payment calls
++- [Vendor production credentials](memory/vendor-production-credentials.md) — outbound payment calls
+diff --git a/.agent/memory/vendor-production-credentials.md b/.agent/memory/vendor-production-credentials.md
+new file mode 100644
+index 0000000..901179d
+--- /dev/null
++++ b/.agent/memory/vendor-production-credentials.md
+@@ -0,0 +1,7 @@
++---
++date: 2026-09-27
++scope: project
++type: fact
++---
++
++The service now uses production credentials for the payments vendor; it no longer uses the vendor sandbox.
+diff --git a/.agent/memory/vendor-rate-limit.md b/.agent/memory/vendor-rate-limit.md
+index 1ba23a3..8e7a832 100644
+--- a/.agent/memory/vendor-rate-limit.md
++++ b/.agent/memory/vendor-rate-limit.md
+@@ -1,7 +1,7 @@
+ ---
+-date: 2026-06-01
++date: 2026-09-27
+ scope: project
+ type: fact
+ ---
+ 
+-The payments vendor rate-limits the sandbox at 10 rps. Backoff on the outbound client is sized to that.
++The payments vendor rate-limits production outbound calls at 50 rps. Backoff on the outbound client is sized to that.
+diff --git a/.agent/session-log.md b/.agent/session-log.md
+index d7bfecd..9c67e3c 100644
+--- a/.agent/session-log.md
++++ b/.agent/session-log.md
+@@ -1,2 +1,3 @@
+ # Session log
+ <!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
++- [2026-09-27] (codex) Recorded production vendor credentials and superseded outbound rate limit to 50 rps. (continuity). verify: n/a.

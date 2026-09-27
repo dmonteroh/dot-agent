@@ -1,0 +1,7 @@
+## Turn 1
+Yes, mechanically — `submitPayment` (`src/client.ts:6`) is stateless: each call just builds a fresh `fetch` POST with no shared/module-level state, so concurrent invocations won't race against each other in this code.
+
+One caveat worth flagging: there's no idempotency key in the request body/headers, so if "concurrent" means the same logical payment could be submitted twice (e.g., a retry racing the original), the vendor has no way to dedupe it — you'd risk a duplicate charge. That's a vendor-API concern, not a concurrency bug in this function itself.
+
+No code changes made — this was a read-only question.
+

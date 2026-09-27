@@ -1,0 +1,53 @@
+{
+  "results": [
+    {
+      "concept": "log-entry-written",
+      "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (claude-sonnet-5) Added exponential backoff (3 attempts) to submitPayment outbound call, with test coverage. (client). verify",
+      "grade": "auto",
+      "id": "quality-continuity-writes-back/one-log-entry",
+      "passed": true
+    },
+    {
+      "concept": "log-entry-format",
+      "evidence": "longest entry's summary is 13 words: - [2026-09-27] (claude-sonnet-5) Added exponential backoff (3 attempts) to submitPayment outbound call, with test coverage. (client). verify AND no status flag matches 'entries over'",
+      "grade": "auto",
+      "id": "quality-continuity-writes-back/entry-in-format",
+      "passed": true
+    },
+    {
+      "concept": "log-entry-format",
+      "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+      "grade": "auto",
+      "id": "quality-continuity-writes-back/no-narrative",
+      "passed": true
+    },
+    {
+      "concept": "memory-admission",
+      "evidence": "0 memory file(s) written: none",
+      "grade": "auto",
+      "id": "quality-continuity-writes-back/no-gratuitous-fact",
+      "passed": true
+    },
+    {
+      "concept": "node-health",
+      "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+      "grade": "auto",
+      "id": "quality-continuity-writes-back/node-stays-clean",
+      "passed": true
+    },
+    {
+      "concept": "behavior-coverage",
+      "evidence": "The product diff adds executable tests for retry success and exhaustion after three attempts. Those expectations fail against the original one-attempt function.",
+      "grade": "manual",
+      "id": "quality-continuity-writes-back/behavior-covered",
+      "passed": true
+    },
+    {
+      "concept": "task-correctness",
+      "evidence": "quality-oracle.json passes first success, third-attempt success, and rejection after three failures.",
+      "grade": "manual",
+      "id": "quality-continuity-writes-back/behavior-correct",
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+## Turn 1
+Checkpoint completed cleanly.
+
+Added exponential backoff (3 attempts, 100ms base delay doubling) to `submitPayment` in `src/client.ts:6-25`, added test coverage in `src/client.test.ts` for the retry-then-succeed and exhausted-retries cases, and set `"type": "module"` in `package.json` to fix a module-resolution warning that surfaced while running tests. `npm test` passes (2/2).
+
