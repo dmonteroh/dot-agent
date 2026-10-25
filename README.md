@@ -53,6 +53,7 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 │                   # in comments.conf, never refreshed by update)
 │                   # + index.sh, the generated-index builder (indexes: generated only)
 │                   # + learn.sh, the learned-rule admission helper
+│                   # + absorb.sh, which merges a worker checkout's node back
 └── indexes/        # indexes: generated only — rendered from rules/ and docs/,
                     # gitignored, disposable, rebuilt by index.sh
 ```

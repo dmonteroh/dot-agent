@@ -29,7 +29,8 @@ Each fenced block is identical in all three presets. Domain rules and quality ru
 - Run `.agent/scripts/checkpoint.sh` before handing back changed work, using the entry point's flags.
 - A read-only turn needs no new entry.
 - Resolve blocking findings. Defer advisory maintenance only under the node's completion policy.
-- The orchestrator owns the log. Workers report continuity facts and edit `.agent/` only when assigned.
+- Workers write `.agent/` only through its scripts, log with `log.sh`, and leave `checkpoint.sh` to the orchestrator.
+- An orchestrator whose workers run in their own checkout merges each worker's node back with `absorb.sh`.
 - Use `.agent/scripts/memory.sh lookup --query "..."` before admitting a durable record.
 - Memory holds current state, user preferences, blockers, or external references absent from canonical sources.
 - When asked to remember information already recorded, name its canonical source instead of writing a duplicate.

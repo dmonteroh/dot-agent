@@ -15,6 +15,6 @@ Before handing back changed work, run `bash .agent/scripts/checkpoint.sh --tool 
 
 Check names live in `.agent/scripts/checks.sh`. Helper `--help` explains details. `checkpoint.conf` controls maintenance policy.
 
-Subagents: flags and `checkpoint.sh` are the orchestrator's. read the rest. edit `.agent/` only when assigned.
+Subagents: flags and `checkpoint.sh` are the orchestrator's. read the rest. write `.agent/` only through its scripts, and log with `log.sh`.
 
 Keep every entry-point mirror identical.

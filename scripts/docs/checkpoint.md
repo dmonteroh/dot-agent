@@ -56,4 +56,4 @@ Private state lives in the worktree's self-ignored `.agent/.state` directory, in
 | 0 | Entry recorded, or unchanged content was already recorded |
 | 1 | Refused, blocked, invalid input, failed inspection, or no changed work |
 
-The session that owns the work owns checkpoint. Delegated workers report continuity facts unless explicitly assigned those files.
+The session that owns the work owns checkpoint. Delegated workers write their experience records through the node's writers (`log.sh`, `memory.sh`, `learn.sh`) and never run checkpoint. A worker in its own checkout writes its copy of the node, and the orchestrator merges it back with `absorb.sh` (`scripts/docs/absorb.md`).

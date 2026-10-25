@@ -17,11 +17,12 @@ These docs remain in the source repository. Nodes receive managed helpers, start
 | `checkpoint.sh` | Completion orchestration and retry-safe logging | [checkpoint.md](checkpoint.md) |
 | `index.sh` | Generated context cache | [index.md](index.md) |
 | `learn.sh` | Learned-record lookup and versioned writing | [learn.md](learn.md) |
+| `absorb.sh` | Merging a worker checkout's node back into the main node | [absorb.md](absorb.md) |
 | `checks.sh` | Project-owned check driver | [v6.3-trial.md](v6.3-trial.md) |
 | `node.sh` | Source-repository installer and updater | [node.md](node.md) |
 | `test.sh` | Source-repository regression suite | [test.md](test.md) |
 
-The thirteen managed helpers are replaced atomically on update. Existing configurations and `checks.sh` are preserved. `node.sh`, `test.sh`, this documentation, and evaluation files are not installed into nodes.
+The fourteen managed helpers are replaced atomically on update. Existing configurations and `checks.sh` are preserved. `node.sh`, `test.sh`, this documentation, and evaluation files are not installed into nodes.
 
 ## Arguments and output
 
@@ -39,5 +40,6 @@ Verification emits a receipt record on stdout and bounded check output on stderr
 | `verify.sh check` | 0 means the receipt is valid, even when it records failure |
 | `checkpoint.sh` | 0 means recorded or already recorded, 1 means no entry was written |
 | `index.sh` | 0 succeeds, 1 reports stale/fallback, 2 rejects invocation |
+| `absorb.sh` | 0 merged without conflict, 3 merged around reported conflicts, 2 refused |
 
 Writers have their own refusal codes. Their linked docs define version conflicts, duplicate records, and other cases. A passing command exit alone does not establish that a behavior was tested.

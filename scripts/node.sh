@@ -9,7 +9,7 @@ SOURCE_URL="https://github.com/dmonteroh/dot-agent"
 selfdir=$(cd "$(dirname "$0")" && pwd)
 srcroot=$(cd "$selfdir/.." && pwd)
 
-SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh)
+SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh absorb.sh)
 SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf review.conf)
 
 install_node_scripts() {
@@ -779,7 +779,7 @@ EOF
   fi
 
   if [ "$version_order" -lt 0 ] && [ "$migration_target" != "$TARGET_VERSION" ]; then
-    for new_helper in runtime.sh verify.sh review.sh capture.sh; do
+    for new_helper in runtime.sh verify.sh review.sh capture.sh absorb.sh; do
       existing="$agent/scripts/$new_helper"
       if [ -L "$existing" ] || { [ -e "$existing" ] && ! cmp -s "$existing" "$srcroot/scripts/$new_helper"; }; then
         echo "node.sh: $existing occupies a new managed helper name; preserve and relocate the custom helper before updating" >&2

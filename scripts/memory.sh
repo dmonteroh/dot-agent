@@ -243,6 +243,20 @@ validate_slug() {
   esac
 }
 
+# Writers in one checkout serialize on one lock per node, so parallel workers
+# can write memory directly. absorb.sh takes the same lock.
+memory_lock() {
+  local selfdir state
+  selfdir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
+  [ -f "$selfdir/runtime.sh" ] || return 0
+  # shellcheck source=runtime.sh
+  . "$selfdir/runtime.sh"
+  state=$(da_state_dir "$1") || exit 1
+  memory_lock_path="$state/memory.lock"
+  da_lock "$memory_lock_path" || exit 1
+  trap 'da_unlock "$memory_lock_path"; cleanup' EXIT
+}
+
 cmd="${1:-}"
 [ $# -ge 1 ] && shift
 
@@ -363,6 +377,7 @@ new)
     echo "memory.sh: $memory is not writable — refusing to publish an unindexable fact" >&2
     exit 1
   fi
+  memory_lock "$root"
   if [ -e "$factfile" ]; then
     echo "memory.sh: $factfile already exists — refusing to overwrite; run memory.sh supersede --slug $slug --fact \"…\" to rewrite it, or pick a new slug" >&2
     exit 1
@@ -486,6 +501,7 @@ supersede)
     echo "memory.sh: $memory does not exist — refusing to write outside an initialized node" >&2
     exit 1
   fi
+  memory_lock "$root"
   if [ ! -f "$factfile" ]; then
     echo "memory.sh: $factfile does not exist — nothing to supersede; use memory.sh new to write a new fact" >&2
     exit 1
