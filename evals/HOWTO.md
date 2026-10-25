@@ -137,6 +137,16 @@ Every assertion lands in one bucket. Each bucket names a different fact about th
 
 Zero regressions is the bar, not a rising aggregate pass rate. Check `rollup.json`'s `concentration_pct_of_delta` (`top_assertion`, `top_two_assertions`) so one loud assertion is not standing in for the whole set. Check `duration_s` too, if one arm visibly took a different number of turns to get there.
 
+## Measure what one section is worth
+
+A corpus section that every arm passes with or without it may be costing always-loaded words for nothing, and a trimmed corpus has lost exactly the rules it cut before (`v6.2-evals-september-2026.md`). Measure a section before removing it, one section per arm:
+
+1. Branch from the revision under test and delete the one section, or the one rule, from the preset. Commit it, so the arm pins a ref.
+2. Run that ref as the corpus arm against the pooled baseline of the full revision, on both prompt sets and both agents, at the repeat count you fixed before the first run.
+3. Read the behavior stratum first. A change only in conformance rows means the section taught a format, not a behavior.
+
+A section whose removal moves nothing is a candidate for cutting *on this bench*. The bench covers the situations its evals encode and no others, so report the result with that limit, and label it isolated: one section separates the arms.
+
 ## When something fails and the cause isn't obvious
 
 Triage layer by layer rather than editing prose by hand: standing instructions, memory admission, routing, tooling, harness. Order the fixes so enforcement moves into code before any prompt is reworded.

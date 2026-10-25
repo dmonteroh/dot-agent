@@ -277,4 +277,5 @@ Not paired evals — recurring passes with their own procedures.
 - **Held-out prompts.** Iterating against a fixed eval set tunes the corpus to that set. `heldout.json` is the held-out set; a paraphrase is still not a new scenario, and a new scenario needs a new fixture.
 - **Contamination.** A corpus revision that retells an eval's situation is graded on the held-out set only, and the judge's finding is reported with the delta.
 - **Wording-sensitive rows.** An assertion that passes in every arm on one wording and fails in every arm on another measures the prompt; report it as such and rewrite it.
+- **Attribution.** Label every claimed improvement *isolated* when one change separates the two arms, or *confounded* when the arms differ by a bundle of changes. A release that ships several corpus changes together can report a bundle's delta, never which change produced it. Isolate a change by running it alone as the corpus arm, or by removing it from the full revision as an ablation arm (`HOWTO.md`, "Measure what one section is worth").
 - **Stopping rule.** Fix it before the first run — a target, an iteration cap, or a cost ceiling — and label it a chosen budget.
