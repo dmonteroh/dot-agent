@@ -17,12 +17,17 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 - Memory lookup searches canonical context with bounded results. Fact updates accept file input and expected versions. Learned lookup supports both index modes and ignores dates for duplicate-body checks.
 - `docs.sh sync` reconciles routing metadata. `docs.sh catalog` validates and updates reusable-block entries.
 - Updates refresh managed scripts atomically, including same-version refreshes. Existing check drivers, configuration, rules, docs, and memory are preserved.
+- Workers write experience records (session-log entries, memory facts, learned rules) through the node's writers and never run checkpoint. `absorb.sh` merges a worker checkout's node back: `mark` at dispatch, `records` when each attempt ends, `docs` at integration. `memory.sh` takes a writer lock like the other writers.
+- `learn.sh retire` requires `--enforced-by <path>`, and the presets retire a learned rule only against a named enforcer.
+- The retro skill adds a cheapest-fix ladder, an attribution discipline, and a project-versus-root scope test.
+- Skills install at `.agents/skills/` beside the node, where most agent tools read them. Claude Code reads them through a `.claude/skills` symlink. `status.sh` checks installed skills against the Agent Skills specification. The node stays at `.agent/`, because Codex's sandbox keeps `.agents/` read-only.
+- Generated index paths are relative to the project root, so a copied node's cache stays current. `status.sh --load` writes nothing.
 
 See the [v6.3 trial guide](scripts/docs/v6.3-trial.md) for installation and migration. Verification records remain local, outside loaded memory. Pattern-based review still requires agent judgment.
 
 ### Contributor validation
 
-Focused shell suites cover receipts, record writers, structured findings, checkpoint recovery, and migration. The evaluation fixtures configure project checks when the tested corpus provides verification tooling. Historical research and smoke comparisons remain under `evals/` and are never installed into a node.
+Focused shell suites cover receipts, record writers, structured findings, checkpoint recovery, migration, and worker merges, and run beside the main suite. `test.sh` refuses eval, assertion, and fixture names in the node-landing corpus, and `evals/HOWTO.md` gains an ablation recipe for measuring one section. The evaluation fixtures configure project checks when the tested corpus provides verification tooling. Historical research and smoke comparisons remain under `evals/` and are never installed into a node.
 
 ---
 
