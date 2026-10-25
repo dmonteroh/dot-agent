@@ -4731,6 +4731,35 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   scripts/comments.conf scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
+# A corpus that names its own eval ids, assertion ids, or fixtures has been
+# fitted to the bench. Hyphenated names only: single words such as "routed"
+# are ordinary prose. contamination.py --judge still owns retold scenarios.
+evtok30=$(python3 - "$reporoot/evals/spec.json" "$reporoot/evals/heldout.json" <<'PY'
+import json, sys
+names = set()
+for path in sys.argv[1:]:
+    for e in json.load(open(path))["evals"]:
+        names.add(e["id"])
+        if e.get("fixture"):
+            names.add(e["fixture"])
+        for a in e.get("assertions", []):
+            names.update([a["id"], a["id"].split("/")[-1]])
+print("\n".join(sorted(n for n in names if "-" in n)))
+PY
+)
+evhits30=""
+if [ -n "$evtok30" ]; then
+  evhits30=$(cd "$reporoot" && printf '%s\n' "$evtok30" | grep -rnwF -f - \
+    presets/software-development.md presets/academic-research.md \
+    presets/domain-knowledge.md presets/_shared.md templates/entry-point.md \
+    templates/entry-point-generated.md scripts/status.sh scripts/log.sh scripts/memory.sh \
+    scripts/docs.sh scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
+    scripts/learn.sh scripts/absorb.sh scripts/comments.conf scripts/status.conf scripts/log.conf \
+    tools/skills/groom/SKILL.md tools/skills/retro/SKILL.md 2>/dev/null)
+fi
+[ -n "$evtok30" ] && [ -z "$evhits30" ] && pass "portability: node-landing corpus names no eval, assertion, or fixture" \
+  || fail "portability: node-landing corpus names no eval, assertion, or fixture ($(printf '%s' "$evhits30" | tr '\n' ';' | cut -c1-160))"
+
 printf 'When stuck, ask SomeVendor to run it in Cursor.\n' >"$WORK/leak.md"
 hits30b=$(grep -inE "$lint_re" "$WORK/leak.md" | grep -vF -f "$lint_allow")
 [ -n "$hits30b" ] && pass "portability: the lint catches an injected vendor token" || fail "portability: the lint catches an injected vendor token"
@@ -8769,7 +8798,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1384
+EXPECTED_CHECKS=1385
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
