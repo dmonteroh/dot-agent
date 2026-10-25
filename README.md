@@ -53,9 +53,8 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 │                   # in comments.conf, never refreshed by update)
 │                   # + index.sh, the generated-index builder (indexes: generated only)
 │                   # + learn.sh, the learned-rule admission helper
-├── indexes/        # indexes: generated only — rendered from rules/ and docs/,
-│                   # gitignored, disposable, rebuilt by index.sh
-└── skills/         # Optional — installed skills, symlinked into tool dirs
+└── indexes/        # indexes: generated only — rendered from rules/ and docs/,
+                    # gitignored, disposable, rebuilt by index.sh
 ```
 
 `.agent/indexes/` and, in generated mode, the aggregate `.agent/rules/learned.md` are both regenerable and gitignored — never hand-edit either. See [`scripts/docs/index.md`](scripts/docs/index.md) for the index cache and [`scripts/docs/learn.md`](scripts/docs/learn.md) for the learned-record helper that owns `rules/learned/`.
@@ -156,7 +155,7 @@ Team-specific vocabulary lives in `comments.conf` beside the gate. It covers the
 
 The status check uses `status.conf`, and the log writer uses `log.conf`. `LOG_INCLUDE_BRANCH=true` stamps the checked-out branch on each entry. Configuration and the project-owned `checks.sh` driver survive update. Managed runtime scripts are refreshed atomically, including on version-current nodes. The operating model's "The comment gate" section documents every key.
 
-If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed beside the node into `.agents/skills/`, which most agent tools read directly. Claude Code reads them through a `.claude/skills` symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 

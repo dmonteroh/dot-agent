@@ -2,7 +2,7 @@
 set -euo pipefail
 export LC_ALL=C
 
-schema_version=1
+schema_version=2
 usage() {
   cat <<'EOF'
 Usage:
@@ -11,7 +11,8 @@ Usage:
   index.sh --help
   index.sh --version
 
-root defaults to . — the cache lives at <root>/.agent/indexes/.
+root defaults to . — the cache lives at <root>/.agent/indexes/. Every path
+the cache writes is relative to <root>, so a copy of the node stays valid.
 budget defaults to 30000 and bounds each generated page and the entry
 file, in bytes (256..1000000).
 EOF
@@ -146,7 +147,7 @@ snapshot() {
   sn_list=$(paths "$root") || return 1
   [ -n "$sn_list" ] || return 1
   sn_hashes=$(printf '%s\n' "$sn_list" | absolute_paths "$root" | git hash-object --no-filters --stdin-paths) || return 1
-  printf '%s\n%s\n%s\n%s\n' "$schema_version/$budget/$generator" "$root" "$sn_list" "$sn_hashes" | git hash-object --stdin
+  printf '%s\n%s\n%s\n' "$schema_version/$budget/$generator" "$sn_list" "$sn_hashes" | git hash-object --stdin
 }
 
 tree_digest() {
@@ -167,7 +168,7 @@ expected_entry() {
   {
     printf '%s\n%s\n%s\n\n' "$ee_fp" "${ee_gen##*/}" "$(tree_digest "$ee_dir")"
     ( cd "$ee_dir" && find . -type f -name '*.md' | sed 's|^\./||' | sort ) \
-      | while IFS= read -r pg; do printf 'READ: %s/%s\n' "$ee_dir" "$pg"; done
+      | while IFS= read -r pg; do printf 'READ: .agent/indexes/%s/%s\n' "${ee_dir##*/}" "$pg"; done
   }
 }
 
@@ -194,7 +195,7 @@ valid_hit() {
 render() {
   rd_gen="$1"
   shift
-  awk -v out="$rd_gen" -v canonical="$root" -v cap="$budget" '
+  awk -v out="$rd_gen" -v cap="$budget" '
     function emit(kind, text,    n,path) {
       n = length(text) + 1
       if (n > cap) { print "record exceeds page budget: " FILENAME_PREV > "/dev/stderr"; exit 4 }
@@ -247,7 +248,7 @@ render() {
           if (fi > 0) { frag = substr(url, fi); base = substr(url, 1, fi - 1) }
           if (base != "") {
             resolved = normalize_path(dir "/" base)
-            url = canonical "/" resolved frag
+            url = resolved frag
           }
         }
         res = res label url title ")"
@@ -259,10 +260,10 @@ render() {
     function flush() {
       if (!seen) return
       if (FILENAME_PREV ~ /^\.agent\/rules\//) {
-        emit("rules", "Source: " canonical "/" FILENAME_PREV "\n" body)
+        emit("rules", "Source: " FILENAME_PREV "\n" body)
       } else {
         h = hook; if (h == "") h = "(no hook)"
-        emit("routes", "- " title " | " h " | READ: " canonical "/" FILENAME_PREV)
+        emit("routes", "- " title " | " h " | READ: " FILENAME_PREV)
       }
     }
     FNR == 1 {

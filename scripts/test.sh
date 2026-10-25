@@ -1927,6 +1927,7 @@ hand-written AGENTS.md
 autoMemoryEnabled
 $root/.claude
 /nonexistent}/.claude
+at .claude/skills/$skill_dir
 EOF
 lint_re='claude|cursor|copilot|codex|anthropic|openai|sonnet|opus|haiku|gpt-|agents\.md'
 hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
@@ -5803,16 +5804,16 @@ printf '# Nested Rule\nSee [alpha doc](../../docs/hooked.md) for context.\n' >"$
 g41gen=$(sed -n 2p "$g41/.agent/indexes/current.md")
 g41dir="$g41/.agent/indexes/$g41gen"
 
-grep -qF "Source: $g41/.agent/rules/r.md" "$g41dir"/rules-*.md \
+grep -qF "Source: .agent/rules/r.md" "$g41dir"/rules-*.md \
   && grep -qF 'Line one.' "$g41dir"/rules-*.md && grep -qF 'Line two.' "$g41dir"/rules-*.md \
   && pass "grammar: a rule record's full body renders verbatim behind its Source: line" \
   || fail "grammar: a rule record's full body renders verbatim behind its Source: line"
 
-grep -qF -- "- Doc With Hook | working on billing | READ: $g41/.agent/docs/hooked.md" "$g41dir"/routes-*.md \
+grep -qF -- "- Doc With Hook | working on billing | READ: .agent/docs/hooked.md" "$g41dir"/routes-*.md \
   && pass "grammar: a route record's title and hook come from its heading and Read-when comment" \
   || fail "grammar: a route record's title and hook come from its heading and Read-when comment"
 
-grep -qF "READ: $g41/.agent/docs/notitle.md" "$g41dir"/routes-*.md \
+grep -qF "READ: .agent/docs/notitle.md" "$g41dir"/routes-*.md \
   && grep -qF '.agent/docs/notitle.md | no title case | READ:' "$g41dir"/routes-*.md \
   && pass "grammar: a missing heading falls back to the record's own path as title" \
   || fail "grammar: a missing heading falls back to the record's own path as title"
@@ -5830,18 +5831,18 @@ grep -qF -- '[ext](https://example.com/page)' "$g41dir"/rules-*.md \
   || fail "links: a scheme URL link is left unmodified"
 
 g41sibling=$(grep -ohE '\[sibling\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[sibling\]\(([^)]*)\)$/\1/')
-[ -n "$g41sibling" ] && [ -f "$g41sibling" ] && [ "$g41sibling" = "$g41/.agent/rules/other.md" ] \
+[ -n "$g41sibling" ] && [ -f "$g41/$g41sibling" ] && [ "$g41sibling" = ".agent/rules/other.md" ] \
   && pass "links: a relative link between two rule records rewrites to a path that resolves to the original sibling" \
   || fail "links: a relative link between two rule records rewrites to a path that resolves to the original sibling"
 
 g41nested=$(grep -ohE '\[alpha doc\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[alpha doc\]\(([^)]*)\)$/\1/')
-[ -n "$g41nested" ] && [ -f "$g41nested" ] && [ "$g41nested" = "$g41/.agent/docs/hooked.md" ] \
+[ -n "$g41nested" ] && [ -f "$g41/$g41nested" ] && [ "$g41nested" = ".agent/docs/hooked.md" ] \
   && pass "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc" \
   || fail "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc"
 
 g41titled=$(grep -ohE '\[titled\]\(.*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[titled\]\((.*)\)$/\1/')
 g41titledpath=$(printf '%s\n' "$g41titled" | sed -E 's/ "[^"]*"$//')
-[ -n "$g41titledpath" ] && [ -f "$g41titledpath" ] && [ "$g41titledpath" = "$g41/.agent/rules/other.md" ] \
+[ -n "$g41titledpath" ] && [ -f "$g41/$g41titledpath" ] && [ "$g41titledpath" = ".agent/rules/other.md" ] \
   && printf '%s\n' "$g41titled" | grep -qF '"See the other"' \
   && pass "links: a titled relative link rewrites the path and preserves the title" \
   || fail "links: a titled relative link rewrites the path and preserves the title ($g41titled)"
@@ -5980,15 +5981,15 @@ grep -q 'record exceeds page budget' "$WORK/i47.big.err" && grep -q 'FALLBACK:' 
   && pass "overflow: a record too large for its own page falls back without truncation" \
   || fail "overflow: a record too large for its own page falls back without truncation"
 
-i47long="$WORK/i47long/$(printf '%0140d' 0)"
+# The entry holds one READ line per page, so many small routes split across
+# many pages at a small budget, and the entry outgrows that budget.
+i47long="$WORK/i47long"
 mkdir -p "$i47long/.agent/docs"
-printf '# A\n' >"$i47long/.agent/docs/a.md"
+i47n=0
+while [ "$i47n" -lt 40 ]; do printf '# Doc %s\n' "$i47n" >"$i47long/.agent/docs/doc-$i47n.md"; i47n=$((i47n + 1)); done
 "$IDXSH" ensure --root "$i47long" >/dev/null 2>&1
 cp "$i47long/.agent/indexes/current.md" "$WORK/i47.long-entry"
-i47priorbytes=$(wc -c <"$WORK/i47.long-entry")
-i47smallbudget=$((i47priorbytes - 1))
-[ "$i47smallbudget" -ge 256 ] || i47smallbudget=256
-"$IDXSH" ensure --root "$i47long" --budget "$i47smallbudget" >/dev/null 2>"$WORK/i47.long.err"
+"$IDXSH" ensure --root "$i47long" --budget 256 >/dev/null 2>"$WORK/i47.long.err"
 grep -q 'entry exceeds page budget' "$WORK/i47.long.err" && grep -q 'FALLBACK:' "$WORK/i47.long.err" \
   && cmp -s "$WORK/i47.long-entry" "$i47long/.agent/indexes/current.md" \
   && pass "overflow: an entry too large for the budget falls back and preserves the prior publication" \
@@ -6201,21 +6202,21 @@ i54dir="$i54/.agent/indexes/$i54gen"
 i54bad=""
 while IFS= read -r rl; do
   target=${rl#READ: }
-  [ -f "$target" ] || i54bad="$i54bad $target"
+  [ -f "$i54/$target" ] || i54bad="$i54bad $target"
 done < <(grep '^READ:' "$i54/.agent/indexes/current.md")
 [ -z "$i54bad" ] && pass "resolution: every entry-file READ line names a file that exists" \
   || fail "resolution: every entry-file READ line names a file that exists ($i54bad)"
 i54routebad=""
 while IFS= read -r rl; do
   target=${rl##*READ: }
-  [ -f "$target" ] || i54routebad="$i54routebad $target"
+  [ -f "$i54/$target" ] || i54routebad="$i54routebad $target"
 done < <(grep -h '| READ:' "$i54dir"/routes-*.md)
 [ -z "$i54routebad" ] && pass "resolution: every route line's READ pointer resolves to a real canonical source" \
   || fail "resolution: every route line's READ pointer resolves to a real canonical source ($i54routebad)"
 i54srcbad=""
 for f in "$i54dir"/rules-*.md; do
   src=$(sed -n 's/^Source: //p' "$f" | head -1)
-  [ -f "$src" ] || i54srcbad="$i54srcbad $src"
+  [ -f "$i54/$src" ] || i54srcbad="$i54srcbad $src"
 done
 [ -z "$i54srcbad" ] && pass "resolution: every rule page's Source: pointer resolves to a real canonical source" \
   || fail "resolution: every rule page's Source: pointer resolves to a real canonical source ($i54srcbad)"
@@ -6367,7 +6368,7 @@ l59after=$(idx_snapshot "$l59/.agent/rules")
 [ "$l59before" = "$l59after" ] \
   && pass "learned aggregate: an empty rules/learned/ directory leaves learned.md untouched, same as no directory at all" \
   || fail "learned aggregate: an empty rules/learned/ directory leaves learned.md untouched, same as no directory at all"
-grep -qF "Source: $l59/.agent/rules/learned.md" "$l59/.agent/indexes/$l59gen"/rules-*.md \
+grep -qF "Source: .agent/rules/learned.md" "$l59/.agent/indexes/$l59gen"/rules-*.md \
   && pass "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record" \
   || fail "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record"
 
@@ -6378,7 +6379,7 @@ printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l61/.agent/docs/d.md"
 l61learnedbefore=$(cat "$l61/.agent/rules/learned.md")
 "$IDXSH" ensure --root "$l61" >/dev/null 2>"$WORK/l61.err"
 l61gen=$(sed -n 2p "$l61/.agent/indexes/current.md")
-grep -qF "Source: $l61/.agent/rules/learned.md" "$l61/.agent/indexes/$l61gen"/rules-*.md \
+grep -qF "Source: .agent/rules/learned.md" "$l61/.agent/indexes/$l61gen"/rules-*.md \
   && grep -qF -- '- [2026-01-01] Legacy single-file rule.' "$l61/.agent/indexes/$l61gen"/rules-*.md \
   && pass "learned aggregate: with no rules/learned/ directory, learned.md renders as an ordinary source record" \
   || fail "learned aggregate: with no rules/learned/ directory, learned.md renders as an ordinary source record"
@@ -7890,7 +7891,7 @@ grep -qF 'folded with the nested-sub-bullet rule' "$g71gendir"/rules-*.md \
   || fail "groom fixture: the regenerated rules page carries the folded rule, not the deleted records' text"
 
 g71_docs_target=$(grep -F 'area/sub.md' "$g71gendir"/routes-*.md | sed -n 's/.*READ: //p' | head -n1)
-[ -n "$g71_docs_target" ] && [ -f "$g71_docs_target" ] && grep -qF 'Third rule, multi paragraph, moved from rules/learned/.' "$g71_docs_target" \
+[ -n "$g71_docs_target" ] && [ -f "$g71/$g71_docs_target" ] && grep -qF 'Third rule, multi paragraph, moved from rules/learned/.' "$g71/$g71_docs_target" \
   && pass "groom fixture: the docs page's routing entry resolves to the doc carrying the moved rule" \
   || fail "groom fixture: the docs page's routing entry resolves to the doc carrying the moved rule"
 
@@ -8738,7 +8739,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1380
+EXPECTED_CHECKS=1381
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

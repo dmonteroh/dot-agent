@@ -1,4 +1,4 @@
-# `.agent/` skills
+# dot-agent skills
 
 Claude Code [skills](https://docs.claude.com/en/docs/claude-code/skills) for the rare-but-detailed procedures that arise mid-session: grooming and retro. Each is plain markdown with a YAML frontmatter block, so anything that can read a file can read one. The auto-loading mechanism (matching a task to a skill's `description`) is Claude Code's, but the content itself is tool-neutral.
 
@@ -8,24 +8,23 @@ Only in-session procedures ship as skills. Bootstrap and update are operator cer
 
 ## Install
 
-Skills live inside the node at `.agent/skills/` (one reviewable, tool-neutral location), and each tool reads them through a symlink:
+Skills live beside the node at `.agents/skills/`, which Codex, Gemini CLI, OpenCode, GitHub Copilot, Cursor, Amp, and Antigravity read directly. Claude Code reads only `.claude/skills/`, so it gets a symlink:
 
 ```bash
 # Project node, from the project root
-mkdir -p .agent/skills .claude
-cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro .agent/skills/
-ln -s ../.agent/skills .claude/skills             # Claude Code
-mkdir -p .codex && ln -s ../.agent/skills .codex/skills   # Codex, if used
+mkdir -p .agents/skills .claude
+cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro .agents/skills/
+ln -s ../.agents/skills .claude/skills             # Claude Code
 
 # Root node
-mkdir -p ~/.agent/skills ~/.claude
-cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro ~/.agent/skills/
-ln -s ../.agent/skills ~/.claude/skills
+mkdir -p ~/.agents/skills ~/.claude
+cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro ~/.agents/skills/
+ln -s ../.agents/skills ~/.claude/skills
 ```
 
-If the tool's skills directory already exists with other content, symlink the individual skill directories into it instead of replacing it. To track this source repo as it updates, symlink from the clone rather than copying.
+At the root, every tool that reads `~/.agents/skills/` sees the skills in every project. If `.claude/skills` already exists with other content, symlink the individual skill directories into it instead of replacing it. To track this source repo as it updates, symlink from the clone rather than copying.
 
-In `ignore-all` and `track-shared`, `.agent/skills/` stays out of git by default (the `track-shared` allowlist never negates it). Negate it explicitly if the team wants to share installed skills through git. In `track-all`, which commits everything, installed skills are committed too.
+The skills sit outside `.agent/`, so no tracking mode touches them: the project decides whether `.agents/skills/` enters git. The node stays at `.agent/` because Codex's `workspace-write` sandbox keeps `.agents/` read-only, which suits skills an agent only reads and would block every write a node needs. Other tools and installers write into `.agents/skills/` too, so `status.sh` checks every installed skill against the Agent Skills specification and reports a `GROOM:` line for a missing `SKILL.md`, a `name` that differs from its directory, a missing description, a description over 1024 characters, or a separate copy under `.claude/skills/`.
 
 ## Skills
 

@@ -5,7 +5,7 @@
 
 **One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Load the node before working on the request.
 
-1. Run `bash .agent/scripts/index.sh ensure` and read the entry path it prints, then open every page it lists. A rule page is the rule read. a rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty.
+1. Run `bash .agent/scripts/index.sh ensure` and read the entry path it prints, then open every page it lists. Listed paths are relative to the folder that holds `.agent/`. A rule page is the rule read. a rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty.
 2. Run `bash .agent/scripts/status.sh --load` and read its output. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
 3. Open the `memory/` fact files whose hooks match the task.
 4. Routing: the routes pages step 1 opened are the catalog, read whole. `.agent/docs/architecture.md` is the routing table behind them and the fallback when no cache exists.

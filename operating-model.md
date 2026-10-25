@@ -53,11 +53,12 @@ project-root/
 │   │                       # Each script's usage is its own header; each
 │   │                       # conf lists every key it reads. Full docs stay
 │   │                       # in the source repo, under scripts/docs/
-│   ├── indexes/            # indexes: generated only. Rendered from rules/
-│   │                       # and docs/, gitignored, disposable — rebuilt by
-│   │                       # index.sh, never hand-edited (scripts/docs/index.md)
-│   └── skills/             # Optional — installed skill payloads; tools
-│                           # read them via symlink (.claude/skills → here)
+│   └── indexes/            # indexes: generated only. Rendered from rules/
+│                           # and docs/, gitignored, disposable — rebuilt by
+│                           # index.sh, never hand-edited (scripts/docs/index.md)
+└── .agents/skills/         # Optional — installed skills, beside the node. Most
+                            # tools read them here; Claude Code through a
+                            # .claude/skills → ../.agents/skills symlink
 ```
 
 In `indexes: generated`, `.agent/indexes/` and the aggregate `.agent/rules/learned.md` are both regenerable and gitignored — never hand-edit either; the canonical source is `rules/learned/`, one tracked record per learned rule. See [Storage contract](scripts/docs/node.md#storage-contract) and `scripts/docs/index.md`.
@@ -454,7 +455,7 @@ The template also states its own boundary: an entry point is wiring, and the pro
 
 **Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads. Workers read context like any session (running `status.sh --load` for the text, with flags left for the orchestrator to handle, and never `checkpoint.sh`) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. Grooming is the standing example of explicit assignment. A session may hand its `GROOM:` flags to one worker whose write scope is the flagged files, so a session bootstrapped for a large task doesn't spend its own context on housekeeping. The scripts and the groom skill make the procedure mechanical enough that a small, cheap model handles it. The dispatching session re-runs `status.sh` afterward — the cleared flag is the artifact, not the worker's claim.
 
-`REPAIR:` flags are not delegable: repair is a conversation, not a job to hand off. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, the same write ban as any other worker. `workflows/` and `agents/` directories hold role prompts and process definitions, and they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, installed skill payloads under `skills/`) are outside the model: never loaded by the load order, never groomed, never negated by `track-shared`'s allowlist (`track-all`, which commits everything, is the exception).
+`REPAIR:` flags are not delegable: repair is a conversation, not a job to hand off. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, the same write ban as any other worker. `workflows/` and `agents/` directories hold role prompts and process definitions, and they never load by default. Directories the node's files don't reference (`others/`, `tmp/`) are outside the model: never loaded by the load order, never groomed, never negated by `track-shared`'s allowlist (`track-all`, which commits everything, is the exception). Installed skills sit outside the node altogether, at `.agents/skills/`.
 
 **Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp). The memory split makes the rest simpler than one shared file: two sessions writing different facts write different files under `memory/` and never collide. `CONFLICT` marking narrows to the case where two sessions write the *same* fact file (or both edit the same `memory.md` index line) in the same window. Keep both statements, tag them `CONFLICT`, and resolve in the next human-guided pass. Never silently overwrite.
 
@@ -627,7 +628,7 @@ Optional, and unused in the reference deployments. Compliance rests on the trust
 
 **Claude Code settings:** [`tools/claude-code/`](tools/claude-code/) ships `settings-example.json` — `"autoMemoryEnabled": false` (see [Native tool memory](#native-tool-memory)) plus a permissions allowlist for `.agent/**` writes.
 
-**Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live in the node at `.agent/skills/`, and each tool reads them through a symlink (`.claude/skills` → `.agent/skills`): one reviewable, tool-neutral location. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule. A skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
+**Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live beside the node at `.agents/skills/`, which Codex, Gemini CLI, OpenCode, GitHub Copilot, Cursor, Amp, and Antigravity read directly. Claude Code reads only `.claude/skills/`, so it gets a symlink (`.claude/skills` → `.agents/skills`): one reviewable, tool-neutral location. The node itself stays at `.agent/`, because Codex's `workspace-write` sandbox keeps `.agents/` read-only and a node is written every session. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule. A skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
 
 **Cursor:** add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
 
