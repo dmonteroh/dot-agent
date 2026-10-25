@@ -540,6 +540,50 @@ enable_generated_indexes() {
   return 0
 }
 
+# Before 6.3, skills were installed inside the node at .agent/skills/, read
+# through .claude/skills and .codex/skills symlinks. Codex no longer reads
+# .codex/skills, and most agent tools read .agents/skills/ beside the node.
+migrate_skills_location() {
+  local root="$1" old="$1/.agent/skills" new="$1/.agents/skills" entry name link target clashes=""
+  [ -d "$old" ] && [ ! -L "$old" ] || return 0
+  if [ -n "$(ls -A "$old" 2>/dev/null)" ]; then
+    if [ -L "$1/.agents" ] || [ -L "$new" ] || { [ -e "$new" ] && [ ! -d "$new" ]; }; then
+      echo "node.sh: skills stay at $old — $new is not a plain directory" >&2
+      return 0
+    fi
+    for entry in "$old"/*; do
+      [ -e "$entry" ] || [ -L "$entry" ] || continue
+      name=${entry##*/}
+      if [ -e "$new/$name" ] || [ -L "$new/$name" ]; then clashes="$clashes $name"; fi
+    done
+    if [ -n "$clashes" ]; then
+      echo "node.sh: skills stay at $old — these names already exist in $new:$clashes. Keep one copy of each, then re-run update" >&2
+      return 0
+    fi
+    mkdir -p "$new" || return 1
+    for entry in "$old"/*; do
+      [ -e "$entry" ] || [ -L "$entry" ] || continue
+      mv -- "$entry" "$new/" || { echo "node.sh: moving $entry to $new failed" >&2; return 1; }
+    done
+  fi
+  rmdir "$old" 2>/dev/null || { echo "node.sh: $old still holds hidden files — inspect it" >&2; return 0; }
+  echo "node.sh: moved installed skills from .agent/skills/ to .agents/skills/ — no tracking mode ignores them there, so decide whether they enter git"
+  for link in "$root/.claude/skills" "$root/.codex/skills"; do
+    [ -L "$link" ] || continue
+    target=$(readlink "$link")
+    case "$target" in
+    *.agent/skills | *.agent/skills/) ;;
+    *) continue ;;
+    esac
+    if [ "$link" = "$root/.claude/skills" ]; then
+      ln -sfn ../.agents/skills "$link" && echo "node.sh: repointed $link to ../.agents/skills"
+    else
+      rm -f "$link" && echo "node.sh: removed $link — Codex reads .agents/skills/ itself"
+    fi
+  done
+  return 0
+}
+
 case "$cmd" in
 init)
   preset=""
@@ -734,6 +778,8 @@ update this node by hand in a normal session.
 EOF
     exit 1
   fi
+
+  migrate_skills_location "$root" || exit 1
 
   version_line=$(grep -m1 '^  version:' "$purpose")
   oldversion=$(printf '%s\n' "$version_line" | sed -E 's/^[[:space:]]*version:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')

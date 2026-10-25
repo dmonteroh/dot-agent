@@ -63,6 +63,30 @@ before=$(tree_state "$copy")
 bash "$copy/.agent/scripts/index.sh" ensure --root "$copy" >/dev/null 2>&1 || fail 'ensure failed in a copy'
 [ "$before" = "$(tree_state "$copy")" ] || fail 'ensure rewrote a valid copied index'
 
+# Skills installed inside the node before 6.3 move beside it on update
+mv_node="$scratch/skills-move"
+mkdir -p "$mv_node"
+git -C "$mv_node" init -q
+bash "$node_sh" init --preset software-development --mode track-shared "$mv_node" >/dev/null
+mkdir -p "$mv_node/.agent/skills" "$mv_node/.claude" "$mv_node/.codex"
+cp -R "$repo/tools/skills/groom" "$mv_node/.agent/skills/"
+ln -s ../.agent/skills "$mv_node/.claude/skills"
+ln -s ../.agent/skills "$mv_node/.codex/skills"
+bash "$node_sh" update "$mv_node" >"$scratch/skills-move.out" 2>&1 || { cat "$scratch/skills-move.out" >&2; fail 'update failed while moving skills'; }
+[ -f "$mv_node/.agents/skills/groom/SKILL.md" ] || fail 'update did not move installed skills to .agents/skills/'
+[ ! -e "$mv_node/.agent/skills" ] || fail 'update left .agent/skills/ behind'
+[ "$(readlink "$mv_node/.claude/skills")" = ../.agents/skills ] || fail 'update did not repoint .claude/skills'
+[ ! -L "$mv_node/.codex/skills" ] || fail 'update kept a .codex/skills link to the old location'
+bash "$node_sh" update "$mv_node" >/dev/null 2>&1 || fail 'a second update failed after the skills move'
+clash="$scratch/skills-clash"
+mkdir -p "$clash"
+git -C "$clash" init -q
+bash "$node_sh" init --preset software-development --mode track-shared "$clash" >/dev/null
+mkdir -p "$clash/.agent/skills/groom" "$clash/.agents/skills/groom"
+bash "$node_sh" update "$clash" >"$scratch/skills-clash.out" 2>&1 || fail 'update failed on a skills clash instead of leaving the skills in place'
+[ -d "$clash/.agent/skills/groom" ] || fail 'update moved skills over a clashing name'
+grep -q 'already exist in' "$scratch/skills-clash.out" || fail 'the skills clash was not reported'
+
 # Installed skills
 sk="$scratch/track-all-manual"
 mkdir -p "$sk/.agents/skills/empty" "$sk/.agents/skills/bad" "$sk/.agents/skills/folded" "$sk/.agents/skills/long" "$sk/.claude/skills/retro"

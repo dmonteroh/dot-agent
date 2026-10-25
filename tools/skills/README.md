@@ -22,7 +22,7 @@ cp -r <clone>/tools/skills/groom <clone>/tools/skills/retro ~/.agents/skills/
 ln -s ../.agents/skills ~/.claude/skills
 ```
 
-At the root, every tool that reads `~/.agents/skills/` sees the skills in every project. If `.claude/skills` already exists with other content, symlink the individual skill directories into it instead of replacing it. To track this source repo as it updates, symlink from the clone rather than copying.
+At the root, every tool that reads `~/.agents/skills/` sees the skills in every project. A node that installed skills at `.agent/skills/` before 6.3 has them moved by `node.sh update`, which also repoints `.claude/skills` and drops the `.codex/skills` link. If `.claude/skills` already exists with other content, symlink the individual skill directories into it instead of replacing it. To track this source repo as it updates, symlink from the clone rather than copying.
 
 The skills sit outside `.agent/`, so no tracking mode touches them: the project decides whether `.agents/skills/` enters git. The node stays at `.agent/` because Codex's `workspace-write` sandbox keeps `.agents/` read-only, which suits skills an agent only reads and would block every write a node needs. Other tools and installers write into `.agents/skills/` too, so `status.sh` checks every installed skill against the Agent Skills specification and reports a `GROOM:` line for a missing `SKILL.md`, a `name` that differs from its directory, a missing description, a description over 1024 characters, or a separate copy under `.claude/skills/`.
 
