@@ -1673,7 +1673,7 @@ EOF
     # every run in a harness-free arm. The artifact is written, empty of
     # findings and saying why: a grader that reaches for it gets a reason,
     # and every assertion that reads it is excluded from this comparison.
-    printf 'status.sh was not run: this fixture has no .agent directory.\n' \
+    printf 'status.sh was not run: this fixture has no node directory (.agents/ or .agent/).\n' \
       >"$rundir/outputs/status-after.txt"
   fi
 

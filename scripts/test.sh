@@ -4283,7 +4283,7 @@ bare_harness=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["
   "$wsc_bare/iteration-1/run-config.json" 2>/dev/null)
 if [ "$rc44bare" -eq 0 ] && [ -n "$bare_run" ] && [ -f "$bare_run/grading.json" ] \
   && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("void"))' "$bare_run/run-meta.json" 2>/dev/null)" = "False" ] \
-  && grep -q 'no .agents directory' "$bare_run/outputs/status-after.txt" 2>/dev/null \
+  && grep -q 'no node directory' "$bare_run/outputs/status-after.txt" 2>/dev/null \
   && [ "$bare_harness" = "none" ]; then
   pass "evals: a no-harness run grades instead of voiding, and records its harness mode"
 else
