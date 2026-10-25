@@ -34,7 +34,7 @@ REVIEW: CODE PATH MESSAGE
 
 - `SOURCE_ROOTS=src` is a space-separated list of project-relative roots.
 - `TEST_PATH_RE=...` is an extended regular expression for test paths.
-- `CATALOGS=auto` discovers `.agent/docs/*catalog*.md`. Otherwise it is a space-separated list of project-relative catalog paths.
+- `CATALOGS=auto` discovers `.agents/docs/*catalog*.md`. Otherwise it is a space-separated list of project-relative catalog paths.
 - `MAX_FINDINGS=20` caps ordinary candidate lines and must be a positive whole number. `0` is invalid rather than meaning “hide every finding.”
 
 Configuration lists intentionally do not encode paths containing spaces. Such paths are supported for changed files, while projects needing spaced source roots or catalog paths should choose a stable unspaced parent/root.

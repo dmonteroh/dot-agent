@@ -14,13 +14,13 @@ trap 'exit 130' INT TERM
 
 make_fixture() {
   fdir="$1"; count="$2"
-  mkdir -p "$fdir/.agent/rules" "$fdir/.agent/docs"
+  mkdir -p "$fdir/.agents/rules" "$fdir/.agents/docs"
   n=0
   while [ "$n" -lt "$count" ]; do
     if [ $((n % 2)) -eq 0 ]; then
-      printf '# Rule %d\nBody line one for record %d.\nBody line two.\n' "$n" "$n" >"$fdir/.agent/rules/r$n.md"
+      printf '# Rule %d\nBody line one for record %d.\nBody line two.\n' "$n" "$n" >"$fdir/.agents/rules/r$n.md"
     else
-      printf '# Doc %d\n<!-- Read when: record %d -->\nBody text for record %d.\n' "$n" "$n" "$n" >"$fdir/.agent/docs/d$n.md"
+      printf '# Doc %d\n<!-- Read when: record %d -->\nBody text for record %d.\n' "$n" "$n" "$n" >"$fdir/.agents/docs/d$n.md"
     fi
     n=$((n + 1))
   done
@@ -35,7 +35,7 @@ for count in 100 1000; do
     : >"$scratch/samples"
     i=0
     while [ "$i" -lt "$repeats" ]; do
-      if [ "$mode" = cold ]; then rm -rf "$project/.agent/indexes"; fi
+      if [ "$mode" = cold ]; then rm -rf "$project/.agents/indexes"; fi
       /usr/bin/time -p -o "$scratch/time" "$idx" ensure --root "$project" >/dev/null 2>"$scratch/diag"
       if [ "$mode" = warm ]; then grep -q '^HIT$' "$scratch/diag"; fi
       awk '$1=="real"{print $2}' "$scratch/time" >>"$scratch/samples"

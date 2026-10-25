@@ -13,13 +13,13 @@ Usage: learn.sh lookup   --file <path|-> [root]
        learn.sh pending  [root]
        learn.sh resolve  --id <id> --disposition <value> [root]
 
-root defaults to . — the project root holding .agent/. A record lives at
-<root>/.agent/rules/learned/<id>.md; <id> is its filename without .md, a
+root defaults to . — the project root holding .agents/. A record lives at
+<root>/.agents/rules/learned/<id>.md; <id> is its filename without .md, a
 minted 12-character lowercase-hex identity. <version> is
 git hash-object --no-filters -- of that record file. --file - reads the
 candidate body from stdin. pending lists the migration's open
 semantic-review-pending and hook-missing items from
-<root>/.agent/migration-inventory.md; resolve closes one, --disposition
+<root>/.agents/migration-inventory.md; resolve closes one, --disposition
 one of migrated, "migrated (split into <id>[, <id>]...)",
 "migrated (merged into <id>)", or retired. Full documentation:
 scripts/docs/learn.md.
@@ -233,7 +233,7 @@ lrn_publish_replace() {
 }
 
 lrn_indexes_mode() {
-  im_purpose="$1/.agent/purpose.md"
+  im_purpose="$1/.agents/purpose.md"
   [ -f "$im_purpose" ] || { printf 'manual'; return; }
   im_line=$(grep -m1 '^  indexes:' "$im_purpose")
   im_val=$(printf '%s\n' "$im_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
@@ -243,12 +243,12 @@ lrn_indexes_mode() {
 
 lrn_refresh_index() {
   [ "$(lrn_indexes_mode "$1")" = generated ] || return 0
-  ri_idx="$1/.agent/scripts/index.sh"
+  ri_idx="$1/.agents/scripts/index.sh"
   if [ -x "$ri_idx" ]; then
     "$ri_idx" ensure --root "$1" >/dev/null 2>&1 \
-      || echo "learn.sh: index refresh failed after the write — read $1/.agent/rules/ and $1/.agent/docs/ directly until it is fixed" >&2
+      || echo "learn.sh: index refresh failed after the write — read $1/.agents/rules/ and $1/.agents/docs/ directly until it is fixed" >&2
   else
-    echo "learn.sh: no index.sh at $ri_idx to refresh the cache — read $1/.agent/rules/ and $1/.agent/docs/ directly" >&2
+    echo "learn.sh: no index.sh at $ri_idx to refresh the cache — read $1/.agents/rules/ and $1/.agents/docs/ directly" >&2
   fi
 }
 
@@ -297,7 +297,7 @@ lookup)
   [ -n "$file" ] || { echo "learn.sh: lookup requires --file <path|->" >&2; usage >&2; exit 2; }
 
   read_candidate "$file"
-  agent="$root/.agent"
+  agent="$root/.agents"
   learned_dir="$agent/rules/learned"
   if lrn_dir_is_real "$learned_dir"; then
     lk_results=$(lrn_scan_records "$candidate_tmp" "$learned_dir") || exit 2
@@ -345,7 +345,7 @@ new)
     exit 2 ;;
   esac
 
-  agent="$root/.agent"
+  agent="$root/.agents"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
     if [ "$(lrn_indexes_mode "$root")" = generated ] && [ ! -e "$learned_dir" ]; then
@@ -428,7 +428,7 @@ revise)
   [ -n "$file" ] || { echo "learn.sh: revise requires --file <path|->" >&2; usage >&2; exit 2; }
   [ -n "$expected" ] || { echo "learn.sh: revise requires --expected <version>" >&2; usage >&2; exit 2; }
 
-  agent="$root/.agent"
+  agent="$root/.agents"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
     echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
@@ -495,7 +495,7 @@ retire)
   lrn_id_ok "$id" || { echo "learn.sh: <id> must be 12 lowercase hex characters (got '$id')" >&2; exit 2; }
   [ -n "$expected" ] || { echo "learn.sh: retire requires --expected <version>" >&2; usage >&2; exit 2; }
 
-  agent="$root/.agent"
+  agent="$root/.agents"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
     echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
@@ -542,7 +542,7 @@ pending)
     esac
   done
 
-  agent="$root/.agent"
+  agent="$root/.agents"
   learned_dir="$agent/rules/learned"
   inventory="$agent/migration-inventory.md"
   [ -f "$inventory" ] || exit 0
@@ -601,7 +601,7 @@ resolve)
   [ -n "$id" ] || { echo "learn.sh: resolve requires --id <id>" >&2; usage >&2; exit 2; }
   [ -n "$disp" ] || { echo "learn.sh: resolve requires --disposition <value>" >&2; usage >&2; exit 2; }
 
-  agent="$root/.agent"
+  agent="$root/.agents"
   learned_dir="$agent/rules/learned"
   docs_dir="$agent/docs"
   inventory="$agent/migration-inventory.md"

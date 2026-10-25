@@ -2,9 +2,9 @@
   "autoMemoryEnabled": false,
   "permissions": {
     "allow": [
-      "Read(**/.agent/**)",
-      "Edit(**/.agent/**)",
-      "Write(**/.agent/**)"
+      "Read(**/.agents/**)",
+      "Edit(**/.agents/**)",
+      "Write(**/.agents/**)"
     ]
   }
 }

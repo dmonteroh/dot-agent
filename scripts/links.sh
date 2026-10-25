@@ -9,16 +9,16 @@ case "$root" in
 Usage: links.sh [root]
 
 Reports ORPHAN: (a file in the node nothing cites) and BROKEN: (a node path
-cited by a node file that does not exist). Paths outside .agent/ are out of
+cited by a node file that does not exist). Paths outside .agents/ are out of
 scope. root defaults to . — findings never change the exit status. A root
-holding no .agent/ is a usage error and exits 1.
+holding no .agents/ is a usage error and exits 1.
 EOF
   exit 0 ;;
 esac
 
-agent="$root/.agent"
+agent="$root/.agents"
 if [ ! -d "$agent" ]; then
-  echo "links.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+  echo "links.sh: no .agents directory at $agent — run from the node's project root, or pass that root as an argument" >&2
   exit 1
 fi
 
@@ -118,7 +118,7 @@ for c in "${corpus[@]}"; do
     case "$target" in *.md) ;; *) continue ;; esac
 
     stripped=${target#./}
-    inagent=${stripped#.agent/}
+    inagent=${stripped#.agents/}
     case "$inagent" in
     docs/* | memory/* | rules/* | archive/* | scripts/*) ;;
     */*) continue ;;

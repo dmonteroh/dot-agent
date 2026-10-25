@@ -22,7 +22,7 @@ cp "$repo_root/scripts/review.sh" "$repo_root/scripts/review.conf" \
 chmod +x "$bin/review.sh" "$bin/comments.sh"
 
 work="$tmp/work"
-mkdir -p "$work/src" "$work/tests" "$work/.agent/docs"
+mkdir -p "$work/src" "$work/tests" "$work/.agents/docs"
 git -C "$work" init -q
 git -C "$work" config user.email test@example.invalid
 git -C "$work" config user.name test
@@ -46,7 +46,7 @@ git -C "$work" add src/staged.ts tests/staged.test.ts
 printf 'export function helperAdded() { return existing; }\n' >>"$work/src/base.ts"
 printf 'helperAdded();\n' >"$work/tests/base.test.ts"
 printf 'export function spacedHelper() { return 3; }\n' >"$work/src/path with space.ts"
-printf '| helper | path |\n|---|---|\n| committedHelper | src/committed.ts |\n' >"$work/.agent/docs/api-catalog.md"
+printf '| helper | path |\n|---|---|\n| committedHelper | src/committed.ts |\n' >"$work/.agents/docs/api-catalog.md"
 
 before_index=$(git -C "$work" write-tree)
 before_status=$(git -C "$work" status --porcelain=v1)
@@ -103,27 +103,27 @@ check "comment gate retains ownership of blocking status" \
   '[ "$blocked_rc" -eq 1 ] && printf "%s" "$blocked_out" | grep -q "^BLOCK:" && printf "%s" "$blocked_out" | grep -q "REVIEW: TEST_COVERAGE"'
 
 node="$tmp/node"
-mkdir -p "$node/.agent/scripts" "$node/.agent/rules" "$node/.agent/docs" "$node/.agent/memory"
-cp "$repo_root/scripts/status.sh" "$node/.agent/scripts/status.sh"
-cat >"$node/.agent/scripts/status.conf" <<'EOF'
+mkdir -p "$node/.agents/scripts" "$node/.agents/rules" "$node/.agents/docs" "$node/.agents/memory"
+cp "$repo_root/scripts/status.sh" "$node/.agents/scripts/status.sh"
+cat >"$node/.agents/scripts/status.conf" <<'EOF'
 PROBE_TOOLS=dot-agent-v63-missing-tool
 MEMORY_MAX_WORDS=1
 EOF
-cat >"$node/.agent/session-log.md" <<'EOF'
+cat >"$node/.agents/session-log.md" <<'EOF'
 - [2026-09-27] (test) fixture. verify: pass
 EOF
-cat >"$node/.agent/memory.md" <<'EOF'
+cat >"$node/.agents/memory.md" <<'EOF'
 - [fact](memory/fact.md) — fixture
 EOF
-printf 'several words in fact\n' >"$node/.agent/memory/fact.md"
-cat >"$node/.agent/rules/contract.md" <<'EOF'
+printf 'several words in fact\n' >"$node/.agents/memory/fact.md"
+cat >"$node/.agents/rules/contract.md" <<'EOF'
 # Contract
 ## Project guardrails
 - Test: true
 EOF
-printf '# Quality bar\n' >"$node/.agent/rules/quality-bar.md"
-printf -- '- Keep the fixture deterministic.\n' >"$node/.agent/rules/learned.md"
-cat >"$node/.agent/purpose.md" <<'EOF'
+printf '# Quality bar\n' >"$node/.agents/rules/quality-bar.md"
+printf -- '- Keep the fixture deterministic.\n' >"$node/.agents/rules/learned.md"
+cat >"$node/.agents/purpose.md" <<'EOF'
 ---
 dot-agent:
   version: 6.3
@@ -131,7 +131,7 @@ dot-agent:
 ---
 # Purpose
 EOF
-cat >"$node/.agent/docs/fenced.md" <<'EOF'
+cat >"$node/.agents/docs/fenced.md" <<'EOF'
 <!-- Read when: testing fenced headings -->
 # Fenced
 ## Real section
@@ -144,7 +144,7 @@ cat >"$node/.agent/docs/fenced.md" <<'EOF'
 ## Another example heading
 ~~~
 EOF
-cat >"$node/.agent/docs/architecture.md" <<'EOF'
+cat >"$node/.agents/docs/architecture.md" <<'EOF'
 # Architecture
 
 ### `fenced.md`
@@ -166,13 +166,13 @@ status_tools_text=$(HOME="$tmp/home" bash "$repo_root/scripts/status.sh" "$node"
 check "tool availability remains in default status text" \
   'printf "%s" "$status_tools_text" | grep -q "^TOOLS: not installed: dot-agent-v63-missing-tool$"'
 
-printf 'legacy migration payload\n' >"$node/.agent/memory/legacy.md"
+printf 'legacy migration payload\n' >"$node/.agents/memory/legacy.md"
 legacy_tsv=$(HOME="$tmp/home" bash "$repo_root/scripts/status.sh" --format tsv "$node")
 check "legacy unsplit memory is blocking migration state" \
   'printf "%s" "$legacy_tsv" | grep -q $'"'"'^block\tMEMORY_LEGACY_UNSPLIT\tmemory/legacy.md\t'"'"''
-rm "$node/.agent/memory/legacy.md"
+rm "$node/.agents/memory/legacy.md"
 
-rm "$node/.agent/memory.md"
+rm "$node/.agents/memory.md"
 set +e
 status_text=$(HOME="$tmp/home" bash "$repo_root/scripts/status.sh" "$node" 2>&1)
 text_rc=$?
@@ -187,7 +187,7 @@ check "TSV contains findings only" \
   '! printf "%s" "$status_tsv" | grep -Eq "^(LOAD:|PAYLOAD:|- \[)"'
 
 tab_doc=$'tab\tname.md'
-printf '# Tab doc\n' >"$node/.agent/docs/$tab_doc"
+printf '# Tab doc\n' >"$node/.agents/docs/$tab_doc"
 escaped=$(HOME="$tmp/home" bash "$repo_root/scripts/status.sh" --format tsv "$node")
 check "TSV escapes control characters in paths" \
   'printf "%s" "$escaped" | grep -Fq $'"'"'block\tDOC_HOOK_MISSING\tdocs/tab\\tname.md\t'"'"''

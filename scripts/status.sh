@@ -39,8 +39,8 @@ would write against PAYLOAD_MAX_BYTES; over budget, --load prints one line
 (REPAIR:, naming the mode's paths) instead, with no marker and no file
 content written.
 
-root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
-root holding no .agent/ is a usage error and exits 1.
+root defaults to . — checks <root>/.agents/ and exits 0 whatever it finds. A
+root holding no .agents/ is a usage error and exits 1.
 
 --format tsv prints findings only as severity<TAB>code<TAB>path<TAB>message.
 Tabs, carriage returns, and newlines in fields are escaped. It cannot be
@@ -85,9 +85,9 @@ finding() { # severity code path message default-text
   fi
 }
 
-agent="$root/.agent"
+agent="$root/.agents"
 if [ ! -d "$agent" ]; then
-  echo "status.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+  echo "status.sh: no .agents directory at $agent — run from the node's project root, or pass that root as an argument" >&2
   exit 1
 fi
 
@@ -182,6 +182,55 @@ if ! head -n 10 "$purpose" 2>/dev/null | grep -qF "dot-agent:"; then
   finding block MANIFEST_INVALID purpose.md "missing dot-agent frontmatter — restore manifest" "REPAIR: purpose.md missing dot-agent frontmatter — restore manifest"
 fi
 
+# Installed skills follow the Agent Skills specification (agentskills.io/
+# specification): a SKILL.md whose frontmatter name equals its directory and
+# whose description holds 1 to 1024 characters. Several tools drop a skill that
+# breaks these without a message. Other installers write here too, so the
+# findings are advisory.
+skill_frontmatter() { # $1: SKILL.md — prints "name<TAB>description"
+  awk '
+    NR == 1 { if ($0 != "---") exit; inside = 1; next }
+    inside && $0 == "---" { exit }
+    inside && /^name:/ { v = $0; sub(/^name:[ \t]*/, "", v); name = v; block = 0; next }
+    inside && /^description:/ {
+      v = $0; sub(/^description:[ \t]*/, "", v)
+      if (v ~ /^[>|][-+]?$/) { block = 1; desc = ""; next }
+      desc = v; block = 0; next
+    }
+    inside && block && /^[ \t]/ { v = $0; sub(/^[ \t]+/, "", v); desc = desc (desc == "" ? "" : " ") v; next }
+    inside { block = 0 }
+    END {
+      if (name ~ /^".*"$/ || name ~ /^\047.*\047$/) name = substr(name, 2, length(name) - 2)
+      if (desc ~ /^".*"$/ || desc ~ /^\047.*\047$/) desc = substr(desc, 2, length(desc) - 2)
+      printf "%s\t%s\n", name, desc
+    }
+  ' "$1"
+}
+if [[ -d "$agent/skills" ]]; then
+  for skill_path in "$agent/skills"/*/; do
+    [[ -d "$skill_path" ]] || continue
+    skill_path=${skill_path%/}
+    skill_dir=${skill_path##*/}
+    skill_rel="skills/$skill_dir"
+    if [[ ! -f "$skill_path/SKILL.md" ]]; then
+      finding advisory SKILL_FILE_MISSING "$skill_rel" "has no SKILL.md — tools that read .agents/skills/ skip it; add one or remove the directory" "GROOM: $skill_rel has no SKILL.md — tools that read .agents/skills/ skip it; add one or remove the directory"
+      continue
+    fi
+    IFS=$'\t' read -r skill_name skill_desc < <(skill_frontmatter "$skill_path/SKILL.md")
+    if [[ "$skill_name" != "$skill_dir" ]]; then
+      finding advisory SKILL_NAME_MISMATCH "$skill_rel/SKILL.md" "frontmatter name '${skill_name}' does not match the directory '$skill_dir' — the Agent Skills spec requires the match; fix it here, or upstream when an installer wrote it" "GROOM: $skill_rel/SKILL.md frontmatter name '${skill_name}' does not match the directory '$skill_dir' — the Agent Skills spec requires the match; fix it here, or upstream when an installer wrote it"
+    fi
+    if [[ -z "$skill_desc" ]]; then
+      finding advisory SKILL_DESCRIPTION_MISSING "$skill_rel/SKILL.md" "has no frontmatter description — tools match a skill to a task by it; add one" "GROOM: $skill_rel/SKILL.md has no frontmatter description — tools match a skill to a task by it; add one"
+    elif [[ "${#skill_desc}" -gt 1024 ]]; then
+      finding advisory SKILL_DESCRIPTION_OVERSIZE "$skill_rel/SKILL.md" "description is ${#skill_desc} characters, over the spec's 1024 — shorten it" "GROOM: $skill_rel/SKILL.md description is ${#skill_desc} characters, over the spec's 1024 — shorten it"
+    fi
+    if [[ -d "$root/.claude/skills/$skill_dir" && ! -L "$root/.claude/skills" && ! -L "$root/.claude/skills/$skill_dir" ]]; then
+      finding advisory SKILL_DUPLICATE "$skill_rel" "a separate copy also lives at .claude/skills/$skill_dir — tools that read both directories list it twice or pick one; keep one and link the other" "GROOM: $skill_rel has a separate copy at .claude/skills/$skill_dir — tools that read both directories list it twice or pick one; keep one and link the other"
+    fi
+  done
+fi
+
 migration_target_line=$(grep -m1 '^  migration_target:' "$purpose" 2>/dev/null)
 if [[ -n "$migration_target_line" ]]; then
   migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
@@ -206,7 +255,7 @@ entrypoints=()
 for candidate in "$root/CLAUDE.md" "$root/AGENTS.md" "$root/.cursorrules" \
   "$root/.github/copilot-instructions.md" "$root/.claude/CLAUDE.md"; do
   [[ -s "$candidate" ]] || continue
-  grep -qF ".agent/scripts/status.sh" "$candidate" || continue
+  grep -qF ".agents/scripts/status.sh" "$candidate" || continue
   entrypoints+=("$candidate")
 done
 if [[ "${#entrypoints[@]}" -gt 1 ]]; then
@@ -281,7 +330,7 @@ if [[ -d "$memdir" ]]; then
     if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
       keep=$(keep_tokens "$f")
       memory_rel="memory/$(basename "$f")"
-      finding advisory MEMORY_RECORD_OVERSIZE "$memory_rel" "> $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}" "GROOM: $memory_rel > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}"
+      finding advisory MEMORY_RECORD_OVERSIZE "$memory_rel" "> $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agents/${keep:+ — keep at least: $keep}" "GROOM: $memory_rel > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agents/${keep:+ — keep at least: $keep}"
     fi
   done
 fi
@@ -513,7 +562,7 @@ if [[ "$load" -eq 1 ]]; then
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
       finding block LOAD_PAYLOAD_OVERSIZE purpose.md "--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}" "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
     else
-      echo "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md."
+      echo "Rule bodies are not printed here — read every page listed in .agents/indexes/current.md."
       for f in "$purpose" "$memory"; do
         [[ -s "$f" ]] || continue
         printf '\n==== %s ====\n' "${f#"$root"/}"
@@ -522,7 +571,7 @@ if [[ "$load" -eq 1 ]]; then
     fi
   else
     if [[ "$indexes" == generated ]]; then
-      echo "Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."
+      echo "Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agents/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."
     fi
     if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
       finding block LOAD_PAYLOAD_OVERSIZE rules/learned.md "--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}" "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"

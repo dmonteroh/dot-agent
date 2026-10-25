@@ -11,8 +11,8 @@ Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh sync --name <file> [--read-when "…"] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
 
-root defaults to . — new writes <root>/.agent/docs/<file> and a routing row
-in <root>/.agent/docs/architecture.md; rehook rewrites an existing doc's
+root defaults to . — new writes <root>/.agents/docs/<file> and a routing row
+in <root>/.agents/docs/architecture.md; rehook rewrites an existing doc's
 "Read when:" header and its routing row to the new text, both or neither.
 EOF
 }
@@ -181,7 +181,7 @@ new)
     exit 1
   fi
 
-  agent="$root/.agent"
+  agent="$root/.agents"
   docs="$agent/docs"
   doc="$docs/$filename"
   arch="$docs/architecture.md"
@@ -264,9 +264,9 @@ sync)
     esac
   done
   [ -n "$name" ] || { echo "docs.sh: sync requires --name <file>" >&2; exit 1; }
-  filename=$(doc_filename "$name") || { echo "docs.sh: --name must be a safe path under .agent/docs/ (got '$name')" >&2; exit 1; }
+  filename=$(doc_filename "$name") || { echo "docs.sh: --name must be a safe path under .agents/docs/ (got '$name')" >&2; exit 1; }
   [ "$readwhen_supplied" -eq 0 ] || validate_cell --read-when "$readwhen"
-  docs="$root/.agent/docs"
+  docs="$root/.agents/docs"
   doc="$docs/$filename"
   arch="$docs/architecture.md"
   [ -f "$doc" ] && [ ! -L "$doc" ] || { echo "docs.sh: $doc is not a regular document" >&2; exit 1; }
@@ -339,7 +339,7 @@ sync)
   cp "$doc" "$doc_backup" || { rm -f "$doc_tmp" "$arch_tmp"; exit 1; }
   if mv "$doc_tmp" "$doc" && mv "$arch_tmp" "$arch"; then
     rm -f "$doc_backup"
-    printf 'synced\t.agent/docs/%s\t%s\n' "$filename" "$(git hash-object --no-filters -- "$doc")"
+    printf 'synced\t.agents/docs/%s\t%s\n' "$filename" "$(git hash-object --no-filters -- "$doc")"
     exit 0
   fi
   mv "$doc_backup" "$doc" 2>/dev/null || :
@@ -371,8 +371,8 @@ catalog)
   validate_cell --when "$when"
   case "$name" in *'`'*) echo "docs.sh: --name contains unsafe Markdown-table characters" >&2; exit 1 ;; esac
   case "$project_path" in /*|.|..|../*|*/../*|*/..|*/.|*'/./'*|./*|*'`'*) echo "docs.sh: --path must be a safe project-relative path" >&2; exit 1 ;; esac
-  catfile=$(doc_filename "$catalog") || { echo "docs.sh: --catalog must name a file under .agent/docs/" >&2; exit 1; }
-  catdoc="$root/.agent/docs/$catfile"
+  catfile=$(doc_filename "$catalog") || { echo "docs.sh: --catalog must name a file under .agents/docs/" >&2; exit 1; }
+  catdoc="$root/.agents/docs/$catfile"
   [ -f "$catdoc" ] && [ ! -L "$catdoc" ] || { echo "docs.sh: $catdoc is not a regular catalog" >&2; exit 1; }
   root_phys=$(cd "$root" 2>/dev/null && pwd -P) || exit 1
   catalog_parent_phys=$(cd "$(dirname "$catdoc")" 2>/dev/null && pwd -P) || exit 1
@@ -481,10 +481,10 @@ rehook)
   esac
   case "$filename" in
   /* | ../* | */../* | *"$nl"*)
-    echo "docs.sh: --name must be a path under .agent/docs/ (got '$name')" >&2
+    echo "docs.sh: --name must be a path under .agents/docs/ (got '$name')" >&2
     exit 1 ;;
   esac
-  docs="$root/.agent/docs"
+  docs="$root/.agents/docs"
   doc="$docs/$filename"
   arch="$docs/architecture.md"
   if [ ! -s "$doc" ]; then

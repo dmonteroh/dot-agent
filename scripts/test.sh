@@ -20,7 +20,7 @@ fail() { FAIL=$((FAIL + 1)); printf 'FAIL %s\n' "$1"; }
 
 
 status_flags() {
-  "$1/.agent/scripts/status.sh" "$1" 2>"$WORK/.status-stderr" | grep -E '^(GROOM|REPAIR|INDEX):'
+  "$1/.agents/scripts/status.sh" "$1" 2>"$WORK/.status-stderr" | grep -E '^(GROOM|REPAIR|INDEX):'
   sf_rc=${PIPESTATUS[0]}
   if [ "$sf_rc" -ne 0 ] || [ -s "$WORK/.status-stderr" ]; then
     echo "STATUSFAIL: rc=$sf_rc stderr=$(tr '\n' ' ' <"$WORK/.status-stderr" | cut -c1-120)"
@@ -40,15 +40,15 @@ words_n() {
 today() { date +%Y-%m-%d; }
 
 finish_bootstrap() {
-  fb_contract="$1/.agent/rules/contract.md"
+  fb_contract="$1/.agents/rules/contract.md"
   awk '/^## Quality bar/ { inq = 1 } inq && /^## / && !/^## Quality bar/ { inq = 0 } !inq' \
     "$fb_contract" >"$fb_contract.body"
   awk '/^## Quality bar/ { inq = 1 } inq && /^## / && !/^## Quality bar/ { inq = 0 } inq' \
-    "$fb_contract" >"$1/.agent/rules/quality-bar.md"
+    "$fb_contract" >"$1/.agents/rules/quality-bar.md"
   mv "$fb_contract.body" "$fb_contract"
   subst "$fb_contract" 's/^\(- [A-Za-z][^:]*:\) <.*>$/\1 filled at bootstrap/'
-  if [ -f "$1/.agent/scripts/verify.sh" ]; then
-    cat >"$1/.agent/scripts/checks.sh" <<'CHECKS'
+  if [ -f "$1/.agents/scripts/verify.sh" ]; then
+    cat >"$1/.agents/scripts/checks.sh" <<'CHECKS'
 #!/usr/bin/env bash
 printf 'TAP version 13\n1..1\nok 1 - controlled fixture check\n'
 CHECKS
@@ -58,8 +58,8 @@ CHECKS
 make_v6_fixture() {
   fx="$1"
   fxmode="${2:-ignore-all}"
-  mkdir -p "$fx/.agent/rules" "$fx/.agent/docs"
-  cat >"$fx/.agent/purpose.md" <<'EOF'
+  mkdir -p "$fx/.agents/rules" "$fx/.agents/docs"
+  cat >"$fx/.agents/purpose.md" <<'EOF'
 ---
 # Do not remove or rewrite this block; update passes may set `migration_target` — version changes only at finalize.
 dot-agent:
@@ -67,14 +67,14 @@ dot-agent:
   version: 6
   preset: software-development
   mode: ignore-all        # ignore-all | track-shared | track-all
-  children: []              # repo-relative paths to child .agent/ nodes
+  children: []              # repo-relative paths to child .agents/ nodes
 ---
 
 # Purpose
 
 Fixture project for smoke tests.
 EOF
-  cat >"$fx/.agent/memory.md" <<'EOF'
+  cat >"$fx/.agents/memory.md" <<'EOF'
 # Memory
 <!-- Prose facts about the project, one paragraph per entry, newest first. -->
 
@@ -82,47 +82,47 @@ This project uses a custom auth flow with rotating tokens. The staging
 database resets nightly at 02:00 UTC. Deploy via the internal release
 tool, never raw kubectl.
 EOF
-  cat >"$fx/.agent/session-log.md" <<'EOF'
+  cat >"$fx/.agents/session-log.md" <<'EOF'
 # Session log
 <!-- One entry per turn that changed files, newest last. -->
 
 - [2026-01-01] (claude) fixture bootstrap for smoke tests (testing). verify: pass.
 EOF
-  cat >"$fx/.agent/rules/contract.md" <<'EOF'
+  cat >"$fx/.agents/rules/contract.md" <<'EOF'
 # Contract
 
 ## Project guardrails
 
 - Build: `true`
 EOF
-  cat >"$fx/.agent/rules/quality-bar.md" <<'EOF'
+  cat >"$fx/.agents/rules/quality-bar.md" <<'EOF'
 # Quality bar
 
 Fixture quality-bar body for smoke tests.
 EOF
-  cat >"$fx/.agent/rules/learned.md" <<'EOF'
+  cat >"$fx/.agents/rules/learned.md" <<'EOF'
 # Learned rules
 <!-- Binding rules distilled from operator corrections. -->
 
 - [2026-01-01] Fixture learned-rule body for smoke tests.
 EOF
   if [ "$fxmode" != "ignore-all" ]; then
-    sed "s/^  mode: ignore-all/  mode: $fxmode/" "$fx/.agent/purpose.md" >"$fx/.agent/purpose.md.tmp"
-    mv "$fx/.agent/purpose.md.tmp" "$fx/.agent/purpose.md"
+    sed "s/^  mode: ignore-all/  mode: $fxmode/" "$fx/.agents/purpose.md" >"$fx/.agents/purpose.md.tmp"
+    mv "$fx/.agents/purpose.md.tmp" "$fx/.agents/purpose.md"
   fi
 }
 
 make_index_fixture() {
   ifx="$1"
-  mkdir -p "$ifx/.agent/rules" "$ifx/.agent/docs"
-  cat >"$ifx/.agent/rules/contract.md" <<'EOF'
+  mkdir -p "$ifx/.agents/rules" "$ifx/.agents/docs"
+  cat >"$ifx/.agents/rules/contract.md" <<'EOF'
 # Contract
 
 ## Project guardrails
 
 - Build: `true`
 EOF
-  cat >"$ifx/.agent/docs/architecture.md" <<'EOF'
+  cat >"$ifx/.agents/docs/architecture.md" <<'EOF'
 # Alpha
 <!-- Read when: working on auth -->
 Body text describing the alpha area.
@@ -167,26 +167,29 @@ for preset in $PRESETS; do
 
     missing=""
     for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh checks.sh; do
-      [ -x "$root/.agent/scripts/$f" ] || missing="$missing $f"
+      [ -x "$root/.agents/scripts/$f" ] || missing="$missing $f"
     done
     for f in comments.conf status.conf log.conf; do
-      [ -f "$root/.agent/scripts/$f" ] || missing="$missing $f"
+      [ -f "$root/.agents/scripts/$f" ] || missing="$missing $f"
     done
     [ -z "$missing" ] && pass "init $preset/$mode: every shipped script and starter conf is in place" || fail "init $preset/$mode: every shipped script and starter conf is in place (missing:$missing)"
-    [ ! -e "$root/.agent/scripts/docs" ] && pass "init $preset/$mode: scripts/docs is not shipped into the node" || fail "init $preset/$mode: scripts/docs is not shipped into the node"
+    [ ! -e "$root/.agents/scripts/docs" ] && pass "init $preset/$mode: scripts/docs is not shipped into the node" || fail "init $preset/$mode: scripts/docs is not shipped into the node"
 
-    grep -qxF '  indexes: manual        # manual | generated' "$root/.agent/purpose.md" \
+    grep -qxF '  indexes: manual        # manual | generated' "$root/.agents/purpose.md" \
       && pass "init $preset/$mode: manifest defaults to indexes: manual" \
       || fail "init $preset/$mode: manifest defaults to indexes: manual"
   done
 done
 
+# No mode ignores .agents/ whole: other tools share it. Each lists node-owned paths.
+expected_shared=$(printf '%s\n' .agents/memory.md .agents/memory/ .agents/session-log.md .agents/archive/ \
+  .agents/scripts/ .agents/indexes/ .agents/migration-inventory.md '.agents/.*' '.agents/*.tmp' '.agents/*.tmp.*')
+expected_ignore_all=$(printf '%s\n' .agents/purpose.md .agents/rules/ .agents/docs/ "$expected_shared")
 gi_ignore="$WORK/init-software-development-ignore-all/.gitignore"
-[ "$(cat "$gi_ignore" 2>/dev/null)" = ".agent/" ] && pass "ignore-all: gitignore is exactly '.agent/'" || fail "ignore-all: gitignore is exactly '.agent/'"
+[ "$(cat "$gi_ignore" 2>/dev/null)" = "$expected_ignore_all" ] && pass "ignore-all: gitignore lists every node-owned path" || fail "ignore-all: gitignore lists every node-owned path"
 
 gi_shared="$WORK/init-software-development-track-shared/.gitignore"
-expected_shared=$(printf '.agent/*\n!.agent/purpose.md\n!.agent/rules/\n!.agent/docs/')
-[ "$(cat "$gi_shared" 2>/dev/null)" = "$expected_shared" ] && pass "track-shared: gitignore matches the 4-line allowlist" || fail "track-shared: gitignore matches the 4-line allowlist"
+[ "$(cat "$gi_shared" 2>/dev/null)" = "$expected_shared" ] && pass "track-shared: gitignore lists the personal node paths" || fail "track-shared: gitignore lists the personal node paths"
 
 gi_all="$WORK/init-software-development-track-all/.gitignore"
 [ ! -e "$gi_all" ] && pass "track-all: no gitignore created" || fail "track-all: no gitignore created"
@@ -195,54 +198,54 @@ root2="$WORK/gitignore-preserve-ignore"
 mkdir -p "$root2"
 printf 'custom-content\n' >"$root2/.gitignore"
 "$NODE" init --preset software-development --mode ignore-all "$root2" >/dev/null 2>&1
-expected2=$(printf 'custom-content\n.agent/')
+expected2=$(printf 'custom-content\n%s' "$expected_ignore_all")
 [ "$(cat "$root2/.gitignore" 2>/dev/null)" = "$expected2" ] && pass "ignore-all: pre-existing gitignore content preserved" || fail "ignore-all: pre-existing gitignore content preserved"
 
 root3="$WORK/gitignore-preserve-shared"
 mkdir -p "$root3"
 printf 'foo\n' >"$root3/.gitignore"
 "$NODE" init --preset software-development --mode track-shared "$root3" >/dev/null 2>&1
-expected3=$(printf 'foo\n\n.agent/*\n!.agent/purpose.md\n!.agent/rules/\n!.agent/docs/')
+expected3=$(printf 'foo\n%s' "$expected_shared")
 [ "$(cat "$root3/.gitignore" 2>/dev/null)" = "$expected3" ] && pass "track-shared: pre-existing gitignore content preserved" || fail "track-shared: pre-existing gitignore content preserved"
 
 root4="$WORK/gitignore-fresh-ignore"
 mkdir -p "$root4"
 "$NODE" init --preset software-development --mode ignore-all "$root4" >/dev/null 2>&1
-if [ "$(cat "$root4/.gitignore" 2>/dev/null)" = ".agent/" ] && grep -qF "custom-content" "$root2/.gitignore" 2>/dev/null; then
+if [ "$(cat "$root4/.gitignore" 2>/dev/null)" = "$expected_ignore_all" ] && grep -qF "custom-content" "$root2/.gitignore" 2>/dev/null; then
   pass "re-init into another root does not cross-contaminate gitignores"
 else
   fail "re-init into another root does not cross-contaminate gitignores"
 fi
 
 existing="$WORK/existing-agent"
-mkdir -p "$existing/.agent"
-touch "$existing/.agent/marker"
+mkdir -p "$existing/.agents"
+touch "$existing/.agents/purpose.md"
 "$NODE" init --preset software-development --mode ignore-all "$existing" >/dev/null 2>"$WORK/err1"
 rc=$?
-[ "$rc" -ne 0 ] && pass "init refuses an existing .agent (nonzero exit)" || fail "init refuses an existing .agent (nonzero exit)"
-count=$(find "$existing/.agent" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
-[ "$count" -eq 1 ] && pass "init refuses an existing .agent (no changes made)" || fail "init refuses an existing .agent (no changes made, found $count entries)"
+[ "$rc" -ne 0 ] && pass "init refuses an existing node manifest (nonzero exit)" || fail "init refuses an existing node manifest (nonzero exit)"
+count=$(find "$existing/.agents" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+[ "$count" -eq 1 ] && pass "init refuses an existing node manifest (no changes made)" || fail "init refuses an existing node manifest (no changes made, found $count entries)"
 
 unk_preset="$WORK/unknown-preset"
 mkdir -p "$unk_preset"
 "$NODE" init --preset bogus-preset --mode ignore-all "$unk_preset" >/dev/null 2>"$WORK/err2"
 rc=$?
 [ "$rc" -ne 0 ] && pass "unknown --preset exits nonzero" || fail "unknown --preset exits nonzero"
-[ ! -e "$unk_preset/.agent" ] && pass "unknown --preset creates nothing" || fail "unknown --preset creates nothing"
+[ ! -e "$unk_preset/.agents" ] && pass "unknown --preset creates nothing" || fail "unknown --preset creates nothing"
 
 unk_mode="$WORK/unknown-mode"
 mkdir -p "$unk_mode"
 "$NODE" init --preset software-development --mode bogus-mode "$unk_mode" >/dev/null 2>"$WORK/err3"
 rc=$?
 [ "$rc" -ne 0 ] && pass "unknown --mode exits nonzero" || fail "unknown --mode exits nonzero"
-[ ! -e "$unk_mode/.agent" ] && pass "unknown --mode creates nothing" || fail "unknown --mode creates nothing"
+[ ! -e "$unk_mode/.agents" ] && pass "unknown --mode creates nothing" || fail "unknown --mode creates nothing"
 
 unk_indexes="$WORK/unknown-indexes"
 mkdir -p "$unk_indexes"
 "$NODE" init --preset software-development --mode ignore-all --indexes bogus-indexes "$unk_indexes" >/dev/null 2>"$WORK/err4"
 rc=$?
 [ "$rc" -ne 0 ] && pass "unknown --indexes exits nonzero" || fail "unknown --indexes exits nonzero"
-[ ! -e "$unk_indexes/.agent" ] && pass "unknown --indexes creates nothing" || fail "unknown --indexes creates nothing"
+[ ! -e "$unk_indexes/.agents" ] && pass "unknown --indexes creates nothing" || fail "unknown --indexes creates nothing"
 grep -qF "unknown --indexes: 'bogus-indexes' (must be manual or generated)" "$WORK/err4" \
   && pass "unknown --indexes: message matches the --mode refusal style" \
   || fail "unknown --indexes: message matches the --mode refusal style"
@@ -250,59 +253,59 @@ grep -qF "unknown --indexes: 'bogus-indexes' (must be manual or generated)" "$WO
 idxman="$WORK/init-indexes-manual"
 mkdir -p "$idxman"
 "$NODE" init --preset software-development --mode ignore-all --indexes manual "$idxman" >/dev/null 2>&1
-grep -qxF '  indexes: manual        # manual | generated' "$idxman/.agent/purpose.md" \
+grep -qxF '  indexes: manual        # manual | generated' "$idxman/.agents/purpose.md" \
   && pass "init --indexes manual: manifest carries the line" \
   || fail "init --indexes manual: manifest carries the line"
 
 idxgen="$WORK/init-indexes-generated"
 mkdir -p "$idxgen"
 "$NODE" init --preset software-development --mode ignore-all --indexes generated "$idxgen" >/dev/null 2>&1
-grep -qxF '  indexes: generated        # manual | generated' "$idxgen/.agent/purpose.md" \
+grep -qxF '  indexes: generated        # manual | generated' "$idxgen/.agents/purpose.md" \
   && pass "init --indexes generated: manifest carries the line" \
   || fail "init --indexes generated: manifest carries the line"
-[ -x "$idxgen/.agent/scripts/index.sh" ] \
+[ -x "$idxgen/.agents/scripts/index.sh" ] \
   && pass "init --indexes generated: index.sh is installed" \
   || fail "init --indexes generated: index.sh is installed"
 finish_bootstrap "$idxgen"
-"$idxgen/.agent/scripts/index.sh" ensure --root "$idxgen" >/dev/null 2>&1
-idx_links=$("$idxgen/.agent/scripts/links.sh" "$idxgen" 2>&1)
-[ -e "$idxgen/.agent/indexes/current.md" ] && ! printf '%s\n' "$idx_links" | grep -q 'ORPHAN: indexes/' && pass "links.sh: the generated index cache is not an orphan" || fail "links.sh: the generated index cache is not an orphan ($idx_links)"
+"$idxgen/.agents/scripts/index.sh" ensure --root "$idxgen" >/dev/null 2>&1
+idx_links=$("$idxgen/.agents/scripts/links.sh" "$idxgen" 2>&1)
+[ -e "$idxgen/.agents/indexes/current.md" ] && ! printf '%s\n' "$idx_links" | grep -q 'ORPHAN: indexes/' && pass "links.sh: the generated index cache is not an orphan" || fail "links.sh: the generated index cache is not an orphan ($idx_links)"
 
 v6root="$WORK/update-v6"
 mkdir -p "$v6root"
 make_v6_fixture "$v6root"
-cp "$v6root/.agent/purpose.md" "$WORK/purpose-before.md"
+cp "$v6root/.agents/purpose.md" "$WORK/purpose-before.md"
 
 "$NODE" update "$v6root" >"$WORK/update.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update on V6 fixture exits 0" || fail "update on V6 fixture exits 0 (rc=$rc)"
 
-backup="$v6root/.agent.backup-v6"
-[ -d "$backup" ] && grep -q "custom auth flow" "$backup/memory.md" 2>/dev/null && pass "update: .agent.backup-v6 created with the pre-update memory.md" || fail "update: .agent.backup-v6 created with the pre-update memory.md"
+backup="$v6root/.agents.backup-v6"
+[ -d "$backup" ] && grep -q "custom auth flow" "$backup/memory.md" 2>/dev/null && pass "update: .agents.backup-v6 created with the pre-update memory.md" || fail "update: .agents.backup-v6 created with the pre-update memory.md"
 
-legacy="$v6root/.agent/memory/legacy.md"
+legacy="$v6root/.agents/memory/legacy.md"
 [ -f "$legacy" ] && grep -q "custom auth flow" "$legacy" && pass "update: memory/legacy.md holds the prose body" || fail "update: memory/legacy.md holds the prose body"
 
-grep -qF "[Legacy memory](memory/legacy.md)" "$v6root/.agent/memory.md" 2>/dev/null && pass "update: memory.md is the new index with the legacy line" || fail "update: memory.md is the new index with the legacy line"
+grep -qF "[Legacy memory](memory/legacy.md)" "$v6root/.agents/memory.md" 2>/dev/null && pass "update: memory.md is the new index with the legacy line" || fail "update: memory.md is the new index with the legacy line"
 
 grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pb-noversion"
-grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pa-noversion"
+grep -v '^  version:' "$v6root/.agents/purpose.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pa-noversion"
 diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version, migration_target, and indexes lines" || fail "update: manifest diff touches only the version, migration_target, and indexes lines"
-grep -q '^  version: 6$' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version stays at 6 (unbumped) — finalize's job" || fail "update: version stays at 6 (unbumped) — finalize's job"
-grep -q '^  migration_target: "6.3"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.3\"" || fail "update: migration_target is now \"6.3\""
-[ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.3"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
+grep -q '^  version: 6$' "$v6root/.agents/purpose.md" 2>/dev/null && pass "update: version stays at 6 (unbumped) — finalize's job" || fail "update: version stays at 6 (unbumped) — finalize's job"
+grep -q '^  migration_target: "6.3"' "$v6root/.agents/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.3\"" || fail "update: migration_target is now \"6.3\""
+[ "$(grep -A1 '^  version:' "$v6root/.agents/purpose.md" | tail -n1)" = '  migration_target: "6.3"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
 grep -qF "finalize" "$WORK/update.out" && pass "update: closing message names the pending finalize step" || fail "update: closing message names the pending finalize step"
 
-grep -qxF '  indexes: manual        # manual | generated' "$v6root/.agent/purpose.md" \
+grep -qxF '  indexes: manual        # manual | generated' "$v6root/.agents/purpose.md" \
   && pass "update: a manifest with no indexes line is backfilled with indexes: manual" \
   || fail "update: a manifest with no indexes line is backfilled with indexes: manual"
-[ "$(grep -A1 '^  mode:' "$v6root/.agent/purpose.md" | tail -n1)" = '  indexes: manual        # manual | generated' ] \
+[ "$(grep -A1 '^  mode:' "$v6root/.agents/purpose.md" | tail -n1)" = '  indexes: manual        # manual | generated' ] \
   && pass "update: the backfilled indexes line is inserted right after mode" \
   || fail "update: the backfilled indexes line is inserted right after mode"
 grep -qF "indexes: manual backfilled" "$WORK/update.out" \
   && pass "update: the backfill is reported" \
   || fail "update: the backfill is reported"
-[ -x "$v6root/.agent/scripts/index.sh" ] \
+[ -x "$v6root/.agents/scripts/index.sh" ] \
   && pass "update: index.sh is installed alongside the existing seven scripts" \
   || fail "update: index.sh is installed alongside the existing seven scripts"
 
@@ -310,16 +313,16 @@ adopt_migrating="$WORK/adopt-generated-migrating"
 mkdir -p "$adopt_migrating"
 make_v6_fixture "$adopt_migrating" track-shared
 git -C "$adopt_migrating" init -q
-git -C "$adopt_migrating" add .agent/purpose.md .agent/rules .agent/docs
+git -C "$adopt_migrating" add .agents/purpose.md .agents/rules .agents/docs
 git -C "$adopt_migrating" -c user.name=Fixture -c user.email=fixture@example.com commit -qm base
 "$NODE" update --indexes generated "$adopt_migrating" >"$WORK/adopt-generated-migrating.out" 2>&1
 rc_adopt_migrating=$?
 [ "$rc_adopt_migrating" -eq 0 ] \
-  && grep -qxF '  indexes: generated        # manual | generated' "$adopt_migrating/.agent/purpose.md" \
+  && grep -qxF '  indexes: generated        # manual | generated' "$adopt_migrating/.agents/purpose.md" \
   && pass "update --indexes generated selects generated mode during a version migration" \
   || fail "update --indexes generated selects generated mode during a version migration (rc=$rc_adopt_migrating; $(cat "$WORK/adopt-generated-migrating.out"))"
-[ -f "$adopt_migrating/.agent/indexes/current.md" ] \
-  && [ "$(find "$adopt_migrating/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" -eq 1 ] \
+[ -f "$adopt_migrating/.agents/indexes/current.md" ] \
+  && [ "$(find "$adopt_migrating/.agents/rules/learned" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" -eq 1 ] \
   && pass "migration-time generated adoption extracts rules and builds the index" \
   || fail "migration-time generated adoption extracts rules and builds the index"
 
@@ -327,17 +330,17 @@ idxpresent_older() {
   io_dir="$1" io_value="$2"
   mkdir -p "$io_dir"
   make_v6_fixture "$io_dir"
-  io_modeline=$(grep -n '^  mode:' "$io_dir/.agent/purpose.md" | head -1 | cut -d: -f1)
+  io_modeline=$(grep -n '^  mode:' "$io_dir/.agents/purpose.md" | head -1 | cut -d: -f1)
   awk -v ln="$io_modeline" -v val="$io_value" \
     'NR==ln { print; print "  indexes: " val "        # manual | generated"; next } { print }' \
-    "$io_dir/.agent/purpose.md" >"$io_dir/.agent/purpose.md.tmp"
-  mv "$io_dir/.agent/purpose.md.tmp" "$io_dir/.agent/purpose.md"
+    "$io_dir/.agents/purpose.md" >"$io_dir/.agents/purpose.md.tmp"
+  mv "$io_dir/.agents/purpose.md.tmp" "$io_dir/.agents/purpose.md"
   "$NODE" update "$io_dir" >"$io_dir.out" 2>&1
-  io_lines=$(grep -c '^  indexes:' "$io_dir/.agent/purpose.md")
+  io_lines=$(grep -c '^  indexes:' "$io_dir/.agents/purpose.md")
   [ "$io_lines" -eq 1 ] \
     && pass "update (older-version): existing indexes: $io_value is not duplicated" \
     || fail "update (older-version): existing indexes: $io_value is not duplicated (found $io_lines lines)"
-  grep -qxF "  indexes: $io_value        # manual | generated" "$io_dir/.agent/purpose.md" \
+  grep -qxF "  indexes: $io_value        # manual | generated" "$io_dir/.agents/purpose.md" \
     && pass "update (older-version): existing indexes: $io_value is left byte-unchanged" \
     || fail "update (older-version): existing indexes: $io_value is left byte-unchanged"
   grep -qF "indexes:" "$io_dir.out" \
@@ -352,11 +355,11 @@ idxpresent_current() {
   ic_dir="$WORK/idxpresent-current-$ic_value"
   cp -R "$ic_src" "$ic_dir"
   "$NODE" update "$ic_dir" >"$ic_dir.out" 2>&1
-  ic_lines=$(grep -c '^  indexes:' "$ic_dir/.agent/purpose.md")
+  ic_lines=$(grep -c '^  indexes:' "$ic_dir/.agents/purpose.md")
   [ "$ic_lines" -eq 1 ] \
     && pass "update (version-current): existing indexes: $ic_value is not duplicated" \
     || fail "update (version-current): existing indexes: $ic_value is not duplicated (found $ic_lines lines)"
-  grep -qxF "  indexes: $ic_value        # manual | generated" "$ic_dir/.agent/purpose.md" \
+  grep -qxF "  indexes: $ic_value        # manual | generated" "$ic_dir/.agents/purpose.md" \
     && pass "update (version-current): existing indexes: $ic_value is left byte-unchanged" \
     || fail "update (version-current): existing indexes: $ic_value is left byte-unchanged"
   grep -qF "indexes:" "$ic_dir.out" \
@@ -370,45 +373,45 @@ adopt_current="$WORK/adopt-generated-current"
 mkdir -p "$adopt_current"
 git -C "$adopt_current" init -q
 "$NODE" init --preset software-development --mode track-shared --indexes manual "$adopt_current" >/dev/null 2>&1
-cat >>"$adopt_current/.agent/rules/learned.md" <<'EOF'
+cat >>"$adopt_current/.agents/rules/learned.md" <<'EOF'
 - [2026-09-20] Keep the payment timeout aligned with the vendor SLA. Trigger: timeout drift.
 - [2026-09-20] Run the reconciliation check before deployment. Trigger: missed reconciliation.
 EOF
-git -C "$adopt_current" add .gitignore .agent/purpose.md .agent/rules .agent/docs
+git -C "$adopt_current" add .gitignore .agents/purpose.md .agents/rules .agents/docs
 git -C "$adopt_current" -c user.name=Fixture -c user.email=fixture@example.com commit -qm base
 "$NODE" update --indexes generated "$adopt_current" >"$WORK/adopt-generated-current.out" 2>&1
 rc_adopt_current=$?
 [ "$rc_adopt_current" -eq 0 ] && pass "update --indexes generated adopts generated mode on a version-current node" || fail "update --indexes generated adopts generated mode on a version-current node (rc=$rc_adopt_current; $(cat "$WORK/adopt-generated-current.out"))"
-[ -d "$adopt_current/.agent.backup-v6.3-indexes-generated" ] \
+[ -d "$adopt_current/.agents.backup-v6.3-indexes-generated" ] \
   && pass "generated-mode adoption backs up a version-current track-shared node" \
   || fail "generated-mode adoption backs up a version-current track-shared node"
-grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agent/purpose.md" \
+grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agents/purpose.md" \
   && pass "generated-mode adoption records indexes: generated" \
   || fail "generated-mode adoption records indexes: generated"
-adopt_record_count=$(find "$adopt_current/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')
+adopt_record_count=$(find "$adopt_current/.agents/rules/learned" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')
 [ "$adopt_record_count" -eq 2 ] \
   && pass "generated-mode adoption extracts every learned rule into a record" \
   || fail "generated-mode adoption extracts every learned rule into a record (count=$adopt_record_count)"
-grep -qF 'Keep the payment timeout aligned with the vendor SLA.' "$adopt_current/.agent/rules/learned.md" \
-  && grep -qF 'Run the reconciliation check before deployment.' "$adopt_current/.agent/rules/learned.md" \
+grep -qF 'Keep the payment timeout aligned with the vendor SLA.' "$adopt_current/.agents/rules/learned.md" \
+  && grep -qF 'Run the reconciliation check before deployment.' "$adopt_current/.agents/rules/learned.md" \
   && pass "generated-mode adoption regenerates the aggregate without rule loss" \
   || fail "generated-mode adoption regenerates the aggregate without rule loss"
-if grep -qxF '.agent/indexes/' "$adopt_current/.gitignore" \
-  && grep -qxF '.agent/rules/learned.md' "$adopt_current/.gitignore"; then
+if grep -qxF '.agents/indexes/' "$adopt_current/.gitignore" \
+  && grep -qxF '.agents/rules/learned.md' "$adopt_current/.gitignore"; then
   pass "generated-mode adoption adds both ignore rules"
 else
   fail "generated-mode adoption adds both ignore rules"
 fi
-git -C "$adopt_current" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$adopt_current" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "generated-mode adoption untracks the derived learned aggregate" \
   || pass "generated-mode adoption untracks the derived learned aggregate"
-[ -f "$adopt_current/.agent/indexes/current.md" ] && [ -x "$adopt_current/.agent/scripts/learn.sh" ] \
+[ -f "$adopt_current/.agents/indexes/current.md" ] && [ -x "$adopt_current/.agents/scripts/learn.sh" ] \
   && pass "generated-mode adoption builds the index and installs its learned-record writer" \
   || fail "generated-mode adoption builds the index and installs its learned-record writer"
-adopt_records_before=$(find "$adopt_current/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f -exec shasum {} + | sort)
+adopt_records_before=$(find "$adopt_current/.agents/rules/learned" -maxdepth 1 -name '*.md' -type f -exec shasum {} + | sort)
 "$NODE" update --indexes generated "$adopt_current" >"$WORK/adopt-generated-current-2.out" 2>&1
 rc_adopt_current_2=$?
-adopt_records_after=$(find "$adopt_current/.agent/rules/learned" -maxdepth 1 -name '*.md' -type f -exec shasum {} + | sort)
+adopt_records_after=$(find "$adopt_current/.agents/rules/learned" -maxdepth 1 -name '*.md' -type f -exec shasum {} + | sort)
 [ "$rc_adopt_current_2" -eq 0 ] && [ "$adopt_records_before" = "$adopt_records_after" ] \
   && pass "generated-mode adoption is idempotent on a second explicit run" \
   || fail "generated-mode adoption is idempotent on a second explicit run (rc=$rc_adopt_current_2)"
@@ -417,26 +420,26 @@ rc_adopt_revert=$?
 [ "$rc_adopt_revert" -ne 0 ] && grep -qF 'refusing generated-to-manual conversion' "$WORK/adopt-generated-revert.out" \
   && pass "update refuses generated-to-manual conversion outside the documented procedure" \
   || fail "update refuses generated-to-manual conversion outside the documented procedure (rc=$rc_adopt_revert)"
-grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agent/purpose.md" \
+grep -qxF '  indexes: generated        # manual | generated' "$adopt_current/.agents/purpose.md" \
   && pass "a refused generated-to-manual update leaves the manifest unchanged" \
   || fail "a refused generated-to-manual update leaves the manifest unchanged"
 
 adopt_collision="$WORK/adopt-generated-shape-collision"
 mkdir -p "$adopt_collision"
 "$NODE" init --preset software-development --mode track-shared --indexes manual "$adopt_collision" >/dev/null 2>&1
-subst "$adopt_collision/.agent/memory.md" 's/This contract covers memory\/ too/This older header lacks the directory contract/'
-mkdir -p "$adopt_collision/.agent.backup-v6.3-shape"
-printf 'pre-existing shape backup\n' >"$adopt_collision/.agent.backup-v6.3-shape/marker"
-cp -R "$adopt_collision/.agent" "$WORK/adopt-collision-agent-before"
+subst "$adopt_collision/.agents/memory.md" 's/This contract covers memory\/ too/This older header lacks the directory contract/'
+mkdir -p "$adopt_collision/.agents.backup-v6.3-shape"
+printf 'pre-existing shape backup\n' >"$adopt_collision/.agents.backup-v6.3-shape/marker"
+cp -R "$adopt_collision/.agents" "$WORK/adopt-collision-agent-before"
 cp "$adopt_collision/.gitignore" "$WORK/adopt-collision-gitignore-before"
 "$NODE" update --indexes generated "$adopt_collision" >"$WORK/adopt-collision.out" 2>&1
 rc_adopt_collision=$?
 [ "$rc_adopt_collision" -ne 0 ] && grep -qF 'backup path already exists' "$WORK/adopt-collision.out" \
   && pass "generated adoption preflights a conflicting shape backup" \
   || fail "generated adoption preflights a conflicting shape backup (rc=$rc_adopt_collision; $(cat "$WORK/adopt-collision.out"))"
-if diff -r "$WORK/adopt-collision-agent-before" "$adopt_collision/.agent" >/dev/null 2>&1 \
+if diff -r "$WORK/adopt-collision-agent-before" "$adopt_collision/.agents" >/dev/null 2>&1 \
   && diff -q "$WORK/adopt-collision-gitignore-before" "$adopt_collision/.gitignore" >/dev/null 2>&1 \
-  && [ ! -e "$adopt_collision/.agent.backup-v6.3-indexes-generated" ]; then
+  && [ ! -e "$adopt_collision/.agents.backup-v6.3-indexes-generated" ]; then
   pass "a generated-adoption backup collision leaves the node untouched"
 else
   fail "a generated-adoption backup collision leaves the node untouched"
@@ -449,136 +452,136 @@ flags4_repairs=$(printf '%s\n' "$flags4" | grep '^REPAIR:')
   && pass "update: status.sh shows only the pending-migration REPAIR" \
   || fail "update: status.sh shows only the pending-migration REPAIR ($flags4_repairs)"
 
-cp -R "$v6root/.agent" "$WORK/v6root-agent-snapshot"
+cp -R "$v6root/.agents" "$WORK/v6root-agent-snapshot"
 "$NODE" update "$v6root" >"$WORK/update2.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update re-run (pending migration_target) exits 0" || fail "update re-run (pending migration_target) exits 0 (rc=$rc)"
 grep -qF "node is current" "$WORK/update2.out" && fail "update re-run with a pending migration_target does not report the node current" || pass "update re-run with a pending migration_target does not report the node current"
 grep -qF "resuming" "$WORK/update2.out" && pass "update re-run reports resuming the interrupted update" || fail "update re-run reports resuming the interrupted update"
-diff -r "$WORK/v6root-agent-snapshot" "$v6root/.agent" >/dev/null 2>&1 && pass "update re-run with a pending migration_target is a content no-op (diff -r clean)" || fail "update re-run with a pending migration_target is a content no-op (diff -r clean)"
+diff -r "$WORK/v6root-agent-snapshot" "$v6root/.agents" >/dev/null 2>&1 && pass "update re-run with a pending migration_target is a content no-op (diff -r clean)" || fail "update re-run with a pending migration_target is a content no-op (diff -r clean)"
 
 interrupt="$WORK/update-interrupted"
 mkdir -p "$interrupt"
 make_v6_fixture "$interrupt"
-cp -R "$interrupt/.agent" "$interrupt/.agent.backup-v6"
-printf 'pre-existing backup marker\n' >"$interrupt/.agent.backup-v6/.marker"
+cp -R "$interrupt/.agents" "$interrupt/.agents.backup-v6"
+printf 'pre-existing backup marker\n' >"$interrupt/.agents.backup-v6/.marker"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$interrupt/.agent/purpose.md" >"$interrupt/.agent/purpose.md.tmp"
-mv "$interrupt/.agent/purpose.md.tmp" "$interrupt/.agent/purpose.md"
+  "$interrupt/.agents/purpose.md" >"$interrupt/.agents/purpose.md.tmp"
+mv "$interrupt/.agents/purpose.md.tmp" "$interrupt/.agents/purpose.md"
 "$NODE" update "$interrupt" >"$WORK/update-interrupt.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update: retry of an interrupted update exits 0" || fail "update: retry of an interrupted update exits 0 (rc=$rc)"
 grep -qF "backup path already exists" "$WORK/update-interrupt.out" && fail "update: retry of an interrupted update does not abort on its own backup" || pass "update: retry of an interrupted update does not abort on its own backup"
-[ -f "$interrupt/.agent.backup-v6/.marker" ] && pass "update: retry does not re-copy over the existing backup" || fail "update: retry does not re-copy over the existing backup"
-grep -q "custom auth flow" "$interrupt/.agent.backup-v6/memory.md" 2>/dev/null && pass "update: retry's backup still holds the pre-migration memory.md" || fail "update: retry's backup still holds the pre-migration memory.md"
-grep -q '^  migration_target:' "$interrupt/.agent.backup-v6/purpose.md" && fail "update: retry's backup predates migration_target, as the pre-migration node did" || pass "update: retry's backup predates migration_target, as the pre-migration node did"
-[ -f "$interrupt/.agent/memory/legacy.md" ] && pass "update: retry completes the interrupted content mutation" || fail "update: retry completes the interrupted content mutation"
-legacy_count=$(grep -cF "[Legacy memory](memory/legacy.md)" "$interrupt/.agent/memory.md")
+[ -f "$interrupt/.agents.backup-v6/.marker" ] && pass "update: retry does not re-copy over the existing backup" || fail "update: retry does not re-copy over the existing backup"
+grep -q "custom auth flow" "$interrupt/.agents.backup-v6/memory.md" 2>/dev/null && pass "update: retry's backup still holds the pre-migration memory.md" || fail "update: retry's backup still holds the pre-migration memory.md"
+grep -q '^  migration_target:' "$interrupt/.agents.backup-v6/purpose.md" && fail "update: retry's backup predates migration_target, as the pre-migration node did" || pass "update: retry's backup predates migration_target, as the pre-migration node did"
+[ -f "$interrupt/.agents/memory/legacy.md" ] && pass "update: retry completes the interrupted content mutation" || fail "update: retry completes the interrupted content mutation"
+legacy_count=$(grep -cF "[Legacy memory](memory/legacy.md)" "$interrupt/.agents/memory.md")
 [ "$legacy_count" -eq 1 ] && pass "update: retry does not duplicate the legacy memory index line" || fail "update: retry does not duplicate the legacy memory index line (count=$legacy_count)"
-grep -q '^  version: 6$' "$interrupt/.agent/purpose.md" 2>/dev/null && pass "update: retry still leaves version unbumped" || fail "update: retry still leaves version unbumped"
+grep -q '^  version: 6$' "$interrupt/.agents/purpose.md" 2>/dev/null && pass "update: retry still leaves version unbumped" || fail "update: retry still leaves version unbumped"
 
 splitA="$WORK/update-split-interrupted-a"
-mkdir -p "$splitA/.agent/memory"
+mkdir -p "$splitA/.agents/memory"
 make_v6_fixture "$splitA"
-cp -R "$splitA/.agent" "$splitA/.agent.backup-v6"
+cp -R "$splitA/.agents" "$splitA/.agents.backup-v6"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$splitA/.agent/purpose.md" >"$splitA/.agent/purpose.md.tmp"
-mv "$splitA/.agent/purpose.md.tmp" "$splitA/.agent/purpose.md"
+  "$splitA/.agents/purpose.md" >"$splitA/.agents/purpose.md.tmp"
+mv "$splitA/.agents/purpose.md.tmp" "$splitA/.agents/purpose.md"
 "$NODE" update "$splitA" >"$WORK/update-splitA.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update: resume after memory/ created but empty exits 0" || fail "update: resume after memory/ created but empty exits 0 (rc=$rc)"
-grep -q "custom auth flow" "$splitA/.agent/memory/legacy.md" 2>/dev/null && pass "update: resume after an empty memory/ still moves the body to legacy.md" || fail "update: resume after an empty memory/ still moves the body to legacy.md"
-splitA_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitA/.agent/memory.md")
+grep -q "custom auth flow" "$splitA/.agents/memory/legacy.md" 2>/dev/null && pass "update: resume after an empty memory/ still moves the body to legacy.md" || fail "update: resume after an empty memory/ still moves the body to legacy.md"
+splitA_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitA/.agents/memory.md")
 [ "$splitA_links" -eq 1 ] && pass "update: resume after an empty memory/ adds exactly one index link" || fail "update: resume after an empty memory/ adds exactly one index link (count=$splitA_links)"
-grep -q "custom auth flow" "$splitA/.agent/memory.md" 2>/dev/null && fail "update: resume after an empty memory/ does not leave the body behind in memory.md" || pass "update: resume after an empty memory/ does not leave the body behind in memory.md"
+grep -q "custom auth flow" "$splitA/.agents/memory.md" 2>/dev/null && fail "update: resume after an empty memory/ does not leave the body behind in memory.md" || pass "update: resume after an empty memory/ does not leave the body behind in memory.md"
 
 splitB="$WORK/update-split-interrupted-b"
-mkdir -p "$splitB/.agent/memory"
+mkdir -p "$splitB/.agents/memory"
 make_v6_fixture "$splitB"
 printf 'This project uses a custom auth flow with rotating tokens. The staging\ndatabase resets nightly at 02:00 UTC. Deploy via the internal release\ntool, never raw kubectl.\n' \
-  >"$splitB/.agent/memory/legacy.md"
-: >"$splitB/.agent/memory/.split-in-progress"
-cp -R "$splitB/.agent" "$splitB/.agent.backup-v6"
+  >"$splitB/.agents/memory/legacy.md"
+: >"$splitB/.agents/memory/.split-in-progress"
+cp -R "$splitB/.agents" "$splitB/.agents.backup-v6"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$splitB/.agent/purpose.md" >"$splitB/.agent/purpose.md.tmp"
-mv "$splitB/.agent/purpose.md.tmp" "$splitB/.agent/purpose.md"
+  "$splitB/.agents/purpose.md" >"$splitB/.agents/purpose.md.tmp"
+mv "$splitB/.agents/purpose.md.tmp" "$splitB/.agents/purpose.md"
 "$NODE" update "$splitB" >"$WORK/update-splitB.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update: resume after legacy.md written but memory.md not yet rewritten exits 0" || fail "update: resume after legacy.md written but memory.md not yet rewritten exits 0 (rc=$rc)"
-splitB_legacy_count=$(grep -c "custom auth flow" "$splitB/.agent/memory/legacy.md" 2>/dev/null)
+splitB_legacy_count=$(grep -c "custom auth flow" "$splitB/.agents/memory/legacy.md" 2>/dev/null)
 [ "$splitB_legacy_count" -eq 1 ] && pass "update: resume does not duplicate the fact inside legacy.md" || fail "update: resume does not duplicate the fact inside legacy.md (count=$splitB_legacy_count)"
-grep -q "custom auth flow" "$splitB/.agent/memory.md" 2>/dev/null && fail "update: resume converts memory.md into the index, not a second copy of the body" || pass "update: resume converts memory.md into the index, not a second copy of the body"
-splitB_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitB/.agent/memory.md")
+grep -q "custom auth flow" "$splitB/.agents/memory.md" 2>/dev/null && fail "update: resume converts memory.md into the index, not a second copy of the body" || pass "update: resume converts memory.md into the index, not a second copy of the body"
+splitB_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitB/.agents/memory.md")
 [ "$splitB_links" -eq 1 ] && pass "update: resume after legacy.md written adds exactly one index link" || fail "update: resume after legacy.md written adds exactly one index link (count=$splitB_links)"
-[ ! -e "$splitB/.agent/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
+[ ! -e "$splitB/.agents/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
 
 splitC="$WORK/update-split-interrupted-c"
-mkdir -p "$splitC/.agent/memory"
+mkdir -p "$splitC/.agents/memory"
 make_v6_fixture "$splitC"
 printf 'This project uses a custom auth flow with rotating tokens. The staging\ndatabase resets nightly at 02:00 UTC. Deploy via the internal release\ntool, never raw kubectl.\n' \
-  >"$splitC/.agent/memory/legacy.md"
-cat >"$splitC/.agent/memory.md" <<'MEMEOF'
+  >"$splitC/.agents/memory/legacy.md"
+cat >"$splitC/.agents/memory.md" <<'MEMEOF'
 # Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agent/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agents/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agents/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
 MEMEOF
-: >"$splitC/.agent/memory/.split-in-progress"
-cp -R "$splitC/.agent" "$splitC/.agent.backup-v6"
+: >"$splitC/.agents/memory/.split-in-progress"
+cp -R "$splitC/.agents" "$splitC/.agents.backup-v6"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$splitC/.agent/purpose.md" >"$splitC/.agent/purpose.md.tmp"
-mv "$splitC/.agent/purpose.md.tmp" "$splitC/.agent/purpose.md"
+  "$splitC/.agents/purpose.md" >"$splitC/.agents/purpose.md.tmp"
+mv "$splitC/.agents/purpose.md.tmp" "$splitC/.agents/purpose.md"
 "$NODE" update "$splitC" >"$WORK/update-splitC.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update: resume after memory.md rewritten but link not yet appended exits 0" || fail "update: resume after memory.md rewritten but link not yet appended exits 0 (rc=$rc)"
-splitC_legacy_count=$(grep -c "custom auth flow" "$splitC/.agent/memory/legacy.md" 2>/dev/null)
+splitC_legacy_count=$(grep -c "custom auth flow" "$splitC/.agents/memory/legacy.md" 2>/dev/null)
 [ "$splitC_legacy_count" -eq 1 ] && pass "update: resume after a rewritten memory.md leaves legacy.md untouched" || fail "update: resume after a rewritten memory.md leaves legacy.md untouched (count=$splitC_legacy_count)"
-splitC_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitC/.agent/memory.md")
+splitC_links=$(grep -cF "[Legacy memory](memory/legacy.md)" "$splitC/.agents/memory.md")
 [ "$splitC_links" -eq 1 ] && pass "update: resume finishes the orphaned legacy.md by appending its missing index link" || fail "update: resume finishes the orphaned legacy.md by appending its missing index link (count=$splitC_links)"
-[ ! -e "$splitC/.agent/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
+[ ! -e "$splitC/.agents/memory/.split-in-progress" ] && pass "update: resume clears the split-in-progress marker on completion" || fail "update: resume clears the split-in-progress marker on completion"
 
 unexplained="$WORK/update-unexplained-backup"
 mkdir -p "$unexplained"
 make_v6_fixture "$unexplained"
-mkdir -p "$unexplained/.agent.backup-v6"
-printf 'unrelated pre-existing directory\n' >"$unexplained/.agent.backup-v6/marker"
-cp -R "$unexplained/.agent" "$WORK/unexplained-snapshot"
+mkdir -p "$unexplained/.agents.backup-v6"
+printf 'unrelated pre-existing directory\n' >"$unexplained/.agents.backup-v6/marker"
+cp -R "$unexplained/.agents" "$WORK/unexplained-snapshot"
 "$NODE" update "$unexplained" >"$WORK/update-unexplained.out" 2>"$WORK/update-unexplained.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "update: an unexplained backup collision (no matching migration_target) aborts" || fail "update: an unexplained backup collision (no matching migration_target) aborts"
 grep -qF "backup path already exists" "$WORK/update-unexplained.err" && pass "update: unexplained backup collision prints the existing refusal message" || fail "update: unexplained backup collision prints the existing refusal message"
-diff -r "$WORK/unexplained-snapshot" "$unexplained/.agent" >/dev/null 2>&1 && pass "update: unexplained backup collision leaves the node untouched" || fail "update: unexplained backup collision leaves the node untouched"
-[ -f "$unexplained/.agent.backup-v6/marker" ] && pass "update: unexplained backup collision leaves the pre-existing backup untouched" || fail "update: unexplained backup collision leaves the pre-existing backup untouched"
+diff -r "$WORK/unexplained-snapshot" "$unexplained/.agents" >/dev/null 2>&1 && pass "update: unexplained backup collision leaves the node untouched" || fail "update: unexplained backup collision leaves the node untouched"
+[ -f "$unexplained/.agents.backup-v6/marker" ] && pass "update: unexplained backup collision leaves the pre-existing backup untouched" || fail "update: unexplained backup collision leaves the pre-existing backup untouched"
 
 nomanifest="$WORK/update-no-manifest"
-mkdir -p "$nomanifest/.agent"
-touch "$nomanifest/.agent/placeholder"
-cp -R "$nomanifest/.agent" "$WORK/nomanifest-snapshot"
+mkdir -p "$nomanifest/.agents"
+touch "$nomanifest/.agents/placeholder"
+cp -R "$nomanifest/.agents" "$WORK/nomanifest-snapshot"
 "$NODE" update "$nomanifest" >"$WORK/update3.out" 2>"$WORK/update3.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "update with no manifest exits nonzero" || fail "update with no manifest exits nonzero"
-diff -r "$WORK/nomanifest-snapshot" "$nomanifest/.agent" >/dev/null 2>&1 && pass "update with no manifest leaves the node untouched" || fail "update with no manifest leaves the node untouched"
+diff -r "$WORK/nomanifest-snapshot" "$nomanifest/.agents" >/dev/null 2>&1 && pass "update with no manifest leaves the node untouched" || fail "update with no manifest leaves the node untouched"
 
 current_root="$WORK/init-software-development-track-all"
-cp -R "$current_root/.agent" "$WORK/current-snapshot"
+cp -R "$current_root/.agents" "$WORK/current-snapshot"
 "$NODE" update "$current_root" >"$WORK/update4.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update on a current node exits 0" || fail "update on a current node exits 0 (rc=$rc)"
 grep -q "current" "$WORK/update4.out" && pass "update on a current node prints 'current'" || fail "update on a current node prints 'current'"
-diff -r "$WORK/current-snapshot" "$current_root/.agent" >/dev/null 2>&1 && pass "update on a current node is a no-op" || fail "update on a current node is a no-op"
+diff -r "$WORK/current-snapshot" "$current_root/.agents" >/dev/null 2>&1 && pass "update on a current node is a no-op" || fail "update on a current node is a no-op"
 
 stale62="$WORK/current-stale-memory-header"
 cp -R "$current_root" "$stale62"
-"$stale62/.agent/scripts/memory.sh" new --slug keep --title Keep --hook "keep this hook" --fact "Keep this fact body." "$stale62" >/dev/null 2>&1
-subst "$stale62/.agent/memory.md" 's/ Before writing, search purpose.*architecture\.md already routes it\.//'
-subst "$stale62/.agent/purpose.md" 's/mode: track-all/mode: track-shared/'
-mkdir -p "$stale62/.agent.backup-v6.3"
-printf 'earlier backup\n' >"$stale62/.agent.backup-v6.3/marker"
-grep -qF 'If one already states it' "$stale62/.agent/memory.md" && fail "update: stale 6.3 fixture actually lacks the new admission test" || pass "update: stale 6.3 fixture lacks the new admission test"
+"$stale62/.agents/scripts/memory.sh" new --slug keep --title Keep --hook "keep this hook" --fact "Keep this fact body." "$stale62" >/dev/null 2>&1
+subst "$stale62/.agents/memory.md" 's/ Before writing, search purpose.*architecture\.md already routes it\.//'
+subst "$stale62/.agents/purpose.md" 's/mode: track-all/mode: track-shared/'
+mkdir -p "$stale62/.agents.backup-v6.3"
+printf 'earlier backup\n' >"$stale62/.agents.backup-v6.3/marker"
+grep -qF 'If one already states it' "$stale62/.agents/memory.md" && fail "update: stale 6.3 fixture actually lacks the new admission test" || pass "update: stale 6.3 fixture lacks the new admission test"
 "$NODE" update "$stale62" >/dev/null 2>&1
-grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$stale62/.agent/memory.md" && pass "update: a version-current node refreshes a stale memory header" || fail "update: a version-current node refreshes a stale memory header"
-grep -qxF -- '- [Keep](memory/keep.md) — keep this hook' "$stale62/.agent/memory.md" && grep -qF 'Keep this fact body.' "$stale62/.agent/memory/keep.md" && pass "update: refreshing the stale memory header keeps facts and index lines" || fail "update: refreshing the stale memory header keeps facts and index lines"
-if [ -f "$stale62/.agent.backup-v6.3/marker" ] \
-  && [ -f "$stale62/.agent.backup-v6.3-shape/memory.md" ] \
-  && ! grep -qF 'If one already states it' "$stale62/.agent.backup-v6.3-shape/memory.md"; then
+grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$stale62/.agents/memory.md" && pass "update: a version-current node refreshes a stale memory header" || fail "update: a version-current node refreshes a stale memory header"
+grep -qxF -- '- [Keep](memory/keep.md) — keep this hook' "$stale62/.agents/memory.md" && grep -qF 'Keep this fact body.' "$stale62/.agents/memory/keep.md" && pass "update: refreshing the stale memory header keeps facts and index lines" || fail "update: refreshing the stale memory header keeps facts and index lines"
+if [ -f "$stale62/.agents.backup-v6.3/marker" ] \
+  && [ -f "$stale62/.agents.backup-v6.3-shape/memory.md" ] \
+  && ! grep -qF 'If one already states it' "$stale62/.agents.backup-v6.3-shape/memory.md"; then
   pass "update: same-version shape backup does not collide with an earlier backup"
 else
   fail "update: same-version shape backup does not collide with an earlier backup"
@@ -588,14 +591,14 @@ finroot="$WORK/finalize-node"
 mkdir -p "$finroot"
 make_v6_fixture "$finroot"
 "$NODE" update "$finroot" >/dev/null 2>&1
-cp "$finroot/.agent/purpose.md" "$WORK/fin-purpose-pending.md"
+cp "$finroot/.agents/purpose.md" "$WORK/fin-purpose-pending.md"
 
 flags_pending=$(status_flags "$finroot")
 printf '%s\n' "$flags_pending" | grep -qF 'REPAIR: purpose.md has migration_target "6.3" pending' && pass "status.sh: a pending migration_target draws a REPAIR finding naming the target" || fail "status.sh: a pending migration_target draws a REPAIR finding naming the target ($flags_pending)"
 printf '%s\n' "$flags_pending" | grep -q 'REPAIR: purpose.md has migration_target.*finalize' && pass "status.sh: the pending-migration REPAIR finding names the finalize command" || fail "status.sh: the pending-migration REPAIR finding names the finalize command ($flags_pending)"
 
-grep -vF '[Legacy memory](memory/legacy.md)' "$finroot/.agent/memory.md" >"$finroot/.agent/memory.md.tmp"
-mv "$finroot/.agent/memory.md.tmp" "$finroot/.agent/memory.md"
+grep -vF '[Legacy memory](memory/legacy.md)' "$finroot/.agents/memory.md" >"$finroot/.agents/memory.md.tmp"
+mv "$finroot/.agents/memory.md.tmp" "$finroot/.agents/memory.md"
 flags_broken=$(status_flags "$finroot")
 printf '%s\n' "$flags_broken" | grep -qF 'REPAIR: memory/legacy.md has no index line in memory.md' && pass "finalize fixture: the deliberate break draws a real REPAIR finding" || fail "finalize fixture: the deliberate break draws a real REPAIR finding ($flags_broken)"
 
@@ -603,17 +606,17 @@ printf '%s\n' "$flags_broken" | grep -qF 'REPAIR: memory/legacy.md has no index 
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh reports REPAIR findings" || fail "finalize: refuses when status.sh reports REPAIR findings (rc=$rc)"
 grep -qF 'REPAIR: memory/legacy.md has no index line in memory.md' "$WORK/finalize1.err" && pass "finalize: refusal prints the offending REPAIR finding" || fail "finalize: refusal prints the offending REPAIR finding"
-diff -q "$WORK/fin-purpose-pending.md" "$finroot/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a refused finalize leaves version and migration_target unchanged" || fail "finalize: a refused finalize leaves version and migration_target unchanged"
+diff -q "$WORK/fin-purpose-pending.md" "$finroot/.agents/purpose.md" >/dev/null 2>&1 && pass "finalize: a refused finalize leaves version and migration_target unchanged" || fail "finalize: a refused finalize leaves version and migration_target unchanged"
 
-printf '\n%s\n' '- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag' >>"$finroot/.agent/memory.md"
+printf '\n%s\n' '- [Legacy memory](memory/legacy.md) — unsplit pre-6.1 memory, split per its GROOM flag' >>"$finroot/.agents/memory.md"
 flags_reconciled=$(status_flags "$finroot" | grep '^REPAIR:' | grep -v '^REPAIR: purpose\.md has migration_target ')
 [ -z "$flags_reconciled" ] && pass "finalize fixture: reconciling the break clears every REPAIR finding but the pending-migration one" || fail "finalize fixture: reconciling the break clears every REPAIR finding but the pending-migration one ($flags_reconciled)"
 
 "$NODE" finalize "$finroot" >"$WORK/finalize2.out" 2>"$WORK/finalize2.err"
 rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: succeeds once the node is reconciled (zero REPAIR findings)" || fail "finalize: succeeds once the node is reconciled (zero REPAIR findings) (rc=$rc, err=$(cat "$WORK/finalize2.err"))"
-grep -q '^  version: "6.3"$' "$finroot/.agent/purpose.md" && pass "finalize: version is stamped to the pending target" || fail "finalize: version is stamped to the pending target"
-grep -q '^  migration_target:' "$finroot/.agent/purpose.md" && fail "finalize: migration_target is removed" || pass "finalize: migration_target is removed"
+grep -q '^  version: "6.3"$' "$finroot/.agents/purpose.md" && pass "finalize: version is stamped to the pending target" || fail "finalize: version is stamped to the pending target"
+grep -q '^  migration_target:' "$finroot/.agents/purpose.md" && fail "finalize: migration_target is removed" || pass "finalize: migration_target is removed"
 
 "$NODE" finalize "$finroot" >"$WORK/finalize3.out" 2>&1
 rc=$?
@@ -632,12 +635,12 @@ finunadopted="$WORK/finalize-unadopted"
 mkdir -p "$finunadopted"
 "$NODE" finalize "$finunadopted" >/dev/null 2>"$WORK/finalize-unadopted.err"
 rc=$?
-[ "$rc" -ne 0 ] && pass "finalize: an un-adopted path (no .agent) exits nonzero" || fail "finalize: an un-adopted path (no .agent) exits nonzero"
-grep -qF "no .agent directory at" "$WORK/finalize-unadopted.err" && pass "finalize: an un-adopted path prints the same refusal shape as update" || fail "finalize: an un-adopted path prints the same refusal shape as update"
+[ "$rc" -ne 0 ] && pass "finalize: an un-adopted path (no .agents) exits nonzero" || fail "finalize: an un-adopted path (no .agents) exits nonzero"
+grep -qF "no .agents directory at" "$WORK/finalize-unadopted.err" && pass "finalize: an un-adopted path prints the same refusal shape as update" || fail "finalize: an un-adopted path prints the same refusal shape as update"
 
 finnomanifest="$WORK/finalize-no-manifest"
-mkdir -p "$finnomanifest/.agent"
-touch "$finnomanifest/.agent/placeholder"
+mkdir -p "$finnomanifest/.agents"
+touch "$finnomanifest/.agents/placeholder"
 "$NODE" finalize "$finnomanifest" >/dev/null 2>"$WORK/finalize-nomanifest.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: an unknown (no-manifest) node exits nonzero" || fail "finalize: an unknown (no-manifest) node exits nonzero"
@@ -647,8 +650,8 @@ finstatusfail="$WORK/finalize-status-fail"
 mkdir -p "$finstatusfail"
 make_v6_fixture "$finstatusfail"
 "$NODE" update "$finstatusfail" >/dev/null 2>&1
-cp "$finstatusfail/.agent/purpose.md" "$WORK/fin-statusfail-purpose.md"
-realstatussh="$finstatusfail/.agent/scripts/status.sh"
+cp "$finstatusfail/.agents/purpose.md" "$WORK/fin-statusfail-purpose.md"
+realstatussh="$finstatusfail/.agents/scripts/status.sh"
 cp "$realstatussh" "$WORK/fin-statusfail-status.sh.orig"
 
 cat >"$realstatussh" <<'EOF'
@@ -661,7 +664,7 @@ chmod +x "$realstatussh"
 "$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail1.out" 2>"$WORK/finalize-statusfail1.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits nonzero with stdout and stderr" || fail "finalize: refuses when status.sh exits nonzero with stdout and stderr (rc=$rc)"
-diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a nonzero-exit refusal leaves the manifest byte-identical" || fail "finalize: a nonzero-exit refusal leaves the manifest byte-identical"
+diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agents/purpose.md" >/dev/null 2>&1 && pass "finalize: a nonzero-exit refusal leaves the manifest byte-identical" || fail "finalize: a nonzero-exit refusal leaves the manifest byte-identical"
 
 cat >"$realstatussh" <<'EOF'
 #!/usr/bin/env bash
@@ -673,7 +676,7 @@ chmod +x "$realstatussh"
 "$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail2.out" 2>"$WORK/finalize-statusfail2.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits zero but writes to stderr" || fail "finalize: refuses when status.sh exits zero but writes to stderr (rc=$rc)"
-diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a stderr-output refusal leaves the manifest byte-identical" || fail "finalize: a stderr-output refusal leaves the manifest byte-identical"
+diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agents/purpose.md" >/dev/null 2>&1 && pass "finalize: a stderr-output refusal leaves the manifest byte-identical" || fail "finalize: a stderr-output refusal leaves the manifest byte-identical"
 
 cat >"$realstatussh" <<'EOF'
 #!/usr/bin/env bash
@@ -683,7 +686,7 @@ chmod +x "$realstatussh"
 "$NODE" finalize "$finstatusfail" >"$WORK/finalize-statusfail3.out" 2>"$WORK/finalize-statusfail3.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: refuses when status.sh exits zero with empty stdout" || fail "finalize: refuses when status.sh exits zero with empty stdout (rc=$rc)"
-diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: an empty-stdout refusal leaves the manifest byte-identical" || fail "finalize: an empty-stdout refusal leaves the manifest byte-identical"
+diff -q "$WORK/fin-statusfail-purpose.md" "$finstatusfail/.agents/purpose.md" >/dev/null 2>&1 && pass "finalize: an empty-stdout refusal leaves the manifest byte-identical" || fail "finalize: an empty-stdout refusal leaves the manifest byte-identical"
 
 cp "$WORK/fin-statusfail-status.sh.orig" "$realstatussh"
 chmod +x "$realstatussh"
@@ -695,21 +698,21 @@ rc=$?
 pmwfail="$WORK/update-pmw-fail"
 mkdir -p "$pmwfail"
 make_v6_fixture "$pmwfail"
-mkdir -p "$pmwfail/.agent/.purpose.md.new"
-cp -R "$pmwfail/.agent" "$WORK/pmw-snapshot"
+mkdir -p "$pmwfail/.agents/.purpose.md.new"
+cp -R "$pmwfail/.agents" "$WORK/pmw-snapshot"
 "$NODE" update "$pmwfail" >"$WORK/pmw.out" 2>"$WORK/pmw.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "update: a blocked pending-marker write aborts" || fail "update: a blocked pending-marker write aborts (rc=$rc)"
 grep -qF "failed to record migration_target" "$WORK/pmw.err" && pass "update: a blocked pending-marker write prints an actionable error" || fail "update: a blocked pending-marker write prints an actionable error"
 grep -qiF "migrated" "$WORK/pmw.out" && fail "update: a blocked pending-marker write prints no success message" || pass "update: a blocked pending-marker write prints no success message"
-diff -r "$WORK/pmw-snapshot" "$pmwfail/.agent" >/dev/null 2>&1 && pass "update: a blocked pending-marker write leaves node content and the manifest unchanged" || fail "update: a blocked pending-marker write leaves node content and the manifest unchanged"
+diff -r "$WORK/pmw-snapshot" "$pmwfail/.agents" >/dev/null 2>&1 && pass "update: a blocked pending-marker write leaves node content and the manifest unchanged" || fail "update: a blocked pending-marker write leaves node content and the manifest unchanged"
 
 vwfail="$WORK/finalize-vw-fail"
 mkdir -p "$vwfail"
 make_v6_fixture "$vwfail"
 "$NODE" update "$vwfail" >/dev/null 2>&1
-cp "$vwfail/.agent/purpose.md" "$WORK/vwf-purpose-pending.md"
-mkdir -p "$vwfail/.agent/.purpose.md.new"
+cp "$vwfail/.agents/purpose.md" "$WORK/vwf-purpose-pending.md"
+mkdir -p "$vwfail/.agents/.purpose.md.new"
 "$NODE" finalize "$vwfail" >"$WORK/vwf.out" 2>"$WORK/vwf.err"
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a blocked version write aborts" || fail "finalize: a blocked version write aborts (rc=$rc)"
@@ -717,7 +720,7 @@ grep -qF "failed to write version" "$WORK/vwf.err" && grep -qF "aborting before 
   && pass "finalize: a blocked version write prints an actionable error naming the abort-before-removal ordering" \
   || fail "finalize: a blocked version write prints an actionable error naming the abort-before-removal ordering"
 grep -qiF "finalized" "$WORK/vwf.out" && fail "finalize: a blocked version write prints no success message" || pass "finalize: a blocked version write prints no success message"
-diff -q "$WORK/vwf-purpose-pending.md" "$vwfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a blocked version write preserves the pending marker and original version" || fail "finalize: a blocked version write preserves the pending marker and original version"
+diff -q "$WORK/vwf-purpose-pending.md" "$vwfail/.agents/purpose.md" >/dev/null 2>&1 && pass "finalize: a blocked version write preserves the pending marker and original version" || fail "finalize: a blocked version write preserves the pending marker and original version"
 
 rmfail="$WORK/finalize-rm-fail"
 mkdir -p "$rmfail"
@@ -745,18 +748,18 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a failed marker removal returns nonzero" || fail "finalize: a failed marker removal returns nonzero (rc=$rc)"
 grep -qF "failed to remove the pending migration_target marker" "$WORK/rmf.err" && pass "finalize: a failed marker removal prints an actionable error" || fail "finalize: a failed marker removal prints an actionable error"
 grep -qiF "finalized" "$WORK/rmf.out" && fail "finalize: a failed marker removal prints no success message" || pass "finalize: a failed marker removal prints no success message"
-grep -q '^  version: "6.3"$' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal still leaves version stamped (removal runs after the stamp)" || fail "finalize: a failed marker removal still leaves version stamped"
-grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && pass "finalize: a failed marker removal retains a detectable pending migration" || fail "finalize: a failed marker removal retains a detectable pending migration"
+grep -q '^  version: "6.3"$' "$rmfail/.agents/purpose.md" && pass "finalize: a failed marker removal still leaves version stamped (removal runs after the stamp)" || fail "finalize: a failed marker removal still leaves version stamped"
+grep -q '^  migration_target:' "$rmfail/.agents/purpose.md" && pass "finalize: a failed marker removal retains a detectable pending migration" || fail "finalize: a failed marker removal retains a detectable pending migration"
 
 "$NODE" finalize "$rmfail" >"$WORK/rmf-retry.out" 2>"$WORK/rmf-retry.err"
 rc=$?
 [ "$rc" -eq 0 ] && pass "finalize: retrying after a failed marker removal succeeds" || fail "finalize: retrying after a failed marker removal succeeds (rc=$rc, err=$(cat "$WORK/rmf-retry.err"))"
-grep -q '^  migration_target:' "$rmfail/.agent/purpose.md" && fail "finalize: the retry actually removes the marker" || pass "finalize: the retry actually removes the marker"
+grep -q '^  migration_target:' "$rmfail/.agents/purpose.md" && fail "finalize: the retry actually removes the marker" || pass "finalize: the retry actually removes the marker"
 
 wmtcfail="$WORK/update-wmt-corrupt"
 mkdir -p "$wmtcfail"
 make_v6_fixture "$wmtcfail"
-cp -R "$wmtcfail/.agent" "$WORK/wmtc-snapshot"
+cp -R "$wmtcfail/.agents" "$WORK/wmtc-snapshot"
 fakebin_awk="$WORK/fakebin-awk-corrupt"
 mkdir -p "$fakebin_awk"
 cat >"$fakebin_awk/awk" <<'EOF'
@@ -776,13 +779,13 @@ PATH="$fakebin_awk:$PATH" "$NODE" update "$wmtcfail" >"$WORK/wmtc.out" 2>"$WORK/
 rc=$?
 [ "$rc" -ne 0 ] && pass "update: a corrupted migration_target write (transform exits 0, output truncated) aborts" || fail "update: a corrupted migration_target write (transform exits 0, output truncated) aborts (rc=$rc)"
 grep -qF "failed to record migration_target" "$WORK/wmtc.err" && pass "update: a corrupted migration_target write prints the same actionable error as an OS-level failure" || fail "update: a corrupted migration_target write prints the same actionable error as an OS-level failure"
-diff -r "$WORK/wmtc-snapshot" "$wmtcfail/.agent" >/dev/null 2>&1 && pass "update: a corrupted migration_target write leaves node content and the manifest unchanged" || fail "update: a corrupted migration_target write leaves node content and the manifest unchanged"
+diff -r "$WORK/wmtc-snapshot" "$wmtcfail/.agents" >/dev/null 2>&1 && pass "update: a corrupted migration_target write leaves node content and the manifest unchanged" || fail "update: a corrupted migration_target write leaves node content and the manifest unchanged"
 
 wvcfail="$WORK/finalize-wv-corrupt"
 mkdir -p "$wvcfail"
 make_v6_fixture "$wvcfail"
 "$NODE" update "$wvcfail" >/dev/null 2>&1
-cp "$wvcfail/.agent/purpose.md" "$WORK/wvc-purpose-pending.md"
+cp "$wvcfail/.agents/purpose.md" "$WORK/wvc-purpose-pending.md"
 fakebin_sed="$WORK/fakebin-sed-corrupt"
 mkdir -p "$fakebin_sed"
 cat >"$fakebin_sed/sed" <<'EOF'
@@ -802,7 +805,7 @@ PATH="$fakebin_sed:$PATH" "$NODE" finalize "$wvcfail" >"$WORK/wvc.out" 2>"$WORK/
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a corrupted version write (transform exits 0, output truncated) aborts" || fail "finalize: a corrupted version write (transform exits 0, output truncated) aborts (rc=$rc)"
 grep -qF "failed to write version" "$WORK/wvc.err" && pass "finalize: a corrupted version write prints the same actionable error as an OS-level failure" || fail "finalize: a corrupted version write prints the same actionable error as an OS-level failure"
-diff -q "$WORK/wvc-purpose-pending.md" "$wvcfail/.agent/purpose.md" >/dev/null 2>&1 && pass "finalize: a corrupted version write preserves the pending marker and original version" || fail "finalize: a corrupted version write preserves the pending marker and original version"
+diff -q "$WORK/wvc-purpose-pending.md" "$wvcfail/.agents/purpose.md" >/dev/null 2>&1 && pass "finalize: a corrupted version write preserves the pending marker and original version" || fail "finalize: a corrupted version write preserves the pending marker and original version"
 
 rmcfail="$WORK/finalize-rm-corrupt"
 mkdir -p "$rmcfail"
@@ -831,14 +834,14 @@ PATH="$fakebin_grep:$PATH" "$NODE" finalize "$rmcfail" >"$WORK/rmc.out" 2>"$WORK
 rc=$?
 [ "$rc" -ne 0 ] && pass "finalize: a corrupted marker-removal write (transform exits 0, line not actually removed) returns nonzero" || fail "finalize: a corrupted marker-removal write (transform exits 0, line not actually removed) returns nonzero (rc=$rc)"
 grep -qF "failed to remove the pending migration_target marker" "$WORK/rmc.err" && pass "finalize: a corrupted marker-removal write prints the same actionable error as an OS-level failure" || fail "finalize: a corrupted marker-removal write prints the same actionable error as an OS-level failure"
-grep -q '^  version: "6.3"$' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write still leaves version stamped" || fail "finalize: a corrupted marker-removal write still leaves version stamped"
-grep -q '^  migration_target:' "$rmcfail/.agent/purpose.md" && pass "finalize: a corrupted marker-removal write retains a detectable pending migration" || fail "finalize: a corrupted marker-removal write retains a detectable pending migration"
+grep -q '^  version: "6.3"$' "$rmcfail/.agents/purpose.md" && pass "finalize: a corrupted marker-removal write still leaves version stamped" || fail "finalize: a corrupted marker-removal write still leaves version stamped"
+grep -q '^  migration_target:' "$rmcfail/.agents/purpose.md" && pass "finalize: a corrupted marker-removal write retains a detectable pending migration" || fail "finalize: a corrupted marker-removal write retains a detectable pending migration"
 
 logroot="$WORK/log-tests"
 mkdir -p "$logroot"
 "$NODE" init --preset software-development --mode track-all "$logroot" >/dev/null 2>&1
-logcopy="$logroot/.agent/scripts/log.sh"
-sessionlog="$logroot/.agent/session-log.md"
+logcopy="$logroot/.agents/scripts/log.sh"
+sessionlog="$logroot/.agents/session-log.md"
 
 "$logcopy" --tool claude --area testing --verify pass --summary "smoke test entry for the log script" "$logroot" >/dev/null 2>&1
 rc=$?
@@ -846,7 +849,7 @@ rc=$?
 expected_line="- [$(today)] (claude) smoke test entry for the log script (testing). verify: pass."
 grep -qxF -- "$expected_line" "$sessionlog" && pass "log.sh: appended entry matches the expected line exactly" || fail "log.sh: appended entry matches the expected line exactly"
 
-recent=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
+recent=$("$logroot/.agents/scripts/status.sh" "$logroot" 2>&1)
 if printf '%s\n' "$recent" | grep -qF -- "$expected_line" && ! printf '%s\n' "$recent" | grep -qF "<!--"; then
   pass "status.sh: recent entries exclude the header comment"
 else
@@ -868,11 +871,11 @@ after8b=$(cat "$sessionlog")
 [ "$before8b" = "$after8b" ] && pass "log.sh: bad --verify writes nothing" || fail "log.sh: bad --verify writes nothing"
 
 nolog="$WORK/log-no-session-log"
-mkdir -p "$nolog/.agent"
+mkdir -p "$nolog/.agents"
 "$LOGSH" --tool claude --area testing --verify pass --summary "should not write" "$nolog" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "log.sh: missing session-log.md rejected" || fail "log.sh: missing session-log.md rejected"
-[ ! -e "$nolog/.agent/session-log.md" ] && pass "log.sh: missing session-log.md creates nothing" || fail "log.sh: missing session-log.md creates nothing"
+[ ! -e "$nolog/.agents/session-log.md" ] && pass "log.sh: missing session-log.md creates nothing" || fail "log.sh: missing session-log.md creates nothing"
 
 before8c=$(cat "$sessionlog")
 out8c=$("$logcopy" --tool claude --area testing --verify pass --summary "Added backoff to submitPayment in src/client.ts" "$logroot" 2>&1)
@@ -887,22 +890,22 @@ rc=$?
 rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: a ticket id and a version number are not read as a file or a SHA" || fail "log.sh: a ticket id and a version number are not read as a file or a SHA"
 
-load8=$("$logroot/.agent/scripts/status.sh" --load "$logroot" 2>&1)
+load8=$("$logroot/.agents/scripts/status.sh" --load "$logroot" 2>&1)
 order8=$(printf '%s\n' "$load8" | grep -n '^==== ' | cut -d: -f2 | tr '\n' ' ')
-[ "$order8" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
+[ "$order8" = "==== .agents/rules/learned.md ==== ==== .agents/rules/contract.md ==== ==== .agents/purpose.md ==== ==== .agents/memory.md ==== " ] \
   && pass "status.sh --load: the four files print under markers, learned, contract, purpose, memory" \
   || fail "status.sh --load: the four files print under markers, learned, contract, purpose, memory ($order8)"
 printf '%s\n' "$load8" | grep -q '^## Kernel' && pass "status.sh --load: the contract body is in the output" || fail "status.sh --load: the contract body is in the output"
-plain8=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
+plain8=$("$logroot/.agents/scripts/status.sh" "$logroot" 2>&1)
 ! printf '%s\n' "$plain8" | grep -q '^==== ' && pass "status.sh: without --load no file is printed" || fail "status.sh: without --load no file is printed"
 
 groomroot="$WORK/groom-tokens"
 mkdir -p "$groomroot"
 "$NODE" init --preset software-development --mode track-all "$groomroot" >/dev/null 2>&1
 finish_bootstrap "$groomroot"
-"$groomroot/.agent/scripts/memory.sh" new --slug vendor --title Vendor --hook "vendor calls" --fact "Vendor limit measured on 2026-07-02 for PAY-318 against sandbox.vendor.example:8443; repro with npm run test:integration -- --grep vendor and VENDOR_SANDBOX_KEY set." "$groomroot" >/dev/null 2>&1
-printf '\n%s\n' "$(words_n 320)" >>"$groomroot/.agent/memory/vendor.md"
-groom8=$("$groomroot/.agent/scripts/status.sh" "$groomroot" 2>&1 | grep '^GROOM: memory/vendor.md')
+"$groomroot/.agents/scripts/memory.sh" new --slug vendor --title Vendor --hook "vendor calls" --fact "Vendor limit measured on 2026-07-02 for PAY-318 against sandbox.vendor.example:8443; repro with npm run test:integration -- --grep vendor and VENDOR_SANDBOX_KEY set." "$groomroot" >/dev/null 2>&1
+printf '\n%s\n' "$(words_n 320)" >>"$groomroot/.agents/memory/vendor.md"
+groom8=$("$groomroot/.agents/scripts/status.sh" "$groomroot" 2>&1 | grep '^GROOM: memory/vendor.md')
 groom8_missing=""
 for tok in PAY-318 sandbox.vendor.example:8443 "npm run test:integration -- --grep vendor" VENDOR_SANDBOX_KEY 2026-07-02; do
   printf '%s' "$groom8" | grep -qF -- "$tok" || groom8_missing="$groom8_missing $tok"
@@ -913,14 +916,14 @@ rehookroot="$WORK/rehook"
 mkdir -p "$rehookroot"
 "$NODE" init --preset software-development --mode track-all "$rehookroot" >/dev/null 2>&1
 finish_bootstrap "$rehookroot"
-"$rehookroot/.agent/scripts/docs.sh" new --name deploy --read-when "shipping a release" "$rehookroot" >/dev/null 2>&1
-"$rehookroot/.agent/scripts/docs.sh" rehook --name deploy --read-when "shipping a release, deploying to production" "$rehookroot" >/dev/null 2>&1
+"$rehookroot/.agents/scripts/docs.sh" new --name deploy --read-when "shipping a release" "$rehookroot" >/dev/null 2>&1
+"$rehookroot/.agents/scripts/docs.sh" rehook --name deploy --read-when "shipping a release, deploying to production" "$rehookroot" >/dev/null 2>&1
 rc=$?
-head -n 1 "$rehookroot/.agent/docs/deploy.md" | grep -qF -- '<!-- Read when: shipping a release, deploying to production -->' \
-  && grep -qF -- '- **Read when:** shipping a release, deploying to production' "$rehookroot/.agent/docs/architecture.md" \
+head -n 1 "$rehookroot/.agents/docs/deploy.md" | grep -qF -- '<!-- Read when: shipping a release, deploying to production -->' \
+  && grep -qF -- '- **Read when:** shipping a release, deploying to production' "$rehookroot/.agents/docs/architecture.md" \
   && [ "$rc" -eq 0 ] && pass "docs.sh rehook: the doc header and the routing row carry the new hook" || fail "docs.sh rehook: the doc header and the routing row carry the new hook (rc=$rc)"
-! "$rehookroot/.agent/scripts/status.sh" "$rehookroot" 2>&1 | grep -q '^INDEX:' && pass "docs.sh rehook: status.sh sees no INDEX: drift afterwards" || fail "docs.sh rehook: status.sh sees no INDEX: drift afterwards"
-"$rehookroot/.agent/scripts/docs.sh" rehook --name missing --read-when "anything" "$rehookroot" >/dev/null 2>&1
+! "$rehookroot/.agents/scripts/status.sh" "$rehookroot" 2>&1 | grep -q '^INDEX:' && pass "docs.sh rehook: status.sh sees no INDEX: drift afterwards" || fail "docs.sh rehook: status.sh sees no INDEX: drift afterwards"
+"$rehookroot/.agents/scripts/docs.sh" rehook --name missing --read-when "anything" "$rehookroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "docs.sh rehook: a doc that does not exist is refused" || fail "docs.sh rehook: a doc that does not exist is refused"
 
@@ -930,37 +933,37 @@ mkdir -p "$finroot/src"
 finish_bootstrap "$finroot"
 printf 'export const a = 1\n' >"$finroot/src/a.ts"
 git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-out8e=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
+out8e=$("$finroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
-n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+n8f=$(grep -c '^- \[' "$finroot/.agents/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'nothing changed' && [ "$n8f" -eq 0 ] && pass "checkpoint.sh: an unchanged tree writes no entry" || fail "checkpoint.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
 printf '// const old = fetch(url)\nexport const b = 2\n' >>"$finroot/src/a.ts"
-out8f=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" 2>&1)
+out8f=$("$finroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" 2>&1)
 rc=$?
-n8f2=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+n8f2=$(grep -c '^- \[' "$finroot/.agents/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8f" | grep -q 'BLOCK' && [ "$n8f2" -eq 0 ] && pass "checkpoint.sh: a BLOCK finding stops it before the log entry" || fail "checkpoint.sh: a BLOCK finding stops it before the log entry (rc=$rc entries=$n8f2)"
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$finroot/src/a.ts"
-"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" >/dev/null 2>&1
+"$finroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" >/dev/null 2>&1
 rc=$?
-n8f3=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+n8f3=$(grep -c '^- \[' "$finroot/.agents/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8f3" -eq 1 ] && pass "checkpoint.sh: on the clean run the entry is written once" || fail "checkpoint.sh: on the clean run the entry is written once (rc=$rc entries=$n8f3)"
 git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m work
-"$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
+"$finroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "committed b" --base HEAD~1 "$finroot" >/dev/null 2>&1
 rc=$?
-n8f3b=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+n8f3b=$(grep -c '^- \[' "$finroot/.agents/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8f3b" -eq 2 ] && pass "checkpoint.sh: committed work still logs, against --base" || fail "checkpoint.sh: committed work still logs, against --base (rc=$rc entries=$n8f3b)"
-i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agent/session-log.md"; i8f=$((i8f + 1)); done
-out8g=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added c" "$finroot" 2>&1)
+i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agents/session-log.md"; i8f=$((i8f + 1)); done
+out8g=$("$finroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added c" "$finroot" 2>&1)
 rc=$?
-n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
+n8f4=$(grep -c '^- \[' "$finroot/.agents/session-log.md")
 [ "$rc" -ne 0 ] && printf '%s' "$out8g" | grep -q 'LOG_.*OVERSIZE\|^GROOM:' && [ "$n8f4" -eq 5 ] && pass "checkpoint.sh: a standing flag stops it before the log entry" || fail "checkpoint.sh: a standing flag stops it before the log entry (rc=$rc entries=$n8f4)"
 finroot_nogit="$WORK/finish-nogit"
 mkdir -p "$finroot_nogit"
 "$NODE" init --preset software-development --mode ignore-all "$finroot_nogit" >/dev/null 2>&1
 finish_bootstrap "$finroot_nogit"
-"$finroot_nogit/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "no repo here" "$finroot_nogit" >/dev/null 2>&1
+"$finroot_nogit/.agents/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "no repo here" "$finroot_nogit" >/dev/null 2>&1
 rc=$?
-n8h=$(grep -c '^- \[' "$finroot_nogit/.agent/session-log.md")
+n8h=$(grep -c '^- \[' "$finroot_nogit/.agents/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8h" -eq 1 ] && pass "checkpoint.sh: a non-git project still writes its entry" || fail "checkpoint.sh: a non-git project still writes its entry (rc=$rc entries=$n8h)"
 
 fsroot="$WORK/finish-statuscheck"
@@ -970,31 +973,31 @@ finish_bootstrap "$fsroot"
 printf 'export const a = 1\n' >"$fsroot/src/a.ts"
 git -C "$fsroot" init -q && git -C "$fsroot" add -A && git -C "$fsroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$fsroot/src/a.ts"
-cp "$fsroot/.agent/scripts/status.sh" "$WORK/fs-status-clean.sh"
-n8i0=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+cp "$fsroot/.agents/scripts/status.sh" "$WORK/fs-status-clean.sh"
+n8i0=$(grep -c '^- \[' "$fsroot/.agents/session-log.md")
 
-printf '#!/usr/bin/env bash\nif [ 1 -eq 1 ]\n  echo "missing then"\n' >"$fsroot/.agent/scripts/status.sh"
-out8i=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "syntax break" "$fsroot" 2>&1)
+printf '#!/usr/bin/env bash\nif [ 1 -eq 1 ]\n  echo "missing then"\n' >"$fsroot/.agents/scripts/status.sh"
+out8i=$("$fsroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "syntax break" "$fsroot" 2>&1)
 rc=$?
-n8i=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+n8i=$(grep -c '^- \[' "$fsroot/.agents/session-log.md")
 [ "$rc" -ne 0 ] && [ "$n8i" -eq "$n8i0" ] && printf '%s' "$out8i" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: invalid status.sh syntax blocks completion" || fail "checkpoint.sh: invalid status.sh syntax blocks completion (rc=$rc entries=$n8i)"
 
-printf '#!/usr/bin/env bash\nexit 3\n' >"$fsroot/.agent/scripts/status.sh"
-out8j=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "quiet exit 3" "$fsroot" 2>&1)
+printf '#!/usr/bin/env bash\nexit 3\n' >"$fsroot/.agents/scripts/status.sh"
+out8j=$("$fsroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "quiet exit 3" "$fsroot" 2>&1)
 rc=$?
-n8j=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+n8j=$(grep -c '^- \[' "$fsroot/.agents/session-log.md")
 [ "$rc" -ne 0 ] && [ "$n8j" -eq "$n8i0" ] && printf '%s' "$out8j" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: a status.sh that quietly exits nonzero blocks completion" || fail "checkpoint.sh: a status.sh that quietly exits nonzero blocks completion (rc=$rc entries=$n8j)"
 
-printf '#!/usr/bin/env bash\necho "unexpected noise" >&2\nexit 0\n' >"$fsroot/.agent/scripts/status.sh"
-out8k=$("$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "unexpected stderr" "$fsroot" 2>&1)
+printf '#!/usr/bin/env bash\necho "unexpected noise" >&2\nexit 0\n' >"$fsroot/.agents/scripts/status.sh"
+out8k=$("$fsroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "unexpected stderr" "$fsroot" 2>&1)
 rc=$?
-n8k=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+n8k=$(grep -c '^- \[' "$fsroot/.agents/session-log.md")
 [ "$rc" -ne 0 ] && [ "$n8k" -eq "$n8i0" ] && printf '%s' "$out8k" | grep -q 'checkpoint.sh: status check failed to run cleanly' && pass "checkpoint.sh: unexpected status.sh stderr blocks completion" || fail "checkpoint.sh: unexpected status.sh stderr blocks completion (rc=$rc entries=$n8k)"
 
-cp "$WORK/fs-status-clean.sh" "$fsroot/.agent/scripts/status.sh"
-"$fsroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
+cp "$WORK/fs-status-clean.sh" "$fsroot/.agents/scripts/status.sh"
+"$fsroot/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "the inspection script is clean again" "$fsroot" >/dev/null 2>&1
 rc=$?
-n8l=$(grep -c '^- \[' "$fsroot/.agent/session-log.md")
+n8l=$(grep -c '^- \[' "$fsroot/.agents/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8l" -eq "$((n8i0 + 1))" ] && pass "checkpoint.sh: a clean status check still allows completion" || fail "checkpoint.sh: a clean status check still allows completion (rc=$rc entries=$n8l)"
 
 seqA="$WORK/seq-edit-commit-edit-commit-noedit"
@@ -1005,19 +1008,19 @@ printf 'export const a = 1\n' >"$seqA/src/a.ts"
 git -C "$seqA" init -q && git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 
 printf 'export const b = 2\n' >>"$seqA/src/a.ts"
-"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "turn one edit" "$seqA" >/dev/null 2>&1
+"$seqA/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "turn one edit" "$seqA" >/dev/null 2>&1
 rc_a1=$?
 git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-one
 
 printf 'export const c = 3\n' >>"$seqA/src/a.ts"
-"$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "turn two edit" "$seqA" >/dev/null 2>&1
+"$seqA/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "turn two edit" "$seqA" >/dev/null 2>&1
 rc_a2=$?
 git -C "$seqA" add -A && git -C "$seqA" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m turn-two
-n_a2=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
+n_a2=$(grep -c '^- \[' "$seqA/.agents/session-log.md")
 
-out_a3=$("$seqA/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "turn three no edit" "$seqA" 2>&1)
+out_a3=$("$seqA/.agents/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "turn three no edit" "$seqA" 2>&1)
 rc_a3=$?
-n_a3=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
+n_a3=$(grep -c '^- \[' "$seqA/.agents/session-log.md")
 
 [ "$rc_a1" -eq 0 ] && [ "$rc_a2" -eq 0 ] && [ "$n_a2" -eq 2 ] \
   && pass "sequence: edit-commit-edit-commit writes exactly two entries" \
@@ -1033,17 +1036,17 @@ finish_bootstrap "$seqB"
 printf 'export const a = 1\n' >"$seqB/src/a.ts"
 git -C "$seqB" init -q && git -C "$seqB" add -A && git -C "$seqB" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 
-out_b1=$("$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
+out_b1=$("$seqB/.agents/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
 rc_b1=$?
-n_b1=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
+n_b1=$(grep -c '^- \[' "$seqB/.agents/session-log.md")
 [ "$rc_b1" -ne 0 ] && [ "$n_b1" -eq 0 ] && printf '%s' "$out_b1" | grep -q 'nothing changed' \
   && pass "sequence: no-edit before any edit exits nonzero and writes nothing" \
   || fail "sequence: no-edit before any edit exits nonzero and writes nothing (rc=$rc_b1 entries=$n_b1)"
 
 printf 'export const b = 2\n' >>"$seqB/src/a.ts"
-"$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "second turn edits" "$seqB" >/dev/null 2>&1
+"$seqB/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "second turn edits" "$seqB" >/dev/null 2>&1
 rc_b2=$?
-n_b2=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
+n_b2=$(grep -c '^- \[' "$seqB/.agents/session-log.md")
 [ "$rc_b2" -eq 0 ] && [ "$n_b2" -eq 1 ] \
   && pass "sequence: no-edit then edit writes exactly one entry total" \
   || fail "sequence: no-edit then edit writes exactly one entry total (rc=$rc_b2 entries=$n_b2)"
@@ -1054,9 +1057,9 @@ mkdir -p "$seqC/src"
 finish_bootstrap "$seqC"
 printf 'export const a = 1\n' >"$seqC/src/a.ts"
 git -C "$seqC" init -q && git -C "$seqC" add -A && git -C "$seqC" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-"$seqC/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "only answered, nothing to record" "$seqC" >/dev/null 2>&1
+"$seqC/.agents/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "only answered, nothing to record" "$seqC" >/dev/null 2>&1
 rc_c1=$?
-n_c1=$(grep -c '^- \[' "$seqC/.agent/session-log.md")
+n_c1=$(grep -c '^- \[' "$seqC/.agents/session-log.md")
 [ "$rc_c1" -ne 0 ] && [ "$n_c1" -eq 0 ] \
   && pass "sequence: a no-edit-only turn over a committed baseline writes zero entries" \
   || fail "sequence: a no-edit-only turn over a committed baseline writes zero entries (rc=$rc_c1 entries=$n_c1)"
@@ -1064,18 +1067,18 @@ n_c1=$(grep -c '^- \[' "$seqC/.agent/session-log.md")
 migBelow="$WORK/migrate-session-log-below-target"
 mkdir -p "$migBelow"
 make_v6_fixture "$migBelow"
-subst "$migBelow/.agent/session-log.md" 's/One entry per turn that changed files, newest last\./One entry per session, newest last./'
-before_mb=$(grep '^- \[' "$migBelow/.agent/session-log.md")
+subst "$migBelow/.agents/session-log.md" 's/One entry per turn that changed files, newest last\./One entry per session, newest last./'
+before_mb=$(grep '^- \[' "$migBelow/.agents/session-log.md")
 "$NODE" update "$migBelow" >/dev/null 2>&1
-after_mb=$(grep '^- \[' "$migBelow/.agent/session-log.md")
-grep -qF 'One entry per turn that changed files, newest last.' "$migBelow/.agent/session-log.md" \
+after_mb=$(grep '^- \[' "$migBelow/.agents/session-log.md")
+grep -qF 'One entry per turn that changed files, newest last.' "$migBelow/.agents/session-log.md" \
   && pass "migrate (below-target): session-log.md header is replaced" \
   || fail "migrate (below-target): session-log.md header is replaced"
 [ "$before_mb" = "$after_mb" ] \
   && pass "migrate (below-target): every existing log entry is preserved byte-identical, in order" \
   || fail "migrate (below-target): every existing log entry is preserved byte-identical, in order"
 out_mb2=$("$NODE" update "$migBelow" 2>&1)
-after_mb2=$(grep '^- \[' "$migBelow/.agent/session-log.md")
+after_mb2=$(grep '^- \[' "$migBelow/.agents/session-log.md")
 [ "$after_mb" = "$after_mb2" ] && printf '%s' "$out_mb2" | grep -qF 'session log header already current' \
   && pass "migrate (below-target): a second run reports the header already current, no further rewrite" \
   || fail "migrate (below-target): a second run reports the header already current, no further rewrite ($out_mb2)"
@@ -1083,24 +1086,24 @@ after_mb2=$(grep '^- \[' "$migBelow/.agent/session-log.md")
 migSame="$WORK/migrate-session-log-same-version"
 mkdir -p "$migSame"
 "$NODE" init --preset software-development --mode track-shared "$migSame" >/dev/null 2>&1
-printf -- '- [2026-02-02] (claude) pre-migration entry (testing). verify: pass.\n' >>"$migSame/.agent/session-log.md"
-subst "$migSame/.agent/session-log.md" 's/One entry per turn that changed files, newest last\./One entry per session, newest last./'
-before_ms=$(grep '^- \[' "$migSame/.agent/session-log.md")
+printf -- '- [2026-02-02] (claude) pre-migration entry (testing). verify: pass.\n' >>"$migSame/.agents/session-log.md"
+subst "$migSame/.agents/session-log.md" 's/One entry per turn that changed files, newest last\./One entry per session, newest last./'
+before_ms=$(grep '^- \[' "$migSame/.agents/session-log.md")
 "$NODE" update "$migSame" >/dev/null 2>&1
 rc_ms1=$?
-after_ms=$(grep '^- \[' "$migSame/.agent/session-log.md")
-[ "$rc_ms1" -eq 0 ] && grep -qF 'One entry per turn that changed files, newest last.' "$migSame/.agent/session-log.md" \
+after_ms=$(grep '^- \[' "$migSame/.agents/session-log.md")
+[ "$rc_ms1" -eq 0 ] && grep -qF 'One entry per turn that changed files, newest last.' "$migSame/.agents/session-log.md" \
   && pass "migrate (same-version): a 6.3 node with the old header is refreshed by the shape-refresh branch" \
   || fail "migrate (same-version): a 6.3 node with the old header is refreshed by the shape-refresh branch"
 [ "$before_ms" = "$after_ms" ] \
   && pass "migrate (same-version): every existing log entry is preserved byte-identical, in order" \
   || fail "migrate (same-version): every existing log entry is preserved byte-identical, in order"
-[ -f "$migSame/.agent.backup-v6.3-shape/session-log.md" ] && grep -qF 'One entry per session, newest last.' "$migSame/.agent.backup-v6.3-shape/session-log.md" \
+[ -f "$migSame/.agents.backup-v6.3-shape/session-log.md" ] && grep -qF 'One entry per session, newest last.' "$migSame/.agents.backup-v6.3-shape/session-log.md" \
   && pass "migrate (same-version): the pre-refresh header is preserved behind the existing shape backup" \
   || fail "migrate (same-version): the pre-refresh header is preserved behind the existing shape backup"
 out_ms2=$("$NODE" update "$migSame" 2>&1)
 rc_ms2=$?
-after_ms2=$(grep '^- \[' "$migSame/.agent/session-log.md")
+after_ms2=$(grep '^- \[' "$migSame/.agents/session-log.md")
 [ "$rc_ms2" -eq 0 ] && [ "$after_ms" = "$after_ms2" ] && printf '%s' "$out_ms2" | grep -qF 'current' \
   && pass "migrate (same-version): a second run leaves the node current with no further rewrite" \
   || fail "migrate (same-version): a second run leaves the node current with no further rewrite ($out_ms2)"
@@ -1108,9 +1111,9 @@ after_ms2=$(grep '^- \[' "$migSame/.agent/session-log.md")
 migNew="$WORK/migrate-session-log-already-new"
 mkdir -p "$migNew"
 "$NODE" init --preset software-development --mode ignore-all "$migNew" >/dev/null 2>&1
-before_mn=$(cat "$migNew/.agent/session-log.md")
+before_mn=$(cat "$migNew/.agents/session-log.md")
 out_mn=$("$NODE" update "$migNew" 2>&1)
-after_mn=$(cat "$migNew/.agent/session-log.md")
+after_mn=$(cat "$migNew/.agents/session-log.md")
 [ "$before_mn" = "$after_mn" ] && printf '%s' "$out_mn" | grep -qF 'current' \
   && pass "migrate: update on a node already carrying the new header rewrites nothing and reports current" \
   || fail "migrate: update on a node already carrying the new header rewrites nothing and reports current"
@@ -1118,12 +1121,12 @@ after_mn=$(cat "$migNew/.agent/session-log.md")
 noHeaderRoot="$WORK/session-log-no-header"
 mkdir -p "$noHeaderRoot"
 "$NODE" init --preset software-development --mode ignore-all "$noHeaderRoot" >/dev/null 2>&1
-printf '%s\n' '# Session log' >"$noHeaderRoot/.agent/session-log.md"
-printf -- '- [2026-01-01] (claude) test entry (testing). verify: pass.\n' >>"$noHeaderRoot/.agent/session-log.md"
-before_nh=$(cat "$noHeaderRoot/.agent/session-log.md")
+printf '%s\n' '# Session log' >"$noHeaderRoot/.agents/session-log.md"
+printf -- '- [2026-01-01] (claude) test entry (testing). verify: pass.\n' >>"$noHeaderRoot/.agents/session-log.md"
+before_nh=$(cat "$noHeaderRoot/.agents/session-log.md")
 out_nh=$("$NODE" update "$noHeaderRoot" 2>&1)
 rc_nh=$?
-after_nh=$(cat "$noHeaderRoot/.agent/session-log.md")
+after_nh=$(cat "$noHeaderRoot/.agents/session-log.md")
 [ "$rc_nh" -eq 0 ] && [ "$before_nh" = "$after_nh" ] \
   && pass "update: a session-log.md with no header comment is left untouched" \
   || fail "update: a session-log.md with no header comment is left untouched (rc=$rc_nh)"
@@ -1135,48 +1138,48 @@ memroot="$WORK/memory-tests"
 mkdir -p "$memroot"
 "$NODE" init --preset domain-knowledge --mode track-all "$memroot" >/dev/null 2>&1
 finish_bootstrap "$memroot"
-memcopy="$memroot/.agent/scripts/memory.sh"
+memcopy="$memroot/.agents/scripts/memory.sh"
 
 out9=$("$memcopy" new --slug test-fact --title "Test Fact" --hook "why it matters for tests" --fact "This is a short durable fact used only for the smoke test suite." "$memroot" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && pass "memory.sh new: valid fact exits 0" || fail "memory.sh new: valid fact exits 0"
-factfile="$memroot/.agent/memory/test-fact.md"
+factfile="$memroot/.agents/memory/test-fact.md"
 [ -f "$factfile" ] && pass "memory.sh new: fact file created" || fail "memory.sh new: fact file created"
 grep -q '^date: ' "$factfile" 2>/dev/null && grep -q '^scope: project' "$factfile" 2>/dev/null && pass "memory.sh new: fact file has date and scope frontmatter" || fail "memory.sh new: fact file has date and scope frontmatter"
-grep -qxF -- "- [Test Fact](memory/test-fact.md) — why it matters for tests" "$memroot/.agent/memory.md" && pass "memory.sh new: index line appended" || fail "memory.sh new: index line appended"
+grep -qxF -- "- [Test Fact](memory/test-fact.md) — why it matters for tests" "$memroot/.agents/memory.md" && pass "memory.sh new: index line appended" || fail "memory.sh new: index line appended"
 
 grep -q '<!--' "$factfile" && fail "memory.sh new: the fact file carries no header contract" || pass "memory.sh new: the fact file carries no header contract"
 printf '%s\n' "$out9" | grep -qF 'supersede in place' && pass "memory.sh new: the write reminds the writer of the contract" || fail "memory.sh new: the write reminds the writer of the contract ($out9)"
-grep -qF 'fact files carry no header of their' "$memroot/.agent/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"
-grep -qF 'Keep a fact only if work in this node changes when it is' "$memroot/.agent/memory.md" && pass "memory.md's header states the retention test" || fail "memory.md's header states the retention test"
-grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$memroot/.agent/memory.md" && pass "memory.md's header rejects facts duplicated from canonical sources" || fail "memory.md's header rejects facts duplicated from canonical sources"
+grep -qF 'fact files carry no header of their' "$memroot/.agents/memory.md" && pass "memory.md's header carries the contract for memory/" || fail "memory.md's header carries the contract for memory/"
+grep -qF 'Keep a fact only if work in this node changes when it is' "$memroot/.agents/memory.md" && pass "memory.md's header states the retention test" || fail "memory.md's header states the retention test"
+grep -qF 'If one already states it, update that source or its routing, write no fact, and say which source states it.' "$memroot/.agents/memory.md" && pass "memory.md's header rejects facts duplicated from canonical sources" || fail "memory.md's header rejects facts duplicated from canonical sources"
 printf '%s\n' "$out9" | grep -qF 'search purpose, rules, routed docs, source, and existing facts first' && pass "memory.sh new: the writer output repeats the source check" || fail "memory.sh new: the writer output repeats the source check ($out9)"
 
 flags9=$(status_flags "$memroot")
 [ -z "$flags9" ] && pass "memory.sh new: status.sh clean afterward" || fail "memory.sh new: status.sh clean afterward ($flags9)"
 
-before9=$(cat "$memroot/.agent/memory.md")
+before9=$(cat "$memroot/.agents/memory.md")
 "$memcopy" new --slug test-fact --title "Dup" --hook "dup" --fact "duplicate attempt" "$memroot" >/dev/null 2>&1
 rc=$?
-after9=$(cat "$memroot/.agent/memory.md")
+after9=$(cat "$memroot/.agents/memory.md")
 [ "$rc" -ne 0 ] && pass "memory.sh new: duplicate slug rejected" || fail "memory.sh new: duplicate slug rejected"
 [ "$before9" = "$after9" ] && pass "memory.sh new: duplicate slug leaves index unchanged" || fail "memory.sh new: duplicate slug leaves index unchanged"
 
 "$memcopy" new --slug "Bad_Slug" --title "Bad" --hook "bad" --fact "invalid slug attempt" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: invalid slug rejected" || fail "memory.sh new: invalid slug rejected"
-[ ! -e "$memroot/.agent/memory/Bad_Slug.md" ] && pass "memory.sh new: invalid slug creates no file" || fail "memory.sh new: invalid slug creates no file"
+[ ! -e "$memroot/.agents/memory/Bad_Slug.md" ] && pass "memory.sh new: invalid slug creates no file" || fail "memory.sh new: invalid slug creates no file"
 
 "$memcopy" new --slug bad-title --title "Bad [Title]" --hook "ok" --fact "bracketed title attempt" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: bracketed title rejected" || fail "memory.sh new: bracketed title rejected"
-[ ! -e "$memroot/.agent/memory/bad-title.md" ] && pass "memory.sh new: bracketed title creates no file" || fail "memory.sh new: bracketed title creates no file"
+[ ! -e "$memroot/.agents/memory/bad-title.md" ] && pass "memory.sh new: bracketed title creates no file" || fail "memory.sh new: bracketed title creates no file"
 
 "$memcopy" new --slug bad-hook --title "Ok" --hook "line one
 line two" --fact "multiline hook attempt" "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "memory.sh new: multiline hook rejected" || fail "memory.sh new: multiline hook rejected"
-[ ! -e "$memroot/.agent/memory/bad-hook.md" ] && pass "memory.sh new: multiline hook creates no file" || fail "memory.sh new: multiline hook creates no file"
+[ ! -e "$memroot/.agents/memory/bad-hook.md" ] && pass "memory.sh new: multiline hook creates no file" || fail "memory.sh new: multiline hook creates no file"
 
 "$memcopy" new --slug field-size --title "Field Size" --hook "field regression case" --fact "$(words_n 130)" "$memroot" >/dev/null 2>&1
 rc=$?
@@ -1190,10 +1193,10 @@ rc=$?
 flags9c=$(status_flags "$memroot")
 printf '%s\n' "$flags9c" | grep -q '^GROOM: memory/outlier\.md' && pass "memory.sh new: outlier fact draws a GROOM flag" || fail "memory.sh new: outlier fact draws a GROOM flag ($flags9c)"
 
-printf -- '---\ndate: 2020-01-01\nscope: package\ntype: reference\n---\n\nthe superseded body, stale\n' >"$memroot/.agent/memory/vendor-rate-limit.md"
-printf -- '- [Vendor Rate Limit](memory/vendor-rate-limit.md) — calling the vendor API\n' >>"$memroot/.agent/memory.md"
-supfile="$memroot/.agent/memory/vendor-rate-limit.md"
-supindex_before=$(cat "$memroot/.agent/memory.md")
+printf -- '---\ndate: 2020-01-01\nscope: package\ntype: reference\n---\n\nthe superseded body, stale\n' >"$memroot/.agents/memory/vendor-rate-limit.md"
+printf -- '- [Vendor Rate Limit](memory/vendor-rate-limit.md) — calling the vendor API\n' >>"$memroot/.agents/memory.md"
+supfile="$memroot/.agents/memory/vendor-rate-limit.md"
+supindex_before=$(cat "$memroot/.agents/memory.md")
 
 out9s=$("$memcopy" supersede --slug vendor-rate-limit --fact "the vendor allows 240 requests a minute per key, burst 40." "$memroot" 2>&1)
 rc=$?
@@ -1202,7 +1205,7 @@ grep -qF 'the vendor allows 240 requests a minute per key' "$supfile" && pass "m
 grep -qF 'the superseded body, stale' "$supfile" && fail "memory.sh supersede: the old body is gone" || pass "memory.sh supersede: the old body is gone"
 grep -qxF -- "date: $(today)" "$supfile" && pass "memory.sh supersede: the date is restamped to today" || fail "memory.sh supersede: the date is restamped to today ($(grep '^date:' "$supfile"))"
 grep -qxF -- "scope: package" "$supfile" && grep -qxF -- "type: reference" "$supfile" && pass "memory.sh supersede: scope and type carry forward unchanged" || fail "memory.sh supersede: scope and type carry forward unchanged"
-[ "$supindex_before" = "$(cat "$memroot/.agent/memory.md")" ] && pass "memory.sh supersede: the index line is left alone" || fail "memory.sh supersede: the index line is left alone"
+[ "$supindex_before" = "$(cat "$memroot/.agents/memory.md")" ] && pass "memory.sh supersede: the index line is left alone" || fail "memory.sh supersede: the index line is left alone"
 grep -q '<!--' "$supfile" && fail "memory.sh supersede: the rewritten fact carries no header contract" || pass "memory.sh supersede: the rewritten fact carries no header contract"
 flags9s=$(status_flags "$memroot" | grep '^REPAIR:')
 [ -z "$flags9s" ] && pass "memory.sh supersede: the node draws no REPAIR afterward" || fail "memory.sh supersede: the node draws no REPAIR afterward ($flags9s)"
@@ -1216,13 +1219,13 @@ rc=$?
 
 "$memcopy" supersede --slug never-written --fact "no such fact" "$memroot" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$memroot/.agent/memory/never-written.md" ] && pass "memory.sh supersede: a missing fact file is rejected, nothing created" || fail "memory.sh supersede: a missing fact file is rejected, nothing created"
+[ "$rc" -ne 0 ] && [ ! -e "$memroot/.agents/memory/never-written.md" ] && pass "memory.sh supersede: a missing fact file is rejected, nothing created" || fail "memory.sh supersede: a missing fact file is rejected, nothing created"
 
-printf -- '---\ndate: 2020-01-01\nscope: project\ntype: fact\n---\n\nunindexed body\n' >"$memroot/.agent/memory/unindexed.md"
+printf -- '---\ndate: 2020-01-01\nscope: project\ntype: fact\n---\n\nunindexed body\n' >"$memroot/.agents/memory/unindexed.md"
 "$memcopy" supersede --slug unindexed --fact "should not land" "$memroot" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && grep -qF 'unindexed body' "$memroot/.agent/memory/unindexed.md" && pass "memory.sh supersede: an unindexed fact file is rejected, unchanged" || fail "memory.sh supersede: an unindexed fact file is rejected, unchanged"
-rm -f "$memroot/.agent/memory/unindexed.md"
+[ "$rc" -ne 0 ] && grep -qF 'unindexed body' "$memroot/.agents/memory/unindexed.md" && pass "memory.sh supersede: an unindexed fact file is rejected, unchanged" || fail "memory.sh supersede: an unindexed fact file is rejected, unchanged"
+rm -f "$memroot/.agents/memory/unindexed.md"
 
 "$memcopy" supersede --slug vendor-rate-limit "$memroot" >/dev/null 2>&1
 rc=$?
@@ -1244,12 +1247,12 @@ docroot="$WORK/docs-tests"
 mkdir -p "$docroot"
 "$NODE" init --preset academic-research --mode track-all "$docroot" >/dev/null 2>&1
 finish_bootstrap "$docroot"
-doccopy="$docroot/.agent/scripts/docs.sh"
+doccopy="$docroot/.agents/scripts/docs.sh"
 
 "$doccopy" new --name auth-flow --read-when "working on authentication" "$docroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "docs.sh new: first doc exits 0" || fail "docs.sh new: first doc exits 0"
-docfile="$docroot/.agent/docs/auth-flow.md"
+docfile="$docroot/.agents/docs/auth-flow.md"
 [ -f "$docfile" ] && pass "docs.sh new: doc file created" || fail "docs.sh new: doc file created"
 firstline=$(head -n1 "$docfile" 2>/dev/null)
 [ "$firstline" = "<!-- Read when: working on authentication -->" ] && pass "docs.sh new: doc opens with the Read when: line" || fail "docs.sh new: doc opens with the Read when: line"
@@ -1260,7 +1263,7 @@ docout=$("$doccopy" new --name payments --read-when "touching billing" "$docroot
 printf '%s\n' "$docout" | grep -qF "one-fact-per-line bullets" && pass "docs.sh new: the output states the shape contract" || fail "docs.sh new: the output states the shape contract"
 printf '%s\n' "$docout" | grep -qF "may drop a name, value, command, path, or gotcha" && pass "docs.sh new: the output states the no-fact-loss invariant" || fail "docs.sh new: the output states the no-fact-loss invariant"
 
-archfile="$docroot/.agent/docs/architecture.md"
+archfile="$docroot/.agents/docs/architecture.md"
 [ -f "$archfile" ] && grep -qF '### `auth-flow.md`' "$archfile" && grep -qF -- "- **Read when:** working on authentication" "$archfile" && pass "docs.sh new: architecture.md created with the routing entry" || fail "docs.sh new: architecture.md created with the routing entry"
 grep -qF -- "- **Sections:**" "$archfile" && pass "docs.sh new: routing entry carries a Sections field" || fail "docs.sh new: routing entry carries a Sections field"
 
@@ -1278,14 +1281,14 @@ nlroot="$WORK/gitignore-no-newline"
 mkdir -p "$nlroot"
 printf 'node_modules' >"$nlroot/.gitignore"
 "$NODE" init --preset software-development --mode ignore-all "$nlroot" >/dev/null 2>&1
-expected_nl=$(printf 'node_modules\n.agent/')
-[ "$(cat "$nlroot/.gitignore" 2>/dev/null)" = "$expected_nl" ] && pass "init: no-trailing-newline gitignore keeps its pattern and gains .agent/ on its own line" || fail "init: no-trailing-newline gitignore keeps its pattern and gains .agent/ on its own line"
+expected_nl=$(printf 'node_modules\n%s' "$expected_ignore_all")
+[ "$(cat "$nlroot/.gitignore" 2>/dev/null)" = "$expected_nl" ] && pass "init: no-trailing-newline gitignore keeps its pattern and gains the node lines on their own lines" || fail "init: no-trailing-newline gitignore keeps its pattern and gains the node lines on their own lines"
 
 fakehome="$WORK/fake-home"
 mkdir -p "$fakehome"
 HOME="$fakehome" "$NODE" init --preset software-development --mode ignore-all "$fakehome" >/dev/null 2>&1
 rc=$?
-[ "$rc" -eq 0 ] && [ -d "$fakehome/.agent" ] && pass "init at \$HOME exits 0 and creates the node" || fail "init at \$HOME exits 0 and creates the node"
+[ "$rc" -eq 0 ] && [ -d "$fakehome/.agents" ] && pass "init at \$HOME exits 0 and creates the node" || fail "init at \$HOME exits 0 and creates the node"
 [ ! -e "$fakehome/.gitignore" ] && pass "init at \$HOME skips the gitignore" || fail "init at \$HOME skips the gitignore"
 
 realhome="$WORK/real-home"
@@ -1300,19 +1303,19 @@ make_v6_fixture "$tsroot" track-shared
 "$NODE" update "$tsroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "update on a track-shared V6 fixture exits 0" || fail "update on a track-shared V6 fixture exits 0 (rc=$rc)"
-[ -d "$tsroot/.agent.backup-v6" ] && grep -q "custom auth flow" "$tsroot/.agent.backup-v6/memory.md" 2>/dev/null && pass "update: track-shared node backed up before the migration" || fail "update: track-shared node backed up before the migration"
+[ -d "$tsroot/.agents.backup-v6" ] && grep -q "custom auth flow" "$tsroot/.agents.backup-v6/memory.md" 2>/dev/null && pass "update: track-shared node backed up before the migration" || fail "update: track-shared node backed up before the migration"
 
 arrowroot="$WORK/update-arrow-body"
 mkdir -p "$arrowroot"
 make_v6_fixture "$arrowroot"
-cat >"$arrowroot/.agent/memory.md" <<'EOF'
+cat >"$arrowroot/.agents/memory.md" <<'EOF'
 # Memory
 
 Fact one: deploys flow build --> stage --> prod, never direct.
 Fact two: staging resets nightly.
 EOF
 "$NODE" update "$arrowroot" >/dev/null 2>&1
-legacy_arrow="$arrowroot/.agent/memory/legacy.md"
+legacy_arrow="$arrowroot/.agents/memory/legacy.md"
 if grep -q "Fact one" "$legacy_arrow" 2>/dev/null && grep -q "Fact two" "$legacy_arrow" 2>/dev/null; then
   pass "update: --> in a header-less body loses no facts"
 else
@@ -1323,18 +1326,18 @@ grep -q '^# Memory' "$legacy_arrow" 2>/dev/null && fail "update: legacy.md does 
 headroot="$WORK/update-custom-heading"
 mkdir -p "$headroot"
 make_v6_fixture "$headroot"
-cat >"$headroot/.agent/memory.md" <<'EOF'
+cat >"$headroot/.agents/memory.md" <<'EOF'
 # Deploy facts
 
 Deploys go through the internal release tool only.
 EOF
 "$NODE" update "$headroot" >/dev/null 2>&1
-grep -q '^# Deploy facts' "$headroot/.agent/memory/legacy.md" 2>/dev/null && pass "update: a custom first-line heading survives into legacy.md" || fail "update: a custom first-line heading survives into legacy.md"
+grep -q '^# Deploy facts' "$headroot/.agents/memory/legacy.md" 2>/dev/null && pass "update: a custom first-line heading survives into legacy.md" || fail "update: a custom first-line heading survives into legacy.md"
 
 hdrroot="$WORK/update-fact-headers"
-mkdir -p "$hdrroot/.agent/memory"
+mkdir -p "$hdrroot/.agents/memory"
 make_v6_fixture "$hdrroot"
-cat >"$hdrroot/.agent/memory.md" <<'EOF'
+cat >"$hdrroot/.agents/memory.md" <<'EOF'
 # Memory
 <!-- Index only, one line per fact file, newest last; reorder by
 relevance only when grooming.
@@ -1342,7 +1345,7 @@ Format: - [Title](memory/slug.md) — hook. -->
 
 - [Auth flow](memory/auth-flow.md) — touching login
 EOF
-cat >"$hdrroot/.agent/memory/auth-flow.md" <<'EOF'
+cat >"$hdrroot/.agents/memory/auth-flow.md" <<'EOF'
 ---
 date: 2026-01-01
 scope: project
@@ -1354,8 +1357,8 @@ would be superseded at different times, they are two files. -->
 
 Auth uses rotating tokens, refreshed every 900 seconds.
 EOF
-mkdir -p "$hdrroot/.agent/docs/billing"
-for hdrdoc in "$hdrroot/.agent/docs/billing.md" "$hdrroot/.agent/docs/billing/refunds.md"; do
+mkdir -p "$hdrroot/.agents/docs/billing"
+for hdrdoc in "$hdrroot/.agents/docs/billing.md" "$hdrroot/.agents/docs/billing/refunds.md"; do
   cat >"$hdrdoc" <<'EOF'
 <!-- Read when: touching billing -->
 # Billing
@@ -1365,20 +1368,20 @@ Refunds settle in 3 business days.
 EOF
 done
 "$NODE" update "$hdrroot" >/dev/null 2>&1
-hdrfact="$hdrroot/.agent/memory/auth-flow.md"
-for hdrdoc in "$hdrroot/.agent/docs/billing.md" "$hdrroot/.agent/docs/billing/refunds.md"; do
-  hdrlabel=${hdrdoc#"$hdrroot/.agent/"}
+hdrfact="$hdrroot/.agents/memory/auth-flow.md"
+for hdrdoc in "$hdrroot/.agents/docs/billing.md" "$hdrroot/.agents/docs/billing/refunds.md"; do
+  hdrlabel=${hdrdoc#"$hdrroot/.agents/"}
   grep -qF 'Agent-facing reference' "$hdrdoc" 2>/dev/null && fail "update: $hdrlabel loses its shape header" || pass "update: $hdrlabel loses its shape header"
   head -n1 "$hdrdoc" | grep -qxF '<!-- Read when: touching billing -->' && pass "update: $hdrlabel keeps its Read when: hook" || fail "update: $hdrlabel keeps its Read when: hook"
   grep -qF 'Refunds settle in 3 business days.' "$hdrdoc" 2>/dev/null && pass "update: $hdrlabel keeps its body" || fail "update: $hdrlabel keeps its body"
 done
-[ ! -e "$hdrroot/.agent/.doc-headers.tmp" ] && pass "update: the doc-header migration leaves no scratch file" || fail "update: the doc-header migration leaves no scratch file"
+[ ! -e "$hdrroot/.agents/.doc-headers.tmp" ] && pass "update: the doc-header migration leaves no scratch file" || fail "update: the doc-header migration leaves no scratch file"
 grep -q '<!--' "$hdrfact" 2>/dev/null && fail "update: an existing fact file loses its header contract" || pass "update: an existing fact file loses its header contract"
 grep -qF 'Auth uses rotating tokens, refreshed every 900 seconds.' "$hdrfact" 2>/dev/null && pass "update: stripping the header keeps the fact" || fail "update: stripping the header keeps the fact"
 grep -q '^date: 2026-01-01' "$hdrfact" 2>/dev/null && grep -q '^type: fact' "$hdrfact" 2>/dev/null && pass "update: stripping the header keeps the frontmatter" || fail "update: stripping the header keeps the frontmatter"
-grep -qF 'This contract covers memory/ too' "$hdrroot/.agent/memory.md" 2>/dev/null && pass "update: memory.md's header gains the memory/ contract" || fail "update: memory.md's header gains the memory/ contract"
-grep -qxF -- "- [Auth flow](memory/auth-flow.md) — touching login" "$hdrroot/.agent/memory.md" && pass "update: rewriting the header keeps the index lines" || fail "update: rewriting the header keeps the index lines"
-[ ! -e "$hdrroot/.agent/memory/legacy.md" ] && pass "update: an already-split node grows no legacy.md" || fail "update: an already-split node grows no legacy.md"
+grep -qF 'This contract covers memory/ too' "$hdrroot/.agents/memory.md" 2>/dev/null && pass "update: memory.md's header gains the memory/ contract" || fail "update: memory.md's header gains the memory/ contract"
+grep -qxF -- "- [Auth flow](memory/auth-flow.md) — touching login" "$hdrroot/.agents/memory.md" && pass "update: rewriting the header keeps the index lines" || fail "update: rewriting the header keeps the index lines"
+[ ! -e "$hdrroot/.agents/memory/legacy.md" ] && pass "update: an already-split node grows no legacy.md" || fail "update: an already-split node grows no legacy.md"
 
 if [ "$(id -u)" -eq 0 ]; then
   pass "update: failed backup exits nonzero (skipped: running as root)"
@@ -1387,36 +1390,36 @@ else
   roroot="$WORK/update-backup-fails"
   mkdir -p "$roroot"
   make_v6_fixture "$roroot"
-  before_ro=$(cat "$roroot/.agent/memory.md")
+  before_ro=$(cat "$roroot/.agents/memory.md")
   chmod 555 "$roroot"
   "$NODE" update "$roroot" >/dev/null 2>&1
   rc=$?
   chmod 755 "$roroot"
   [ "$rc" -ne 0 ] && pass "update: failed backup exits nonzero" || fail "update: failed backup exits nonzero"
-  [ "$(cat "$roroot/.agent/memory.md")" = "$before_ro" ] && pass "update: failed backup leaves memory.md untouched" || fail "update: failed backup leaves memory.md untouched"
+  [ "$(cat "$roroot/.agents/memory.md")" = "$before_ro" ] && pass "update: failed backup leaves memory.md untouched" || fail "update: failed backup leaves memory.md untouched"
 fi
 
 malroot="$WORK/update-bad-version"
 mkdir -p "$malroot"
 make_v6_fixture "$malroot"
-sed 's/^  version: 6$/  version: unknown/' "$malroot/.agent/purpose.md" >"$malroot/.agent/purpose.md.tmp"
-mv "$malroot/.agent/purpose.md.tmp" "$malroot/.agent/purpose.md"
-cp -R "$malroot/.agent" "$WORK/malroot-snapshot"
+sed 's/^  version: 6$/  version: unknown/' "$malroot/.agents/purpose.md" >"$malroot/.agents/purpose.md.tmp"
+mv "$malroot/.agents/purpose.md.tmp" "$malroot/.agents/purpose.md"
+cp -R "$malroot/.agents" "$WORK/malroot-snapshot"
 "$NODE" update "$malroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -ne 0 ] && pass "update: non-numeric version exits nonzero" || fail "update: non-numeric version exits nonzero"
-diff -r "$WORK/malroot-snapshot" "$malroot/.agent" >/dev/null 2>&1 && pass "update: non-numeric version leaves the node untouched" || fail "update: non-numeric version leaves the node untouched"
+diff -r "$WORK/malroot-snapshot" "$malroot/.agents" >/dev/null 2>&1 && pass "update: non-numeric version leaves the node untouched" || fail "update: non-numeric version leaves the node untouched"
 
 futroot="$WORK/update-future-version"
 mkdir -p "$futroot"
 make_v6_fixture "$futroot"
-sed 's/^  version: 6$/  version: "6.10"/' "$futroot/.agent/purpose.md" >"$futroot/.agent/purpose.md.tmp"
-mv "$futroot/.agent/purpose.md.tmp" "$futroot/.agent/purpose.md"
-cp -R "$futroot/.agent" "$WORK/futroot-snapshot"
+sed 's/^  version: 6$/  version: "6.10"/' "$futroot/.agents/purpose.md" >"$futroot/.agents/purpose.md.tmp"
+mv "$futroot/.agents/purpose.md.tmp" "$futroot/.agents/purpose.md"
+cp -R "$futroot/.agents" "$WORK/futroot-snapshot"
 "$NODE" update "$futroot" >"$WORK/update-fut.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && grep -q "current" "$WORK/update-fut.out" && pass "update: newer node (6.10 vs 6.1) is a 'current' no-op" || fail "update: newer node (6.10 vs 6.1) is a 'current' no-op"
-diff -r "$WORK/futroot-snapshot" "$futroot/.agent" >/dev/null 2>&1 && pass "update: newer node left untouched" || fail "update: newer node left untouched"
+diff -r "$WORK/futroot-snapshot" "$futroot/.agents" >/dev/null 2>&1 && pass "update: newer node left untouched" || fail "update: newer node left untouched"
 
 before17=$(cat "$sessionlog")
 "$logcopy" --tool claude --area testing --verify pass --summary "line one
@@ -1452,11 +1455,11 @@ rc=$?
 before17d=$(cat "$archfile")
 "$doccopy" new --name pipe-doc --read-when "a | b" "$docroot" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$docroot/.agent/docs/pipe-doc.md" ] && [ "$(cat "$archfile")" = "$before17d" ] && pass "docs.sh: pipe in --read-when rejected, nothing written" || fail "docs.sh: pipe in --read-when rejected, nothing written"
+[ "$rc" -ne 0 ] && [ ! -e "$docroot/.agents/docs/pipe-doc.md" ] && [ "$(cat "$archfile")" = "$before17d" ] && pass "docs.sh: pipe in --read-when rejected, nothing written" || fail "docs.sh: pipe in --read-when rejected, nothing written"
 
 "$doccopy" new --name arrow-doc --read-when "before --> after" "$docroot" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$docroot/.agent/docs/arrow-doc.md" ] && pass "docs.sh: --> in --read-when rejected" || fail "docs.sh: --> in --read-when rejected"
+[ "$rc" -ne 0 ] && [ ! -e "$docroot/.agents/docs/arrow-doc.md" ] && pass "docs.sh: --> in --read-when rejected" || fail "docs.sh: --> in --read-when rejected"
 
 "$memcopy" new --slug pointer-fact --title "Pointer" --hook "detail lives in (memory/expanded-detail.md)" --fact "pointer fact for the anchor regression" "$memroot" >/dev/null 2>&1
 rc=$?
@@ -1469,8 +1472,8 @@ rc=$?
 flags18b=$(status_flags "$memroot" | grep '^REPAIR:')
 [ -z "$flags18b" ] && pass "status.sh: index and fact files agree after the anchor regression" || fail "status.sh: index and fact files agree after the anchor regression ($flags18b)"
 
-printf -- '---\ndate: 2026-01-01\nscope: project\n---\n\ncpp notes fact body\n' >"$memroot/.agent/memory/c++notes.md"
-printf -- '- [Cpp notes](memory/c++notes.md) — cpp gotchas\n' >>"$memroot/.agent/memory.md"
+printf -- '---\ndate: 2026-01-01\nscope: project\n---\n\ncpp notes fact body\n' >"$memroot/.agents/memory/c++notes.md"
+printf -- '- [Cpp notes](memory/c++notes.md) — cpp gotchas\n' >>"$memroot/.agents/memory.md"
 flags18c=$(status_flags "$memroot" | grep '^REPAIR:')
 [ -z "$flags18c" ] && pass "status.sh: regex metacharacters in a fact filename draw no phantom REPAIR" || fail "status.sh: regex metacharacters in a fact filename draw no phantom REPAIR ($flags18c)"
 
@@ -1478,49 +1481,49 @@ subroot="$WORK/docs-subdocs"
 mkdir -p "$subroot"
 "$NODE" init --preset software-development --mode track-all "$subroot" >/dev/null 2>&1
 finish_bootstrap "$subroot"
-subdocs="$subroot/.agent/scripts/docs.sh"
+subdocs="$subroot/.agents/scripts/docs.sh"
 
 "$subdocs" new --name frontend/grids --read-when "grid layouts and gridstack" "$subroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "docs.sh: one-level sub-doc path accepted" || fail "docs.sh: one-level sub-doc path accepted (rc=$rc)"
-[ -f "$subroot/.agent/docs/frontend/grids.md" ] && pass "docs.sh: sub-doc file created under docs/frontend/" || fail "docs.sh: sub-doc file created under docs/frontend/"
-grep -qF '### `frontend/grids.md`' "$subroot/.agent/docs/architecture.md" 2>/dev/null && pass "docs.sh: routing entry carries the relative path" || fail "docs.sh: routing entry carries the relative path"
+[ -f "$subroot/.agents/docs/frontend/grids.md" ] && pass "docs.sh: sub-doc file created under docs/frontend/" || fail "docs.sh: sub-doc file created under docs/frontend/"
+grep -qF '### `frontend/grids.md`' "$subroot/.agents/docs/architecture.md" 2>/dev/null && pass "docs.sh: routing entry carries the relative path" || fail "docs.sh: routing entry carries the relative path"
 flags19=$(status_flags "$subroot")
 [ -z "$flags19" ] && pass "status.sh: routed sub-doc is INDEX-clean" || fail "status.sh: routed sub-doc is INDEX-clean ($flags19)"
 
 "$subdocs" new --name a/b/c --read-when "too deep" "$subroot" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$subroot/.agent/docs/a" ] && pass "docs.sh: two-level nesting rejected" || fail "docs.sh: two-level nesting rejected"
+[ "$rc" -ne 0 ] && [ ! -e "$subroot/.agents/docs/a" ] && pass "docs.sh: two-level nesting rejected" || fail "docs.sh: two-level nesting rejected"
 
-printf 'no routing header here\n' >"$subroot/.agent/docs/frontend/loose.md"
+printf 'no routing header here\n' >"$subroot/.agents/docs/frontend/loose.md"
 flags19b=$(status_flags "$subroot")
 printf '%s\n' "$flags19b" | grep -qF 'INDEX: docs/frontend/loose.md missing its "Read when:" header' && pass "status.sh: unrouted sub-doc draws the header INDEX flag with its relative path" || fail "status.sh: unrouted sub-doc draws the header INDEX flag with its relative path ($flags19b)"
 printf '%s\n' "$flags19b" | grep -qF "INDEX: docs/frontend/loose.md not in the architecture.md routing table" && pass "status.sh: unrouted sub-doc draws the routing INDEX flag" || fail "status.sh: unrouted sub-doc draws the routing INDEX flag"
-rm -f "$subroot/.agent/docs/frontend/loose.md"
+rm -f "$subroot/.agents/docs/frontend/loose.md"
 
 "$subdocs" new --name huge --read-when "docs size-trigger fixture" "$subroot" >/dev/null 2>&1
-printf '%s\n' "$(words_n 2100)" >>"$subroot/.agent/docs/huge.md"
+printf '%s\n' "$(words_n 2100)" >>"$subroot/.agents/docs/huge.md"
 flags19c=$(status_flags "$subroot")
 printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/huge\.md' && pass "status.sh: oversized area doc draws a GROOM flag" || fail "status.sh: oversized area doc draws a GROOM flag ($flags19c)"
 printf '%s\n' "$flags19c" | grep -q '^GROOM: docs/frontend/grids\.md' && fail "status.sh: small sub-doc stays GROOM-clean" || pass "status.sh: small sub-doc stays GROOM-clean"
 printf '%s\n' "$flags19c" | grep -qF 'restructure without dropping facts' && pass "status.sh: docs GROOM flag names the no-fact-loss invariant" || fail "status.sh: docs GROOM flag names the no-fact-loss invariant"
 
 "$subdocs" new --name budget --read-when "docs budget fixture" "$subroot" >/dev/null 2>&1
-printf '%s\n' "$(words_n 1900)" >>"$subroot/.agent/docs/budget.md"
+printf '%s\n' "$(words_n 1900)" >>"$subroot/.agents/docs/budget.md"
 flags19d=$(status_flags "$subroot")
 printf '%s\n' "$flags19d" | grep -q '^GROOM: docs/budget\.md' && fail "status.sh: header contract costs no body words" || pass "status.sh: header contract costs no body words"
-rm -f "$subroot/.agent/docs/budget.md"
+rm -f "$subroot/.agents/docs/budget.md"
 
 rt="$WORK/routing"
 mkdir -p "$rt"
 "$NODE" init --preset software-development --mode track-all "$rt" >/dev/null 2>&1
 finish_bootstrap "$rt"
-rtdocs="$rt/.agent/scripts/docs.sh"
-rtarch="$rt/.agent/docs/architecture.md"
+rtdocs="$rt/.agents/scripts/docs.sh"
+rtarch="$rt/.agents/docs/architecture.md"
 "$rtdocs" new --name payments --read-when "payment flows and webhooks" "$rt" >/dev/null 2>&1
 [ -z "$(status_flags "$rt")" ] && pass "routing: a freshly scaffolded doc is INDEX-clean" || fail "routing: a freshly scaffolded doc is INDEX-clean ($(status_flags "$rt"))"
 
-printf '\n## Webhook retries\n\n## Refund flow\n' >>"$rt/.agent/docs/payments.md"
+printf '\n## Webhook retries\n\n## Refund flow\n' >>"$rt/.agents/docs/payments.md"
 f21=$(status_flags "$rt")
 printf '%s\n' "$f21" | grep -qF 'INDEX: docs/payments.md sections missing from its architecture.md entry' && pass "routing: unlisted sections draw an INDEX flag" || fail "routing: unlisted sections draw an INDEX flag ($f21)"
 printf '%s\n' "$f21" | grep -qF 'Webhook retries' && printf '%s\n' "$f21" | grep -qF 'Refund flow' && pass "routing: the flag names every missing section" || fail "routing: the flag names every missing section"
@@ -1528,7 +1531,7 @@ printf '%s\n' "$f21" | grep -qF 'Webhook retries' && printf '%s\n' "$f21" | grep
 subst "$rtarch" 's/^- \*\*Sections:\*\*$/- **Sections:** Webhook retries (exponential backoff) · Refund flow/'
 [ -z "$(status_flags "$rt")" ] && pass "routing: listing the sections clears the flag, enrichment allowed" || fail "routing: listing the sections clears the flag, enrichment allowed ($(status_flags "$rt"))"
 
-subst "$rt/.agent/docs/payments.md" 's/^<!-- Read when: payment flows and webhooks -->$/<!-- Read when: payment flows, webhooks, and refunds -->/'
+subst "$rt/.agents/docs/payments.md" 's/^<!-- Read when: payment flows and webhooks -->$/<!-- Read when: payment flows, webhooks, and refunds -->/'
 f21b=$(status_flags "$rt")
 printf '%s\n' "$f21b" | grep -qF 'INDEX: docs/payments.md hook disagrees with its architecture.md entry' && pass "routing: hook drift draws an INDEX flag" || fail "routing: hook drift draws an INDEX flag ($f21b)"
 subst "$rtarch" 's/^- \*\*Read when:\*\* payment flows and webhooks$/- **Read when:** payment flows, webhooks, and refunds/'
@@ -1551,8 +1554,8 @@ rtm2="$WORK/routing-table-missing-references-only"
 mkdir -p "$rtm2"
 "$NODE" init --preset software-development --mode track-all "$rtm2" >/dev/null 2>&1
 finish_bootstrap "$rtm2"
-mkdir -p "$rtm2/.agent/docs/references"
-printf '# Vendor spec dump\n\nsome content\n' >"$rtm2/.agent/docs/references/vendor.md"
+mkdir -p "$rtm2/.agents/docs/references"
+printf '# Vendor spec dump\n\nsome content\n' >"$rtm2/.agents/docs/references/vendor.md"
 f21d=$(status_flags "$rtm2" | grep -F "$missrepair")
 [ -z "$f21d" ] && pass "routing table: references/-only docs/ draws no missing-table REPAIR" || fail "routing table: references/-only docs/ draws no missing-table REPAIR ($f21d)"
 
@@ -1560,9 +1563,9 @@ rtm3="$WORK/routing-table-missing-one-doc"
 mkdir -p "$rtm3"
 "$NODE" init --preset software-development --mode track-all "$rtm3" >/dev/null 2>&1
 finish_bootstrap "$rtm3"
-rtm3docs="$rtm3/.agent/scripts/docs.sh"
+rtm3docs="$rtm3/.agents/scripts/docs.sh"
 "$rtm3docs" new --name payments --read-when "payment flows and webhooks" "$rtm3" >/dev/null 2>&1
-rm -f "$rtm3/.agent/docs/architecture.md"
+rm -f "$rtm3/.agents/docs/architecture.md"
 f21e=$(status_flags "$rtm3")
 [ "$(printf '%s\n' "$f21e" | grep -cF "$missrepair")" = "1" ] && pass "routing table: routed doc with no table draws exactly one REPAIR" || fail "routing table: routed doc with no table draws exactly one REPAIR ($f21e)"
 printf '%s\n' "$f21e" | grep -qF 'docs/architecture.md' && pass "routing table: the REPAIR line names the missing table" || fail "routing table: the REPAIR line names the missing table ($f21e)"
@@ -1571,15 +1574,15 @@ rtm4="$WORK/routing-table-missing-several-docs"
 mkdir -p "$rtm4"
 "$NODE" init --preset software-development --mode track-all "$rtm4" >/dev/null 2>&1
 finish_bootstrap "$rtm4"
-rtm4docs="$rtm4/.agent/scripts/docs.sh"
+rtm4docs="$rtm4/.agents/scripts/docs.sh"
 "$rtm4docs" new --name payments --read-when "payment flows and webhooks" "$rtm4" >/dev/null 2>&1
 "$rtm4docs" new --name refunds --read-when "refund flows" "$rtm4" >/dev/null 2>&1
 "$rtm4docs" new --name frontend/grids --read-when "grid layouts" "$rtm4" >/dev/null 2>&1
-rm -f "$rtm4/.agent/docs/architecture.md"
+rm -f "$rtm4/.agents/docs/architecture.md"
 f21f=$(status_flags "$rtm4")
 [ "$(printf '%s\n' "$f21f" | grep -cF "$missrepair")" = "1" ] && pass "routing table: several routed docs (incl. a sub-doc) still draw exactly one REPAIR" || fail "routing table: several routed docs (incl. a sub-doc) still draw exactly one REPAIR ($f21f)"
 
-: >"$rtm4/.agent/docs/architecture.md"
+: >"$rtm4/.agents/docs/architecture.md"
 f21g=$(status_flags "$rtm4")
 [ "$(printf '%s\n' "$f21g" | grep -cF "$missrepair")" = "1" ] && pass "routing table: an empty-but-present architecture.md still draws exactly one REPAIR" || fail "routing table: an empty-but-present architecture.md still draws exactly one REPAIR ($f21g)"
 
@@ -1587,14 +1590,14 @@ rtm5="$WORK/routing-table-present"
 mkdir -p "$rtm5"
 "$NODE" init --preset software-development --mode track-all "$rtm5" >/dev/null 2>&1
 finish_bootstrap "$rtm5"
-rtm5docs="$rtm5/.agent/scripts/docs.sh"
+rtm5docs="$rtm5/.agents/scripts/docs.sh"
 "$rtm5docs" new --name payments --read-when "payment flows and webhooks" "$rtm5" >/dev/null 2>&1
 f21h=$(status_flags "$rtm5")
 [ -z "$(printf '%s\n' "$f21h" | grep -F "$missrepair")" ] && pass "routing table: a present architecture.md draws no missing-table REPAIR" || fail "routing table: a present architecture.md draws no missing-table REPAIR ($f21h)"
 [ -z "$f21h" ] && pass "routing table: a routed doc with its table stays otherwise INDEX-clean" || fail "routing table: a routed doc with its table stays otherwise INDEX-clean ($f21h)"
 
 fresh19="$WORK/init-academic-research-track-all"
-out19all=$("$fresh19/.agent/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
+out19all=$("$fresh19/.agents/scripts/status.sh" "$fresh19" 2>&1 | grep -v '^TOOLS:')
 out19=$(printf '%s\n' "$out19all" | grep -v '^LOAD:' | grep -v '^PAYLOAD:')
 [ -z "$out19" ] && pass "status.sh: bootstrapped node prints no findings (no stray blank line)" || fail "status.sh: bootstrapped node prints no findings (no stray blank line)"
 [ "$(printf '%s\n' "$out19all" | grep -c '^LOAD:')" = "1" ] && pass "status.sh: exactly one LOAD line on a quiet node" || fail "status.sh: exactly one LOAD line on a quiet node ($out19all)"
@@ -1605,7 +1608,7 @@ mkdir -p "$bc"
 finish_bootstrap "$bc"
 [ -z "$(status_flags "$bc")" ] && pass "bootstrap: a completed node is clean" || fail "bootstrap: a completed node is clean ($(status_flags "$bc"))"
 
-printf -- '- Test: `pytest -k <name>`\n' >>"$bc/.agent/rules/contract.md"
+printf -- '- Test: `pytest -k <name>`\n' >>"$bc/.agents/rules/contract.md"
 f23=$(status_flags "$bc")
 printf '%s\n' "$f23" | grep -qF 'template placeholders' && fail "bootstrap: a single-token <name> in a real command is not a placeholder" || pass "bootstrap: a single-token <name> in a real command is not a placeholder"
 
@@ -1656,7 +1659,7 @@ mkdir -p "$lr"
 finish_bootstrap "$lr"
 i=1
 while [ "$i" -le 40 ]; do
-  printf -- '- [2026-01-01] %s\n' "$(words_n 70)" >>"$lr/.agent/rules/learned.md"
+  printf -- '- [2026-01-01] %s\n' "$(words_n 70)" >>"$lr/.agents/rules/learned.md"
   i=$((i + 1))
 done
 f25=$(status_flags "$lr")
@@ -1668,7 +1671,7 @@ mkdir -p "$lr2"
 finish_bootstrap "$lr2"
 i=1
 while [ "$i" -le 40 ]; do
-  printf -- '- [2026-01-01] %s\n' "$(words_n 40)" >>"$lr2/.agent/rules/learned.md"
+  printf -- '- [2026-01-01] %s\n' "$(words_n 40)" >>"$lr2/.agents/rules/learned.md"
   i=$((i + 1))
 done
 [ -z "$(status_flags "$lr2")" ] && pass "learned: 40 on-target rules stay clean" || fail "learned: 40 on-target rules stay clean ($(status_flags "$lr2"))"
@@ -1677,18 +1680,18 @@ rf="$WORK/references"
 mkdir -p "$rf"
 "$NODE" init --preset software-development --mode track-all "$rf" >/dev/null 2>&1
 finish_bootstrap "$rf"
-"$rf/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$rf" >/dev/null 2>&1
-mkdir -p "$rf/.agent/docs/backend/references"
-printf '# Full error-code table\n\n%s\n' "$(words_n 4000)" >"$rf/.agent/docs/backend/references/error-codes.md"
+"$rf/.agents/scripts/docs.sh" new --name backend --read-when "backend services" "$rf" >/dev/null 2>&1
+mkdir -p "$rf/.agents/docs/backend/references"
+printf '# Full error-code table\n\n%s\n' "$(words_n 4000)" >"$rf/.agents/docs/backend/references/error-codes.md"
 f26=$(status_flags "$rf")
 [ -z "$f26" ] && pass "references: an unrouted, oversized reference file draws no flag" || fail "references: an unrouted, oversized reference file draws no flag ($f26)"
 
-mkdir -p "$rf/.agent/docs/references"
-printf '# Vendor spec dump\n\n%s\n' "$(words_n 4000)" >"$rf/.agent/docs/references/vendor.md"
+mkdir -p "$rf/.agents/docs/references"
+printf '# Vendor spec dump\n\n%s\n' "$(words_n 4000)" >"$rf/.agents/docs/references/vendor.md"
 f26b=$(status_flags "$rf")
 [ -z "$f26b" ] && pass "references: docs/references/ is excluded too" || fail "references: docs/references/ is excluded too ($f26b)"
 
-printf 'no routing header\n' >"$rf/.agent/docs/backend/queues.md"
+printf 'no routing header\n' >"$rf/.agents/docs/backend/queues.md"
 f26c=$(status_flags "$rf")
 printf '%s\n' "$f26c" | grep -qF 'INDEX: docs/backend/queues.md' && pass "references: a real sub-doc beside references/ is still checked" || fail "references: a real sub-doc beside references/ is still checked ($f26c)"
 
@@ -1698,46 +1701,46 @@ mkdir -p "$alcf"
 finish_bootstrap "$alcf"
 [ -z "$(status_flags "$alcf")" ] && pass "always-loaded: a complete node prints no finding" || fail "always-loaded: a complete node prints no finding ($(status_flags "$alcf"))"
 
-rm -f "$alcf/.agent/rules/contract.md"
+rm -f "$alcf/.agents/rules/contract.md"
 f26d=$(status_flags "$alcf")
 [ "$f26d" = "REPAIR: rules/contract.md missing/empty — restore it, the entry point loads it every session" ] && pass "always-loaded: a missing contract.md draws exactly one REPAIR finding" || fail "always-loaded: a missing contract.md draws exactly one REPAIR finding ($f26d)"
-"$alcf/.agent/scripts/status.sh" "$alcf" >/dev/null 2>&1
+"$alcf/.agents/scripts/status.sh" "$alcf" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with contract.md missing" || fail "always-loaded: status.sh still exits 0 with contract.md missing"
 
 alcf2="$WORK/always-loaded-canonical-files-learned"
 mkdir -p "$alcf2"
 "$NODE" init --preset software-development --mode track-all "$alcf2" >/dev/null 2>&1
 finish_bootstrap "$alcf2"
-rm -f "$alcf2/.agent/rules/learned.md"
+rm -f "$alcf2/.agents/rules/learned.md"
 f26e=$(status_flags "$alcf2")
 [ "$f26e" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] && pass "always-loaded: a missing learned.md draws exactly one REPAIR finding" || fail "always-loaded: a missing learned.md draws exactly one REPAIR finding ($f26e)"
-"$alcf2/.agent/scripts/status.sh" "$alcf2" >/dev/null 2>&1
+"$alcf2/.agents/scripts/status.sh" "$alcf2" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md missing" || fail "always-loaded: status.sh still exits 0 with learned.md missing"
 
 alcf3="$WORK/always-loaded-canonical-files-empty"
 mkdir -p "$alcf3"
 "$NODE" init --preset software-development --mode track-all "$alcf3" >/dev/null 2>&1
 finish_bootstrap "$alcf3"
-: >"$alcf3/.agent/rules/learned.md"
+: >"$alcf3/.agents/rules/learned.md"
 f26f=$(status_flags "$alcf3")
 [ "$f26f" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] && pass "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one" || fail "always-loaded: an empty learned.md draws the same REPAIR finding as a missing one ($f26f)"
-"$alcf3/.agent/scripts/status.sh" "$alcf3" >/dev/null 2>&1
+"$alcf3/.agents/scripts/status.sh" "$alcf3" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass "always-loaded: status.sh still exits 0 with learned.md empty" || fail "always-loaded: status.sh still exits 0 with learned.md empty"
 
 mt="$WORK/memory-type"
 mkdir -p "$mt"
 "$NODE" init --preset software-development --mode track-all "$mt" >/dev/null 2>&1
 finish_bootstrap "$mt"
-mtsh="$mt/.agent/scripts/memory.sh"
+mtsh="$mt/.agents/scripts/memory.sh"
 "$mtsh" new --slug api-docs --title "Vendor API docs" --hook "integrating the vendor API" --fact "https://example.invalid/docs" --type reference "$mt" >/dev/null 2>&1
-grep -q '^type: reference' "$mt/.agent/memory/api-docs.md" 2>/dev/null && pass "memory.sh: --type reference lands in the frontmatter" || fail "memory.sh: --type reference lands in the frontmatter"
+grep -q '^type: reference' "$mt/.agents/memory/api-docs.md" 2>/dev/null && pass "memory.sh: --type reference lands in the frontmatter" || fail "memory.sh: --type reference lands in the frontmatter"
 
 "$mtsh" new --slug plain --title "Plain" --hook "default type" --fact "a durable decision" "$mt" >/dev/null 2>&1
-grep -q '^type: fact' "$mt/.agent/memory/plain.md" 2>/dev/null && pass "memory.sh: type defaults to fact" || fail "memory.sh: type defaults to fact"
+grep -q '^type: fact' "$mt/.agents/memory/plain.md" 2>/dev/null && pass "memory.sh: type defaults to fact" || fail "memory.sh: type defaults to fact"
 
 "$mtsh" new --slug bogus --title "Bogus" --hook "bad type" --fact "x" --type notes "$mt" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$mt/.agent/memory/bogus.md" ] && pass "memory.sh: an unknown --type is rejected, nothing written" || fail "memory.sh: an unknown --type is rejected, nothing written"
+[ "$rc" -ne 0 ] && [ ! -e "$mt/.agents/memory/bogus.md" ] && pass "memory.sh: an unknown --type is rejected, nothing written" || fail "memory.sh: an unknown --type is rejected, nothing written"
 [ -z "$(status_flags "$mt")" ] && pass "memory.sh: typed facts leave the node clean" || fail "memory.sh: typed facts leave the node clean ($(status_flags "$mt"))"
 
 sharedfile="$reporoot/presets/_shared.md"
@@ -1763,7 +1766,7 @@ noderoot_sh="$WORK/preset-underscore"
 mkdir -p "$noderoot_sh"
 "$NODE" init --preset _shared --mode ignore-all "$noderoot_sh" >/dev/null 2>&1
 rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$noderoot_sh/.agent" ] && pass "node.sh: --preset _shared is rejected, nothing created" || fail "node.sh: --preset _shared is rejected, nothing created"
+[ "$rc" -ne 0 ] && [ ! -e "$noderoot_sh/.agents" ] && pass "node.sh: --preset _shared is rejected, nothing created" || fail "node.sh: --preset _shared is rejected, nothing created"
 
 memstale=0
 for p in "$reporoot"/presets/*.md; do
@@ -1834,7 +1837,7 @@ printf '%s\n' "$retro_merge" | grep -qF "learn.sh" && pass "retro skill: the mer
 
 retro_route=$(awk '/^## Route by scope/ { inq = 1 } inq && /^## / && !/^## Route by scope/ { inq = 0 } inq' "$retro_skill")
 rt_ok=1
-for rt_kind in "no durable record" ".agent/scripts/memory.sh new" ".agent/scripts/memory.sh supersede" ".agent/scripts/learn.sh"; do
+for rt_kind in "no durable record" ".agents/scripts/memory.sh new" ".agents/scripts/memory.sh supersede" ".agents/scripts/learn.sh"; do
   printf '%s\n' "$retro_route" | grep -qF "$rt_kind" || rt_ok=0
 done
 [ "$rt_ok" -eq 1 ] && pass "retro skill: the routing section names the four kinds and their writers" || fail "retro skill: the routing section names the four kinds and their writers"
@@ -1843,47 +1846,47 @@ lk="$WORK/links"
 mkdir -p "$lk"
 "$NODE" init --preset software-development --mode track-all "$lk" >/dev/null 2>&1
 finish_bootstrap "$lk"
-LINKS="$lk/.agent/scripts/links.sh"
+LINKS="$lk/.agents/scripts/links.sh"
 "$LINKS" "$lk" >"$WORK/links-clean.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "links.sh: exits 0" || fail "links.sh: exits 0 (rc=$rc)"
 grep -q 'no orphans or broken links' "$WORK/links-clean.out" && pass "links.sh: a fresh node reports clean" || fail "links.sh: a fresh node reports clean ($(cat "$WORK/links-clean.out"))"
 
-"$lk/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$lk" >/dev/null 2>&1
-mkdir -p "$lk/.agent/docs/backend/references"
-printf '# Error codes\n\nthe full table\n' >"$lk/.agent/docs/backend/references/error-codes.md"
+"$lk/.agents/scripts/docs.sh" new --name backend --read-when "backend services" "$lk" >/dev/null 2>&1
+mkdir -p "$lk/.agents/docs/backend/references"
+printf '# Error codes\n\nthe full table\n' >"$lk/.agents/docs/backend/references/error-codes.md"
 out28=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28" | grep -qF 'ORPHAN: docs/backend/references/error-codes.md' && pass "links.sh: an uncited reference file is reported" || fail "links.sh: an uncited reference file is reported ($out28)"
 printf '%s\n' "$out28" | grep -qF 'unreachable' && pass "links.sh: the reference orphan explains why it matters" || fail "links.sh: the reference orphan explains why it matters"
 
-printf '\nFull table: `docs/backend/references/error-codes.md`\n' >>"$lk/.agent/docs/backend.md"
+printf '\nFull table: `docs/backend/references/error-codes.md`\n' >>"$lk/.agents/docs/backend.md"
 out28b=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28b" | grep -q '^ORPHAN:' && fail "links.sh: citing the reference clears the orphan" || pass "links.sh: citing the reference clears the orphan"
 
-printf '\nSee `docs/backend/queues.md` for the queue design.\n' >>"$lk/.agent/docs/backend.md"
+printf '\nSee `docs/backend/queues.md` for the queue design.\n' >>"$lk/.agents/docs/backend.md"
 out28c=$("$LINKS" "$lk" 2>&1)
-printf '%s\n' "$out28c" | grep -qF 'BROKEN: .agent/docs/backend.md cites docs/backend/queues.md' && pass "links.sh: a dangling node path is reported" || fail "links.sh: a dangling node path is reported ($out28c)"
+printf '%s\n' "$out28c" | grep -qF 'BROKEN: .agents/docs/backend.md cites docs/backend/queues.md' && pass "links.sh: a dangling node path is reported" || fail "links.sh: a dangling node path is reported ($out28c)"
 
-printf '\nBrief: `temp/some-task-board.md`, source `src/app/main.md`.\n' >>"$lk/.agent/docs/backend.md"
+printf '\nBrief: `temp/some-task-board.md`, source `src/app/main.md`.\n' >>"$lk/.agents/docs/backend.md"
 out28d=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28d" | grep -qF 'temp/some-task-board.md' && fail "links.sh: paths outside the node are out of scope" || pass "links.sh: paths outside the node are out of scope"
 
-printf '\nSee `learned.md` for the accumulated corrections.\n' >>"$lk/.agent/docs/backend.md"
+printf '\nSee `learned.md` for the accumulated corrections.\n' >>"$lk/.agents/docs/backend.md"
 out28e=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28e" | grep -qF 'cites learned.md' && fail "links.sh: a loose basename resolves against the node" || pass "links.sh: a loose basename resolves against the node"
 
 mkdir -p "$lk/skills/testing"
 printf '# Testing\n' >"$lk/skills/testing/SKILL.md"
-printf '\nThe bar lives in `SKILL.md`, and `skills/testing/SKILL.md` implements it.\n' >>"$lk/.agent/docs/backend.md"
+printf '\nThe bar lives in `SKILL.md`, and `skills/testing/SKILL.md` implements it.\n' >>"$lk/.agents/docs/backend.md"
 out28i=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28i" | grep -qF 'cites SKILL.md' && fail "links.sh: a bare name held by the project is not broken" || pass "links.sh: a bare name held by the project is not broken"
-printf '%s\n' "$out28i" | grep -qF 'skills/testing/SKILL.md' && fail "links.sh: an out-of-model .agent directory is not audited as a target" || pass "links.sh: an out-of-model .agent directory is not audited as a target"
+printf '%s\n' "$out28i" | grep -qF 'skills/testing/SKILL.md' && fail "links.sh: an out-of-model .agents directory is not audited as a target" || pass "links.sh: an out-of-model .agents directory is not audited as a target"
 
-printf '\nAlso `nowhere-at-all.md`.\n' >>"$lk/.agent/docs/backend.md"
+printf '\nAlso `nowhere-at-all.md`.\n' >>"$lk/.agents/docs/backend.md"
 out28j=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28j" | grep -qF 'cites nowhere-at-all.md' && pass "links.sh: a name neither node nor project holds is still broken" || fail "links.sh: a name neither node nor project holds is still broken ($out28j)"
 
-printf -- '- [2026-01-01] (claude) worked from `docs/gone-forever.md` (backend). verify: pass.\n' >>"$lk/.agent/session-log.md"
+printf -- '- [2026-01-01] (claude) worked from `docs/gone-forever.md` (backend). verify: pass.\n' >>"$lk/.agents/session-log.md"
 out28f=$("$LINKS" "$lk" 2>&1)
 printf '%s\n' "$out28f" | grep -qF 'gone-forever' && fail "links.sh: the session log is not audited as a citation source" || pass "links.sh: the session log is not audited as a citation source"
 
@@ -1895,8 +1898,8 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "links.sh: a missing node is an error, not a clean report" || fail "links.sh: a missing node is an error, not a clean report"
 
 lkempty="$WORK/links-empty"
-mkdir -p "$lkempty/.agent/docs"
-printf 'entry point citing .agent/scripts/status.sh\n' >"$lkempty/CLAUDE.md"
+mkdir -p "$lkempty/.agents/docs"
+printf 'entry point citing .agents/scripts/status.sh\n' >"$lkempty/CLAUDE.md"
 out28h=$("$LINKS" "$lkempty" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && printf '%s\n' "$out28h" | grep -qF 'no markdown files to audit' && pass "links.sh: an empty node reports cleanly instead of erroring" || fail "links.sh: an empty node reports cleanly instead of erroring (rc=$rc, $out28h)"
@@ -1905,12 +1908,12 @@ spaceroot="$WORK/space dir/my node"
 mkdir -p "$spaceroot"
 "$NODE" init --preset software-development --mode track-all "$spaceroot" >/dev/null 2>&1
 finish_bootstrap "$spaceroot"
-LINKSSP="$spaceroot/.agent/scripts/links.sh"
+LINKSSP="$spaceroot/.agents/scripts/links.sh"
 out29=$("$LINKSSP" "$spaceroot" 2>&1)
 printf '%s\n' "$out29" | grep -q 'no orphans or broken links' && pass "links.sh: a node under a path with spaces reports clean" || fail "links.sh: a node under a path with spaces reports clean ($out29)"
 
-mkdir -p "$spaceroot/.agent/docs/back end/references"
-printf '# Deep dive\n\ndetail\n' >"$spaceroot/.agent/docs/back end/references/deep dive.md"
+mkdir -p "$spaceroot/.agents/docs/back end/references"
+printf '# Deep dive\n\ndetail\n' >"$spaceroot/.agents/docs/back end/references/deep dive.md"
 out29b=$("$LINKSSP" "$spaceroot" 2>&1)
 printf '%s\n' "$out29b" | grep -qF 'ORPHAN: docs/back end/references/deep dive.md' && pass "links.sh: a filename with spaces is reported whole, not in fragments" || fail "links.sh: a filename with spaces is reported whole, not in fragments ($out29b)"
 printf '%s\n' "$out29b" | grep -qE 'ORPHAN: (purpose|memory|session-log)\.md' && fail "links.sh: exemptions survive a path with spaces" || pass "links.sh: exemptions survive a path with spaces"
@@ -1927,6 +1930,11 @@ hand-written AGENTS.md
 autoMemoryEnabled
 $root/.claude
 /nonexistent}/.claude
+at .claude/skills/$skill_dir
+for file in CLAUDE.md AGENTS.md GEMINI.md .github/copilot-instructions.md .claude/CLAUDE.md .codex/AGENTS.md
+.claude/settings.json .claude/settings.local.json .git/info/exclude
+link="$root/.codex/skills"
+Codex reads .agents/skills natively
 EOF
 lint_re='claude|cursor|copilot|codex|anthropic|openai|sonnet|opus|haiku|gpt-|agents\.md'
 hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
@@ -1966,7 +1974,7 @@ ld="$WORK/load-line"
 mkdir -p "$ld"
 "$NODE" init --preset software-development --mode track-all "$ld" >/dev/null 2>&1
 finish_bootstrap "$ld"
-loadline=$("$ld/.agent/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
+loadline=$("$ld/.agents/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
 [ -n "$loadline" ] && pass "status.sh: LOAD line prints on a quiet node" || fail "status.sh: LOAD line prints on a quiet node"
 printf '%s\n' "$loadline" | grep -q 'contract' && pass "status.sh: LOAD names its components" || fail "status.sh: LOAD names its components ($loadline)"
 total32=$(printf '%s\n' "$loadline" | sed -E 's/^LOAD: always-loaded set ~([0-9]+) words.*/\1/')
@@ -1974,8 +1982,8 @@ sum32=$(printf '%s\n' "$loadline" | sed -E 's/.*\((.*)\).*/\1/' | tr ',' '\n' | 
 [ -n "$total32" ] && [ "$total32" = "$sum32" ] && pass "status.sh: LOAD arithmetic sums its components" || fail "status.sh: LOAD arithmetic sums its components (total $total32, sum $sum32)"
 [ -z "$(status_flags "$ld")" ] && pass "status.sh: LOAD is advisory — a quiet node stays quiet" || fail "status.sh: LOAD is advisory — a quiet node stays quiet ($(status_flags "$ld"))"
 
-printf 'Session bootstrap: run .agent/scripts/status.sh first.\n' >"$ld/CLAUDE.md"
-loadline32b=$("$ld/.agent/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
+printf 'Session bootstrap: run .agents/scripts/status.sh first.\n' >"$ld/CLAUDE.md"
+loadline32b=$("$ld/.agents/scripts/status.sh" "$ld" 2>&1 | grep '^LOAD:')
 printf '%s\n' "$loadline32b" | grep -q '(entry ' && pass "status.sh: LOAD counts the entry point once wired" || fail "status.sh: LOAD counts the entry point once wired ($loadline32b)"
 
 pb="$WORK/payload-budget"
@@ -1983,8 +1991,8 @@ mkdir -p "$pb"
 "$NODE" init --preset software-development --mode track-all "$pb" >/dev/null 2>&1
 finish_bootstrap "$pb"
 
-"$pb/.agent/scripts/status.sh" "$pb" >"$WORK/pb-noload.out" 2>&1
-"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-load.out" 2>&1
+"$pb/.agents/scripts/status.sh" "$pb" >"$WORK/pb-noload.out" 2>&1
+"$pb/.agents/scripts/status.sh" --load "$pb" >"$WORK/pb-load.out" 2>&1
 payloadline_a=$(grep '^PAYLOAD:' "$WORK/pb-load.out")
 [ -n "$payloadline_a" ] && pass "status.sh: PAYLOAD line prints on a node under budget" || fail "status.sh: PAYLOAD line prints on a node under budget"
 grep -q '^REPAIR:.*payload' "$WORK/pb-load.out" && fail "status.sh: an under-budget node does not overflow" || pass "status.sh: an under-budget node does not overflow"
@@ -2001,9 +2009,9 @@ actual_a=$((bytes_load_a - bytes_noload_a))
 budget_default=$(sed -n 's/^PAYLOAD_MAX_BYTES=//p' "$reporoot/scripts/status.sh" | head -n 1)
 pad_needed=$((budget_default - reported_a))
 [ "$pad_needed" -gt 0 ] || fail "status.sh: fixture's natural payload already exceeds PAYLOAD_MAX_BYTES — cannot build the boundary case"
-printf '%*s' "$pad_needed" '' | tr ' ' 'x' >>"$pb/.agent/memory.md"
+printf '%*s' "$pad_needed" '' | tr ' ' 'x' >>"$pb/.agents/memory.md"
 
-"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-exact.out" 2>&1
+"$pb/.agents/scripts/status.sh" --load "$pb" >"$WORK/pb-exact.out" 2>&1
 payloadline_exact=$(grep '^PAYLOAD:' "$WORK/pb-exact.out")
 reported_exact=$(printf '%s\n' "$payloadline_exact" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
 [ "$reported_exact" = "$budget_default" ] \
@@ -2012,8 +2020,8 @@ reported_exact=$(printf '%s\n' "$payloadline_exact" | sed -E 's/^PAYLOAD: [^0-9]
 grep -q '^REPAIR:.*payload' "$WORK/pb-exact.out" && fail "status.sh: a payload exactly at budget does not overflow" || pass "status.sh: a payload exactly at budget does not overflow"
 grep -q '^==== .*memory.md ====' "$WORK/pb-exact.out" && pass "status.sh: a payload exactly at budget still emits its markers and content" || fail "status.sh: a payload exactly at budget still emits its markers and content"
 
-printf 'x' >>"$pb/.agent/memory.md"
-"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-over.out" 2>&1
+printf 'x' >>"$pb/.agents/memory.md"
+"$pb/.agents/scripts/status.sh" --load "$pb" >"$WORK/pb-over.out" 2>&1
 rc_over=$?
 overline=$(grep '^REPAIR:.*payload' "$WORK/pb-over.out")
 [ -n "$overline" ] && pass "status.sh: one byte over budget reports overflow" || fail "status.sh: one byte over budget reports overflow ($(cat "$WORK/pb-over.out"))"
@@ -2029,8 +2037,8 @@ lo="$WORK/payload-lowered"
 mkdir -p "$lo"
 "$NODE" init --preset software-development --mode track-all "$lo" >/dev/null 2>&1
 finish_bootstrap "$lo"
-printf 'PAYLOAD_MAX_BYTES=10\n' >>"$lo/.agent/scripts/status.conf"
-out32e=$("$lo/.agent/scripts/status.sh" --load "$lo" 2>&1)
+printf 'PAYLOAD_MAX_BYTES=10\n' >>"$lo/.agents/scripts/status.conf"
+out32e=$("$lo/.agents/scripts/status.sh" --load "$lo" 2>&1)
 printf '%s\n' "$out32e" | grep -q '^REPAIR:.*payload' \
   && pass "status.conf: a lowered PAYLOAD_MAX_BYTES pushes a normal node over budget" \
   || fail "status.conf: a lowered PAYLOAD_MAX_BYTES pushes a normal node over budget ($out32e)"
@@ -2042,8 +2050,8 @@ nc="$WORK/payload-nonnumeric"
 mkdir -p "$nc"
 "$NODE" init --preset software-development --mode track-all "$nc" >/dev/null 2>&1
 finish_bootstrap "$nc"
-printf 'PAYLOAD_MAX_BYTES=huge\n' >>"$nc/.agent/scripts/status.conf"
-out32f=$("$nc/.agent/scripts/status.sh" --load "$nc" 2>&1)
+printf 'PAYLOAD_MAX_BYTES=huge\n' >>"$nc/.agents/scripts/status.conf"
+out32f=$("$nc/.agents/scripts/status.sh" --load "$nc" 2>&1)
 printf '%s\n' "$out32f" | grep -q '^REPAIR: status.conf PAYLOAD_MAX_BYTES=huge is not a whole number' \
   && pass "status.conf: a non-numeric PAYLOAD_MAX_BYTES draws the generic conf REPAIR line" \
   || fail "status.conf: a non-numeric PAYLOAD_MAX_BYTES draws the generic conf REPAIR line ($out32f)"
@@ -2056,10 +2064,10 @@ mb="$WORK/payload-multibyte"
 mkdir -p "$mb"
 "$NODE" init --preset software-development --mode track-all "$mb" >/dev/null 2>&1
 finish_bootstrap "$mb"
-printf '\nCafé naïve façade — 日本語のテスト — €£¥\n' >>"$mb/.agent/memory.md"
-total_mb_c=$(LC_ALL=C "$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
-total_mb_iso=$(LC_ALL=en_US.ISO8859-1 "$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
-total_mb_default=$("$mb/.agent/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
+printf '\nCafé naïve façade — 日本語のテスト — €£¥\n' >>"$mb/.agents/memory.md"
+total_mb_c=$(LC_ALL=C "$mb/.agents/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
+total_mb_iso=$(LC_ALL=en_US.ISO8859-1 "$mb/.agents/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
+total_mb_default=$("$mb/.agents/scripts/status.sh" --load "$mb" 2>/dev/null | sed -nE 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/p')
 [ -n "$total_mb_c" ] && [ "$total_mb_c" = "$total_mb_iso" ] && [ "$total_mb_c" = "$total_mb_default" ] \
   && pass "status.sh: a multibyte fixture's byte total is locale-invariant" \
   || fail "status.sh: a multibyte fixture's byte total is locale-invariant (C=$total_mb_c ISO=$total_mb_iso default=$total_mb_default)"
@@ -2068,22 +2076,22 @@ es="$WORK/entry-shape"
 mkdir -p "$es"
 "$NODE" init --preset software-development --mode track-all "$es" >/dev/null 2>&1
 finish_bootstrap "$es"
-printf -- '- [2026-01-02] (tool) %s\n' "$(words_n 60)" >>"$es/.agent/session-log.md"
+printf -- '- [2026-01-02] (tool) %s\n' "$(words_n 60)" >>"$es/.agents/session-log.md"
 f33=$(status_flags "$es")
 printf '%s\n' "$f33" | grep -qF "entries over 50 words: 1 (largest 63" && pass "status.sh: an oversized log entry is flagged with count and size" || fail "status.sh: an oversized log entry is flagged with count and size ($f33)"
 
-printf -- '- [2026-01-03] (tool) %s\n' "$(words_n 45)" >>"$es/.agent/session-log.md"
+printf -- '- [2026-01-03] (tool) %s\n' "$(words_n 45)" >>"$es/.agents/session-log.md"
 f33b=$(status_flags "$es")
 printf '%s\n' "$f33b" | grep -qF "entries over 50 words: 1" && pass "status.sh: an at-format entry does not flag" || fail "status.sh: an at-format entry does not flag ($f33b)"
 
-printf -- '- [2026-01-04] (tool) %s\n%s\n' "$(words_n 30)" "$(words_n 30)" >>"$es/.agent/session-log.md"
+printf -- '- [2026-01-04] (tool) %s\n%s\n' "$(words_n 30)" "$(words_n 30)" >>"$es/.agents/session-log.md"
 f33c=$(status_flags "$es")
 printf '%s\n' "$f33c" | grep -qF "entries over 50 words: 2" && pass "status.sh: a hand-wrapped entry is counted whole" || fail "status.sh: a hand-wrapped entry is counted whole ($f33c)"
 
 cg="$WORK/comment-gate"
-mkdir -p "$cg/src" "$cg/Migrations" "$cg/.agent/scripts"
-cp "$reporoot/scripts/comments.sh" "$cg/.agent/scripts/comments.sh"
-chmod +x "$cg/.agent/scripts/comments.sh"
+mkdir -p "$cg/src" "$cg/Migrations" "$cg/.agents/scripts"
+cp "$reporoot/scripts/comments.sh" "$cg/.agents/scripts/comments.sh"
+chmod +x "$cg/.agents/scripts/comments.sh"
 git_cg() { git -C "$cg" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
 git_cg init -q
 git_cg checkout -q -b base
@@ -2107,7 +2115,7 @@ printf 'echo "// planted per commit deadbeefcafe1234"\n# a real shell comment\n'
 git_cg add -A >/dev/null
 git_cg commit -q -m feat
 
-out34=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34=$?
 [ "$rc34" -eq 1 ] && pass "comments.sh: a blocking citation exits 1" || fail "comments.sh: a blocking citation exits 1 (rc=$rc34)"
 block34=$(printf '%s\n' "$out34" | sed -n '/^BLOCK:/,$p')
@@ -2123,30 +2131,30 @@ printf '%s\n' "$out34" | grep -q 'existing constraint comment' && fail "comments
 printf '%s\n' "$out34" | grep -q '.toolrc' && fail "comments.sh: hidden directories are out of the scan" || pass "comments.sh: hidden directories are out of the scan"
 printf '%s\n' "$out34" | grep -q 'src/app.ts' && pass "comments.sh: an ordinary path is not read as hidden" || fail "comments.sh: an ordinary path is not read as hidden ($out34)"
 
-cat >"$cg/.agent/scripts/comments.conf" <<'EOF'
+cat >"$cg/.agents/scripts/comments.conf" <<'EOF'
 BLOCK_RE_EXTRA=(^|[^[:alnum:]])AC-?[0-9]|(^|[^[:alnum:]])Q[0-9]+([^[:alnum:]]|$)
 EXCLUDE_RE_EXTRA=(^|/)Migrations/
 PRAGMA_RE_EXTRA=`touch pwned34`
 EOF
-out34b=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34b=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 block34b=$(printf '%s\n' "$out34b" | sed -n '/^BLOCK:/,$p')
 printf '%s\n' "$block34b" | grep -q 'AC-12' && pass "comments.sh: conf vocabulary joins BLOCK" || fail "comments.sh: conf vocabulary joins BLOCK ($block34b)"
 printf '%s\n' "$out34b" | grep -q 'narration in a migration' && fail "comments.sh: conf exclusions hide their paths" || pass "comments.sh: conf exclusions hide their paths"
 [ ! -e "$cg/pwned34" ] && pass "comments.sh: comments.conf is parsed, never executed" || fail "comments.sh: comments.conf is parsed, never executed"
 
-cat >"$cg/.agent/scripts/comments.conf" <<'EOF'
+cat >"$cg/.agents/scripts/comments.conf" <<'EOF'
 EXCLUDE_RE=(^|/)node_modules/
 EOF
-out34j=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34j=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34j" | grep -q '.toolrc' && pass "comments.sh: EXCLUDE_RE replaces the shipped exclusions" || fail "comments.sh: EXCLUDE_RE replaces the shipped exclusions ($out34j)"
-rm -f "$cg/.agent/scripts/comments.conf"
+rm -f "$cg/.agents/scripts/comments.conf"
 
 git_cg checkout -q base
 git_cg checkout -q -b justify
 printf '// cap ordered by the payment provider contract\nconst c = 3\n' >>"$cg/src/app.ts"
 git_cg add -A >/dev/null
 git_cg commit -q -m justify
-out34c=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34c=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34c=$?
 [ "$rc34c" -eq 0 ] && printf '%s\n' "$out34c" | grep -q '^REVIEW:' && pass "comments.sh: REVIEW alone exits 0" || fail "comments.sh: REVIEW alone exits 0 (rc=$rc34c; $out34c)"
 
@@ -2155,33 +2163,33 @@ git_cg checkout -q -b clean34
 printf 'const d = 4\n' >>"$cg/src/app.ts"
 git_cg add -A >/dev/null
 git_cg commit -q -m clean
-out34d=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34d=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34d=$?
 [ "$rc34d" -eq 0 ] && [ -z "$out34d" ] && pass "comments.sh: a clean diff is silent" || fail "comments.sh: a clean diff is silent (rc=$rc34d; $out34d)"
 
-(cd "$cg" && .agent/scripts/comments.sh nosuchref >/dev/null 2>&1)
+(cd "$cg" && .agents/scripts/comments.sh nosuchref >/dev/null 2>&1)
 rc34e=$?
 [ "$rc34e" -eq 2 ] && pass "comments.sh: a missing base ref exits 2" || fail "comments.sh: a missing base ref exits 2 (rc=$rc34e)"
 
 git_cg checkout -q clean34
 printf '// tuned per commit cafebabecafebabe\nconst e = 5\n' >>"$cg/src/app.ts"
-out34f=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34f=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34f=$?
 [ "$rc34f" -eq 1 ] && printf '%s\n' "$out34f" | grep -q 'cafebabecafebabe' && pass "comments.sh: an unstaged SHA citation BLOCKs" || fail "comments.sh: an unstaged SHA citation BLOCKs (rc=$rc34f; $out34f)"
 
 git_cg add src/app.ts
-(cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
+(cd "$cg" && .agents/scripts/comments.sh base >/dev/null 2>&1)
 rc34g=$?
 [ "$rc34g" -eq 1 ] && pass "comments.sh: a staged-only SHA citation BLOCKs" || fail "comments.sh: a staged-only SHA citation BLOCKs (rc=$rc34g)"
 git_cg reset -q HEAD -- src/app.ts
 git_cg checkout -q -- src/app.ts
 
 printf '// context in commit deadbeef12345678\nconst f = 6\n' >"$cg/src/brand-new.ts"
-out34h=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34h=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34h=$?
 [ "$rc34h" -eq 1 ] && printf '%s\n' "$out34h" | grep -q 'brand-new.ts' && pass "comments.sh: an untracked file's SHA citation BLOCKs" || fail "comments.sh: an untracked file's SHA citation BLOCKs (rc=$rc34h; $out34h)"
 rm -f "$cg/src/brand-new.ts"
-out34i=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34i=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34i=$?
 [ "$rc34i" -eq 0 ] && [ -z "$out34i" ] && pass "comments.sh: the worktree checks leave a clean diff silent" || fail "comments.sh: the worktree checks leave a clean diff silent (rc=$rc34i; $out34i)"
 
@@ -2205,7 +2213,7 @@ const h = 8
 EOF
 git_cg add -A >/dev/null
 git_cg commit -q -m classes
-out34k=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34k=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34k=$?
 block34k=$(printf '%s\n' "$out34k" | sed -n '/^BLOCK:/,$p')
 review34k=$(printf '%s\n' "$out34k" | awk '/^BLOCK:/ { exit } { print }')
@@ -2227,39 +2235,39 @@ cat >"$cg/src/Thing.cs" <<'EOF'
 public string UserName { get; set; }
 EOF
 printf '// retry counter\nretryCounter = retryCounter + 1\n' >>"$cg/src/app.ts"
-out34l=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34l=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 block34l=$(printf '%s\n' "$out34l" | sed -n '/^BLOCK:/,$p')
 review34l=$(printf '%s\n' "$out34l" | awk '/^BLOCK:/ { exit } { print }')
 printf '%s\n' "$block34l" | grep -q 'Gets the user name' && pass "comments.sh: a doc comment narrating its signature BLOCKs" || fail "comments.sh: a doc comment narrating its signature BLOCKs ($out34l)"
 rest34=$(printf '%s\n' "$review34l" | grep -A1 'restates the code below' | grep 'retry counter')
 [ -n "$rest34" ] && pass "comments.sh: a comment repeating the identifier below it is labeled" || fail "comments.sh: a comment repeating the identifier below it is labeled ($review34l)"
 
-printf 'RESTATE_CHECK=false\n' >"$cg/.agent/scripts/comments.conf"
-out34m=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf 'RESTATE_CHECK=false\n' >"$cg/.agents/scripts/comments.conf"
+out34m=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34m" | grep -qF '[restates the code below]' && fail "comments.sh: RESTATE_CHECK=false drops the label" || pass "comments.sh: RESTATE_CHECK=false drops the label"
 printf '%s\n' "$out34m" | awk '/^BLOCK:/ { exit } { print }' | grep -q 'retry counter' && pass "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW" || fail "comments.sh: RESTATE_CHECK=false keeps the comment in REVIEW ($out34m)"
 
-printf 'CONSTRAINT_RE_EXTRA=payments gateway\n' >"$cg/.agent/scripts/comments.conf"
+printf 'CONSTRAINT_RE_EXTRA=payments gateway\n' >"$cg/.agents/scripts/comments.conf"
 printf 'const m0 = 0\n// Build the rows the payments gateway expects\nconst m = 12\n' >>"$cg/src/app.ts"
-out34q=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34q=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34q" | awk '/^BLOCK:/ { exit } { print }' | grep -q 'payments gateway' && pass "comments.sh: CONSTRAINT_RE_EXTRA rescues a real comment from the routine class" || fail "comments.sh: CONSTRAINT_RE_EXTRA rescues a real comment from the routine class ($out34q)"
 
-printf 'ROUTINE_MAX_WORDS=0\n' >"$cg/.agent/scripts/comments.conf"
-out34r=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+printf 'ROUTINE_MAX_WORDS=0\n' >"$cg/.agents/scripts/comments.conf"
+out34r=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34r" | sed -n '/^BLOCK:/,$p' | grep -q 'Build the rows' && fail "comments.sh: ROUTINE_MAX_WORDS=0 leaves the class a label only" || pass "comments.sh: ROUTINE_MAX_WORDS=0 leaves the class a label only"
 printf '%s\n' "$out34r" | grep -qF '[routine narration]' && pass "comments.sh: ROUTINE_MAX_WORDS=0 keeps the label" || fail "comments.sh: ROUTINE_MAX_WORDS=0 keeps the label ($out34r)"
 
-printf 'ROUTINE_MAX_WORDS=eight\n' >"$cg/.agent/scripts/comments.conf"
-(cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
+printf 'ROUTINE_MAX_WORDS=eight\n' >"$cg/.agents/scripts/comments.conf"
+(cd "$cg" && .agents/scripts/comments.sh base >/dev/null 2>&1)
 rc34s=$?
 [ "$rc34s" -eq 2 ] && pass "comments.sh: a non-numeric ROUTINE_MAX_WORDS fails closed" || fail "comments.sh: a non-numeric ROUTINE_MAX_WORDS fails closed (rc=$rc34s)"
 git_cg checkout -q -- src/app.ts
 
-printf 'NARRATION_RE_EXTRA=(^|[^[:alnum:]])old world\n' >"$cg/.agent/scripts/comments.conf"
+printf 'NARRATION_RE_EXTRA=(^|[^[:alnum:]])old world\n' >"$cg/.agents/scripts/comments.conf"
 printf '// the old world path is gone\nconst j = 9\n' >>"$cg/src/app.ts"
-out34n=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34n=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34n" | sed -n '/^BLOCK:/,$p' | grep -q 'old world' && pass "comments.sh: NARRATION_RE_EXTRA joins the narration class" || fail "comments.sh: NARRATION_RE_EXTRA joins the narration class ($out34n)"
-rm -f "$cg/.agent/scripts/comments.conf" "$cg/src/Thing.cs"
+rm -f "$cg/.agents/scripts/comments.conf" "$cg/src/Thing.cs"
 git_cg checkout -q -- src/app.ts
 
 git_cg checkout -q base
@@ -2327,7 +2335,7 @@ const n28 = 28
 EOF
 git_cg add -A >/dev/null
 git_cg commit -q -m chat34
-out34t=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34t=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 rc34t=$?
 block34t=$(printf '%s\n' "$out34t" | sed -n '/^BLOCK:/,$p')
 review34t=$(printf '%s\n' "$out34t" | awk '/^BLOCK:/ { exit } { print }')
@@ -2376,32 +2384,32 @@ cat >>"$cg/src/app.ts" <<'EOF'
 // Keep the label readable in diagnostic output.
 const diagnosticLabel = "left — right"
 EOF
-out34utf8=$(cd "$cg" && LC_ALL=C.UTF-8 .agent/scripts/comments.sh chat34 2>&1)
+out34utf8=$(cd "$cg" && LC_ALL=C.UTF-8 .agents/scripts/comments.sh chat34 2>&1)
 rc34utf8=$?
 [ "$rc34utf8" -eq 0 ] && printf '%s\n' "$out34utf8" | grep -qF 'Keep the label readable in diagnostic output.' \
   && pass "comments.sh: UTF-8 code below a review comment does not break classification" \
   || fail "comments.sh: UTF-8 code below a review comment does not break classification (rc=$rc34utf8; $out34utf8)"
 git_cg checkout -q -- src/app.ts
 
-printf 'CHAT_RE_EXTRA=(^|[^[:alnum:]])lgtm\n' >"$cg/.agent/scripts/comments.conf"
+printf 'CHAT_RE_EXTRA=(^|[^[:alnum:]])lgtm\n' >"$cg/.agents/scripts/comments.conf"
 printf '// lgtm, ship it\nconst n22 = 22\n' >>"$cg/src/app.ts"
-out34u=$(cd "$cg" && .agent/scripts/comments.sh base 2>&1)
+out34u=$(cd "$cg" && .agents/scripts/comments.sh base 2>&1)
 printf '%s\n' "$out34u" | sed -n '/^BLOCK:/,$p' | grep -q 'lgtm, ship it' && pass "comments.sh: CHAT_RE_EXTRA joins the chat-residue class" || fail "comments.sh: CHAT_RE_EXTRA joins the chat-residue class ($out34u)"
 git_cg checkout -q -- src/app.ts
 
-printf 'CHAT_RE_EXTRA=(unterminated\n' >"$cg/.agent/scripts/comments.conf"
-(cd "$cg" && .agent/scripts/comments.sh base >/dev/null 2>&1)
+printf 'CHAT_RE_EXTRA=(unterminated\n' >"$cg/.agents/scripts/comments.conf"
+(cd "$cg" && .agents/scripts/comments.sh base >/dev/null 2>&1)
 rc34v=$?
 [ "$rc34v" -eq 2 ] && pass "comments.sh: an invalid CHAT_RE_EXTRA fails closed rather than passing clean" || fail "comments.sh: an invalid CHAT_RE_EXTRA fails closed (rc=$rc34v)"
-rm -f "$cg/.agent/scripts/comments.conf"
+rm -f "$cg/.agents/scripts/comments.conf"
 
 printf '# As you suggested, cache the response for five minutes.\n' >"$cg/notes.md"
-mkdir -p "$cg/.agent/docs"
-printf '// As you suggested, cache the response for five minutes.\n' >"$cg/.agent/docs/note.ts"
-out34w=$(cd "$cg" && .agent/scripts/comments.sh chat34 2>&1)
+mkdir -p "$cg/.agents/docs"
+printf '// As you suggested, cache the response for five minutes.\n' >"$cg/.agents/docs/note.ts"
+out34w=$(cd "$cg" && .agents/scripts/comments.sh chat34 2>&1)
 rc34w=$?
-[ "$rc34w" -eq 0 ] && [ -z "$out34w" ] && pass "comments.sh: chat residue in Markdown and under .agent/ stays out of the gate" || fail "comments.sh: chat residue in Markdown and under .agent/ stays out of the gate (rc=$rc34w; $out34w)"
-rm -rf "$cg/notes.md" "$cg/.agent/docs"
+[ "$rc34w" -eq 0 ] && [ -z "$out34w" ] && pass "comments.sh: chat residue in Markdown and under .agents/ stays out of the gate" || fail "comments.sh: chat residue in Markdown and under .agents/ stays out of the gate (rc=$rc34w; $out34w)"
+rm -rf "$cg/notes.md" "$cg/.agents/docs"
 
 cat >>"$cg/src/app.ts" <<'EOF'
 function retryOnce(fn) {
@@ -2412,7 +2420,7 @@ function retryOnce(fn) {
   }
 }
 EOF
-out34x=$(cd "$cg" && .agent/scripts/comments.sh chat34 2>&1)
+out34x=$(cd "$cg" && .agents/scripts/comments.sh chat34 2>&1)
 rc34x=$?
 [ "$rc34x" -eq 0 ] && [ -z "$out34x" ] && pass "comments.sh: a routine implementation adding zero comments is silent, not flagged for lacking one" || fail "comments.sh: a routine implementation adding zero comments is silent (rc=$rc34x; $out34x)"
 git_cg checkout -q -- src/app.ts
@@ -2420,11 +2428,11 @@ git_cg checkout -q -- src/app.ts
 git_cg checkout -q base
 
 [ -z "$(git -C "$cg" status --porcelain)" ] && pass "comments.sh: the empty-diff fixture starts clean" || fail "comments.sh: the empty-diff fixture starts clean ($(git -C "$cg" status --porcelain | tr '\n' ' '))"
-(cd "$cg" && .agent/scripts/comments.sh HEAD >/dev/null 2>&1)
+(cd "$cg" && .agents/scripts/comments.sh HEAD >/dev/null 2>&1)
 rc34o=$?
 [ "$rc34o" -eq 2 ] && pass "comments.sh: a base resolving to HEAD over a clean tree exits 2" || fail "comments.sh: a base resolving to HEAD over a clean tree exits 2 (rc=$rc34o)"
 printf '// tuned per commit cafebabecafebabe\nconst k = 10\n' >>"$cg/src/app.ts"
-(cd "$cg" && .agent/scripts/comments.sh HEAD >/dev/null 2>&1)
+(cd "$cg" && .agents/scripts/comments.sh HEAD >/dev/null 2>&1)
 rc34p=$?
 [ "$rc34p" -eq 1 ] && pass "comments.sh: HEAD with an uncommitted change is a real diff, not the empty case" || fail "comments.sh: HEAD with an uncommitted change is a real diff, not the empty case (rc=$rc34p)"
 git_cg checkout -q -- src/app.ts
@@ -2432,40 +2440,40 @@ git_cg checkout -q -- src/app.ts
 cgn="$WORK/comment-gate-init"
 mkdir -p "$cgn"
 "$NODE" init --preset software-development --mode ignore-all "$cgn" >/dev/null 2>&1
-[ -x "$cgn/.agent/scripts/comments.sh" ] && pass "init: comments.sh is installed executable" || fail "init: comments.sh is installed executable"
-grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgn/.agent/scripts/comments.conf" 2>/dev/null && pass "init: the starter comments.conf is seeded" || fail "init: the starter comments.conf is seeded"
-grep -q '^PROBE_TOOLS=' "$cgn/.agent/scripts/status.conf" 2>/dev/null && pass "init: the starter status.conf is seeded" || fail "init: the starter status.conf is seeded"
-grep -q '^LOG_INCLUDE_BRANCH=' "$cgn/.agent/scripts/log.conf" 2>/dev/null && pass "init: the starter log.conf is seeded" || fail "init: the starter log.conf is seeded"
+[ -x "$cgn/.agents/scripts/comments.sh" ] && pass "init: comments.sh is installed executable" || fail "init: comments.sh is installed executable"
+grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgn/.agents/scripts/comments.conf" 2>/dev/null && pass "init: the starter comments.conf is seeded" || fail "init: the starter comments.conf is seeded"
+grep -q '^PROBE_TOOLS=' "$cgn/.agents/scripts/status.conf" 2>/dev/null && pass "init: the starter status.conf is seeded" || fail "init: the starter status.conf is seeded"
+grep -q '^LOG_INCLUDE_BRANCH=' "$cgn/.agents/scripts/log.conf" 2>/dev/null && pass "init: the starter log.conf is seeded" || fail "init: the starter log.conf is seeded"
 
 cgu="$WORK/comment-gate-update"
 mkdir -p "$cgu"
 make_v6_fixture "$cgu"
-mkdir -p "$cgu/.agent/scripts"
-printf 'BASE_REF=origin/dev\n' >"$cgu/.agent/scripts/comments.conf"
-printf 'PROBE_TOOLS=jq\n' >"$cgu/.agent/scripts/status.conf"
+mkdir -p "$cgu/.agents/scripts"
+printf 'BASE_REF=origin/dev\n' >"$cgu/.agents/scripts/comments.conf"
+printf 'PROBE_TOOLS=jq\n' >"$cgu/.agents/scripts/status.conf"
 "$NODE" update "$cgu" >/dev/null 2>&1
-[ -x "$cgu/.agent/scripts/comments.sh" ] && pass "update: comments.sh is refreshed into an existing node" || fail "update: comments.sh is refreshed into an existing node"
-[ "$(cat "$cgu/.agent/scripts/comments.conf")" = 'BASE_REF=origin/dev' ] && pass "update: an existing comments.conf is never overwritten" || fail "update: an existing comments.conf is never overwritten"
-[ "$(cat "$cgu/.agent/scripts/status.conf")" = 'PROBE_TOOLS=jq' ] && pass "update: an existing status.conf is never overwritten" || fail "update: an existing status.conf is never overwritten"
+[ -x "$cgu/.agents/scripts/comments.sh" ] && pass "update: comments.sh is refreshed into an existing node" || fail "update: comments.sh is refreshed into an existing node"
+[ "$(cat "$cgu/.agents/scripts/comments.conf")" = 'BASE_REF=origin/dev' ] && pass "update: an existing comments.conf is never overwritten" || fail "update: an existing comments.conf is never overwritten"
+[ "$(cat "$cgu/.agents/scripts/status.conf")" = 'PROBE_TOOLS=jq' ] && pass "update: an existing status.conf is never overwritten" || fail "update: an existing status.conf is never overwritten"
 
 cgu2="$WORK/comment-gate-update-noconf"
 mkdir -p "$cgu2"
 make_v6_fixture "$cgu2"
 "$NODE" update "$cgu2" >/dev/null 2>&1
-grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgu2/.agent/scripts/comments.conf" 2>/dev/null && pass "update: a missing comments.conf is seeded with the starter" || fail "update: a missing comments.conf is seeded with the starter"
-grep -q '^PROBE_TOOLS=' "$cgu2/.agent/scripts/status.conf" 2>/dev/null && pass "update: a missing status.conf is seeded with the starter" || fail "update: a missing status.conf is seeded with the starter"
-grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agent/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
+grep -q '^BLOCK_RE_EXTRA=.*AC' "$cgu2/.agents/scripts/comments.conf" 2>/dev/null && pass "update: a missing comments.conf is seeded with the starter" || fail "update: a missing comments.conf is seeded with the starter"
+grep -q '^PROBE_TOOLS=' "$cgu2/.agents/scripts/status.conf" 2>/dev/null && pass "update: a missing status.conf is seeded with the starter" || fail "update: a missing status.conf is seeded with the starter"
+grep -q '^LOG_INCLUDE_BRANCH=' "$cgu2/.agents/scripts/log.conf" 2>/dev/null && pass "update: a missing log.conf is seeded with the starter" || fail "update: a missing log.conf is seeded with the starter"
 
 missing_u=""
 for f in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh checks.sh; do
-  [ -x "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
+  [ -x "$cgu2/.agents/scripts/$f" ] || missing_u="$missing_u $f"
 done
 for f in comments.conf status.conf log.conf; do
-  [ -f "$cgu2/.agent/scripts/$f" ] || missing_u="$missing_u $f"
+  [ -f "$cgu2/.agents/scripts/$f" ] || missing_u="$missing_u $f"
 done
 [ -z "$missing_u" ] && pass "update: every shipped script and starter conf reaches an existing node" || fail "update: every shipped script and starter conf reaches an existing node (missing:$missing_u)"
 
-out34diffx=$(cd "$cg" && GIT_EXTERNAL_DIFF=false .agent/scripts/comments.sh base 2>&1)
+out34diffx=$(cd "$cg" && GIT_EXTERNAL_DIFF=false .agents/scripts/comments.sh base 2>&1)
 rc34diffx=$?
 [ "$rc34diffx" -eq 2 ] && pass "comments.sh: GIT_EXTERNAL_DIFF pointed at a broken program fails the diff capture closed" || fail "comments.sh: GIT_EXTERNAL_DIFF pointed at a broken program fails the diff capture closed (rc=$rc34diffx; $out34diffx)"
 
@@ -2484,7 +2492,7 @@ done
 exec "$real_git34" "\$@"
 STUBEOF
 chmod +x "$stub34/git"
-out34diffy=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+out34diffy=$(cd "$cg" && PATH="$stub34:$PATH" .agents/scripts/comments.sh base 2>&1)
 rc34diffy=$?
 [ "$rc34diffy" -eq 2 ] && pass "comments.sh: a stubbed git failing the diff capture exits 2" || fail "comments.sh: a stubbed git failing the diff capture exits 2 (rc=$rc34diffy; $out34diffy)"
 rm -f "$stub34/git"
@@ -2499,7 +2507,7 @@ done
 exec "$real_git34" "\$@"
 STUBEOF
 chmod +x "$stub34/git"
-out34untrx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+out34untrx=$(cd "$cg" && PATH="$stub34:$PATH" .agents/scripts/comments.sh base 2>&1)
 rc34untrx=$?
 [ "$rc34untrx" -eq 2 ] && pass "comments.sh: a stubbed git failing untracked-file discovery exits 2" || fail "comments.sh: a stubbed git failing untracked-file discovery exits 2 (rc=$rc34untrx; $out34untrx)"
 rm -f "$stub34/git"
@@ -2512,7 +2520,7 @@ fi
 exec "$real_awk34" "\$@"
 STUBEOF
 chmod +x "$stub34/awk"
-out34clsx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+out34clsx=$(cd "$cg" && PATH="$stub34:$PATH" .agents/scripts/comments.sh base 2>&1)
 rc34clsx=$?
 [ "$rc34clsx" -eq 2 ] && pass "comments.sh: a stubbed awk failing the classifier exits 2" || fail "comments.sh: a stubbed awk failing the classifier exits 2 (rc=$rc34clsx; $out34clsx)"
 rm -f "$stub34/awk"
@@ -2525,7 +2533,7 @@ fi
 exec "$real_git34" "\$@"
 STUBEOF
 chmod +x "$stub34/git"
-out34headx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+out34headx=$(cd "$cg" && PATH="$stub34:$PATH" .agents/scripts/comments.sh base 2>&1)
 rc34headx=$?
 [ "$rc34headx" -eq 2 ] && pass "comments.sh: a stubbed 'git rev-parse HEAD' failure exits 2" || fail "comments.sh: a stubbed 'git rev-parse HEAD' failure exits 2 (rc=$rc34headx; $out34headx)"
 rm -f "$stub34/git"
@@ -2538,7 +2546,7 @@ fi
 exec "$real_git34" "\$@"
 STUBEOF
 chmod +x "$stub34/git"
-out34quietx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+out34quietx=$(cd "$cg" && PATH="$stub34:$PATH" .agents/scripts/comments.sh base 2>&1)
 rc34quietx=$?
 [ "$rc34quietx" -eq 2 ] && pass "comments.sh: a 'git diff --quiet HEAD' error status exits 2" || fail "comments.sh: a 'git diff --quiet HEAD' error status exits 2 (rc=$rc34quietx; $out34quietx)"
 rm -f "$stub34/git"
@@ -2551,7 +2559,7 @@ fi
 exec "$real_git34" "\$@"
 STUBEOF
 chmod +x "$stub34/git"
-out34othersx=$(cd "$cg" && PATH="$stub34:$PATH" .agent/scripts/comments.sh base 2>&1)
+out34othersx=$(cd "$cg" && PATH="$stub34:$PATH" .agents/scripts/comments.sh base 2>&1)
 rc34othersx=$?
 [ "$rc34othersx" -eq 2 ] && pass "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2" || fail "comments.sh: a stubbed emptiness-guard 'git ls-files' failure exits 2 (rc=$rc34othersx; $out34othersx)"
 rm -f "$stub34/git"
@@ -2563,30 +2571,30 @@ finish_bootstrap "$cgf34"
 printf 'export const a = 1\n' >"$cgf34/src/a.ts"
 git -C "$cgf34" init -q && git -C "$cgf34" add -A && git -C "$cgf34" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf 'export const b = 2\n' >>"$cgf34/src/a.ts"
-n34before=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
-out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "should not log" "$cgf34" 2>&1)
+n34before=$(grep -c '^- \[' "$cgf34/.agents/session-log.md")
+out34fc=$(GIT_EXTERNAL_DIFF=false "$cgf34/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "should not log" "$cgf34" 2>&1)
 rc34fc=$?
-n34after=$(grep -c '^- \[' "$cgf34/.agent/session-log.md")
+n34after=$(grep -c '^- \[' "$cgf34/.agents/session-log.md")
 [ "$rc34fc" -ne 0 ] && [ "$n34before" -eq "$n34after" ] && pass "checkpoint.sh: a failed-closed comment gate appends no log entry" || fail "checkpoint.sh: a failed-closed comment gate appends no log entry (rc=$rc34fc before=$n34before after=$n34after; $out34fc)"
 
 tmpdir34="$WORK/cg-tmpdir"
 mkdir -p "$tmpdir34"
-(cd "$cg" && TMPDIR="$tmpdir34" .agent/scripts/comments.sh base >/dev/null 2>&1)
-(cd "$cg" && TMPDIR="$tmpdir34" GIT_EXTERNAL_DIFF=false .agent/scripts/comments.sh base >/dev/null 2>&1)
-(cd "$cg" && TMPDIR="$tmpdir34" .agent/scripts/comments.sh nosuchref >/dev/null 2>&1)
+(cd "$cg" && TMPDIR="$tmpdir34" .agents/scripts/comments.sh base >/dev/null 2>&1)
+(cd "$cg" && TMPDIR="$tmpdir34" GIT_EXTERNAL_DIFF=false .agents/scripts/comments.sh base >/dev/null 2>&1)
+(cd "$cg" && TMPDIR="$tmpdir34" .agents/scripts/comments.sh nosuchref >/dev/null 2>&1)
 leftover34=$(find "$tmpdir34" -type f)
 [ -z "$leftover34" ] && pass "comments.sh: no temporary file survives success or failure" || fail "comments.sh: no temporary file survives success or failure ($leftover34)"
 
-printf 'LOG_ENTRY_MAX_WORDS=500\n' >"$es/.agent/scripts/status.conf"
+printf 'LOG_ENTRY_MAX_WORDS=500\n' >"$es/.agents/scripts/status.conf"
 f35=$(status_flags "$es")
 printf '%s\n' "$f35" | grep -q 'entries over' && fail "status.conf: a threshold override silences the flag" || pass "status.conf: a threshold override silences the flag"
 
-printf 'PROBE_TOOLS=zz-absent-tool-9\n' >>"$es/.agent/scripts/status.conf"
-out35=$("$es/.agent/scripts/status.sh" "$es" 2>&1)
+printf 'PROBE_TOOLS=zz-absent-tool-9\n' >>"$es/.agents/scripts/status.conf"
+out35=$("$es/.agents/scripts/status.sh" "$es" 2>&1)
 printf '%s\n' "$out35" | grep -q 'TOOLS: not installed: zz-absent-tool-9' && pass "status.conf: PROBE_TOOLS override is probed" || fail "status.conf: PROBE_TOOLS override is probed"
 
-subst "$es/.agent/scripts/status.conf" 's/^PROBE_TOOLS=.*/PROBE_TOOLS=sh/'
-out35b=$("$es/.agent/scripts/status.sh" "$es" 2>&1)
+subst "$es/.agents/scripts/status.conf" 's/^PROBE_TOOLS=.*/PROBE_TOOLS=sh/'
+out35b=$("$es/.agents/scripts/status.sh" "$es" 2>&1)
 printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a trimmed PROBE_TOOLS list stops the probe" || pass "status.conf: a trimmed PROBE_TOOLS list stops the probe"
 
 mismatch36=""
@@ -2634,29 +2642,29 @@ mkdir -p "$lb"
 "$NODE" init --preset software-development --mode track-all "$lb" >/dev/null 2>&1
 git -C "$lb" -c user.name=t -c user.email=t@t init -q
 git -C "$lb" checkout -q -b feat-x
-subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
+subst "$lb/.agents/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
 "$LOGSH" --tool t --area a --verify pass --summary "did the thing" "$lb" >/dev/null 2>&1
-tail -n 1 "$lb/.agent/session-log.md" | grep -qF '. branch: feat-x. verify: pass.' && pass "log.sh: the branch stamp reads the checked-out branch" || fail "log.sh: the branch stamp reads the checked-out branch ($(tail -n 1 "$lb/.agent/session-log.md"))"
+tail -n 1 "$lb/.agents/session-log.md" | grep -qF '. branch: feat-x. verify: pass.' && pass "log.sh: the branch stamp reads the checked-out branch" || fail "log.sh: the branch stamp reads the checked-out branch ($(tail -n 1 "$lb/.agents/session-log.md"))"
 
-subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=true/LOG_INCLUDE_BRANCH=false/'
+subst "$lb/.agents/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=true/LOG_INCLUDE_BRANCH=false/'
 "$LOGSH" --tool t --area a --verify pass --summary "did it again" "$lb" >/dev/null 2>&1
-tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch:' && fail "log.sh: false leaves the entry format unchanged" || pass "log.sh: false leaves the entry format unchanged"
+tail -n 1 "$lb/.agents/session-log.md" | grep -q 'branch:' && fail "log.sh: false leaves the entry format unchanged" || pass "log.sh: false leaves the entry format unchanged"
 
 lb2="$WORK/log-branch-norepo"
 mkdir -p "$lb2"
 "$NODE" init --preset software-development --mode ignore-all "$lb2" >/dev/null 2>&1
-subst "$lb2/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
+subst "$lb2/.agents/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
 "$LOGSH" --tool t --area a --verify pass --summary "no repo here" "$lb2" >/dev/null 2>&1
 rc37=$?
-[ "$rc37" -eq 0 ] && tail -n 1 "$lb2/.agent/session-log.md" | grep -q 'no repo here' && ! tail -n 1 "$lb2/.agent/session-log.md" | grep -q 'branch:' && pass "log.sh: outside a git checkout the stamp is omitted, not an error" || fail "log.sh: outside a git checkout the stamp is omitted, not an error (rc=$rc37)"
+[ "$rc37" -eq 0 ] && tail -n 1 "$lb2/.agents/session-log.md" | grep -q 'no repo here' && ! tail -n 1 "$lb2/.agents/session-log.md" | grep -q 'branch:' && pass "log.sh: outside a git checkout the stamp is omitted, not an error" || fail "log.sh: outside a git checkout the stamp is omitted, not an error (rc=$rc37)"
 
-printf 'SUMMARY_MAX_WORDS=5\n' >>"$lb2/.agent/scripts/log.conf"
+printf 'SUMMARY_MAX_WORDS=5\n' >>"$lb2/.agents/scripts/log.conf"
 "$LOGSH" --tool t --area a --verify pass --summary "one two three four five six" "$lb2" >/dev/null 2>&1 \
   && fail "log.sh: the summary ceiling tunes from log.conf" || pass "log.sh: the summary ceiling tunes from log.conf"
 
-subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
+subst "$lb/.agents/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRANCH=true/'
 "$LOGSH" --tool t --area a --verify pass --summary "$(words_n 25)" "$lb" >/dev/null 2>&1 \
-  && tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch: feat-x' && pass "log.sh: the stamp spends no summary budget at the 25-word ceiling" || fail "log.sh: the stamp spends no summary budget at the 25-word ceiling"
+  && tail -n 1 "$lb/.agents/session-log.md" | grep -q 'branch: feat-x' && pass "log.sh: the stamp spends no summary budget at the 25-word ceiling" || fail "log.sh: the stamp spends no summary budget at the 25-word ceiling"
 status_flags "$lb" | grep -q 'entries over' && fail "log.sh: a stamped max-length entry stays under the entry-shape flag" || pass "log.sh: a stamped max-length entry stays under the entry-shape flag"
 
 hwawk="$WORK/hardwrap.awk"
@@ -2688,10 +2696,10 @@ printf 'A paragraph broken by a column limit\nrather than by a blank line.\n' >"
 hwnode="$WORK/hardwrap-node"
 mkdir -p "$hwnode"
 "$NODE" init --preset software-development --mode track-all "$hwnode" >/dev/null 2>&1
-"$hwnode/.agent/scripts/docs.sh" new --name auth-flow --read-when "working on authentication" "$hwnode" >/dev/null 2>&1
-"$hwnode/.agent/scripts/memory.sh" new --slug hw --title HW --hook hook --fact "a durable fact" "$hwnode" >/dev/null 2>&1
+"$hwnode/.agents/scripts/docs.sh" new --name auth-flow --read-when "working on authentication" "$hwnode" >/dev/null 2>&1
+"$hwnode/.agents/scripts/memory.sh" new --slug hw --title HW --hook hook --fact "a durable fact" "$hwnode" >/dev/null 2>&1
 hw38b=""
-find "$hwnode/.agent" -name '*.md' -print0 >"$WORK/hw-nodelist"
+find "$hwnode/.agents" -name '*.md' -print0 >"$WORK/hw-nodelist"
 while IFS= read -r -d '' md; do
   hit=$(awk -f "$hwawk" "$md" | sed "s|$hwnode/||")
   [ -n "$hit" ] && hw38b="$hw38b $hit"
@@ -2704,11 +2712,11 @@ printf 'One line of prose.\n\n```\nwrapped inside\na fence\n```\n' >"$WORK/hardw
 omnode="$WORK/om-quotes"
 mkdir -p "$omnode"
 "$NODE" init --preset software-development --mode track-all "$omnode" >/dev/null 2>&1
-"$omnode/.agent/scripts/docs.sh" new --name a --read-when "x" "$omnode" >/dev/null 2>&1
+"$omnode/.agents/scripts/docs.sh" new --name a --read-when "x" "$omnode" >/dev/null 2>&1
 
 om_drift=""
 om_check() {
-  line=$(grep -F "$2" "$omnode/.agent/$1" | head -n 1)
+  line=$(grep -F "$2" "$omnode/.agents/$1" | head -n 1)
   if [ -z "$line" ]; then
     om_drift="$om_drift $1(missing-from-node)"
   else
@@ -2719,7 +2727,7 @@ om_check session-log.md "One entry per turn that changed files"
 om_check memory.md "Index only, one line per fact file"
 om_check rules/learned.md "Binding rules distilled"
 om_check docs/architecture.md "One entry per doc in this directory"
-grep -qF "Agent-facing reference, not a human narrative" "$omnode/.agent/docs/a.md" && om_drift="$om_drift docs/a.md(header-returned)"
+grep -qF "Agent-facing reference, not a human narrative" "$omnode/.agents/docs/a.md" && om_drift="$om_drift docs/a.md(header-returned)"
 grep -qF "Agent-facing reference, not a human narrative" "$reporoot/operating-model.md" && om_drift="$om_drift operating-model.md(header-returned)"
 [ -z "$om_drift" ] && pass "operating model: the quoted node headers match what the scripts write" || fail "operating model: the quoted node headers match what the scripts write (drifted:$om_drift)"
 
@@ -2732,38 +2740,38 @@ mkdir -p "$ce"
 "$NODE" init --preset software-development --mode track-all "$ce" >/dev/null 2>&1
 ce_marker="$WORK/conf-exec-marker"
 rm -f "$ce_marker"
-printf 'LOG_MAX_ENTRIES=entrypoints[$(touch %s)]\n' "$ce_marker" >>"$ce/.agent/scripts/status.conf"
-ce_out=$("$ce/.agent/scripts/status.sh" "$ce" 2>/dev/null)
+printf 'LOG_MAX_ENTRIES=entrypoints[$(touch %s)]\n' "$ce_marker" >>"$ce/.agents/scripts/status.conf"
+ce_out=$("$ce/.agents/scripts/status.sh" "$ce" 2>/dev/null)
 [ ! -e "$ce_marker" ] && pass "status.conf: a conf value cannot execute a command" || fail "status.conf: a conf value cannot execute a command"
 printf '%s\n' "$ce_out" | grep -q '^REPAIR: status.conf LOG_MAX_ENTRIES=' && pass "status.conf: a value that is not a whole number draws a REPAIR flag" || fail "status.conf: a value that is not a whole number draws a REPAIR flag"
 
-grep -v '^LOG_MAX_ENTRIES=entrypoints' "$ce/.agent/scripts/status.conf" >"$ce/conf.tmp" && mv "$ce/conf.tmp" "$ce/.agent/scripts/status.conf"
-printf 'LOG_MAX_ENTRIES=1\n' >>"$ce/.agent/scripts/status.conf"
-printf -- '- [2026-01-01] (t) a (b). verify: pass.\n- [2026-01-02] (t) a (b). verify: pass.\n' >>"$ce/.agent/session-log.md"
+grep -v '^LOG_MAX_ENTRIES=entrypoints' "$ce/.agents/scripts/status.conf" >"$ce/conf.tmp" && mv "$ce/conf.tmp" "$ce/.agents/scripts/status.conf"
+printf 'LOG_MAX_ENTRIES=1\n' >>"$ce/.agents/scripts/status.conf"
+printf -- '- [2026-01-01] (t) a (b). verify: pass.\n- [2026-01-02] (t) a (b). verify: pass.\n' >>"$ce/.agents/session-log.md"
 status_flags "$ce" | grep -q '^GROOM: session-log.md' && pass "status.conf: a valid threshold still tunes the check" || fail "status.conf: a valid threshold still tunes the check"
 
 lc="$WORK/logconf"
 mkdir -p "$lc"
 "$NODE" init --preset software-development --mode track-all "$lc" >/dev/null 2>&1
-printf 'SUMMARY_MAX_WORDS=25 words\n' >>"$lc/.agent/scripts/log.conf"
-"$lc/.agent/scripts/log.sh" --tool t --area a --verify pass --summary "short entry" "$lc" >/dev/null 2>&1 \
+printf 'SUMMARY_MAX_WORDS=25 words\n' >>"$lc/.agents/scripts/log.conf"
+"$lc/.agents/scripts/log.sh" --tool t --area a --verify pass --summary "short entry" "$lc" >/dev/null 2>&1 \
   && fail "log.conf: a ceiling that is not a whole number is refused" || pass "log.conf: a ceiling that is not a whole number is refused"
 
-"$lc/.agent/scripts/log.sh" --tool t --area a --verify pass --summary --area "$lc" >/dev/null 2>&1 \
+"$lc/.agents/scripts/log.sh" --tool t --area a --verify pass --summary --area "$lc" >/dev/null 2>&1 \
   && fail "log.sh: a flag is not accepted as another flag's value" || pass "log.sh: a flag is not accepted as another flag's value"
 
-"$lc/.agent/scripts/status.sh" --help >"$WORK/sh-help" 2>/dev/null
+"$lc/.agents/scripts/status.sh" --help >"$WORK/sh-help" 2>/dev/null
 sh_rc=$?
 [ "$sh_rc" -eq 0 ] && head -n 1 "$WORK/sh-help" | grep -q '^Usage: status.sh' && pass "status.sh: --help prints usage on stdout at exit 0" || fail "status.sh: --help prints usage on stdout at exit 0"
 grep -q '^REPAIR:' "$WORK/sh-help" && fail "status.sh: --help invents no findings" || pass "status.sh: --help invents no findings"
 sh_bad="$WORK/not-a-node"
 mkdir -p "$sh_bad"
-sh_out=$("$lc/.agent/scripts/status.sh" "$sh_bad" 2>/dev/null)
+sh_out=$("$lc/.agents/scripts/status.sh" "$sh_bad" 2>/dev/null)
 sh_rc=$?
-[ "$sh_rc" -ne 0 ] && [ -z "$sh_out" ] && pass "status.sh: a root with no .agent is a usage error, not three findings" || fail "status.sh: a root with no .agent is a usage error, not three findings"
-lk_out=$("$lc/.agent/scripts/links.sh" "$sh_bad" 2>/dev/null)
+[ "$sh_rc" -ne 0 ] && [ -z "$sh_out" ] && pass "status.sh: a root with no .agents is a usage error, not three findings" || fail "status.sh: a root with no .agents is a usage error, not three findings"
+lk_out=$("$lc/.agents/scripts/links.sh" "$sh_bad" 2>/dev/null)
 lk_rc=$?
-[ "$lk_rc" -ne 0 ] && [ -z "$lk_out" ] && pass "links.sh: a root with no .agent is a usage error, not an empty report" || fail "links.sh: a root with no .agent is a usage error, not an empty report"
+[ "$lk_rc" -ne 0 ] && [ -z "$lk_out" ] && pass "links.sh: a root with no .agents is a usage error, not an empty report" || fail "links.sh: a root with no .agents is a usage error, not an empty report"
 
 ax_bad=""
 for ax_f in "$reporoot"/scripts/status.sh "$reporoot"/scripts/links.sh \
@@ -2786,11 +2794,11 @@ fi
 chmod u+w "$WORK/ro-probe"
 
 if [ "$ro_enforced" -eq 1 ]; then
-  chmod a-w "$hw/.agent/memory.md"
-  "$hw/.agent/scripts/memory.sh" new --slug halffact --title T --hook H --fact F "$hw" >/dev/null 2>&1 \
+  chmod a-w "$hw/.agents/memory.md"
+  "$hw/.agents/scripts/memory.sh" new --slug halffact --title T --hook H --fact F "$hw" >/dev/null 2>&1 \
     && fail "memory.sh: a failed index write is reported as a failure" || pass "memory.sh: a failed index write is reported as a failure"
-  [ ! -e "$hw/.agent/memory/halffact.md" ] && pass "memory.sh: a failed index write leaves no orphan fact file" || fail "memory.sh: a failed index write leaves no orphan fact file"
-  chmod u+w "$hw/.agent/memory.md"
+  [ ! -e "$hw/.agents/memory/halffact.md" ] && pass "memory.sh: a failed index write leaves no orphan fact file" || fail "memory.sh: a failed index write leaves no orphan fact file"
+  chmod u+w "$hw/.agents/memory.md"
 else
   pass "memory.sh: failed index write not exercised — this environment ignores file permissions"
   pass "memory.sh: orphan removal not exercised — this environment ignores file permissions"
@@ -2799,13 +2807,13 @@ fi
 hd="$WORK/halfdoc"
 mkdir -p "$hd"
 "$NODE" init --preset software-development --mode track-all "$hd" >/dev/null 2>&1
-"$hd/.agent/scripts/docs.sh" new --name first --read-when "x" "$hd" >/dev/null 2>&1
+"$hd/.agents/scripts/docs.sh" new --name first --read-when "x" "$hd" >/dev/null 2>&1
 if [ "$ro_enforced" -eq 1 ]; then
-  chmod a-w "$hd/.agent/docs/architecture.md"
-  "$hd/.agent/scripts/docs.sh" new --name second --read-when "y" "$hd" >/dev/null 2>&1 \
+  chmod a-w "$hd/.agents/docs/architecture.md"
+  "$hd/.agents/scripts/docs.sh" new --name second --read-when "y" "$hd" >/dev/null 2>&1 \
     && fail "docs.sh: a failed routing write is reported as a failure" || pass "docs.sh: a failed routing write is reported as a failure"
-  [ ! -e "$hd/.agent/docs/second.md" ] && pass "docs.sh: a failed routing write leaves no unrouted doc" || fail "docs.sh: a failed routing write leaves no unrouted doc"
-  chmod u+w "$hd/.agent/docs/architecture.md"
+  [ ! -e "$hd/.agents/docs/second.md" ] && pass "docs.sh: a failed routing write leaves no unrouted doc" || fail "docs.sh: a failed routing write leaves no unrouted doc"
+  chmod u+w "$hd/.agents/docs/architecture.md"
 else
   pass "docs.sh: failed routing write not exercised — this environment ignores file permissions"
   pass "docs.sh: unrouted doc removal not exercised — this environment ignores file permissions"
@@ -2814,31 +2822,31 @@ fi
 vn="$WORK/validate"
 mkdir -p "$vn"
 "$NODE" init --preset software-development --mode track-all "$vn" >/dev/null 2>&1
-LC_ALL=C "$vn/.agent/scripts/memory.sh" new --slug UpperCase --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
+LC_ALL=C "$vn/.agents/scripts/memory.sh" new --slug UpperCase --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
   && fail "memory.sh: an uppercase slug is refused under LC_ALL=C" || pass "memory.sh: an uppercase slug is refused under LC_ALL=C"
 vloc=$(locale -a 2>/dev/null | grep -ix -m1 -e 'en_US.UTF-8' -e 'en_US.utf8' -e 'C.UTF-8' -e 'C.utf8')
 if [ -n "$vloc" ]; then
-  LC_ALL="$vloc" "$vn/.agent/scripts/memory.sh" new --slug UpperCase --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
+  LC_ALL="$vloc" "$vn/.agents/scripts/memory.sh" new --slug UpperCase --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
     && fail "memory.sh: an uppercase slug is refused under a UTF-8 locale" || pass "memory.sh: an uppercase slug is refused under a UTF-8 locale"
-  LC_ALL="$vloc" "$vn/.agent/scripts/docs.sh" new --name AuthFlow --read-when x "$vn" >/dev/null 2>&1 \
+  LC_ALL="$vloc" "$vn/.agents/scripts/docs.sh" new --name AuthFlow --read-when x "$vn" >/dev/null 2>&1 \
     && fail "docs.sh: an uppercase name is refused under a UTF-8 locale" || pass "docs.sh: an uppercase name is refused under a UTF-8 locale"
 fi
-[ ! -e "$vn/.agent/memory/UpperCase.md" ] && pass "memory.sh: no uppercase fact file was written in any locale" || fail "memory.sh: no uppercase fact file was written in any locale"
+[ ! -e "$vn/.agents/memory/UpperCase.md" ] && pass "memory.sh: no uppercase fact file was written in any locale" || fail "memory.sh: no uppercase fact file was written in any locale"
 
-"$vn/.agent/scripts/memory.sh" new --slug -weird --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
+"$vn/.agents/scripts/memory.sh" new --slug -weird --title T --hook H --fact F "$vn" >/dev/null 2>&1 \
   && fail "memory.sh: a slug starting with - is refused" || pass "memory.sh: a slug starting with - is refused"
-"$vn/.agent/scripts/docs.sh" new --name -weird --read-when x "$vn" >/dev/null 2>&1 \
+"$vn/.agents/scripts/docs.sh" new --name -weird --read-when x "$vn" >/dev/null 2>&1 \
   && fail "docs.sh: a name starting with - is refused" || pass "docs.sh: a name starting with - is refused"
-"$vn/.agent/scripts/memory.sh" new --slug ok-slug --title T --hook H --fact --scope "$vn" >/dev/null 2>&1 \
+"$vn/.agents/scripts/memory.sh" new --slug ok-slug --title T --hook H --fact --scope "$vn" >/dev/null 2>&1 \
   && fail "memory.sh: a flag is not accepted as another flag's value" || pass "memory.sh: a flag is not accepted as another flag's value"
-"$vn/.agent/scripts/memory.sh" new --slug fresh-slug --title T --hook H --fact "a real fact" "$vn" >/dev/null 2>&1 \
+"$vn/.agents/scripts/memory.sh" new --slug fresh-slug --title T --hook H --fact "a real fact" "$vn" >/dev/null 2>&1 \
   && pass "memory.sh: a valid invocation still writes" || fail "memory.sh: a valid invocation still writes"
 
 fo="$WORK/gate-failopen"
-mkdir -p "$fo/.agent/scripts" "$fo/My Project"
-cp "$reporoot/scripts/comments.sh" "$fo/.agent/scripts/comments.sh"
-cp "$reporoot/scripts/comments.conf" "$fo/.agent/scripts/comments.conf"
-chmod +x "$fo/.agent/scripts/comments.sh"
+mkdir -p "$fo/.agents/scripts" "$fo/My Project"
+cp "$reporoot/scripts/comments.sh" "$fo/.agents/scripts/comments.sh"
+cp "$reporoot/scripts/comments.conf" "$fo/.agents/scripts/comments.conf"
+chmod +x "$fo/.agents/scripts/comments.sh"
 git_fo() { git -C "$fo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
 git_fo init -q
 git_fo checkout -q -b base
@@ -2850,23 +2858,23 @@ printf '// refactored per commit deadbeefcafe1234\n' >"$fo/My Project/Program.cs
 printf '// refactored per commit deadbeefcafe1234\n' >"$fo/Plain.cs"
 git_fo add -A >/dev/null
 
-fo_out=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
+fo_out=$(cd "$fo" && "$fo/.agents/scripts/comments.sh" base 2>/dev/null)
 printf '%s\n' "$fo_out" | grep -qF 'My Project/Program.cs' && pass "comments.sh: a path containing a space is still gated" || fail "comments.sh: a path containing a space is still gated"
 printf '%s\n' "$fo_out" | grep -qF 'Plain.cs' && pass "comments.sh: the unspaced control path is gated" || fail "comments.sh: the unspaced control path is gated"
 
-grep -v '^BLOCK_RE_EXTRA=' "$fo/.agent/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agent/scripts/comments.conf"
-printf 'BLOCK_RE_EXTRA=[unclosed\n' >>"$fo/.agent/scripts/comments.conf"
-fo_bad=$(cd "$fo" && "$fo/.agent/scripts/comments.sh" base 2>/dev/null)
+grep -v '^BLOCK_RE_EXTRA=' "$fo/.agents/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agents/scripts/comments.conf"
+printf 'BLOCK_RE_EXTRA=[unclosed\n' >>"$fo/.agents/scripts/comments.conf"
+fo_bad=$(cd "$fo" && "$fo/.agents/scripts/comments.sh" base 2>/dev/null)
 fo_rc=$?
 [ "$fo_rc" -ne 0 ] && [ -z "$fo_bad" ] && pass "comments.sh: a conf regex that will not compile fails closed" || fail "comments.sh: a conf regex that will not compile fails closed (rc=$fo_rc)"
 
-grep -v '^BLOCK_RE_EXTRA=' "$fo/.agent/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agent/scripts/comments.conf"
-printf 'BLOCK_RE_EXTRA=(^|[^[:alnum:]])TKT-[0-9]{3}\n' >>"$fo/.agent/scripts/comments.conf"
+grep -v '^BLOCK_RE_EXTRA=' "$fo/.agents/scripts/comments.conf" >"$fo/conf.tmp" && mv "$fo/conf.tmp" "$fo/.agents/scripts/comments.conf"
+printf 'BLOCK_RE_EXTRA=(^|[^[:alnum:]])TKT-[0-9]{3}\n' >>"$fo/.agents/scripts/comments.conf"
 noiv="$WORK/no-interval-awk"
 mkdir -p "$noiv"
 printf '#!/bin/sh\ncase "$*" in *"{2}"*) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v awk)" >"$noiv/awk"
 chmod +x "$noiv/awk"
-fo_iv=$(cd "$fo" && PATH="$noiv:$PATH" "$fo/.agent/scripts/comments.sh" base 2>&1 >/dev/null)
+fo_iv=$(cd "$fo" && PATH="$noiv:$PATH" "$fo/.agents/scripts/comments.sh" base 2>&1 >/dev/null)
 fo_rc=$?
 [ "$fo_rc" -eq 2 ] && printf '%s' "$fo_iv" | grep -qF 'interval' && pass "comments.sh: a conf interval regex fails closed under an awk that cannot match intervals" || fail "comments.sh: a conf interval regex fails closed under an awk that cannot match intervals (rc=$fo_rc; $fo_iv)"
 
@@ -2875,7 +2883,7 @@ mkdir -p "$hp"
 "$NODE" init --preset software-development --mode track-all "$hp" >/dev/null 2>&1
 hp_bad=""
 for hp_s in status log memory docs links checkpoint learn; do
-  hp_out=$("$hp/.agent/scripts/$hp_s.sh" --help 2>/dev/null)
+  hp_out=$("$hp/.agents/scripts/$hp_s.sh" --help 2>/dev/null)
   hp_rc=$?
   [ "$hp_rc" -eq 0 ] || hp_bad="$hp_bad $hp_s.sh(exit=$hp_rc)"
   printf '%s\n' "$hp_out" | head -n 1 | grep -q "^Usage: $hp_s.sh" || hp_bad="$hp_bad $hp_s.sh(no-usage-on-stdout)"
@@ -2886,33 +2894,33 @@ ew="$WORK/entry-width"
 mkdir -p "$ew"
 "$NODE" init --preset software-development --mode track-all "$ew" >/dev/null 2>&1
 finish_bootstrap "$ew"
-printf '# P — Session Bootstrap\n\nRun `bash .agent/scripts/status.sh` first.\n' >"$ew/CLAUDE.md"
+printf '# P — Session Bootstrap\n\nRun `bash .agents/scripts/status.sh` first.\n' >"$ew/CLAUDE.md"
 status_flags "$ew" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-sized entry point does not flag" || pass "status.sh: a wiring-sized entry point does not flag"
 
 printf '\n%s\n' "$(words_n 900)" >>"$ew/CLAUDE.md"
 f41=$(status_flags "$ew")
 printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 600 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
 
-printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agent/scripts/status.conf"
+printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agents/scripts/status.conf"
 status_flags "$ew" | grep -q 'CLAUDE.md > ' && fail "status.conf: the entry-point threshold tunes per node" || pass "status.conf: the entry-point threshold tunes per node"
 
 ews="$WORK/entrypoint-section"
 mkdir -p "$ews"
 "$NODE" init --preset software-development --mode ignore-all "$ews" >/dev/null 2>&1
 finish_bootstrap "$ews"
-printf '# P — Session Bootstrap\n\nRun `bash .agent/scripts/status.sh` first.\n' >"$ews/CLAUDE.md"
+printf '# P — Session Bootstrap\n\nRun `bash .agents/scripts/status.sh` first.\n' >"$ews/CLAUDE.md"
 status_flags "$ews" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-only entry point raises no section flag" || pass "status.sh: a wiring-only entry point raises no section flag"
 printf '\n## Operations\n\nDeploy with `npm run deploy -- --env prod`. Branches are `feat/<ticket>-<slug>`.\n' >>"$ews/CLAUDE.md"
 f41s=$(status_flags "$ews")
 printf '%s\n' "$f41s" | grep -qF 'GROOM: CLAUDE.md carries the section "## Operations"' && pass "status.sh: a section added to an entry point is flagged under the word threshold" || fail "status.sh: a section added to an entry point is flagged under the word threshold ($f41s)"
-printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ews/.agent/scripts/status.conf"
+printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ews/.agents/scripts/status.conf"
 status_flags "$ews" | grep -qF 'carries the section' && pass "status.sh: the section check has no tunable to raise past it" || fail "status.sh: the section check has no tunable to raise past it"
-rm -f "$ews/.agent/scripts/status.conf"
+rm -f "$ews/.agents/scripts/status.conf"
 cp "$ews/CLAUDE.md" "$ews/AGENTS.md"
 f41m=$(status_flags "$ews")
 printf '%s\n' "$f41m" | grep -qF 'differs from' && fail "status.sh: mirrored entry points raise no drift flag" || pass "status.sh: mirrored entry points raise no drift flag"
 [ "$(printf '%s\n' "$f41m" | grep -cF 'carries the section')" -eq 2 ] && pass "status.sh: a mirrored section is flagged in every entry point" || fail "status.sh: a mirrored section is flagged in every entry point ($f41m)"
-printf '# P — Session Bootstrap\n\nRun it:\n\n```\n## not a heading\n```\n\nbash .agent/scripts/status.sh\n' >"$ews/CLAUDE.md"
+printf '# P — Session Bootstrap\n\nRun it:\n\n```\n## not a heading\n```\n\nbash .agents/scripts/status.sh\n' >"$ews/CLAUDE.md"
 rm -f "$ews/AGENTS.md"
 status_flags "$ews" | grep -qF 'carries the section' && fail "status.sh: a heading inside a fenced block is not a section" || pass "status.sh: a heading inside a fenced block is not a section"
 
@@ -2952,7 +2960,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 [ -z "$leaked43b" ] && pass "evals: update puts nothing from evals/ into a node" || fail "evals: update puts nothing from evals/ into a node ($leaked43b)"
 
 extra43=""
-for f43 in "$evleak"/.agent/scripts/*; do
+for f43 in "$evleak"/.agents/scripts/*; do
   case "$(basename "$f43")" in
   status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | index.sh | learn.sh | runtime.sh | verify.sh | review.sh | capture.sh | checks.sh | status.conf | log.conf | comments.conf | verify.conf | review.conf | checkpoint.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
@@ -3119,7 +3127,7 @@ done
 
 evfx="$WORK/eval-fixture"
 "$evroot/fixtures.sh" ts-service-catalog "$evfx" --corpus-dir "$reporoot" >/dev/null 2>&1
-if [ -d "$evfx/.agent" ]; then
+if [ -d "$evfx/.agents" ]; then
   pass "evals: a fixture builds a node from the corpus under test"
   f42=$(status_flags "$evfx")
   [ -z "$f42" ] && pass "evals: a freshly built fixture reports no findings" || fail "evals: a freshly built fixture reports no findings ($f42)"
@@ -3136,36 +3144,36 @@ printf '%s\n' "$f42b" | grep -q '^GROOM: session-log.md entries over' && printf 
 evdoc="$WORK/eval-fixture-with-doc"
 "$evroot/fixtures.sh" ts-service-with-doc "$evdoc" --corpus-dir "$reporoot" >/dev/null 2>&1
 rc42doc=$?
-[ "$rc42doc" -eq 0 ] && [ -d "$evdoc/.agent" ] && pass "evals: ts-service-with-doc builds and its premises hold" || fail "evals: ts-service-with-doc builds and its premises hold (rc=$rc42doc)"
+[ "$rc42doc" -eq 0 ] && [ -d "$evdoc/.agents" ] && pass "evals: ts-service-with-doc builds and its premises hold" || fail "evals: ts-service-with-doc builds and its premises hold (rc=$rc42doc)"
 
 evstale="$WORK/eval-fixture-stale-rule"
 "$evroot/fixtures.sh" ts-service-stale-rule "$evstale" --corpus-dir "$reporoot" >/dev/null 2>&1
 rc42stale=$?
-[ "$rc42stale" -eq 0 ] && [ -d "$evstale/.agent" ] && pass "evals: ts-service-stale-rule builds and its premises hold" || fail "evals: ts-service-stale-rule builds and its premises hold (rc=$rc42stale)"
+[ "$rc42stale" -eq 0 ] && [ -d "$evstale/.agents" ] && pass "evals: ts-service-stale-rule builds and its premises hold" || fail "evals: ts-service-stale-rule builds and its premises hold (rc=$rc42stale)"
 
 evfailing="$WORK/eval-fixture-failing"
 "$evroot/fixtures.sh" ts-service-failing "$evfailing" --corpus-dir "$reporoot" >/dev/null 2>&1
 rc42failing=$?
-[ "$rc42failing" -eq 0 ] && [ -d "$evfailing/.agent" ] && pass "evals: ts-service-failing builds and its premises hold" || fail "evals: ts-service-failing builds and its premises hold (rc=$rc42failing)"
+[ "$rc42failing" -eq 0 ] && [ -d "$evfailing/.agents" ] && pass "evals: ts-service-failing builds and its premises hold" || fail "evals: ts-service-failing builds and its premises hold (rc=$rc42failing)"
 
 evgenwarm="$WORK/eval-fixture-generated-warm"
 "$evroot/fixtures.sh" ts-service "$evgenwarm" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42genwarm=$?
-[ "$rc42genwarm" -eq 0 ] && [ -s "$evgenwarm/.agent/indexes/current.md" ] \
+[ "$rc42genwarm" -eq 0 ] && [ -s "$evgenwarm/.agents/indexes/current.md" ] \
   && pass "evals: a generated-mode fixture builds and its indexer leaves a warm cache" \
   || fail "evals: a generated-mode fixture builds and its indexer leaves a warm cache (rc=$rc42genwarm)"
 
 evidxfault="$WORK/eval-fixture-index-fault"
 "$evroot/fixtures.sh" ts-service-index-fault "$evidxfault" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42idxfault=$?
-[ "$rc42idxfault" -eq 0 ] && grep -qx 'stale0000000000000000000000000000000000' "$evidxfault/.agent/indexes/current.md" 2>/dev/null \
+[ "$rc42idxfault" -eq 0 ] && grep -qx 'stale0000000000000000000000000000000000' "$evidxfault/.agents/indexes/current.md" 2>/dev/null \
   && pass "evals: the index-fault fixture arrives with a stale entry its eval must recover from" \
   || fail "evals: the index-fault fixture arrives with a stale entry its eval must recover from (rc=$rc42idxfault)"
 
 evnoidx="$WORK/eval-fixture-no-indexer"
 "$evroot/fixtures.sh" ts-service-no-indexer "$evnoidx" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42noidx=$?
-[ "$rc42noidx" -eq 0 ] && [ ! -e "$evnoidx/.agent/scripts/index.sh" ] \
+[ "$rc42noidx" -eq 0 ] && [ ! -e "$evnoidx/.agents/scripts/index.sh" ] \
   && pass "evals: the no-indexer fixture arrives with no installed indexer" \
   || fail "evals: the no-indexer fixture arrives with no installed indexer (rc=$rc42noidx)"
 
@@ -3191,29 +3199,29 @@ evbranchsw="$WORK/eval-fixture-branch-switched"
 "$evroot/fixtures.sh" ts-service-branch-switched "$evbranchsw" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42bsw=$?
 bsw_branch=$(git -C "$evbranchsw" branch --show-current 2>/dev/null)
-bsw_other_has_note=$(git -C "$evbranchsw" show fixture-other:.agent/docs/branch-notes.md 2>/dev/null | grep -c 'Only on fixture-other')
-bsw_here_lacks_note=$(grep -c 'Only on fixture-other' "$evbranchsw/.agent/docs/branch-notes.md" 2>/dev/null)
+bsw_other_has_note=$(git -C "$evbranchsw" show fixture-other:.agents/docs/branch-notes.md 2>/dev/null | grep -c 'Only on fixture-other')
+bsw_here_lacks_note=$(grep -c 'Only on fixture-other' "$evbranchsw/.agents/docs/branch-notes.md" 2>/dev/null)
 [ "$rc42bsw" -eq 0 ] && [ "$bsw_branch" = "fixture-base" ] && [ "${bsw_other_has_note:-0}" -ge 1 ] \
-  && [ "${bsw_here_lacks_note:-0}" -eq 0 ] && [ -s "$evbranchsw/.agent/indexes/current.md" ] \
+  && [ "${bsw_here_lacks_note:-0}" -eq 0 ] && [ -s "$evbranchsw/.agents/indexes/current.md" ] \
   && pass "evals: the branch-switched fixture arrives with a cache built on the other branch" \
   || fail "evals: the branch-switched fixture arrives with a cache built on the other branch (rc=$rc42bsw, branch=$bsw_branch)"
 
 evpartmig="$WORK/eval-fixture-partial-migration"
 "$evroot/fixtures.sh" ts-service-partial-migration "$evpartmig" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
 rc42partmig=$?
-[ "$rc42partmig" -eq 0 ] && grep -q 'semantic-review-pending' "$evpartmig/.agent/migration-inventory.md" 2>/dev/null \
-  && grep -q 'hook-missing' "$evpartmig/.agent/migration-inventory.md" 2>/dev/null \
+[ "$rc42partmig" -eq 0 ] && grep -q 'semantic-review-pending' "$evpartmig/.agents/migration-inventory.md" 2>/dev/null \
+  && grep -q 'hook-missing' "$evpartmig/.agents/migration-inventory.md" 2>/dev/null \
   && pass "evals: the partial-migration fixture arrives carrying both pending classes" \
   || fail "evals: the partial-migration fixture arrives carrying both pending classes (rc=$rc42partmig)"
 
 evlearndir="$WORK/eval-learned-delta-fallback"
 mkdir -p "$evlearndir/outputs"
 cat >"$evlearndir/outputs/node-diff.patch" <<'EOF'
-diff --git a/.agent/rules/learned/aaaaaaaaaaaa.md b/.agent/rules/learned/aaaaaaaaaaaa.md
+diff --git a/.agents/rules/learned/aaaaaaaaaaaa.md b/.agents/rules/learned/aaaaaaaaaaaa.md
 new file mode 100644
 index 0000000..1111111
 --- /dev/null
-+++ b/.agent/rules/learned/aaaaaaaaaaaa.md
++++ b/.agents/rules/learned/aaaaaaaaaaaa.md
 @@ -0,0 +1 @@
 +- [2026-09-19] Prefer the generated record directory over the aggregate.
 EOF
@@ -3248,7 +3256,7 @@ premtargetrc42=$?
 evbare="$WORK/eval-fixture-bare"
 "$evroot/fixtures.sh" ts-service "$evbare" --corpus-dir "$reporoot" --no-harness >/dev/null 2>&1
 rc42bare=$?
-[ "$rc42bare" -eq 0 ] && [ ! -d "$evbare/.agent" ] \
+[ "$rc42bare" -eq 0 ] && [ ! -d "$evbare/.agents" ] \
   && [ -f "$evbare.verifier/scripts/status.sh" ] && [ -f "$evbare.verifier/scripts/comments.sh" ] \
   && pass "evals: --no-harness builds a fixture with no node and the verifier beside it" \
   || fail "evals: --no-harness builds a fixture with no node and the verifier beside it (rc=$rc42bare)"
@@ -3262,12 +3270,12 @@ rc42bare=$?
 evgen="$WORK/eval-fixture-generic"
 "$evroot/fixtures.sh" ts-service "$evgen" --corpus-dir "$reporoot" --generic-claude >/dev/null 2>&1
 rc42gen=$?
-[ "$rc42gen" -eq 0 ] && [ ! -d "$evgen/.agent" ] && [ -f "$evgen/CLAUDE.md" ] \
+[ "$rc42gen" -eq 0 ] && [ ! -d "$evgen/.agents" ] && [ -f "$evgen/CLAUDE.md" ] \
   && cmp -s "$evgen/CLAUDE.md" "$evgen/AGENTS.md" \
   && pass "evals: --generic-claude writes an instructions file and mirrors it to AGENTS.md" \
   || fail "evals: --generic-claude writes an instructions file and mirrors it to AGENTS.md (rc=$rc42gen)"
 
-! grep -qiE '\.agent|entry point|routing|learned rule|session log' "$evgen/CLAUDE.md" \
+! grep -qiE '\.agents|entry point|routing|learned rule|session log' "$evgen/CLAUDE.md" \
   && grep -q 'npm test' "$evgen/CLAUDE.md" \
   && pass "evals: the generic instructions file names real commands and no node scaffolding" \
   || fail "evals: the generic instructions file names real commands and no node scaffolding"
@@ -3420,7 +3428,7 @@ for line in sys.stdin:
     break
 
 if mode == "adversarial-file" and turn == 1:
-    hostile = '.agent/pwn"; touch ../outside-capture; #/payload'
+    hostile = '.agents/pwn"; touch ../outside-capture; #/payload'
     os.makedirs(os.path.dirname(hostile), exist_ok=True)
     open(hostile, "w").write("hostile filename payload\n")
 if mode == "gate-findings" and turn == 1:
@@ -3435,13 +3443,13 @@ if mode == "verifier-attack" and turn == 1:
     open("src/verifier-attack.ts", "w").write(
         "// Refactored per commit deadbeefcafe1234.\nexport const safe = true;\n")
     payload = '#!/bin/sh\ntouch "$FAKE_VERIFIER_ATTACK_MARKER"\nprintf "FORGED\\n"\n'
-    open(".agent/scripts/status.sh", "w").write(payload)
-    open(".agent/scripts/comments.sh", "w").write(payload)
+    open(".agents/scripts/status.sh", "w").write(payload)
+    open(".agents/scripts/comments.sh", "w").write(payload)
     # ENTRYPOINT_MAX_WORDS=1 would spuriously flag CLAUDE.md under the
     # tampered value (the trusted default, 600, does not); EXCLUDE_RE_EXTRA
     # would hide the file above from comments.sh entirely if honored.
-    open(".agent/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
-    open(".agent/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")
+    open(".agents/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
+    open(".agents/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")
 if mode == "success-resistant-child" and turn == 1:
     # The leader completes this turn and exits 0 normally, but leaves a
     # detached child and grandchild behind in its own process group,
@@ -4113,7 +4121,7 @@ COMPAT_NODE="$NODE" "$evroot/fixtures.sh" ts-service "$compat_manual" \
   --corpus-dir "$compat_corpus" --indexes manual >"$evfake/pre-indexes-manual.out" 2>&1
 rc44compatmanual=$?
 [ "$rc44compatmanual" -eq 0 ] && pass "evals: a manual fixture builds against a corpus predating --indexes" || fail "evals: a manual fixture builds against a corpus predating --indexes (rc=$rc44compatmanual; $(cat "$evfake/pre-indexes-manual.out"))"
-grep -q '^  indexes: manual' "$compat_manual/.agent/purpose.md" 2>/dev/null \
+grep -q '^  indexes: manual' "$compat_manual/.agents/purpose.md" 2>/dev/null \
   && pass "evals: the pre-indexes compatibility path preserves the manual default" \
   || fail "evals: the pre-indexes compatibility path preserves the manual default"
 COMPAT_NODE="$NODE" "$evroot/fixtures.sh" ts-service "$evfake/pre-indexes-generated" \
@@ -4133,11 +4141,11 @@ rc44hostile=$?
 hostile_run=$(find "$wsc_hostile/iteration-1/eval-scope-question-no-edit" \
   -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
 escaped_hostile=$(find "$wsc_hostile" -name outside-capture -print -quit 2>/dev/null)
-hostile_payload=$(find "$hostile_run/fixture/.agent" -name payload -print -quit 2>/dev/null)
+hostile_payload=$(find "$hostile_run/fixture/.agents" -name payload -print -quit 2>/dev/null)
 if [ "$rc44hostile" -eq 0 ] && [ -n "$hostile_payload" ] && [ -z "$escaped_hostile" ]; then
-  pass "evals: node-tree capture treats adversarial .agent filenames as data"
+  pass "evals: node-tree capture treats adversarial .agents filenames as data"
 else
-  fail "evals: node-tree capture treats adversarial .agent filenames as data (rc=$rc44hostile escaped=$escaped_hostile)"
+  fail "evals: node-tree capture treats adversarial .agents filenames as data (rc=$rc44hostile escaped=$escaped_hostile)"
 fi
 
 wsc_gate_findings="$evfake/claude workspace-gate-findings"
@@ -4275,7 +4283,7 @@ bare_harness=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["
   "$wsc_bare/iteration-1/run-config.json" 2>/dev/null)
 if [ "$rc44bare" -eq 0 ] && [ -n "$bare_run" ] && [ -f "$bare_run/grading.json" ] \
   && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("void"))' "$bare_run/run-meta.json" 2>/dev/null)" = "False" ] \
-  && grep -q 'no .agent directory' "$bare_run/outputs/status-after.txt" 2>/dev/null \
+  && grep -q 'no .agents directory' "$bare_run/outputs/status-after.txt" 2>/dev/null \
   && [ "$bare_harness" = "none" ]; then
   pass "evals: a no-harness run grades instead of voiding, and records its harness mode"
 else
@@ -4739,16 +4747,16 @@ cat >"$gd/snap.json" <<'EOF'
 EOF
 printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$gd/outputs/diff.patch"
 ndrepo="$WORK/eval-node-diff"
-mkdir -p "$ndrepo/.agent/memory"
-printf 'seed\n' >"$ndrepo/.agent/memory/x.md"
+mkdir -p "$ndrepo/.agents/memory"
+printf 'seed\n' >"$ndrepo/.agents/memory/x.md"
 git -C "$ndrepo" init -q
 git -C "$ndrepo" add -A
 git -C "$ndrepo" -c user.name=eval -c user.email=eval@local -c commit.gpgsign=false \
   commit -q -m base
 nd_base=$(git -C "$ndrepo" rev-parse HEAD)
-printf 'a line\n' >>"$ndrepo/.agent/memory/x.md"
+printf 'a line\n' >>"$ndrepo/.agents/memory/x.md"
 git -C "$ndrepo" add -A
-git -C "$ndrepo" diff --cached "$nd_base" -- .agent >"$gd/outputs/node-diff.patch"
+git -C "$ndrepo" diff --cached "$nd_base" -- .agents >"$gd/outputs/node-diff.patch"
 printf '{"seq":0,"event":"call","tool":"read_file","action":"read","text":"read catalog"}\n{"seq":1,"event":"call","tool":"write_file","action":"write","text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
 printf 'nothing sensitive here\n' >"$gd/outputs/node-tree.txt"
 "$evroot/grade.py" "$gd" "$gd/snap.json" >/dev/null 2>&1
@@ -4843,12 +4851,12 @@ trace_legacy=$(trace_result)
 printf '%s\n' "$trace_legacy" | grep -q '^True|True|' && pass "evals: valid legacy seq/text traces remain gradeable" || fail "evals: valid legacy seq/text traces remain gradeable ($trace_legacy)"
 
 tracefix_priv="/private/tmp/evtrace-$$"
-mkdir -p "$tracefix_priv/.agent/rules"
-printf 'a rule\n' >"$tracefix_priv/.agent/rules/learned.md"
+mkdir -p "$tracefix_priv/.agents/rules"
+printf 'a rule\n' >"$tracefix_priv/.agents/rules/learned.md"
 tracefix_tmp="/tmp/evtrace-$$"
 cat >"$gd/outputs/claude-stream-alias.jsonl" <<EOF
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"$tracefix_tmp/.agent/rules/learned.md"}}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat $tracefix_tmp/.agent/rules/learned.md"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"$tracefix_tmp/.agents/rules/learned.md"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat $tracefix_tmp/.agents/rules/learned.md"}}]}}
 {"type":"result","result":"done"}
 EOF
 "$evroot/run_lib.py" extract-claude-trace "$gd/outputs/claude-stream-alias.jsonl" "$gd/outputs/trace-alias.jsonl" \
@@ -4856,15 +4864,15 @@ EOF
 rc_alias=$?
 trace_alias_lines=$(cat "$gd/outputs/trace-alias.jsonl" 2>/dev/null)
 if [ "$rc_alias" -eq 0 ] \
-  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"read:\.agent/rules/learned\.md"' \
-  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"execute:cat \.agent/rules/learned\.md"'; then
+  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"read:\.agents/rules/learned\.md"' \
+  && printf '%s\n' "$trace_alias_lines" | grep -q '"text": *"execute:cat \.agents/rules/learned\.md"'; then
   pass "evals: trace extractor strips the other side of a macOS /tmp alias"
 else
   fail "evals: trace extractor strips the other side of a macOS /tmp alias (rc=$rc_alias $trace_alias_lines)"
 fi
 
 cat >"$gd/outputs/claude-stream-foreign.jsonl" <<'EOF'
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/etc/other/.agent/x"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/etc/other/.agents/x"}}]}}
 {"type":"result","result":"done"}
 EOF
 "$evroot/run_lib.py" extract-claude-trace "$gd/outputs/claude-stream-foreign.jsonl" "$gd/outputs/trace-foreign.jsonl" \
@@ -5790,30 +5798,30 @@ done
 [ -z "$phrase_hits48" ] && pass "routing guidance: the retired phrase \"doc index\" appears nowhere" || fail "routing guidance: retired phrase \"doc index\" found:$phrase_hits48"
 
 g41="$WORK/g41"
-mkdir -p "$g41/.agent/rules" "$g41/.agent/docs"
-printf '# Rule Title\nLine one.\nLine two.\n' >"$g41/.agent/rules/r.md"
-printf '# Doc With Hook\n<!-- Read when: working on billing -->\nBody.\n' >"$g41/.agent/docs/hooked.md"
-printf 'No heading here.\n<!-- Read when: no title case -->\n' >"$g41/.agent/docs/notitle.md"
-printf '# Doc Without Hook\nJust body, no hook comment.\n' >"$g41/.agent/docs/nohook.md"
-printf '# Linked Rule\nSee [sibling](other.md) and [abs](/etc/hosts) and [ext](https://example.com/page) and [titled](other.md "See the other").\n' >"$g41/.agent/rules/linked.md"
-printf '# Other\nOther content.\n' >"$g41/.agent/rules/other.md"
-mkdir -p "$g41/.agent/rules/sub"
-printf '# Nested Rule\nSee [alpha doc](../../docs/hooked.md) for context.\n' >"$g41/.agent/rules/sub/nested.md"
+mkdir -p "$g41/.agents/rules" "$g41/.agents/docs"
+printf '# Rule Title\nLine one.\nLine two.\n' >"$g41/.agents/rules/r.md"
+printf '# Doc With Hook\n<!-- Read when: working on billing -->\nBody.\n' >"$g41/.agents/docs/hooked.md"
+printf 'No heading here.\n<!-- Read when: no title case -->\n' >"$g41/.agents/docs/notitle.md"
+printf '# Doc Without Hook\nJust body, no hook comment.\n' >"$g41/.agents/docs/nohook.md"
+printf '# Linked Rule\nSee [sibling](other.md) and [abs](/etc/hosts) and [ext](https://example.com/page) and [titled](other.md "See the other").\n' >"$g41/.agents/rules/linked.md"
+printf '# Other\nOther content.\n' >"$g41/.agents/rules/other.md"
+mkdir -p "$g41/.agents/rules/sub"
+printf '# Nested Rule\nSee [alpha doc](../../docs/hooked.md) for context.\n' >"$g41/.agents/rules/sub/nested.md"
 "$IDXSH" ensure --root "$g41" >"$WORK/g41.out" 2>"$WORK/g41.err"
-g41gen=$(sed -n 2p "$g41/.agent/indexes/current.md")
-g41dir="$g41/.agent/indexes/$g41gen"
+g41gen=$(sed -n 2p "$g41/.agents/indexes/current.md")
+g41dir="$g41/.agents/indexes/$g41gen"
 
-grep -qF "Source: $g41/.agent/rules/r.md" "$g41dir"/rules-*.md \
+grep -qF "Source: .agents/rules/r.md" "$g41dir"/rules-*.md \
   && grep -qF 'Line one.' "$g41dir"/rules-*.md && grep -qF 'Line two.' "$g41dir"/rules-*.md \
   && pass "grammar: a rule record's full body renders verbatim behind its Source: line" \
   || fail "grammar: a rule record's full body renders verbatim behind its Source: line"
 
-grep -qF -- "- Doc With Hook | working on billing | READ: $g41/.agent/docs/hooked.md" "$g41dir"/routes-*.md \
+grep -qF -- "- Doc With Hook | working on billing | READ: .agents/docs/hooked.md" "$g41dir"/routes-*.md \
   && pass "grammar: a route record's title and hook come from its heading and Read-when comment" \
   || fail "grammar: a route record's title and hook come from its heading and Read-when comment"
 
-grep -qF "READ: $g41/.agent/docs/notitle.md" "$g41dir"/routes-*.md \
-  && grep -qF '.agent/docs/notitle.md | no title case | READ:' "$g41dir"/routes-*.md \
+grep -qF "READ: .agents/docs/notitle.md" "$g41dir"/routes-*.md \
+  && grep -qF '.agents/docs/notitle.md | no title case | READ:' "$g41dir"/routes-*.md \
   && pass "grammar: a missing heading falls back to the record's own path as title" \
   || fail "grammar: a missing heading falls back to the record's own path as title"
 
@@ -5830,18 +5838,18 @@ grep -qF -- '[ext](https://example.com/page)' "$g41dir"/rules-*.md \
   || fail "links: a scheme URL link is left unmodified"
 
 g41sibling=$(grep -ohE '\[sibling\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[sibling\]\(([^)]*)\)$/\1/')
-[ -n "$g41sibling" ] && [ -f "$g41sibling" ] && [ "$g41sibling" = "$g41/.agent/rules/other.md" ] \
+[ -n "$g41sibling" ] && [ -f "$g41/$g41sibling" ] && [ "$g41sibling" = ".agents/rules/other.md" ] \
   && pass "links: a relative link between two rule records rewrites to a path that resolves to the original sibling" \
   || fail "links: a relative link between two rule records rewrites to a path that resolves to the original sibling"
 
 g41nested=$(grep -ohE '\[alpha doc\]\([^)]*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[alpha doc\]\(([^)]*)\)$/\1/')
-[ -n "$g41nested" ] && [ -f "$g41nested" ] && [ "$g41nested" = "$g41/.agent/docs/hooked.md" ] \
-  && pass "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc" \
-  || fail "links: a relative link from a nested rule up into .agent/docs/ resolves to the original doc"
+[ -n "$g41nested" ] && [ -f "$g41/$g41nested" ] && [ "$g41nested" = ".agents/docs/hooked.md" ] \
+  && pass "links: a relative link from a nested rule up into .agents/docs/ resolves to the original doc" \
+  || fail "links: a relative link from a nested rule up into .agents/docs/ resolves to the original doc"
 
 g41titled=$(grep -ohE '\[titled\]\(.*\)' "$g41dir"/rules-*.md | head -1 | sed -E 's/^\[titled\]\((.*)\)$/\1/')
 g41titledpath=$(printf '%s\n' "$g41titled" | sed -E 's/ "[^"]*"$//')
-[ -n "$g41titledpath" ] && [ -f "$g41titledpath" ] && [ "$g41titledpath" = "$g41/.agent/rules/other.md" ] \
+[ -n "$g41titledpath" ] && [ -f "$g41/$g41titledpath" ] && [ "$g41titledpath" = ".agents/rules/other.md" ] \
   && printf '%s\n' "$g41titled" | grep -qF '"See the other"' \
   && pass "links: a titled relative link rewrites the path and preserves the title" \
   || fail "links: a titled relative link rewrites the path and preserves the title ($g41titled)"
@@ -5851,73 +5859,73 @@ make_index_fixture "$i42"
 "$IDXSH" ensure --root "$i42" >"$WORK/i42.out1" 2>"$WORK/i42.err1"
 grep -q '^BUILT$' "$WORK/i42.err1" && pass "ensure: a missing index is an initial BUILT, not an error" \
   || fail "ensure: a missing index is an initial BUILT, not an error"
-[ "$(cat "$WORK/i42.out1")" = "$i42/.agent/indexes/current.md" ] \
+[ "$(cat "$WORK/i42.out1")" = "$i42/.agents/indexes/current.md" ] \
   && pass "ensure: stdout is the absolute entry path" || fail "ensure: stdout is the absolute entry path"
-i42old=$(cat "$i42/.agent/indexes/current.md")
-idx_snapshot "$i42/.agent/indexes" >"$WORK/i42.before"
+i42old=$(cat "$i42/.agents/indexes/current.md")
+idx_snapshot "$i42/.agents/indexes" >"$WORK/i42.before"
 "$IDXSH" ensure --root "$i42" >"$WORK/i42.out2" 2>"$WORK/i42.err2"
-idx_snapshot "$i42/.agent/indexes" >"$WORK/i42.after"
+idx_snapshot "$i42/.agents/indexes" >"$WORK/i42.after"
 grep -q '^HIT$' "$WORK/i42.err2" && pass "ensure: an unchanged tree is a warm HIT" || fail "ensure: an unchanged tree is a warm HIT"
-[ "$i42old" = "$(cat "$i42/.agent/indexes/current.md")" ] && pass "ensure: a warm hit republishes nothing" || fail "ensure: a warm hit republishes nothing"
+[ "$i42old" = "$(cat "$i42/.agents/indexes/current.md")" ] && pass "ensure: a warm hit republishes nothing" || fail "ensure: a warm hit republishes nothing"
 cmp -s "$WORK/i42.before" "$WORK/i42.after" && pass "ensure: a warm hit writes zero bytes and touches no mtime" \
   || fail "ensure: a warm hit writes zero bytes and touches no mtime"
 
 i43="$WORK/i43"
 make_index_fixture "$i43"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>&1
-i43old=$(cat "$i43/.agent/indexes/current.md")
+i43old=$(cat "$i43/.agents/indexes/current.md")
 
-printf '# Added\nNew record.\n' >"$i43/.agent/docs/added.md"
+printf '# Added\nNew record.\n' >"$i43/.agents/docs/added.md"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>"$WORK/i43.a.err"
-i43new=$(cat "$i43/.agent/indexes/current.md")
+i43new=$(cat "$i43/.agents/indexes/current.md")
 [ "$i43old" != "$i43new" ] && grep -q '^BUILT$' "$WORK/i43.a.err" && pass "invalidation: a source addition rebuilds" \
   || fail "invalidation: a source addition rebuilds"
 i43old="$i43new"
 
-printf 'Uncommitted change.\n' >>"$i43/.agent/docs/architecture.md"
+printf 'Uncommitted change.\n' >>"$i43/.agents/docs/architecture.md"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>&1
-i43new=$(cat "$i43/.agent/indexes/current.md")
+i43new=$(cat "$i43/.agents/indexes/current.md")
 [ "$i43old" != "$i43new" ] && pass "invalidation: an uncommitted content change rebuilds" \
   || fail "invalidation: an uncommitted content change rebuilds"
 i43old="$i43new"
 
-touch -r "$i43/.agent/docs/architecture.md" "$WORK/i43.stamp"
-sed 's/alpha/omega/' "$i43/.agent/docs/architecture.md" >"$WORK/i43.edit"
-cat "$WORK/i43.edit" >"$i43/.agent/docs/architecture.md"
-touch -r "$WORK/i43.stamp" "$i43/.agent/docs/architecture.md"
+touch -r "$i43/.agents/docs/architecture.md" "$WORK/i43.stamp"
+sed 's/alpha/omega/' "$i43/.agents/docs/architecture.md" >"$WORK/i43.edit"
+cat "$WORK/i43.edit" >"$i43/.agents/docs/architecture.md"
+touch -r "$WORK/i43.stamp" "$i43/.agents/docs/architecture.md"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>&1
-i43new=$(cat "$i43/.agent/indexes/current.md")
+i43new=$(cat "$i43/.agents/indexes/current.md")
 [ "$i43old" != "$i43new" ] && pass "invalidation: a same-length, timestamp-preserving edit rebuilds" \
   || fail "invalidation: a same-length, timestamp-preserving edit rebuilds"
 i43old="$i43new"
 
-mv "$i43/.agent/docs/added.md" "$i43/.agent/docs/renamed.md"
+mv "$i43/.agents/docs/added.md" "$i43/.agents/docs/renamed.md"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>&1
-i43new=$(cat "$i43/.agent/indexes/current.md")
+i43new=$(cat "$i43/.agents/indexes/current.md")
 [ "$i43old" != "$i43new" ] && pass "invalidation: a rename rebuilds" || fail "invalidation: a rename rebuilds"
 i43old="$i43new"
 
-rm "$i43/.agent/docs/renamed.md"
+rm "$i43/.agents/docs/renamed.md"
 "$IDXSH" ensure --root "$i43" >/dev/null 2>&1
-i43new=$(cat "$i43/.agent/indexes/current.md")
+i43new=$(cat "$i43/.agents/indexes/current.md")
 [ "$i43old" != "$i43new" ] && pass "invalidation: a deletion rebuilds" || fail "invalidation: a deletion rebuilds"
 
 i44="$WORK/i44"
 make_index_fixture "$i44"
 "$IDXSH" ensure --root "$i44" >/dev/null 2>&1
-i44gen=$(sed -n 2p "$i44/.agent/indexes/current.md")
-printf 'damage\n' >>"$i44/.agent/indexes/$i44gen"/routes-1.md
+i44gen=$(sed -n 2p "$i44/.agents/indexes/current.md")
+printf 'damage\n' >>"$i44/.agents/indexes/$i44gen"/routes-1.md
 "$IDXSH" ensure --root "$i44" >/dev/null 2>"$WORK/i44.d.err"
 grep -q '^BUILT$' "$WORK/i44.d.err" && pass "verification: a damaged page forces a rebuild" \
   || fail "verification: a damaged page forces a rebuild"
 
-i44gen=$(sed -n 2p "$i44/.agent/indexes/current.md")
-rm "$i44/.agent/indexes/$i44gen"/rules-1.md
+i44gen=$(sed -n 2p "$i44/.agents/indexes/current.md")
+rm "$i44/.agents/indexes/$i44gen"/rules-1.md
 "$IDXSH" ensure --root "$i44" >/dev/null 2>"$WORK/i44.m.err"
 grep -q '^BUILT$' "$WORK/i44.m.err" && pass "verification: a missing page forces a rebuild" \
   || fail "verification: a missing page forces a rebuild"
 
-printf 'unexpected instruction\n' >>"$i44/.agent/indexes/current.md"
+printf 'unexpected instruction\n' >>"$i44/.agents/indexes/current.md"
 "$IDXSH" ensure --root "$i44" >/dev/null 2>"$WORK/i44.e.err"
 grep -q '^BUILT$' "$WORK/i44.e.err" && pass "verification: tampering with the entry itself forces a rebuild" \
   || fail "verification: tampering with the entry itself forces a rebuild"
@@ -5925,72 +5933,72 @@ grep -q '^BUILT$' "$WORK/i44.e.err" && pass "verification: tampering with the en
 i45="$WORK/i45"
 make_index_fixture "$i45"
 "$IDXSH" ensure --root "$i45" >/dev/null 2>&1
-i45old=$(cat "$i45/.agent/indexes/current.md")
+i45old=$(cat "$i45/.agents/indexes/current.md")
 cp "$IDXSH" "$WORK/i45-index.sh"
 printf '\n# a generator revision\n' >>"$WORK/i45-index.sh"
 chmod +x "$WORK/i45-index.sh"
 "$WORK/i45-index.sh" ensure --root "$i45" >/dev/null 2>"$WORK/i45.g.err"
-i45new=$(cat "$i45/.agent/indexes/current.md")
+i45new=$(cat "$i45/.agents/indexes/current.md")
 [ "$i45old" != "$i45new" ] && grep -q '^BUILT$' "$WORK/i45.g.err" \
   && pass "invalidation: a changed generator rebuilds" || fail "invalidation: a changed generator rebuilds"
 
-i45oldgen=$(sed -n 2p "$i45/.agent/indexes/current.md")
+i45oldgen=$(sed -n 2p "$i45/.agents/indexes/current.md")
 "$IDXSH" ensure --root "$i45" --budget 4096 >/dev/null 2>"$WORK/i45.b.err"
-i45newgen=$(sed -n 2p "$i45/.agent/indexes/current.md")
+i45newgen=$(sed -n 2p "$i45/.agents/indexes/current.md")
 [ "$i45oldgen" != "$i45newgen" ] && grep -q '^BUILT$' "$WORK/i45.b.err" \
   && pass "invalidation: a changed budget rebuilds" || fail "invalidation: a changed budget rebuilds"
-cmp -s "$i45/.agent/indexes/$i45oldgen"/rules-1.md "$i45/.agent/indexes/$i45newgen"/rules-1.md \
-  && cmp -s "$i45/.agent/indexes/$i45oldgen"/routes-1.md "$i45/.agent/indexes/$i45newgen"/routes-1.md \
+cmp -s "$i45/.agents/indexes/$i45oldgen"/rules-1.md "$i45/.agents/indexes/$i45newgen"/rules-1.md \
+  && cmp -s "$i45/.agents/indexes/$i45oldgen"/routes-1.md "$i45/.agents/indexes/$i45newgen"/routes-1.md \
   && pass "rendering: equivalent inputs and budget render byte-identical pages" \
   || fail "rendering: equivalent inputs and budget render byte-identical pages"
 
 i46="$WORK/i46"
 make_index_fixture "$i46"
 i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err1"); i46rc=$?
-[ "$i46rc" -eq 1 ] && [ "$i46out" = STALE ] && [ ! -e "$i46/.agent/indexes" ] \
+[ "$i46rc" -eq 1 ] && [ "$i46out" = STALE ] && [ ! -e "$i46/.agents/indexes" ] \
   && pass "check: no index yet is STALE and creates nothing" || fail "check: no index yet is STALE and creates nothing"
 "$IDXSH" ensure --root "$i46" >/dev/null 2>&1
 i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err2"); i46rc=$?
 [ "$i46rc" -eq 0 ] && [ "$i46out" = FRESH ] && pass "check: a valid cache is FRESH at exit 0" \
   || fail "check: a valid cache is FRESH at exit 0"
-printf 'more\n' >>"$i46/.agent/docs/architecture.md"
+printf 'more\n' >>"$i46/.agents/docs/architecture.md"
 i46out=$("$IDXSH" check --root "$i46" 2>"$WORK/i46.err3"); i46rc=$?
 [ "$i46rc" -eq 1 ] && [ "$i46out" = STALE ] && pass "check: a changed source is STALE at exit 1" \
   || fail "check: a changed source is STALE at exit 1"
 
 i47sym="$WORK/i47sym"
 make_index_fixture "$i47sym"
-ln -s architecture.md "$i47sym/.agent/docs/link.md"
+ln -s architecture.md "$i47sym/.agents/docs/link.md"
 "$IDXSH" ensure --root "$i47sym" >/dev/null 2>"$WORK/i47.sym.err"
 grep -q 'FALLBACK:' "$WORK/i47.sym.err" && pass "rejection: a source symlink falls back rather than being indexed" \
   || fail "rejection: a source symlink falls back rather than being indexed"
 
 i47bad="$WORK/i47bad"
 make_index_fixture "$i47bad"
-printf '# Bad\n' >"$i47bad/.agent/docs/bad name.md"
+printf '# Bad\n' >"$i47bad/.agents/docs/bad name.md"
 "$IDXSH" ensure --root "$i47bad" >/dev/null 2>"$WORK/i47.bad.err"
 grep -q 'FALLBACK:' "$WORK/i47.bad.err" && pass "rejection: an unsupported filename falls back rather than being indexed" \
   || fail "rejection: an unsupported filename falls back rather than being indexed"
 
 i47big="$WORK/i47big"
-mkdir -p "$i47big/.agent/rules"
-awk 'BEGIN { for (i = 0; i < 2000; i++) print "long rule line filler text" }' >"$i47big/.agent/rules/large.md"
+mkdir -p "$i47big/.agents/rules"
+awk 'BEGIN { for (i = 0; i < 2000; i++) print "long rule line filler text" }' >"$i47big/.agents/rules/large.md"
 "$IDXSH" ensure --root "$i47big" --budget 256 >/dev/null 2>"$WORK/i47.big.err"
 grep -q 'record exceeds page budget' "$WORK/i47.big.err" && grep -q 'FALLBACK:' "$WORK/i47.big.err" \
   && pass "overflow: a record too large for its own page falls back without truncation" \
   || fail "overflow: a record too large for its own page falls back without truncation"
 
-i47long="$WORK/i47long/$(printf '%0140d' 0)"
-mkdir -p "$i47long/.agent/docs"
-printf '# A\n' >"$i47long/.agent/docs/a.md"
+# The entry holds one READ line per page, so many small routes split across
+# many pages at a small budget, and the entry outgrows that budget.
+i47long="$WORK/i47long"
+mkdir -p "$i47long/.agents/docs"
+i47n=0
+while [ "$i47n" -lt 40 ]; do printf '# Doc %s\n' "$i47n" >"$i47long/.agents/docs/doc-$i47n.md"; i47n=$((i47n + 1)); done
 "$IDXSH" ensure --root "$i47long" >/dev/null 2>&1
-cp "$i47long/.agent/indexes/current.md" "$WORK/i47.long-entry"
-i47priorbytes=$(wc -c <"$WORK/i47.long-entry")
-i47smallbudget=$((i47priorbytes - 1))
-[ "$i47smallbudget" -ge 256 ] || i47smallbudget=256
-"$IDXSH" ensure --root "$i47long" --budget "$i47smallbudget" >/dev/null 2>"$WORK/i47.long.err"
+cp "$i47long/.agents/indexes/current.md" "$WORK/i47.long-entry"
+"$IDXSH" ensure --root "$i47long" --budget 256 >/dev/null 2>"$WORK/i47.long.err"
 grep -q 'entry exceeds page budget' "$WORK/i47.long.err" && grep -q 'FALLBACK:' "$WORK/i47.long.err" \
-  && cmp -s "$WORK/i47.long-entry" "$i47long/.agent/indexes/current.md" \
+  && cmp -s "$WORK/i47.long-entry" "$i47long/.agents/indexes/current.md" \
   && pass "overflow: an entry too large for the budget falls back and preserves the prior publication" \
   || fail "overflow: an entry too large for the budget falls back and preserves the prior publication"
 
@@ -6020,30 +6028,30 @@ exit "\$rc"
 WRAPPER
 chmod +x "$WORK/i48bin/awk"
 
-printf 'stale-before-retry\n' >>"$i48/.agent/docs/architecture.md"
-i48old=$(cat "$i48/.agent/indexes/current.md")
+printf 'stale-before-retry\n' >>"$i48/.agents/docs/architecture.md"
+i48old=$(cat "$i48/.agents/indexes/current.md")
 rm -f "$WORK/i48.marker"
-PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_once MARKER="$WORK/i48.marker" TARGET="$i48/.agent/docs/architecture.md" \
+PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_once MARKER="$WORK/i48.marker" TARGET="$i48/.agents/docs/architecture.md" \
   "$IDXSH" ensure --root "$i48" >/dev/null 2>"$WORK/i48.once.err"
-grep -q '^BUILT$' "$WORK/i48.once.err" && [ "$i48old" != "$(cat "$i48/.agent/indexes/current.md")" ] \
+grep -q '^BUILT$' "$WORK/i48.once.err" && [ "$i48old" != "$(cat "$i48/.agents/indexes/current.md")" ] \
   && pass "retry: a one-time transient mutation during rendering still succeeds via retry" \
   || fail "retry: a one-time transient mutation during rendering still succeeds via retry"
 
-i48old=$(cat "$i48/.agent/indexes/current.md")
-printf 'force-stale\n' >>"$i48/.agent/docs/architecture.md"
-PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_always TARGET="$i48/.agent/docs/architecture.md" \
+i48old=$(cat "$i48/.agents/indexes/current.md")
+printf 'force-stale\n' >>"$i48/.agents/docs/architecture.md"
+PATH="$WORK/i48bin:$PATH" TEST_MODE=mutate_always TARGET="$i48/.agents/docs/architecture.md" \
   "$IDXSH" ensure --root "$i48" >/dev/null 2>"$WORK/i48.always.err"; i48rc=$?
 [ "$i48rc" -eq 1 ] && grep -q 'exhausted' "$WORK/i48.always.err" \
-  && [ "$i48old" = "$(cat "$i48/.agent/indexes/current.md")" ] \
+  && [ "$i48old" = "$(cat "$i48/.agents/indexes/current.md")" ] \
   && pass "retry: sources changing on every attempt exhausts the bound and preserves the prior entry" \
   || fail "retry: sources changing on every attempt exhausts the bound and preserves the prior entry"
 
 i49="$WORK/i49"
 make_index_fixture "$i49"
 "$IDXSH" ensure --root "$i49" >/dev/null 2>&1
-i49gen=$(sed -n 2p "$i49/.agent/indexes/current.md")
-cp -R "$i49/.agent/indexes/$i49gen" "$WORK/i49-old-generation"
-printf 'concurrency\n' >>"$i49/.agent/docs/architecture.md"
+i49gen=$(sed -n 2p "$i49/.agents/indexes/current.md")
+cp -R "$i49/.agents/indexes/$i49gen" "$WORK/i49-old-generation"
+printf 'concurrency\n' >>"$i49/.agents/docs/architecture.md"
 i49pids=""
 for n in 1 2 3 4; do
   "$IDXSH" ensure --root "$i49" >"$WORK/i49.$n.out" 2>"$WORK/i49.$n.err" &
@@ -6057,15 +6065,15 @@ for n in 1 2 3 4; do grep -q 'FALLBACK:' "$WORK/i49.$n.err" && i49fell_back="$i4
 "$IDXSH" ensure --root "$i49" >/dev/null 2>"$WORK/i49.final.err"
 grep -q '^HIT$' "$WORK/i49.final.err" && pass "concurrency: the state after concurrent writers is itself a valid, consistent hit" \
   || fail "concurrency: the state after concurrent writers is itself a valid, consistent hit"
-diff -r "$WORK/i49-old-generation" "$i49/.agent/indexes/$i49gen" >/dev/null 2>&1 \
+diff -r "$WORK/i49-old-generation" "$i49/.agents/indexes/$i49gen" >/dev/null 2>&1 \
   && pass "concurrency: an old generation a reader already selected is left untouched" \
   || fail "concurrency: an old generation a reader already selected is left untouched"
 
 i49k="$WORK/i49k"
 make_index_fixture "$i49k"
 "$IDXSH" ensure --root "$i49k" >/dev/null 2>&1
-i49kold=$(cat "$i49k/.agent/indexes/current.md")
-printf 'crash-trigger\n' >>"$i49k/.agent/docs/architecture.md"
+i49kold=$(cat "$i49k/.agents/indexes/current.md")
+printf 'crash-trigger\n' >>"$i49k/.agents/docs/architecture.md"
 PATH="$WORK/i48bin:$PATH" TEST_MODE=pause GATE="$WORK/i49k.gate" \
   "$IDXSH" ensure --root "$i49k" >"$WORK/i49k.out" 2>"$WORK/i49k.err" &
 i49kpid=$!
@@ -6076,7 +6084,7 @@ wait "$i49kpid" 2>/dev/null || true
 : >"$WORK/i49k.gate.go"
 i49kdn=0
 while [ ! -f "$WORK/i49k.gate.done" ]; do sleep 0.05; i49kdn=$((i49kdn + 1)); [ "$i49kdn" -lt 100 ] || break; done
-[ "$i49kold" = "$(cat "$i49k/.agent/indexes/current.md")" ] \
+[ "$i49kold" = "$(cat "$i49k/.agents/indexes/current.md")" ] \
   && pass "concurrency: a killed writer publishes nothing and leaves the prior entry readable" \
   || fail "concurrency: a killed writer publishes nothing and leaves the prior entry readable"
 "$IDXSH" ensure --root "$i49k" >/dev/null 2>"$WORK/i49k.retry1.err"
@@ -6088,29 +6096,29 @@ grep -q '^BUILT$' "$WORK/i49k.retry1.err" && grep -q '^HIT$' "$WORK/i49k.retry2.
 i50="$WORK/i50"
 make_index_fixture "$i50"
 "$IDXSH" ensure --root "$i50" >/dev/null 2>&1
-i50a=$(sed -n 2p "$i50/.agent/indexes/current.md")
-touch -t 202001010000 "$i50/.agent/indexes/$i50a"
-printf 'v2\n' >>"$i50/.agent/docs/architecture.md"
+i50a=$(sed -n 2p "$i50/.agents/indexes/current.md")
+touch -t 202001010000 "$i50/.agents/indexes/$i50a"
+printf 'v2\n' >>"$i50/.agents/docs/architecture.md"
 INDEX_CLEANUP_AGE_SECONDS=60 "$IDXSH" ensure --root "$i50" >/dev/null 2>&1
-i50b=$(sed -n 2p "$i50/.agent/indexes/current.md")
-[ -d "$i50/.agent/indexes/$i50a" ] \
+i50b=$(sed -n 2p "$i50/.agents/indexes/current.md")
+[ -d "$i50/.agents/indexes/$i50a" ] \
   && pass "cleanup: the generation this build replaced is exempt even when old" \
   || fail "cleanup: the generation this build replaced is exempt even when old"
-touch -t 202001010000 "$i50/.agent/indexes/$i50b"
-printf 'v3\n' >>"$i50/.agent/docs/architecture.md"
+touch -t 202001010000 "$i50/.agents/indexes/$i50b"
+printf 'v3\n' >>"$i50/.agents/docs/architecture.md"
 INDEX_CLEANUP_AGE_SECONDS=60 "$IDXSH" ensure --root "$i50" >/dev/null 2>&1
-i50c=$(sed -n 2p "$i50/.agent/indexes/current.md")
-[ ! -d "$i50/.agent/indexes/$i50a" ] && [ -d "$i50/.agent/indexes/$i50b" ] && [ -d "$i50/.agent/indexes/$i50c" ] \
+i50c=$(sed -n 2p "$i50/.agents/indexes/current.md")
+[ ! -d "$i50/.agents/indexes/$i50a" ] && [ -d "$i50/.agents/indexes/$i50b" ] && [ -d "$i50/.agents/indexes/$i50c" ] \
   && pass "cleanup: an old generation two publishes stale is reclaimed once past the age bound" \
   || fail "cleanup: an old generation two publishes stale is reclaimed once past the age bound"
 
 i50f="$WORK/i50f"
 make_index_fixture "$i50f"
 "$IDXSH" ensure --root "$i50f" >/dev/null 2>&1
-i50fa=$(sed -n 2p "$i50f/.agent/indexes/current.md")
-printf 'v2\n' >>"$i50f/.agent/docs/architecture.md"
+i50fa=$(sed -n 2p "$i50f/.agents/indexes/current.md")
+printf 'v2\n' >>"$i50f/.agents/docs/architecture.md"
 INDEX_CLEANUP_AGE_SECONDS=300 "$IDXSH" ensure --root "$i50f" >/dev/null 2>&1
-[ -d "$i50f/.agent/indexes/$i50fa" ] \
+[ -d "$i50f/.agents/indexes/$i50fa" ] \
   && pass "cleanup: a fresh superseded generation stays within the age bound's grace window" \
   || fail "cleanup: a fresh superseded generation stays within the age bound's grace window"
 
@@ -6119,22 +6127,22 @@ make_index_fixture "$i51"
 git -C "$i51" init -q
 git -C "$i51" config user.name Tester
 git -C "$i51" config user.email tester@example.invalid
-printf '.agent/indexes/\n' >"$i51/.gitignore"
+printf '.agents/indexes/\n' >"$i51/.gitignore"
 git -C "$i51" add .
 git -C "$i51" commit -qm initial
 i51base=$(git -C "$i51" symbolic-ref --short HEAD)
 "$IDXSH" ensure --root "$i51" >/dev/null 2>&1
-i51old=$(cat "$i51/.agent/indexes/current.md")
+i51old=$(cat "$i51/.agents/indexes/current.md")
 git -C "$i51" checkout -qb alternate
-printf 'alternate branch content\n' >>"$i51/.agent/docs/architecture.md"
+printf 'alternate branch content\n' >>"$i51/.agents/docs/architecture.md"
 git -C "$i51" commit -qam alternate
 "$IDXSH" ensure --root "$i51" >/dev/null 2>&1
-[ "$i51old" != "$(cat "$i51/.agent/indexes/current.md")" ] \
+[ "$i51old" != "$(cat "$i51/.agents/indexes/current.md")" ] \
   && pass "branch switch: checking out a branch with different content invalidates the cache" \
   || fail "branch switch: checking out a branch with different content invalidates the cache"
 git -C "$i51" checkout -q "$i51base"
 "$IDXSH" ensure --root "$i51" >/dev/null 2>&1
-i51back=$(cat "$i51/.agent/indexes/current.md")
+i51back=$(cat "$i51/.agents/indexes/current.md")
 [ "$i51old" != "$i51back" ] \
   && pass "branch switch: returning to the original branch rebuilds a fresh generation" \
   || fail "branch switch: returning to the original branch rebuilds a fresh generation"
@@ -6144,9 +6152,9 @@ i51back=$(cat "$i51/.agent/indexes/current.md")
 
 git -C "$i51" worktree add -q "$WORK/i51-wt" alternate
 "$IDXSH" ensure --root "$WORK/i51-wt" >/dev/null 2>&1
-[ -f "$WORK/i51-wt/.agent/indexes/current.md" ] \
+[ -f "$WORK/i51-wt/.agents/indexes/current.md" ] \
   && pass "worktree: a linked worktree builds its own cache" || fail "worktree: a linked worktree builds its own cache"
-cmp -s "$i51/.agent/indexes/current.md" "$WORK/i51-wt/.agent/indexes/current.md" \
+cmp -s "$i51/.agents/indexes/current.md" "$WORK/i51-wt/.agents/indexes/current.md" \
   && fail "worktree: the two worktrees' caches are isolated" \
   || pass "worktree: the two worktrees' caches are isolated"
 [ -z "$(git -C "$i51" status --porcelain)" ] && [ -z "$(git -C "$WORK/i51-wt" status --porcelain)" ] \
@@ -6157,10 +6165,10 @@ git -C "$i51" worktree remove -f "$WORK/i51-wt" >/dev/null 2>&1 || rm -rf "$WORK
 i52="$WORK/i52"
 make_index_fixture "$i52"
 "$IDXSH" ensure --root "$i52" >/dev/null 2>&1
-idx_snapshot "$i52/.agent/indexes" >"$WORK/i52.before"
+idx_snapshot "$i52/.agents/indexes" >"$WORK/i52.before"
 "$IDXSH" check --root "$i52" >/dev/null 2>&1
 "$IDXSH" check --root "$i52" >/dev/null 2>&1
-idx_snapshot "$i52/.agent/indexes" >"$WORK/i52.after"
+idx_snapshot "$i52/.agents/indexes" >"$WORK/i52.after"
 cmp -s "$WORK/i52.before" "$WORK/i52.after" && pass "check: repeated calls write zero bytes and touch no mtime" \
   || fail "check: repeated calls write zero bytes and touch no mtime"
 
@@ -6179,7 +6187,7 @@ cmp -s "$WORK/i52.before" "$WORK/i52.after" && pass "check: repeated calls write
 i53noagent="$WORK/i53noagent"
 mkdir -p "$i53noagent"
 "$IDXSH" ensure --root "$i53noagent" >/dev/null 2>&1; [ "$?" -eq 2 ] \
-  && pass "usage: a root with no .agent/ is a usage error (exit 2)" || fail "usage: a root with no .agent/ is a usage error (exit 2)"
+  && pass "usage: a root with no .agents/ is a usage error (exit 2)" || fail "usage: a root with no .agents/ is a usage error (exit 2)"
 i53="$WORK/i53"
 make_index_fixture "$i53"
 "$IDXSH" ensure --root "$i53" >/dev/null 2>&1; [ "$?" -eq 0 ] \
@@ -6190,32 +6198,32 @@ make_index_fixture "$i53"
   && pass "exit status: check FRESH is exit 0" || fail "exit status: check FRESH is exit 0"
 
 i54="$WORK/i54"
-mkdir -p "$i54/.agent/rules" "$i54/.agent/docs/sub"
-printf '# Rule A\nBody A.\n' >"$i54/.agent/rules/a.md"
-printf '# Rule B\nBody B.\n' >"$i54/.agent/rules/b.md"
-printf '# Doc A\n<!-- Read when: doc a -->\nBody.\n' >"$i54/.agent/docs/a.md"
-printf '# Sub Doc\n<!-- Read when: sub area -->\nBody.\n' >"$i54/.agent/docs/sub/s.md"
+mkdir -p "$i54/.agents/rules" "$i54/.agents/docs/sub"
+printf '# Rule A\nBody A.\n' >"$i54/.agents/rules/a.md"
+printf '# Rule B\nBody B.\n' >"$i54/.agents/rules/b.md"
+printf '# Doc A\n<!-- Read when: doc a -->\nBody.\n' >"$i54/.agents/docs/a.md"
+printf '# Sub Doc\n<!-- Read when: sub area -->\nBody.\n' >"$i54/.agents/docs/sub/s.md"
 "$IDXSH" ensure --root "$i54" >/dev/null 2>&1
-i54gen=$(sed -n 2p "$i54/.agent/indexes/current.md")
-i54dir="$i54/.agent/indexes/$i54gen"
+i54gen=$(sed -n 2p "$i54/.agents/indexes/current.md")
+i54dir="$i54/.agents/indexes/$i54gen"
 i54bad=""
 while IFS= read -r rl; do
   target=${rl#READ: }
-  [ -f "$target" ] || i54bad="$i54bad $target"
-done < <(grep '^READ:' "$i54/.agent/indexes/current.md")
+  [ -f "$i54/$target" ] || i54bad="$i54bad $target"
+done < <(grep '^READ:' "$i54/.agents/indexes/current.md")
 [ -z "$i54bad" ] && pass "resolution: every entry-file READ line names a file that exists" \
   || fail "resolution: every entry-file READ line names a file that exists ($i54bad)"
 i54routebad=""
 while IFS= read -r rl; do
   target=${rl##*READ: }
-  [ -f "$target" ] || i54routebad="$i54routebad $target"
+  [ -f "$i54/$target" ] || i54routebad="$i54routebad $target"
 done < <(grep -h '| READ:' "$i54dir"/routes-*.md)
 [ -z "$i54routebad" ] && pass "resolution: every route line's READ pointer resolves to a real canonical source" \
   || fail "resolution: every route line's READ pointer resolves to a real canonical source ($i54routebad)"
 i54srcbad=""
 for f in "$i54dir"/rules-*.md; do
   src=$(sed -n 's/^Source: //p' "$f" | head -1)
-  [ -f "$src" ] || i54srcbad="$i54srcbad $src"
+  [ -f "$i54/$src" ] || i54srcbad="$i54srcbad $src"
 done
 [ -z "$i54srcbad" ] && pass "resolution: every rule page's Source: pointer resolves to a real canonical source" \
   || fail "resolution: every rule page's Source: pointer resolves to a real canonical source ($i54srcbad)"
@@ -6226,7 +6234,7 @@ grep -qF 'Body A.' "$i54dir"/rules-*.md && grep -qF 'Body B.' "$i54dir"/rules-*.
 i55="$WORK/i55"
 make_index_fixture "$i55"
 "$IDXSH" ensure --root "$i55" >"$WORK/i55.out" 2>"$WORK/i55.err"
-[ "$(wc -l <"$WORK/i55.out" | tr -d ' ')" -eq 1 ] && [ "$(cat "$WORK/i55.out")" = "$i55/.agent/indexes/current.md" ] \
+[ "$(wc -l <"$WORK/i55.out" | tr -d ' ')" -eq 1 ] && [ "$(cat "$WORK/i55.out")" = "$i55/.agents/indexes/current.md" ] \
   && pass "contract: ensure's stdout is exactly one line, the entry path" \
   || fail "contract: ensure's stdout is exactly one line, the entry path"
 grep -qi 'Read when\|Project guardrails\|Body text' "$WORK/i55.out" \
@@ -6243,14 +6251,14 @@ gi56_combo() {
   mkdir -p "$gi56_dir"
   "$NODE" init --preset software-development --mode "$gi56_mode" --indexes "$gi56_idx" "$gi56_dir" >/dev/null 2>&1
   git -C "$gi56_dir" init -q
-  if git -C "$gi56_dir" check-ignore -q .agent/rules/learned.md; then gi56_ign1=1; else gi56_ign1=0; fi
+  if git -C "$gi56_dir" check-ignore -q .agents/rules/learned.md; then gi56_ign1=1; else gi56_ign1=0; fi
   [ "$gi56_ign1" -eq "$gi56_exp_learned" ] \
-    && pass "gitignore $gi56_mode/$gi56_idx: .agent/rules/learned.md ignored=$gi56_exp_learned" \
-    || fail "gitignore $gi56_mode/$gi56_idx: .agent/rules/learned.md ignored=$gi56_exp_learned (got $gi56_ign1)"
-  if git -C "$gi56_dir" check-ignore -q .agent/indexes/current.md; then gi56_ign2=1; else gi56_ign2=0; fi
+    && pass "gitignore $gi56_mode/$gi56_idx: .agents/rules/learned.md ignored=$gi56_exp_learned" \
+    || fail "gitignore $gi56_mode/$gi56_idx: .agents/rules/learned.md ignored=$gi56_exp_learned (got $gi56_ign1)"
+  if git -C "$gi56_dir" check-ignore -q .agents/indexes/current.md; then gi56_ign2=1; else gi56_ign2=0; fi
   [ "$gi56_ign2" -eq "$gi56_exp_indexes" ] \
-    && pass "gitignore $gi56_mode/$gi56_idx: .agent/indexes/ ignored=$gi56_exp_indexes" \
-    || fail "gitignore $gi56_mode/$gi56_idx: .agent/indexes/ ignored=$gi56_exp_indexes (got $gi56_ign2)"
+    && pass "gitignore $gi56_mode/$gi56_idx: .agents/indexes/ ignored=$gi56_exp_indexes" \
+    || fail "gitignore $gi56_mode/$gi56_idx: .agents/indexes/ ignored=$gi56_exp_indexes (got $gi56_ign2)"
 }
 gi56_combo ignore-all manual 1 1
 gi56_combo ignore-all generated 1 1
@@ -6270,7 +6278,7 @@ gi56home="$WORK/gi56-home-track-all-generated"
 mkdir -p "$gi56home"
 HOME="$gi56home" "$NODE" init --preset software-development --mode track-all --indexes generated "$gi56home" >"$WORK/gi56home.out" 2>&1
 rc=$?
-[ "$rc" -eq 0 ] && [ -d "$gi56home/.agent" ] && pass "init at \$HOME, track-all/generated, exits 0 and creates the node" || fail "init at \$HOME, track-all/generated, exits 0 and creates the node"
+[ "$rc" -eq 0 ] && [ -d "$gi56home/.agents" ] && pass "init at \$HOME, track-all/generated, exits 0 and creates the node" || fail "init at \$HOME, track-all/generated, exits 0 and creates the node"
 grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home.out" \
   && pass "init at \$HOME, track-all/generated, warns about the skipped gitignore" \
   || fail "init at \$HOME, track-all/generated, warns about the skipped gitignore"
@@ -6279,7 +6287,7 @@ grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home.out" \
   || fail "init at \$HOME, track-all/generated, still writes no gitignore"
 HOME="$gi56home" "$NODE" update --indexes generated "$gi56home" >"$WORK/gi56home-update.out" 2>&1
 rc_gi56home_update=$?
-[ "$rc_gi56home_update" -eq 0 ] && [ -f "$gi56home/.agent/indexes/current.md" ] \
+[ "$rc_gi56home_update" -eq 0 ] && [ -f "$gi56home/.agents/indexes/current.md" ] \
   && pass "generated adoption at \$HOME still builds and verifies the index" \
   || fail "generated adoption at \$HOME still builds and verifies the index (rc=$rc_gi56home_update)"
 [ ! -e "$gi56home/.gitignore" ] && grep -qF 'skipped gitignore at $HOME' "$WORK/gi56home-update.out" \
@@ -6322,80 +6330,80 @@ i58base=$(git -C "$i58src" symbolic-ref --short HEAD)
 
 i58clone="$WORK/i58-clone"
 git clone -q "$i58src" "$i58clone"
-[ ! -e "$i58clone/.agent/scripts/index.sh" ] \
+[ ! -e "$i58clone/.agents/scripts/index.sh" ] \
   && pass "clone: a fresh clone of a track-shared node starts without index.sh (gitignored)" \
   || fail "clone: a fresh clone of a track-shared node starts without index.sh (gitignored)"
 "$NODE" update "$i58clone" >"$WORK/i58-clone-update.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "clone: node.sh update exits 0" || fail "clone: node.sh update exits 0 (rc=$rc)"
-[ -x "$i58clone/.agent/scripts/index.sh" ] \
+[ -x "$i58clone/.agents/scripts/index.sh" ] \
   && pass "clone: node.sh update obtains index.sh" \
   || fail "clone: node.sh update obtains index.sh"
-"$i58clone/.agent/scripts/index.sh" ensure --root "$i58clone" >"$WORK/i58-clone-ensure.out" 2>"$WORK/i58-clone-ensure.err"
+"$i58clone/.agents/scripts/index.sh" ensure --root "$i58clone" >"$WORK/i58-clone-ensure.out" 2>"$WORK/i58-clone-ensure.err"
 rc=$?
-[ "$rc" -eq 0 ] && [ -f "$i58clone/.agent/indexes/current.md" ] \
+[ "$rc" -eq 0 ] && [ -f "$i58clone/.agents/indexes/current.md" ] \
   && pass "clone: index.sh ensure succeeds once the indexer is present" \
   || fail "clone: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-clone-ensure.err"))"
 
 i58wt="$WORK/i58-worktree"
 git -C "$i58src" worktree add -q -b i58-branch "$i58wt" "$i58base"
-[ ! -e "$i58wt/.agent/scripts/index.sh" ] \
+[ ! -e "$i58wt/.agents/scripts/index.sh" ] \
   && pass "worktree: a fresh worktree of a track-shared node starts without index.sh (gitignored)" \
   || fail "worktree: a fresh worktree of a track-shared node starts without index.sh (gitignored)"
 "$NODE" update "$i58wt" >"$WORK/i58-wt-update.out" 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && pass "worktree: node.sh update exits 0" || fail "worktree: node.sh update exits 0 (rc=$rc)"
-[ -x "$i58wt/.agent/scripts/index.sh" ] \
+[ -x "$i58wt/.agents/scripts/index.sh" ] \
   && pass "worktree: node.sh update obtains index.sh" \
   || fail "worktree: node.sh update obtains index.sh"
-"$i58wt/.agent/scripts/index.sh" ensure --root "$i58wt" >"$WORK/i58-wt-ensure.out" 2>"$WORK/i58-wt-ensure.err"
+"$i58wt/.agents/scripts/index.sh" ensure --root "$i58wt" >"$WORK/i58-wt-ensure.out" 2>"$WORK/i58-wt-ensure.err"
 rc=$?
-[ "$rc" -eq 0 ] && [ -f "$i58wt/.agent/indexes/current.md" ] \
+[ "$rc" -eq 0 ] && [ -f "$i58wt/.agents/indexes/current.md" ] \
   && pass "worktree: index.sh ensure succeeds once the indexer is present" \
   || fail "worktree: index.sh ensure succeeds once the indexer is present (rc=$rc, err=$(cat "$WORK/i58-wt-ensure.err"))"
 git -C "$i58src" worktree remove -f "$i58wt" >/dev/null 2>&1 || rm -rf "$i58wt"
 
 
 l59="$WORK/l59"
-mkdir -p "$l59/.agent/rules/learned" "$l59/.agent/docs"
-printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n' >"$l59/.agent/rules/learned.md"
-printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l59/.agent/docs/d.md"
-l59before=$(idx_snapshot "$l59/.agent/rules")
+mkdir -p "$l59/.agents/rules/learned" "$l59/.agents/docs"
+printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n' >"$l59/.agents/rules/learned.md"
+printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l59/.agents/docs/d.md"
+l59before=$(idx_snapshot "$l59/.agents/rules")
 "$IDXSH" ensure --root "$l59" >/dev/null 2>"$WORK/l59.err"
-l59gen=$(sed -n 2p "$l59/.agent/indexes/current.md")
-l59after=$(idx_snapshot "$l59/.agent/rules")
+l59gen=$(sed -n 2p "$l59/.agents/indexes/current.md")
+l59after=$(idx_snapshot "$l59/.agents/rules")
 [ "$l59before" = "$l59after" ] \
   && pass "learned aggregate: an empty rules/learned/ directory leaves learned.md untouched, same as no directory at all" \
   || fail "learned aggregate: an empty rules/learned/ directory leaves learned.md untouched, same as no directory at all"
-grep -qF "Source: $l59/.agent/rules/learned.md" "$l59/.agent/indexes/$l59gen"/rules-*.md \
+grep -qF "Source: .agents/rules/learned.md" "$l59/.agents/indexes/$l59gen"/rules-*.md \
   && pass "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record" \
   || fail "learned aggregate: with rules/learned/ empty, learned.md still renders as an ordinary source record"
 
 l61="$WORK/l61"
-mkdir -p "$l61/.agent/rules" "$l61/.agent/docs"
-printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n\n- [2026-01-01] Legacy single-file rule.\n' >"$l61/.agent/rules/learned.md"
-printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l61/.agent/docs/d.md"
-l61learnedbefore=$(cat "$l61/.agent/rules/learned.md")
+mkdir -p "$l61/.agents/rules" "$l61/.agents/docs"
+printf '# Learned rules\n\nHeader body.\n\n<!-- Format: - [YYYY-MM-DD] x. -->\n\n- [2026-01-01] Legacy single-file rule.\n' >"$l61/.agents/rules/learned.md"
+printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l61/.agents/docs/d.md"
+l61learnedbefore=$(cat "$l61/.agents/rules/learned.md")
 "$IDXSH" ensure --root "$l61" >/dev/null 2>"$WORK/l61.err"
-l61gen=$(sed -n 2p "$l61/.agent/indexes/current.md")
-grep -qF "Source: $l61/.agent/rules/learned.md" "$l61/.agent/indexes/$l61gen"/rules-*.md \
-  && grep -qF -- '- [2026-01-01] Legacy single-file rule.' "$l61/.agent/indexes/$l61gen"/rules-*.md \
+l61gen=$(sed -n 2p "$l61/.agents/indexes/current.md")
+grep -qF "Source: .agents/rules/learned.md" "$l61/.agents/indexes/$l61gen"/rules-*.md \
+  && grep -qF -- '- [2026-01-01] Legacy single-file rule.' "$l61/.agents/indexes/$l61gen"/rules-*.md \
   && pass "learned aggregate: with no rules/learned/ directory, learned.md renders as an ordinary source record" \
   || fail "learned aggregate: with no rules/learned/ directory, learned.md renders as an ordinary source record"
-[ "$(cat "$l61/.agent/rules/learned.md")" = "$l61learnedbefore" ] \
+[ "$(cat "$l61/.agents/rules/learned.md")" = "$l61learnedbefore" ] \
   && pass "learned aggregate: with no rules/learned/ directory, ensure never rewrites learned.md" \
   || fail "learned aggregate: with no rules/learned/ directory, ensure never rewrites learned.md"
 
 l60="$WORK/l60"
-mkdir -p "$l60/.agent/rules/learned" "$l60/.agent/docs"
-printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l60/.agent/docs/d.md"
-printf -- '- [2026-01-01] First rule. Trigger: alpha.\n' >"$l60/.agent/rules/learned/aa-first.md"
-printf -- '- [2026-01-02] Second rule.\n- [2026-01-03] Third rule. Trigger: beta.\n' >"$l60/.agent/rules/learned/bb-second.md"
-printf -- '- [2026-01-04] Fourth rule.\n- inline sub-bullet, not a dated rule\n' >"$l60/.agent/rules/learned/cc-third.md"
+mkdir -p "$l60/.agents/rules/learned" "$l60/.agents/docs"
+printf '# Doc\n<!-- Read when: testing -->\nBody.\n' >"$l60/.agents/docs/d.md"
+printf -- '- [2026-01-01] First rule. Trigger: alpha.\n' >"$l60/.agents/rules/learned/aa-first.md"
+printf -- '- [2026-01-02] Second rule.\n- [2026-01-03] Third rule. Trigger: beta.\n' >"$l60/.agents/rules/learned/bb-second.md"
+printf -- '- [2026-01-04] Fourth rule.\n- inline sub-bullet, not a dated rule\n' >"$l60/.agents/rules/learned/cc-third.md"
 "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.err"
-l60gen=$(sed -n 2p "$l60/.agent/indexes/current.md")
-l60dir="$l60/.agent/indexes/$l60gen"
-l60agg="$l60/.agent/rules/learned.md"
+l60gen=$(sed -n 2p "$l60/.agents/indexes/current.md")
+l60dir="$l60/.agents/indexes/$l60gen"
+l60agg="$l60/.agents/rules/learned.md"
 
 grep -qF -- '- [2026-01-01] First rule. Trigger: alpha.' "$l60agg" \
   && grep -qF -- '- [2026-01-02] Second rule.' "$l60agg" \
@@ -6424,7 +6432,7 @@ l60totalfirst=$(grep -hc -F -- 'First rule' "$l60dir"/*.md 2>/dev/null | awk '{s
   || fail "learned aggregate: no rule body from rules/learned/ renders twice across the published pages ($l60totalfirst)"
 
 l60aggbefore=$(cat "$l60agg")
-printf -- '- [2026-01-05] Fifth rule appended.\n' >>"$l60/.agent/rules/learned/aa-first.md"
+printf -- '- [2026-01-05] Fifth rule appended.\n' >>"$l60/.agents/rules/learned/aa-first.md"
 "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.edit.err"
 grep -q '^BUILT$' "$WORK/l60.edit.err" && pass "learned aggregate: editing a record rebuilds" \
   || fail "learned aggregate: editing a record rebuilds"
@@ -6433,24 +6441,24 @@ l60aggafter=$(cat "$l60agg")
   && pass "learned aggregate: editing one record and re-running ensure updates the aggregate" \
   || fail "learned aggregate: editing one record and re-running ensure updates the aggregate"
 
-l60gen2=$(sed -n 2p "$l60/.agent/indexes/current.md")
-l60dir2="$l60/.agent/indexes/$l60gen2"
+l60gen2=$(sed -n 2p "$l60/.agents/indexes/current.md")
+l60dir2="$l60/.agents/indexes/$l60gen2"
 l60totalfirst2=$(grep -hc -F -- 'First rule' "$l60dir2"/*.md 2>/dev/null | awk '{s+=$1} END{print s+0}')
 [ "$l60totalfirst2" -eq 1 ] \
   && pass "learned aggregate: no rule body from rules/learned/ renders twice across the published pages, once learned.md already exists on disk" \
   || fail "learned aggregate: no rule body from rules/learned/ renders twice across the published pages, once learned.md already exists on disk ($l60totalfirst2)"
 
-l60hitsnap1=$(idx_snapshot "$l60/.agent/rules")
+l60hitsnap1=$(idx_snapshot "$l60/.agents/rules")
 "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.hit.err"
 grep -q '^HIT$' "$WORK/l60.hit.err" && pass "learned aggregate: an unchanged tree after the edit is a warm HIT" \
   || fail "learned aggregate: an unchanged tree after the edit is a warm HIT"
-l60hitsnap2=$(idx_snapshot "$l60/.agent/rules")
+l60hitsnap2=$(idx_snapshot "$l60/.agents/rules")
 [ "$l60hitsnap1" = "$l60hitsnap2" ] \
   && pass "learned aggregate: a cache hit writes nothing" \
   || fail "learned aggregate: a cache hit writes nothing"
 
 l60aggcheckbefore=$(cat "$l60agg")
-printf -- '- [2026-01-06] Stale edit for check.\n' >>"$l60/.agent/rules/learned/bb-second.md"
+printf -- '- [2026-01-06] Stale edit for check.\n' >>"$l60/.agents/rules/learned/bb-second.md"
 "$IDXSH" check --root "$l60" >/dev/null 2>&1
 "$IDXSH" check --root "$l60" >/dev/null 2>&1
 [ "$(cat "$l60agg")" = "$l60aggcheckbefore" ] \
@@ -6458,19 +6466,19 @@ printf -- '- [2026-01-06] Stale edit for check.\n' >>"$l60/.agent/rules/learned/
   || fail "learned aggregate: check writes no file under any input, even a stale record change"
 
 "$IDXSH" ensure --root "$l60" >/dev/null 2>&1
-l60entrybefore=$(cat "$l60/.agent/indexes/current.md")
+l60entrybefore=$(cat "$l60/.agents/indexes/current.md")
 l60aggfailbefore=$(cat "$l60agg")
-printf -- '- [2026-01-07] Should never land.\n' >>"$l60/.agent/rules/learned/cc-third.md"
+printf -- '- [2026-01-07] Should never land.\n' >>"$l60/.agents/rules/learned/cc-third.md"
 INDEX_FAIL_AT=before-publish "$IDXSH" ensure --root "$l60" >/dev/null 2>"$WORK/l60.fail.err"
 l60failrc=$?
 [ "$l60failrc" -eq 1 ] && grep -q 'FALLBACK:' "$WORK/l60.fail.err" \
   && pass "learned aggregate: an injected failure before publication is reported and exits 1" \
   || fail "learned aggregate: an injected failure before publication is reported and exits 1"
-[ "$(cat "$l60/.agent/indexes/current.md")" = "$l60entrybefore" ] && [ "$(cat "$l60agg")" = "$l60aggfailbefore" ] \
+[ "$(cat "$l60/.agents/indexes/current.md")" = "$l60entrybefore" ] && [ "$(cat "$l60agg")" = "$l60aggfailbefore" ] \
   && pass "learned aggregate: a failed ensure leaves both the previous entry file and the previous aggregate exactly as they were" \
   || fail "learned aggregate: a failed ensure leaves both the previous entry file and the previous aggregate exactly as they were"
-[ -z "$(find "$l60/.agent/indexes" -maxdepth 1 -name '.entry.*' 2>/dev/null)" ] \
-  && [ -z "$(find "$l60/.agent/rules" -maxdepth 1 -name '.learned.*' 2>/dev/null)" ] \
+[ -z "$(find "$l60/.agents/indexes" -maxdepth 1 -name '.entry.*' 2>/dev/null)" ] \
+  && [ -z "$(find "$l60/.agents/rules" -maxdepth 1 -name '.learned.*' 2>/dev/null)" ] \
   && pass "learned aggregate: a failed ensure leaves no leftover temp files" \
   || fail "learned aggregate: a failed ensure leaves no leftover temp files"
 
@@ -6478,10 +6486,10 @@ m60ctl="$WORK/m60-control"
 mkdir -p "$m60ctl"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$m60ctl" >/dev/null 2>&1
 finish_bootstrap "$m60ctl"
-cat >"$m60ctl/.agent/rules/learned.md" <<'EOF'
+cat >"$m60ctl/.agents/rules/learned.md" <<'EOF'
 # Learned rules
 
-Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
+Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agents/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 
@@ -6490,28 +6498,28 @@ Binding rules distilled from operator corrections and failed verifications on th
 - [2026-01-03] Rule three about review turnaround.
 EOF
 m60ctlflags=$(status_flags "$m60ctl")
-m60ctlplain=$("$m60ctl/.agent/scripts/status.sh" "$m60ctl" 2>/dev/null)
+m60ctlplain=$("$m60ctl/.agents/scripts/status.sh" "$m60ctl" 2>/dev/null)
 m60ctlpayload=$(printf '%s\n' "$m60ctlplain" | grep '^PAYLOAD:' | grep -oE '[0-9]+' | head -1)
 
 m60mig="$WORK/m60-migrated"
 mkdir -p "$m60mig"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$m60mig" >/dev/null 2>&1
 finish_bootstrap "$m60mig"
-rm -f "$m60mig/.agent/rules/learned.md"
-mkdir -p "$m60mig/.agent/rules/learned"
-printf -- '- [2026-01-01] Rule one about deploys.\n' >"$m60mig/.agent/rules/learned/0001.md"
-printf -- '- [2026-01-02] Rule two about tests. Trigger: a flaky suite.\n' >"$m60mig/.agent/rules/learned/0002.md"
-printf -- '- [2026-01-03] Rule three about review turnaround.\n' >"$m60mig/.agent/rules/learned/0003.md"
-"$m60mig/.agent/scripts/index.sh" ensure --root "$m60mig" >/dev/null 2>"$WORK/m60mig.ensure.err"
+rm -f "$m60mig/.agents/rules/learned.md"
+mkdir -p "$m60mig/.agents/rules/learned"
+printf -- '- [2026-01-01] Rule one about deploys.\n' >"$m60mig/.agents/rules/learned/0001.md"
+printf -- '- [2026-01-02] Rule two about tests. Trigger: a flaky suite.\n' >"$m60mig/.agents/rules/learned/0002.md"
+printf -- '- [2026-01-03] Rule three about review turnaround.\n' >"$m60mig/.agents/rules/learned/0003.md"
+"$m60mig/.agents/scripts/index.sh" ensure --root "$m60mig" >/dev/null 2>"$WORK/m60mig.ensure.err"
 
-m60migstripped=$(grep -vF '<!-- Generated by index.sh from rules/learned/' "$m60mig/.agent/rules/learned.md")
-m60ctlcontent=$(cat "$m60ctl/.agent/rules/learned.md")
+m60migstripped=$(grep -vF '<!-- Generated by index.sh from rules/learned/' "$m60mig/.agents/rules/learned.md")
+m60ctlcontent=$(cat "$m60ctl/.agents/rules/learned.md")
 [ "$m60migstripped" = "$m60ctlcontent" ] \
   && pass "migration: the regenerated aggregate matches the pre-migration file exactly, apart from the one generated-marker line" \
   || fail "migration: the regenerated aggregate matches the pre-migration file exactly, apart from the one generated-marker line"
 
 m60migflags=$(status_flags "$m60mig")
-m60migplain=$("$m60mig/.agent/scripts/status.sh" "$m60mig" 2>/dev/null)
+m60migplain=$("$m60mig/.agents/scripts/status.sh" "$m60mig" 2>/dev/null)
 m60migpayload=$(printf '%s\n' "$m60migplain" | grep '^PAYLOAD:' | grep -oE '[0-9]+' | head -1)
 m60markerbytes=$(printf '%s\n' '<!-- Generated by index.sh from rules/learned/*.md — hand edits here are lost on the next ensure. -->' | wc -c | tr -d '[:space:]')
 
@@ -6526,16 +6534,16 @@ printf '%s\n' "$m60migflags" | grep -qF 'REPAIR: rules/learned.md missing/empty'
   && pass "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load" \
   || fail "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load (ctl=$m60ctlpayload mig=$m60migpayload)"
 
-m60ctllearnedbytes=$(wc -c <"$m60ctl/.agent/rules/learned.md" | tr -d '[:space:]')
-m60miglearnedbytes=$(wc -c <"$m60mig/.agent/rules/learned.md" | tr -d '[:space:]')
+m60ctllearnedbytes=$(wc -c <"$m60ctl/.agents/rules/learned.md" | tr -d '[:space:]')
+m60miglearnedbytes=$(wc -c <"$m60mig/.agents/rules/learned.md" | tr -d '[:space:]')
 [ "$((m60miglearnedbytes - m60ctllearnedbytes))" -eq "$m60markerbytes" ] \
   && pass "migration: the regenerated rules/learned.md exceeds the control by exactly the marker line's own bytes" \
   || fail "migration: the regenerated rules/learned.md exceeds the control by exactly the marker line's own bytes (ctl=$m60ctllearnedbytes mig=$m60miglearnedbytes marker=$m60markerbytes)"
 
 printf '\n--- status.sh output against the migrated fixture (%s) ---\n' "$m60mig"
-"$m60mig/.agent/scripts/status.sh" "$m60mig"
+"$m60mig/.agents/scripts/status.sh" "$m60mig"
 printf -- '--- status.sh --load against the migrated fixture ---\n'
-"$m60mig/.agent/scripts/status.sh" --load "$m60mig" 2>/dev/null
+"$m60mig/.agents/scripts/status.sh" --load "$m60mig" 2>/dev/null
 printf -- '--- end status.sh output ---\n\n'
 
 
@@ -6543,16 +6551,16 @@ r61build() {
   r61_dir="$1"
   mkdir -p "$r61_dir"
   make_v6_fixture "$r61_dir"
-  r61_modeline=$(grep -n '^  mode:' "$r61_dir/.agent/purpose.md" | head -1 | cut -d: -f1)
+  r61_modeline=$(grep -n '^  mode:' "$r61_dir/.agents/purpose.md" | head -1 | cut -d: -f1)
   awk -v ln="$r61_modeline" \
     'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
-    "$r61_dir/.agent/purpose.md" >"$r61_dir/.agent/purpose.md.tmp"
-  mv "$r61_dir/.agent/purpose.md.tmp" "$r61_dir/.agent/purpose.md"
+    "$r61_dir/.agents/purpose.md" >"$r61_dir/.agents/purpose.md.tmp"
+  mv "$r61_dir/.agents/purpose.md.tmp" "$r61_dir/.agents/purpose.md"
 
-  cat >"$r61_dir/.agent/rules/learned.md" <<'EOF'
+  cat >"$r61_dir/.agents/rules/learned.md" <<'EOF'
 # Learned rules
 
-Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
+Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agents/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 - [2026-01-01] First rule, flat. Trigger: something.
@@ -6565,8 +6573,8 @@ Binding rules distilled from operator corrections and failed verifications on th
 - [2026-01-04] Fourth rule, flat, last one.
 EOF
 
-  mkdir -p "$r61_dir/.agent/memory"
-  cat >"$r61_dir/.agent/memory/staging-reset.md" <<'EOF'
+  mkdir -p "$r61_dir/.agents/memory"
+  cat >"$r61_dir/.agents/memory/staging-reset.md" <<'EOF'
 ---
 date: 2026-01-01
 scope: project
@@ -6575,15 +6583,15 @@ type: fact
 
 The staging database resets nightly at 02:00 UTC.
 EOF
-  cat >"$r61_dir/.agent/memory.md" <<'EOF'
+  cat >"$r61_dir/.agents/memory.md" <<'EOF'
 # Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agent/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agents/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agents/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
 
 - [Staging reset](memory/staging-reset.md) — when the staging database resets.
 EOF
 
-  mkdir -p "$r61_dir/.agent/docs/area"
-  cat >"$r61_dir/.agent/docs/architecture.md" <<'EOF'
+  mkdir -p "$r61_dir/.agents/docs/area"
+  cat >"$r61_dir/.agents/docs/architecture.md" <<'EOF'
 # Architecture
 
 ### `hooked.md`
@@ -6604,33 +6612,33 @@ EOF
 ### `badtable.md`
 Hand-edited row with no bold marker: whatever hook text.
 EOF
-  cat >"$r61_dir/.agent/docs/hooked.md" <<'EOF'
+  cat >"$r61_dir/.agents/docs/hooked.md" <<'EOF'
 <!-- Read when: already hooked, never touched. -->
 # Hooked
 
 Body.
 EOF
-  cat >"$r61_dir/.agent/docs/unhooked.md" <<'EOF'
+  cat >"$r61_dir/.agents/docs/unhooked.md" <<'EOF'
 # Unhooked
 
 Body.
 EOF
-  cat >"$r61_dir/.agent/docs/area/sub.md" <<'EOF'
+  cat >"$r61_dir/.agents/docs/area/sub.md" <<'EOF'
 # Sub
 
 Body.
 EOF
-  cat >"$r61_dir/.agent/docs/dup.md" <<'EOF'
+  cat >"$r61_dir/.agents/docs/dup.md" <<'EOF'
 # Dup
 
 Body.
 EOF
-  cat >"$r61_dir/.agent/docs/badtable.md" <<'EOF'
+  cat >"$r61_dir/.agents/docs/badtable.md" <<'EOF'
 # Badtable
 
 Body.
 EOF
-  cat >"$r61_dir/.agent/docs/noentry.md" <<'EOF'
+  cat >"$r61_dir/.agents/docs/noentry.md" <<'EOF'
 # Noentry
 
 Body.
@@ -6642,9 +6650,9 @@ r61mode() {
   r61m_mode="$2"
   r61build "$r61m_dir"
   if [ "$r61m_mode" != ignore-all ]; then
-    sed "s/^  mode: ignore-all/  mode: $r61m_mode/" "$r61m_dir/.agent/purpose.md" \
-      >"$r61m_dir/.agent/purpose.md.tmp"
-    mv "$r61m_dir/.agent/purpose.md.tmp" "$r61m_dir/.agent/purpose.md"
+    sed "s/^  mode: ignore-all/  mode: $r61m_mode/" "$r61m_dir/.agents/purpose.md" \
+      >"$r61m_dir/.agents/purpose.md.tmp"
+    mv "$r61m_dir/.agents/purpose.md.tmp" "$r61m_dir/.agents/purpose.md"
   fi
 }
 
@@ -6658,20 +6666,20 @@ r61_bullets_present() {
 
 r61dir="$WORK/r61-migration"
 r61build "$r61dir"
-cp "$r61dir/.agent/docs/architecture.md" "$WORK/r61-arch-before.md"
-cp "$r61dir/.agent/rules/learned.md" "$WORK/r61-learned-before.md"
-cp "$r61dir/.agent/memory.md" "$WORK/r61-memory-before.md"
-cp "$r61dir/.agent/memory/staging-reset.md" "$WORK/r61-memory-fact-before.md"
-cp "$r61dir/.agent/docs/hooked.md" "$WORK/r61-hooked-before.md"
-cp "$r61dir/.agent/docs/dup.md" "$WORK/r61-dup-before.md"
-cp "$r61dir/.agent/docs/badtable.md" "$WORK/r61-badtable-before.md"
-cp "$r61dir/.agent/docs/noentry.md" "$WORK/r61-noentry-before.md"
+cp "$r61dir/.agents/docs/architecture.md" "$WORK/r61-arch-before.md"
+cp "$r61dir/.agents/rules/learned.md" "$WORK/r61-learned-before.md"
+cp "$r61dir/.agents/memory.md" "$WORK/r61-memory-before.md"
+cp "$r61dir/.agents/memory/staging-reset.md" "$WORK/r61-memory-fact-before.md"
+cp "$r61dir/.agents/docs/hooked.md" "$WORK/r61-hooked-before.md"
+cp "$r61dir/.agents/docs/dup.md" "$WORK/r61-dup-before.md"
+cp "$r61dir/.agents/docs/badtable.md" "$WORK/r61-badtable-before.md"
+cp "$r61dir/.agents/docs/noentry.md" "$WORK/r61-noentry-before.md"
 
 "$NODE" update "$r61dir" >"$WORK/r61-update.out" 2>&1
 r61rc=$?
 [ "$r61rc" -eq 0 ] && pass "generated-mode update: exits 0" || fail "generated-mode update: exits 0 (rc=$r61rc)"
 
-r61records=$(find "$r61dir/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+r61records=$(find "$r61dir/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
 r61count=$(printf '%s\n' "$r61records" | grep -c .)
 [ "$r61count" -eq 4 ] && pass "rule extraction: four bullets produce four records" || fail "rule extraction: four bullets produce four records (found $r61count)"
 
@@ -6718,8 +6726,8 @@ r61multi_expect=$(printf '%s\n' \
   && pass "rule extraction: a multi-paragraph bullet keeps its continuation paragraph" \
   || fail "rule extraction: a multi-paragraph bullet keeps its continuation paragraph"
 
-r61inv="$r61dir/.agent/migration-inventory.md"
-[ -f "$r61inv" ] && pass "migration inventory: .agent/migration-inventory.md is written" || fail "migration inventory: .agent/migration-inventory.md is written"
+r61inv="$r61dir/.agents/migration-inventory.md"
+[ -f "$r61inv" ] && pass "migration inventory: .agents/migration-inventory.md is written" || fail "migration inventory: .agents/migration-inventory.md is written"
 
 r61id1=$(basename "$r61flat1" .md)
 r61id2=$(basename "$r61nested" .md)
@@ -6738,46 +6746,46 @@ grep -qF "rules/learned/$r61id4.md | id=$r61id4 | migrated" "$r61inv" \
   && pass "migration inventory: flat rule 4 lists migrated with its real identity" \
   || fail "migration inventory: flat rule 4 lists migrated with its real identity"
 
-r61_bullets_present "$r61dir/.agent/rules/learned.md" \
+r61_bullets_present "$r61dir/.agents/rules/learned.md" \
   && pass "migration: the regenerated rules/learned.md reproduces every original bullet" \
   || fail "migration: the regenerated rules/learned.md reproduces every original bullet"
 
-diff -q "$WORK/r61-arch-before.md" "$r61dir/.agent/docs/architecture.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-arch-before.md" "$r61dir/.agents/docs/architecture.md" >/dev/null 2>&1 \
   && pass "migration: architecture.md is byte-identical before and after" \
   || fail "migration: architecture.md is byte-identical before and after"
 
-diff -q "$WORK/r61-memory-before.md" "$r61dir/.agent/memory.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-memory-before.md" "$r61dir/.agents/memory.md" >/dev/null 2>&1 \
   && pass "migration: memory.md is byte-identical before and after" \
   || fail "migration: memory.md is byte-identical before and after"
 
-diff -q "$WORK/r61-memory-fact-before.md" "$r61dir/.agent/memory/staging-reset.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-memory-fact-before.md" "$r61dir/.agents/memory/staging-reset.md" >/dev/null 2>&1 \
   && pass "migration: a file under memory/ is byte-identical before and after" \
   || fail "migration: a file under memory/ is byte-identical before and after"
 
-diff -q "$WORK/r61-hooked-before.md" "$r61dir/.agent/docs/hooked.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-hooked-before.md" "$r61dir/.agents/docs/hooked.md" >/dev/null 2>&1 \
   && pass "hook backfill: a doc that already carries a hook is left untouched" \
   || fail "hook backfill: a doc that already carries a hook is left untouched"
 
-[ "$(sed -n 1p "$r61dir/.agent/docs/unhooked.md")" = '<!-- Read when: doing unhooked work. -->' ] \
+[ "$(sed -n 1p "$r61dir/.agents/docs/unhooked.md")" = '<!-- Read when: doing unhooked work. -->' ] \
   && pass "hook backfill: a missing hook with a matching architecture.md entry is backfilled" \
   || fail "hook backfill: a missing hook with a matching architecture.md entry is backfilled"
-[ "$(tail -n +2 "$r61dir/.agent/docs/unhooked.md")" = "$(printf '# Unhooked\n\nBody.')" ] \
+[ "$(tail -n +2 "$r61dir/.agents/docs/unhooked.md")" = "$(printf '# Unhooked\n\nBody.')" ] \
   && pass "hook backfill: backfilling a hook changes nothing else in the doc" \
   || fail "hook backfill: backfilling a hook changes nothing else in the doc"
 
-[ "$(sed -n 1p "$r61dir/.agent/docs/area/sub.md")" = '<!-- Read when: doing area sub work. -->' ] \
+[ "$(sed -n 1p "$r61dir/.agents/docs/area/sub.md")" = '<!-- Read when: doing area sub work. -->' ] \
   && pass "hook backfill: a sub-doc under docs/<area>/ resolves its entry key as area/sub.md" \
   || fail "hook backfill: a sub-doc under docs/<area>/ resolves its entry key as area/sub.md"
 
-diff -q "$WORK/r61-dup-before.md" "$r61dir/.agent/docs/dup.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-dup-before.md" "$r61dir/.agents/docs/dup.md" >/dev/null 2>&1 \
   && pass "hook backfill: a duplicate architecture.md entry key is left untouched (no winner picked)" \
   || fail "hook backfill: a duplicate architecture.md entry key is left untouched (no winner picked)"
 
-diff -q "$WORK/r61-badtable-before.md" "$r61dir/.agent/docs/badtable.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-badtable-before.md" "$r61dir/.agents/docs/badtable.md" >/dev/null 2>&1 \
   && pass "hook backfill: a hand-edited entry with no bold Read-when line is left untouched" \
   || fail "hook backfill: a hand-edited entry with no bold Read-when line is left untouched"
 
-diff -q "$WORK/r61-noentry-before.md" "$r61dir/.agent/docs/noentry.md" >/dev/null 2>&1 \
+diff -q "$WORK/r61-noentry-before.md" "$r61dir/.agents/docs/noentry.md" >/dev/null 2>&1 \
   && pass "hook backfill: a doc with no architecture.md entry at all is left untouched" \
   || fail "hook backfill: a doc with no architecture.md entry at all is left untouched"
 
@@ -6804,7 +6812,7 @@ grep -qF 'docs/architecture.md' "$r61inv" \
   && fail "migration inventory: architecture.md itself is never listed as a walked item" \
   || pass "migration inventory: architecture.md itself is never listed as a walked item"
 
-r61snapshot() { find "$1/.agent" -type f | sort | xargs shasum 2>/dev/null | sort; }
+r61snapshot() { find "$1/.agents" -type f | sort | xargs shasum 2>/dev/null | sort; }
 r61before2=$(r61snapshot "$r61dir")
 "$NODE" update "$r61dir" >"$WORK/r61-update2.out" 2>&1
 r61rc2=$?
@@ -6817,12 +6825,12 @@ r61after2=$(r61snapshot "$r61dir")
 r61zero="$WORK/r61-zero"
 mkdir -p "$r61zero"
 make_v6_fixture "$r61zero"
-r61zero_modeline=$(grep -n '^  mode:' "$r61zero/.agent/purpose.md" | head -1 | cut -d: -f1)
+r61zero_modeline=$(grep -n '^  mode:' "$r61zero/.agents/purpose.md" | head -1 | cut -d: -f1)
 awk -v ln="$r61zero_modeline" \
   'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
-  "$r61zero/.agent/purpose.md" >"$r61zero/.agent/purpose.md.tmp"
-mv "$r61zero/.agent/purpose.md.tmp" "$r61zero/.agent/purpose.md"
-cat >"$r61zero/.agent/rules/learned.md" <<'EOF'
+  "$r61zero/.agents/purpose.md" >"$r61zero/.agents/purpose.md.tmp"
+mv "$r61zero/.agents/purpose.md.tmp" "$r61zero/.agents/purpose.md"
+cat >"$r61zero/.agents/rules/learned.md" <<'EOF'
 # Learned rules
 
 Prose paragraph, no rules recorded yet.
@@ -6832,9 +6840,9 @@ EOF
 "$NODE" update "$r61zero" >"$WORK/r61-zero-update.out" 2>&1
 r61zerorc=$?
 [ "$r61zerorc" -eq 0 ] && pass "zero-bullet rules/learned.md: update exits 0" || fail "zero-bullet rules/learned.md: update exits 0 (rc=$r61zerorc)"
-r61zerocount=$(find "$r61zero/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
+r61zerocount=$(find "$r61zero/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
 [ "$r61zerocount" -eq 0 ] && pass "zero-bullet rules/learned.md: no records are created" || fail "zero-bullet rules/learned.md: no records are created (found $r61zerocount)"
-grep -q '^- rule ' "$r61zero/.agent/migration-inventory.md" \
+grep -q '^- rule ' "$r61zero/.agents/migration-inventory.md" \
   && fail "zero-bullet rules/learned.md: the inventory carries no rule line" \
   || pass "zero-bullet rules/learned.md: the inventory carries no rule line"
 
@@ -6902,24 +6910,24 @@ r61afterabort=$(find "$r61abortdir" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:
 r61ntdir="$WORK/r61-no-trailing-newline"
 mkdir -p "$r61ntdir"
 make_v6_fixture "$r61ntdir"
-r61nt_modeline=$(grep -n '^  mode:' "$r61ntdir/.agent/purpose.md" | head -1 | cut -d: -f1)
+r61nt_modeline=$(grep -n '^  mode:' "$r61ntdir/.agents/purpose.md" | head -1 | cut -d: -f1)
 awk -v ln="$r61nt_modeline" \
   'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
-  "$r61ntdir/.agent/purpose.md" >"$r61ntdir/.agent/purpose.md.tmp"
-mv "$r61ntdir/.agent/purpose.md.tmp" "$r61ntdir/.agent/purpose.md"
+  "$r61ntdir/.agents/purpose.md" >"$r61ntdir/.agents/purpose.md.tmp"
+mv "$r61ntdir/.agents/purpose.md.tmp" "$r61ntdir/.agents/purpose.md"
 printf '%s\n' \
   '# Learned rules' \
   '' \
   '<!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->' \
   '- [2026-01-01] First rule, flat.' \
-  '- [2026-01-02] Last rule spans two lines,' >"$r61ntdir/.agent/rules/learned.md"
-printf '  and this second line has NO trailing newline.' >>"$r61ntdir/.agent/rules/learned.md"
+  '- [2026-01-02] Last rule spans two lines,' >"$r61ntdir/.agents/rules/learned.md"
+printf '  and this second line has NO trailing newline.' >>"$r61ntdir/.agents/rules/learned.md"
 
 "$NODE" update "$r61ntdir" >"$WORK/r61-nt-update.out" 2>&1
 r61ntrc=$?
 [ "$r61ntrc" -eq 0 ] && pass "no-trailing-newline rules/learned.md: update exits 0" || fail "no-trailing-newline rules/learned.md: update exits 0 (rc=$r61ntrc)"
 
-r61ntrecords=$(find "$r61ntdir/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+r61ntrecords=$(find "$r61ntdir/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
 r61ntcount=$(printf '%s\n' "$r61ntrecords" | grep -c .)
 [ "$r61ntcount" -eq 2 ] && pass "no-trailing-newline rules/learned.md: two bullets produce two records" || fail "no-trailing-newline rules/learned.md: two bullets produce two records (found $r61ntcount)"
 
@@ -6934,42 +6942,42 @@ r61nt_expect=$(printf '%s\n' \
 b1="$WORK/mig-boundary1"
 mkdir -p "$b1"
 r61mode "$b1" track-shared
-cp -R "$b1/.agent" "$b1/.agent.backup-v6"
-printf 'pre-existing backup marker\n' >"$b1/.agent.backup-v6/.marker"
+cp -R "$b1/.agents" "$b1/.agents.backup-v6"
+printf 'pre-existing backup marker\n' >"$b1/.agents.backup-v6/.marker"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$b1/.agent/purpose.md" >"$b1/.agent/purpose.md.tmp"
-mv "$b1/.agent/purpose.md.tmp" "$b1/.agent/purpose.md"
+  "$b1/.agents/purpose.md" >"$b1/.agents/purpose.md.tmp"
+mv "$b1/.agents/purpose.md.tmp" "$b1/.agents/purpose.md"
 "$NODE" update "$b1" >"$WORK/b1-update.out" 2>&1
 b1rc=$?
 [ "$b1rc" -eq 0 ] && pass "boundary 1: resume before anything is staged exits 0" || fail "boundary 1: resume before anything is staged exits 0 (rc=$b1rc)"
 grep -qF "backup path already exists" "$WORK/b1-update.out" \
   && fail "boundary 1: resume does not abort on its own backup" \
   || pass "boundary 1: resume does not abort on its own backup"
-[ -f "$b1/.agent.backup-v6/.marker" ] \
+[ -f "$b1/.agents.backup-v6/.marker" ] \
   && pass "boundary 1: the pre-existing backup is not re-copied" \
   || fail "boundary 1: the pre-existing backup is not re-copied"
-b1count=$(find "$b1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
+b1count=$(find "$b1/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
 [ "$b1count" -eq 4 ] \
   && pass "boundary 1: resume completes a full migration (four records)" \
   || fail "boundary 1: resume completes a full migration (four records) (found $b1count)"
-b1gi1=$(grep -cxF '.agent/indexes/' "$b1/.gitignore" 2>/dev/null)
-b1gi2=$(grep -cxF '.agent/rules/learned.md' "$b1/.gitignore" 2>/dev/null)
+b1gi1=$(grep -cxF '.agents/indexes/' "$b1/.gitignore" 2>/dev/null)
+b1gi2=$(grep -cxF '.agents/rules/learned.md' "$b1/.gitignore" 2>/dev/null)
 [ "$b1gi1" -eq 1 ] && [ "$b1gi2" -eq 1 ] \
   && pass "boundary 1: resume writes both generated-mode gitignore lines exactly once" \
   || fail "boundary 1: resume writes both generated-mode gitignore lines exactly once"
-r61_bullets_present "$b1/.agent/rules/learned.md" \
+r61_bullets_present "$b1/.agents/rules/learned.md" \
   && pass "boundary 1: the regenerated rules/learned.md reproduces every original bullet" \
   || fail "boundary 1: the regenerated rules/learned.md reproduces every original bullet"
 
 b2="$WORK/mig-boundary2"
 mkdir -p "$b2"
 r61mode "$b2" track-shared
-cp -R "$b2/.agent" "$b2/.agent.backup-v6"
+cp -R "$b2/.agents" "$b2/.agents.backup-v6"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$b2/.agent/purpose.md" >"$b2/.agent/purpose.md.tmp"
-mv "$b2/.agent/purpose.md.tmp" "$b2/.agent/purpose.md"
+  "$b2/.agents/purpose.md" >"$b2/.agents/purpose.md.tmp"
+mv "$b2/.agents/purpose.md.tmp" "$b2/.agents/purpose.md"
 
-b2staging="$b2/.agent/.learned-staging"
+b2staging="$b2/.agents/.learned-staging"
 mkdir -p "$b2staging"
 b2id1=$(bash -c 'RANDOM=6101; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b2id2=$(bash -c 'RANDOM=6102; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
@@ -6988,22 +6996,22 @@ b2rc=$?
 [ ! -e "$b2staging" ] \
   && pass "boundary 2: the staging directory is gone after resume" \
   || fail "boundary 2: the staging directory is gone after resume"
-b2count=$(find "$b2/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
+b2count=$(find "$b2/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | grep -c .)
 [ "$b2count" -eq 4 ] \
   && pass "boundary 2: resume records exactly the four original bullets" \
   || fail "boundary 2: resume records exactly the four original bullets (found $b2count)"
-r61_bullets_present "$b2/.agent/rules/learned.md" \
+r61_bullets_present "$b2/.agents/rules/learned.md" \
   && pass "boundary 2: every original bullet is present in the regenerated aggregate" \
   || fail "boundary 2: every original bullet is present in the regenerated aggregate"
 b2leak=0
 [ -e "$b2staging" ] && b2leak=1
 for b2id in $b2stagedids; do
-  [ -e "$b2/.agent/rules/learned/$b2id.md" ] && b2leak=1
-  grep -rlF "$b2id" "$b2/.agent" >/dev/null 2>&1 && b2leak=1
+  [ -e "$b2/.agents/rules/learned/$b2id.md" ] && b2leak=1
+  grep -rlF "$b2id" "$b2/.agents" >/dev/null 2>&1 && b2leak=1
 done
 [ "$b2leak" -eq 0 ] \
-  && pass "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agent/" \
-  || fail "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agent/"
+  && pass "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agents/" \
+  || fail "boundary 2: none of the discarded attempt's identities, the zero-byte one included, ever appears under .agents/"
 
 b3="$WORK/mig-boundary3"
 mkdir -p "$b3"
@@ -7011,46 +7019,46 @@ r61mode "$b3" track-shared
 git -C "$b3" init -q
 git -C "$b3" config user.name Tester
 git -C "$b3" config user.email tester@example.invalid
-git -C "$b3" add .agent
+git -C "$b3" add .agents
 git -C "$b3" commit -qm initial
 
-cp -R "$b3/.agent" "$b3/.agent.backup-v6"
-grep '^- ' "$b3/.agent/rules/learned.md" >"$b3/.agent/.learned-bullets-before"
+cp -R "$b3/.agents" "$b3/.agents.backup-v6"
+grep '^- ' "$b3/.agents/rules/learned.md" >"$b3/.agents/.learned-bullets-before"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$b3/.agent/purpose.md" >"$b3/.agent/purpose.md.tmp"
-mv "$b3/.agent/purpose.md.tmp" "$b3/.agent/purpose.md"
+  "$b3/.agents/purpose.md" >"$b3/.agents/purpose.md.tmp"
+mv "$b3/.agents/purpose.md.tmp" "$b3/.agents/purpose.md"
 
-mkdir -p "$b3/.agent/rules/learned"
+mkdir -p "$b3/.agents/rules/learned"
 b3id1=$(bash -c 'RANDOM=6201; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b3id2=$(bash -c 'RANDOM=6202; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b3id3=$(bash -c 'RANDOM=6203; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b3id4=$(bash -c 'RANDOM=6204; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
-printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b3/.agent/rules/learned/$b3id1.md"
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b3/.agents/rules/learned/$b3id1.md"
 printf '%s\n' \
   '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
   '  - qualifier one' \
-  '  - qualifier two' >"$b3/.agent/rules/learned/$b3id2.md"
+  '  - qualifier two' >"$b3/.agents/rules/learned/$b3id2.md"
 printf '%s\n' \
   '- [2026-01-03] Third rule, multi paragraph.' \
   '' \
-  '  Continuation paragraph here.' >"$b3/.agent/rules/learned/$b3id3.md"
-printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b3/.agent/rules/learned/$b3id4.md"
+  '  Continuation paragraph here.' >"$b3/.agents/rules/learned/$b3id3.md"
+printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b3/.agents/rules/learned/$b3id4.md"
 
 "$NODE" update "$b3" >"$WORK/b3-update.out" 2>&1
 b3rc=$?
 [ "$b3rc" -eq 0 ] && pass "boundary 3: resume after the rename, before ensure, exits 0" || fail "boundary 3: resume after the rename, before ensure, exits 0 (rc=$b3rc)"
-b3gi1=$(grep -cxF '.agent/indexes/' "$b3/.gitignore" 2>/dev/null)
-b3gi2=$(grep -cxF '.agent/rules/learned.md' "$b3/.gitignore" 2>/dev/null)
+b3gi1=$(grep -cxF '.agents/indexes/' "$b3/.gitignore" 2>/dev/null)
+b3gi2=$(grep -cxF '.agents/rules/learned.md' "$b3/.gitignore" 2>/dev/null)
 [ "$b3gi1" -eq 1 ] && [ "$b3gi2" -eq 1 ] \
   && pass "boundary 3: resume writes both generated-mode gitignore lines exactly once" \
   || fail "boundary 3: resume writes both generated-mode gitignore lines exactly once"
-r61_bullets_present "$b3/.agent/rules/learned.md" \
+r61_bullets_present "$b3/.agents/rules/learned.md" \
   && pass "boundary 3: resume regenerates the aggregate and reproduces every original bullet" \
   || fail "boundary 3: resume regenerates the aggregate and reproduces every original bullet"
-git -C "$b3" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$b3" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "boundary 3: resume untracks rules/learned.md" \
   || pass "boundary 3: resume untracks rules/learned.md"
-[ ! -e "$b3/.agent/.learned-bullets-before" ] \
+[ ! -e "$b3/.agents/.learned-bullets-before" ] \
   && pass "boundary 3: the resume snapshot is removed once the untrack completes" \
   || fail "boundary 3: the resume snapshot is removed once the untrack completes"
 
@@ -7060,50 +7068,50 @@ r61mode "$b4" track-shared
 git -C "$b4" init -q
 git -C "$b4" config user.name Tester
 git -C "$b4" config user.email tester@example.invalid
-git -C "$b4" add .agent
+git -C "$b4" add .agents
 git -C "$b4" commit -qm initial
 
-cp -R "$b4/.agent" "$b4/.agent.backup-v6"
-grep '^- ' "$b4/.agent/rules/learned.md" >"$b4/.agent/.learned-bullets-before"
+cp -R "$b4/.agents" "$b4/.agents.backup-v6"
+grep '^- ' "$b4/.agents/rules/learned.md" >"$b4/.agents/.learned-bullets-before"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$b4/.agent/purpose.md" >"$b4/.agent/purpose.md.tmp"
-mv "$b4/.agent/purpose.md.tmp" "$b4/.agent/purpose.md"
+  "$b4/.agents/purpose.md" >"$b4/.agents/purpose.md.tmp"
+mv "$b4/.agents/purpose.md.tmp" "$b4/.agents/purpose.md"
 
-mkdir -p "$b4/.agent/rules/learned"
+mkdir -p "$b4/.agents/rules/learned"
 b4id1=$(bash -c 'RANDOM=6301; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b4id2=$(bash -c 'RANDOM=6302; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b4id3=$(bash -c 'RANDOM=6303; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b4id4=$(bash -c 'RANDOM=6304; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
-printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b4/.agent/rules/learned/$b4id1.md"
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b4/.agents/rules/learned/$b4id1.md"
 printf '%s\n' \
   '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
   '  - qualifier one' \
-  '  - qualifier two' >"$b4/.agent/rules/learned/$b4id2.md"
+  '  - qualifier two' >"$b4/.agents/rules/learned/$b4id2.md"
 printf '%s\n' \
   '- [2026-01-03] Third rule, multi paragraph.' \
   '' \
-  '  Continuation paragraph here.' >"$b4/.agent/rules/learned/$b4id3.md"
-printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b4/.agent/rules/learned/$b4id4.md"
+  '  Continuation paragraph here.' >"$b4/.agents/rules/learned/$b4id3.md"
+printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b4/.agents/rules/learned/$b4id4.md"
 
 "$IDXSH" ensure --root "$b4" >/dev/null 2>&1
-printf '.agent/indexes/\n' >"$b4/.gitignore"
-printf '.agent/rules/learned.md\n' >>"$b4/.gitignore"
+printf '.agents/indexes/\n' >"$b4/.gitignore"
+printf '.agents/rules/learned.md\n' >>"$b4/.gitignore"
 
 "$NODE" update "$b4" >"$WORK/b4-update.out" 2>&1
 b4rc=$?
 [ "$b4rc" -eq 0 ] && pass "boundary 4: resume after the aggregate check, before untrack, exits 0" || fail "boundary 4: resume after the aggregate check, before untrack, exits 0 (rc=$b4rc)"
-b4gi1=$(grep -cxF '.agent/indexes/' "$b4/.gitignore" 2>/dev/null)
-b4gi2=$(grep -cxF '.agent/rules/learned.md' "$b4/.gitignore" 2>/dev/null)
+b4gi1=$(grep -cxF '.agents/indexes/' "$b4/.gitignore" 2>/dev/null)
+b4gi2=$(grep -cxF '.agents/rules/learned.md' "$b4/.gitignore" 2>/dev/null)
 [ "$b4gi1" -eq 1 ] && [ "$b4gi2" -eq 1 ] \
   && pass "boundary 4: resume adds no duplicate gitignore line" \
   || fail "boundary 4: resume adds no duplicate gitignore line"
-git -C "$b4" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$b4" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "boundary 4: resume untracks rules/learned.md exactly once" \
   || pass "boundary 4: resume untracks rules/learned.md exactly once"
-[ ! -e "$b4/.agent/.learned-bullets-before" ] \
+[ ! -e "$b4/.agents/.learned-bullets-before" ] \
   && pass "boundary 4: the resume snapshot is removed after the untrack" \
   || fail "boundary 4: the resume snapshot is removed after the untrack"
-r61_bullets_present "$b4/.agent/rules/learned.md" \
+r61_bullets_present "$b4/.agents/rules/learned.md" \
   && pass "boundary 4: the aggregate still reproduces every original bullet after resume" \
   || fail "boundary 4: the aggregate still reproduces every original bullet after resume"
 
@@ -7113,41 +7121,41 @@ r61mode "$b5" track-shared
 git -C "$b5" init -q
 git -C "$b5" config user.name Tester
 git -C "$b5" config user.email tester@example.invalid
-git -C "$b5" add .agent
+git -C "$b5" add .agents
 git -C "$b5" commit -qm initial
 
-cp -R "$b5/.agent" "$b5/.agent.backup-v6"
-grep '^- ' "$b5/.agent/rules/learned.md" >"$b5/.agent/.learned-bullets-before"
-printf -- '- [2026-01-09] Bogus bullet never present in any record.\n' >>"$b5/.agent/.learned-bullets-before"
+cp -R "$b5/.agents" "$b5/.agents.backup-v6"
+grep '^- ' "$b5/.agents/rules/learned.md" >"$b5/.agents/.learned-bullets-before"
+printf -- '- [2026-01-09] Bogus bullet never present in any record.\n' >>"$b5/.agents/.learned-bullets-before"
 awk '/^  version: 6$/ { print; print "  migration_target: \"6.3\""; next } { print }' \
-  "$b5/.agent/purpose.md" >"$b5/.agent/purpose.md.tmp"
-mv "$b5/.agent/purpose.md.tmp" "$b5/.agent/purpose.md"
+  "$b5/.agents/purpose.md" >"$b5/.agents/purpose.md.tmp"
+mv "$b5/.agents/purpose.md.tmp" "$b5/.agents/purpose.md"
 
-mkdir -p "$b5/.agent/rules/learned"
+mkdir -p "$b5/.agents/rules/learned"
 b5id1=$(bash -c 'RANDOM=6501; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b5id2=$(bash -c 'RANDOM=6502; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b5id3=$(bash -c 'RANDOM=6503; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
 b5id4=$(bash -c 'RANDOM=6504; printf "%04x%04x%04x" "$RANDOM" "$RANDOM" "$RANDOM"')
-printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b5/.agent/rules/learned/$b5id1.md"
+printf -- '- [2026-01-01] First rule, flat. Trigger: something.\n' >"$b5/.agents/rules/learned/$b5id1.md"
 printf '%s\n' \
   '- [2026-01-02] Second rule with a nested sub-bullet. Trigger: x.' \
   '  - qualifier one' \
-  '  - qualifier two' >"$b5/.agent/rules/learned/$b5id2.md"
+  '  - qualifier two' >"$b5/.agents/rules/learned/$b5id2.md"
 printf '%s\n' \
   '- [2026-01-03] Third rule, multi paragraph.' \
   '' \
-  '  Continuation paragraph here.' >"$b5/.agent/rules/learned/$b5id3.md"
-printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b5/.agent/rules/learned/$b5id4.md"
+  '  Continuation paragraph here.' >"$b5/.agents/rules/learned/$b5id3.md"
+printf -- '- [2026-01-04] Fourth rule, flat, last one.\n' >"$b5/.agents/rules/learned/$b5id4.md"
 
 "$NODE" update "$b5" >"$WORK/b5-update.out" 2>&1
 b5rc=$?
 [ "$b5rc" -ne 0 ] \
   && pass "abort path: update exits nonzero when the regenerated aggregate does not reproduce every snapshotted bullet" \
   || fail "abort path: update exits nonzero when the regenerated aggregate does not reproduce every snapshotted bullet (rc=$b5rc)"
-git -C "$b5" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$b5" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && pass "abort path: rules/learned.md stays tracked when the aggregate-reproduction check fails" \
   || fail "abort path: rules/learned.md stays tracked when the aggregate-reproduction check fails"
-[ -e "$b5/.agent/.learned-bullets-before" ] \
+[ -e "$b5/.agents/.learned-bullets-before" ] \
   && pass "abort path: .learned-bullets-before is not removed when the aggregate-reproduction check fails" \
   || fail "abort path: .learned-bullets-before is not removed when the aggregate-reproduction check fails"
 
@@ -7158,85 +7166,85 @@ mm_build() {
   mkdir -p "$mm_dir"
   r61mode "$mm_dir" "$mm_mode"
   printf '# Custom\n\nHand-authored project note that must survive migration untouched.\n' \
-    >"$mm_dir/.agent/docs/custom.md"
+    >"$mm_dir/.agents/docs/custom.md"
   if [ "$mm_git" = yes ]; then
     git -C "$mm_dir" init -q
     git -C "$mm_dir" config user.name Tester
     git -C "$mm_dir" config user.email tester@example.invalid
-    git -C "$mm_dir" add .agent
+    git -C "$mm_dir" add .agents
     git -C "$mm_dir" commit -qm initial
   fi
 }
 
 mmA="$WORK/mm-track-shared"
 mm_build "$mmA" track-shared yes
-cp "$mmA/.agent/docs/custom.md" "$WORK/mmA-custom-before.md"
+cp "$mmA/.agents/docs/custom.md" "$WORK/mmA-custom-before.md"
 "$NODE" update "$mmA" >"$WORK/mmA-update.out" 2>&1
 mmA_rc=$?
 [ "$mmA_rc" -eq 0 ] && pass "mode matrix (track-shared): update exits 0" || fail "mode matrix (track-shared): update exits 0 (rc=$mmA_rc)"
-mmA_gi1=$(grep -cxF '.agent/indexes/' "$mmA/.gitignore" 2>/dev/null)
-mmA_gi2=$(grep -cxF '.agent/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
+mmA_gi1=$(grep -cxF '.agents/indexes/' "$mmA/.gitignore" 2>/dev/null)
+mmA_gi2=$(grep -cxF '.agents/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
 [ "$mmA_gi1" -eq 1 ] && [ "$mmA_gi2" -eq 1 ] \
   && pass "mode matrix (track-shared): both gitignore lines are present exactly once" \
   || fail "mode matrix (track-shared): both gitignore lines are present exactly once"
-git -C "$mmA" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$mmA" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "mode matrix (track-shared): rules/learned.md is untracked after migration" \
   || pass "mode matrix (track-shared): rules/learned.md is untracked after migration"
-diff -q "$WORK/mmA-custom-before.md" "$mmA/.agent/docs/custom.md" >/dev/null 2>&1 \
+diff -q "$WORK/mmA-custom-before.md" "$mmA/.agents/docs/custom.md" >/dev/null 2>&1 \
   && pass "mode matrix (track-shared): the customized doc's content survives untouched" \
   || fail "mode matrix (track-shared): the customized doc's content survives untouched"
-git -C "$mmA" ls-files --error-unmatch -- .agent/docs/custom.md >/dev/null 2>&1 \
+git -C "$mmA" ls-files --error-unmatch -- .agents/docs/custom.md >/dev/null 2>&1 \
   && pass "mode matrix (track-shared): the customized doc keeps its tracked ownership" \
   || fail "mode matrix (track-shared): the customized doc keeps its tracked ownership"
 "$NODE" update "$mmA" >"$WORK/mmA-update2.out" 2>&1
 mmA_rc2=$?
 [ "$mmA_rc2" -eq 0 ] && pass "mode matrix (track-shared): a second update exits 0" || fail "mode matrix (track-shared): a second update exits 0 (rc=$mmA_rc2)"
-mmA_gi1b=$(grep -cxF '.agent/indexes/' "$mmA/.gitignore" 2>/dev/null)
-mmA_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
+mmA_gi1b=$(grep -cxF '.agents/indexes/' "$mmA/.gitignore" 2>/dev/null)
+mmA_gi2b=$(grep -cxF '.agents/rules/learned.md' "$mmA/.gitignore" 2>/dev/null)
 [ "$mmA_gi1b" -eq 1 ] && [ "$mmA_gi2b" -eq 1 ] \
   && pass "mode matrix (track-shared): a second update adds no duplicate gitignore line" \
   || fail "mode matrix (track-shared): a second update adds no duplicate gitignore line"
 
 mmB="$WORK/mm-track-all"
 mm_build "$mmB" track-all yes
-cp "$mmB/.agent/docs/custom.md" "$WORK/mmB-custom-before.md"
+cp "$mmB/.agents/docs/custom.md" "$WORK/mmB-custom-before.md"
 "$NODE" update "$mmB" >"$WORK/mmB-update.out" 2>&1
 mmB_rc=$?
 [ "$mmB_rc" -eq 0 ] && pass "mode matrix (track-all): update exits 0" || fail "mode matrix (track-all): update exits 0 (rc=$mmB_rc)"
-[ ! -e "$mmB/.agent.backup-v6" ] \
+[ ! -e "$mmB/.agents.backup-v6" ] \
   && pass "mode matrix (track-all): no backup is created" \
   || fail "mode matrix (track-all): no backup is created"
-mmB_gi1=$(grep -cxF '.agent/indexes/' "$mmB/.gitignore" 2>/dev/null)
-mmB_gi2=$(grep -cxF '.agent/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
+mmB_gi1=$(grep -cxF '.agents/indexes/' "$mmB/.gitignore" 2>/dev/null)
+mmB_gi2=$(grep -cxF '.agents/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
 [ "$mmB_gi1" -eq 1 ] && [ "$mmB_gi2" -eq 1 ] \
   && pass "mode matrix (track-all): both gitignore lines are present exactly once" \
   || fail "mode matrix (track-all): both gitignore lines are present exactly once"
-git -C "$mmB" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$mmB" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "mode matrix (track-all): rules/learned.md is untracked after migration" \
   || pass "mode matrix (track-all): rules/learned.md is untracked after migration"
-diff -q "$WORK/mmB-custom-before.md" "$mmB/.agent/docs/custom.md" >/dev/null 2>&1 \
+diff -q "$WORK/mmB-custom-before.md" "$mmB/.agents/docs/custom.md" >/dev/null 2>&1 \
   && pass "mode matrix (track-all): the customized doc's content survives untouched" \
   || fail "mode matrix (track-all): the customized doc's content survives untouched"
-git -C "$mmB" ls-files --error-unmatch -- .agent/docs/custom.md >/dev/null 2>&1 \
+git -C "$mmB" ls-files --error-unmatch -- .agents/docs/custom.md >/dev/null 2>&1 \
   && pass "mode matrix (track-all): the customized doc keeps its tracked ownership" \
   || fail "mode matrix (track-all): the customized doc keeps its tracked ownership"
 "$NODE" update "$mmB" >"$WORK/mmB-update2.out" 2>&1
-mmB_gi1b=$(grep -cxF '.agent/indexes/' "$mmB/.gitignore" 2>/dev/null)
-mmB_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
+mmB_gi1b=$(grep -cxF '.agents/indexes/' "$mmB/.gitignore" 2>/dev/null)
+mmB_gi2b=$(grep -cxF '.agents/rules/learned.md' "$mmB/.gitignore" 2>/dev/null)
 [ "$mmB_gi1b" -eq 1 ] && [ "$mmB_gi2b" -eq 1 ] \
   && pass "mode matrix (track-all): a second update adds no duplicate gitignore line" \
   || fail "mode matrix (track-all): a second update adds no duplicate gitignore line"
 
 mmC="$WORK/mm-ignore-all"
 mm_build "$mmC" ignore-all no
-cp "$mmC/.agent/docs/custom.md" "$WORK/mmC-custom-before.md"
+cp "$mmC/.agents/docs/custom.md" "$WORK/mmC-custom-before.md"
 "$NODE" update "$mmC" >"$WORK/mmC-update.out" 2>&1
 mmC_rc=$?
 [ "$mmC_rc" -eq 0 ] && pass "mode matrix (ignore-all, no git): update exits 0" || fail "mode matrix (ignore-all, no git): update exits 0 (rc=$mmC_rc)"
 [ ! -e "$mmC/.gitignore" ] \
   && pass "mode matrix (ignore-all, no git): no gitignore is written" \
   || fail "mode matrix (ignore-all, no git): no gitignore is written"
-diff -q "$WORK/mmC-custom-before.md" "$mmC/.agent/docs/custom.md" >/dev/null 2>&1 \
+diff -q "$WORK/mmC-custom-before.md" "$mmC/.agents/docs/custom.md" >/dev/null 2>&1 \
   && pass "mode matrix (ignore-all, no git): the customized doc's content survives untouched" \
   || fail "mode matrix (ignore-all, no git): the customized doc's content survives untouched"
 "$NODE" update "$mmC" >"$WORK/mmC-update2.out" 2>&1
@@ -7245,21 +7253,21 @@ mmC_rc2=$?
 
 mmD="$WORK/mm-track-shared-nogit"
 mm_build "$mmD" track-shared no
-cp "$mmD/.agent/docs/custom.md" "$WORK/mmD-custom-before.md"
+cp "$mmD/.agents/docs/custom.md" "$WORK/mmD-custom-before.md"
 "$NODE" update "$mmD" >"$WORK/mmD-update.out" 2>&1
 mmD_rc=$?
 [ "$mmD_rc" -eq 0 ] && pass "mode matrix (track-shared, no git): update exits 0" || fail "mode matrix (track-shared, no git): update exits 0 (rc=$mmD_rc)"
-mmD_gi1=$(grep -cxF '.agent/indexes/' "$mmD/.gitignore" 2>/dev/null)
-mmD_gi2=$(grep -cxF '.agent/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
+mmD_gi1=$(grep -cxF '.agents/indexes/' "$mmD/.gitignore" 2>/dev/null)
+mmD_gi2=$(grep -cxF '.agents/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
 [ "$mmD_gi1" -eq 1 ] && [ "$mmD_gi2" -eq 1 ] \
   && pass "mode matrix (track-shared, no git): both gitignore lines are still written" \
   || fail "mode matrix (track-shared, no git): both gitignore lines are still written"
-diff -q "$WORK/mmD-custom-before.md" "$mmD/.agent/docs/custom.md" >/dev/null 2>&1 \
+diff -q "$WORK/mmD-custom-before.md" "$mmD/.agents/docs/custom.md" >/dev/null 2>&1 \
   && pass "mode matrix (track-shared, no git): the customized doc's content survives untouched" \
   || fail "mode matrix (track-shared, no git): the customized doc's content survives untouched"
 "$NODE" update "$mmD" >"$WORK/mmD-update2.out" 2>&1
-mmD_gi1b=$(grep -cxF '.agent/indexes/' "$mmD/.gitignore" 2>/dev/null)
-mmD_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
+mmD_gi1b=$(grep -cxF '.agents/indexes/' "$mmD/.gitignore" 2>/dev/null)
+mmD_gi2b=$(grep -cxF '.agents/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
 [ "$mmD_gi1b" -eq 1 ] && [ "$mmD_gi2b" -eq 1 ] \
   && pass "mode matrix (track-shared, no git): a second update adds no duplicate gitignore line" \
   || fail "mode matrix (track-shared, no git): a second update adds no duplicate gitignore line"
@@ -7267,7 +7275,7 @@ mmD_gi2b=$(grep -cxF '.agent/rules/learned.md' "$mmD/.gitignore" 2>/dev/null)
 au="$WORK/mm-already-untracked"
 mm_build "$au" track-shared yes
 "$NODE" update "$au" >"$WORK/au-update1.out" 2>&1
-git -C "$au" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$au" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "already-untracked: the first update untracks rules/learned.md, setting up the fixture" \
   || pass "already-untracked: the first update untracks rules/learned.md, setting up the fixture"
 git -C "$au" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
@@ -7279,10 +7287,10 @@ au_rc2=$?
 [ "$au_rc2" -eq 0 ] \
   && pass "already-untracked: a second update, with the file already untracked, exits 0" \
   || fail "already-untracked: a second update, with the file already untracked, exits 0 (rc=$au_rc2)"
-grep -qF 'skipped untracking .agent/rules/learned.md (.agent/rules/learned.md is not tracked)' "$WORK/au-update2.out" \
+grep -qF 'skipped untracking .agents/rules/learned.md (.agents/rules/learned.md is not tracked)' "$WORK/au-update2.out" \
   && pass "already-untracked: the second update reports the not-tracked skip and runs no git rm --cached" \
   || fail "already-untracked: the second update reports the not-tracked skip and runs no git rm --cached"
-git -C "$au" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$au" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "already-untracked: rules/learned.md is still not tracked after the second update" \
   || pass "already-untracked: rules/learned.md is still not tracked after the second update"
 
@@ -7292,7 +7300,7 @@ r61mode "$mg" track-shared
 git -C "$mg" init -q
 git -C "$mg" config user.name Tester
 git -C "$mg" config user.email tester@example.invalid
-git -C "$mg" add .agent
+git -C "$mg" add .agents
 git -C "$mg" commit -qm initial
 "$NODE" update "$mg" >/dev/null 2>&1
 git -C "$mg" add -A
@@ -7300,14 +7308,14 @@ git -C "$mg" commit -qm "post-migration state"
 mgbase=$(git -C "$mg" symbolic-ref --short HEAD)
 
 git -C "$mg" checkout -qb recA "$mgbase"
-printf -- '- [2026-02-01] Branch A added this rule.\n' >"$mg/.agent/rules/learned/branch-a-record.md"
-git -C "$mg" add .agent/rules/learned/branch-a-record.md
+printf -- '- [2026-02-01] Branch A added this rule.\n' >"$mg/.agents/rules/learned/branch-a-record.md"
+git -C "$mg" add .agents/rules/learned/branch-a-record.md
 git -C "$mg" commit -qm "branch A record"
 
 git -C "$mg" checkout -q "$mgbase"
 git -C "$mg" checkout -qb recB "$mgbase"
-printf -- '- [2026-02-02] Branch B added this rule.\n' >"$mg/.agent/rules/learned/branch-b-record.md"
-git -C "$mg" add .agent/rules/learned/branch-b-record.md
+printf -- '- [2026-02-02] Branch B added this rule.\n' >"$mg/.agents/rules/learned/branch-b-record.md"
+git -C "$mg" add .agents/rules/learned/branch-b-record.md
 git -C "$mg" commit -qm "branch B record"
 
 git -C "$mg" checkout -qb merge-ab "$mgbase"
@@ -7318,14 +7326,14 @@ mgmerge2rc=$?
 [ "$mgmerge1rc" -eq 0 ] && [ "$mgmerge2rc" -eq 0 ] \
   && pass "merge fixture: two disjoint new records merge clean" \
   || fail "merge fixture: two disjoint new records merge clean"
-"$mg/.agent/scripts/index.sh" ensure --root "$mg" >/dev/null 2>&1
-grep -qF 'Branch A added this rule.' "$mg/.agent/rules/learned.md" \
-  && grep -qF 'Branch B added this rule.' "$mg/.agent/rules/learned.md" \
+"$mg/.agents/scripts/index.sh" ensure --root "$mg" >/dev/null 2>&1
+grep -qF 'Branch A added this rule.' "$mg/.agents/rules/learned.md" \
+  && grep -qF 'Branch B added this rule.' "$mg/.agents/rules/learned.md" \
   && pass "merge fixture: both merged records reach the regenerated aggregate" \
   || fail "merge fixture: both merged records reach the regenerated aggregate"
 
 git -C "$mg" checkout -q "$mgbase"
-mgeditfile=$(grep -lF 'First rule, flat' "$mg/.agent/rules/learned"/*.md | head -n1)
+mgeditfile=$(grep -lF 'First rule, flat' "$mg/.agents/rules/learned"/*.md | head -n1)
 mgeditrel=${mgeditfile#"$mg"/}
 
 git -C "$mg" checkout -qb editC "$mgbase"
@@ -7353,15 +7361,15 @@ git -C "$mg" diff --name-only --diff-filter=U 2>/dev/null | grep -qF "$mgeditrel
 git -C "$mg" merge --abort >/dev/null 2>&1
 
 git -C "$mg" checkout -qb linear "$mgbase"
-printf -- '- [2026-02-03] Linear commit one added this rule.\n' >"$mg/.agent/rules/learned/linear-one.md"
-git -C "$mg" add .agent/rules/learned/linear-one.md
+printf -- '- [2026-02-03] Linear commit one added this rule.\n' >"$mg/.agents/rules/learned/linear-one.md"
+git -C "$mg" add .agents/rules/learned/linear-one.md
 git -C "$mg" commit -qm "linear commit one"
-printf -- '- [2026-02-04] Linear commit two added this rule.\n' >"$mg/.agent/rules/learned/linear-two.md"
-git -C "$mg" add .agent/rules/learned/linear-two.md
+printf -- '- [2026-02-04] Linear commit two added this rule.\n' >"$mg/.agents/rules/learned/linear-two.md"
+git -C "$mg" add .agents/rules/learned/linear-two.md
 git -C "$mg" commit -qm "linear commit two"
-"$mg/.agent/scripts/index.sh" ensure --root "$mg" >/dev/null 2>&1
-grep -qF 'Linear commit one added this rule.' "$mg/.agent/rules/learned.md" \
-  && grep -qF 'Linear commit two added this rule.' "$mg/.agent/rules/learned.md" \
+"$mg/.agents/scripts/index.sh" ensure --root "$mg" >/dev/null 2>&1
+grep -qF 'Linear commit one added this rule.' "$mg/.agents/rules/learned.md" \
+  && grep -qF 'Linear commit two added this rule.' "$mg/.agents/rules/learned.md" \
   && pass "linear replay: both sequential commits' records survive in the regenerated aggregate" \
   || fail "linear replay: both sequential commits' records survive in the regenerated aggregate"
 
@@ -7371,13 +7379,13 @@ r61mode "$e2e" track-shared
 git -C "$e2e" init -q
 git -C "$e2e" config user.name Tester
 git -C "$e2e" config user.email tester@example.invalid
-git -C "$e2e" add .agent
+git -C "$e2e" add .agents
 git -C "$e2e" commit -qm initial
 
 "$NODE" update "$e2e" >"$WORK/e2e-update.out" 2>&1
 e2e_rc=$?
 [ "$e2e_rc" -eq 0 ] && pass "end-to-end migration: update exits 0" || fail "end-to-end migration: update exits 0 (rc=$e2e_rc)"
-git -C "$e2e" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1 \
+git -C "$e2e" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1 \
   && fail "end-to-end migration: the real chain untracks rules/learned.md" \
   || pass "end-to-end migration: the real chain untracks rules/learned.md"
 
@@ -7393,7 +7401,7 @@ e2e_bad_repairs=$(printf '%s\n' "$e2e_flags_after" \
 shimU="$WORK/shim-update"
 make_v6_fixture "$shimU"
 "$NODE" update "$shimU" >/dev/null 2>&1
-[ -x "$shimU/.agent/scripts/checkpoint.sh" ] && [ ! -e "$shimU/.agent/scripts/finish.sh" ] \
+[ -x "$shimU/.agents/scripts/checkpoint.sh" ] && [ ! -e "$shimU/.agents/scripts/finish.sh" ] \
   && pass "node.sh update: refreshes checkpoint.sh and installs no finish.sh" \
   || fail "node.sh update: refreshes checkpoint.sh and installs no finish.sh"
 
@@ -7405,45 +7413,45 @@ finish_bootstrap "$rs67"
 grep -q '^BUILT$' "$WORK/rs67.cold.err" \
   && pass "read set: a cold index.sh ensure reports BUILT" \
   || fail "read set: a cold index.sh ensure reports BUILT"
-[ "$(cat "$WORK/rs67.cold.out")" = "$rs67/.agent/indexes/current.md" ] \
+[ "$(cat "$WORK/rs67.cold.out")" = "$rs67/.agents/indexes/current.md" ] \
   && pass "read set: index.sh ensure prints the entry path" \
   || fail "read set: index.sh ensure prints the entry path"
 
-"$rs67/.agent/scripts/status.sh" --load "$rs67" >"$WORK/rs67.load.out" 2>&1
-grep -qF "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md." "$WORK/rs67.load.out" \
+"$rs67/.agents/scripts/status.sh" --load "$rs67" >"$WORK/rs67.load.out" 2>&1
+grep -qF "Rule bodies are not printed here — read every page listed in .agents/indexes/current.md." "$WORK/rs67.load.out" \
   && pass "read set: --load names the index entry path in generated mode" \
   || fail "read set: --load names the index entry path in generated mode"
-grep -qF '==== .agent/purpose.md ====' "$WORK/rs67.load.out" \
+grep -qF '==== .agents/purpose.md ====' "$WORK/rs67.load.out" \
   && pass "read set: --load prints purpose.md under a marker in generated mode" \
   || fail "read set: --load prints purpose.md under a marker in generated mode"
-grep -qF '==== .agent/memory.md ====' "$WORK/rs67.load.out" \
+grep -qF '==== .agents/memory.md ====' "$WORK/rs67.load.out" \
   && pass "read set: --load prints memory.md under a marker in generated mode" \
   || fail "read set: --load prints memory.md under a marker in generated mode"
-grep -q '^==== \.agent/rules/' "$WORK/rs67.load.out" \
-  && fail "read set: --load prints no .agent/rules/ marker in generated mode" \
-  || pass "read set: --load prints no .agent/rules/ marker in generated mode"
+grep -q '^==== \.agents/rules/' "$WORK/rs67.load.out" \
+  && fail "read set: --load prints no .agents/rules/ marker in generated mode" \
+  || pass "read set: --load prints no .agents/rules/ marker in generated mode"
 
 rs67ni="$WORK/read-set-no-indexer"
 mkdir -p "$rs67ni"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$rs67ni" >/dev/null 2>&1
 finish_bootstrap "$rs67ni"
 "$IDXSH" ensure --root "$rs67ni" >/dev/null 2>&1
-rm -f "$rs67ni/.agent/scripts/index.sh"
-"$rs67ni/.agent/scripts/status.sh" --load "$rs67ni" >"$WORK/rs67ni.load.out" 2>&1
+rm -f "$rs67ni/.agents/scripts/index.sh"
+"$rs67ni/.agents/scripts/status.sh" --load "$rs67ni" >"$WORK/rs67ni.load.out" 2>&1
 grep -q '^Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed' "$WORK/rs67ni.load.out" \
   && pass "read set: a generated node with no indexer is told so in the load output, not as a REPAIR" \
   || fail "read set: a generated node with no indexer is told so in the load output, not as a REPAIR"
 grep -q '^REPAIR: .*index.sh' "$WORK/rs67ni.load.out" \
   && fail "read set: a missing indexer stays a warning, never a checkpoint-blocking REPAIR" \
   || pass "read set: a missing indexer stays a warning, never a checkpoint-blocking REPAIR"
-grep -qF '==== .agent/rules/contract.md ====' "$WORK/rs67ni.load.out" \
+grep -qF '==== .agents/rules/contract.md ====' "$WORK/rs67ni.load.out" \
   && pass "read set: --load prints the contract inline when the indexer is missing" \
   || fail "read set: --load prints the contract inline when the indexer is missing"
-grep -qF "read every page listed in .agent/indexes/current.md" "$WORK/rs67ni.load.out" \
+grep -qF "read every page listed in .agents/indexes/current.md" "$WORK/rs67ni.load.out" \
   && fail "read set: --load never points at the unverifiable cache when the indexer is missing" \
   || pass "read set: --load never points at the unverifiable cache when the indexer is missing"
 
-rs67_snap_before=$(idx_snapshot "$rs67/.agent/indexes")
+rs67_snap_before=$(idx_snapshot "$rs67/.agents/indexes")
 "$IDXSH" ensure --root "$rs67" >"$WORK/rs67.warm.out" 2>"$WORK/rs67.warm.err"
 grep -q '^HIT$' "$WORK/rs67.warm.err" \
   && pass "read set: a warm index.sh ensure reports HIT" \
@@ -7451,7 +7459,7 @@ grep -q '^HIT$' "$WORK/rs67.warm.err" \
 [ "$(cat "$WORK/rs67.warm.out")" = "$(cat "$WORK/rs67.cold.out")" ] \
   && pass "read set: a warm ensure prints the same entry path" \
   || fail "read set: a warm ensure prints the same entry path"
-rs67_snap_after=$(idx_snapshot "$rs67/.agent/indexes")
+rs67_snap_after=$(idx_snapshot "$rs67/.agents/indexes")
 [ "$rs67_snap_before" = "$rs67_snap_after" ] \
   && pass "read set: a warm ensure publishes no new generation" \
   || fail "read set: a warm ensure publishes no new generation"
@@ -7460,13 +7468,13 @@ dup67="$WORK/read-set-dup"
 mkdir -p "$dup67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$dup67" >/dev/null 2>&1
 finish_bootstrap "$dup67"
-printf '# Custom Rule\n\nThe duplicate-body probe sentence lives only in this rule record.\n' >"$dup67/.agent/rules/custom.md"
+printf '# Custom Rule\n\nThe duplicate-body probe sentence lives only in this rule record.\n' >"$dup67/.agents/rules/custom.md"
 "$IDXSH" ensure --root "$dup67" >/dev/null 2>"$WORK/dup67.err"
-dup67_gen=$(sed -n 2p "$dup67/.agent/indexes/current.md")
-grep -qrF -- 'duplicate-body probe sentence' "$dup67/.agent/indexes/$dup67_gen" \
+dup67_gen=$(sed -n 2p "$dup67/.agents/indexes/current.md")
+grep -qrF -- 'duplicate-body probe sentence' "$dup67/.agents/indexes/$dup67_gen" \
   && pass "read set: a rule's distinctive sentence appears in a published page" \
   || fail "read set: a rule's distinctive sentence appears in a published page"
-"$dup67/.agent/scripts/status.sh" --load "$dup67" 2>/dev/null | grep -qF -- 'duplicate-body probe sentence' \
+"$dup67/.agents/scripts/status.sh" --load "$dup67" 2>/dev/null | grep -qF -- 'duplicate-body probe sentence' \
   && fail "read set: the rule's sentence does not also appear in --load output" \
   || pass "read set: the rule's sentence does not also appear in --load output"
 
@@ -7474,10 +7482,10 @@ mp67="$WORK/manual-parity"
 mkdir -p "$mp67"
 "$NODE" init --preset software-development --mode track-all --indexes manual "$mp67" >/dev/null 2>&1
 finish_bootstrap "$mp67"
-"$mp67/.agent/scripts/status.sh" --load "$mp67" >"$WORK/mp67.cur.out" 2>&1
+"$mp67/.agents/scripts/status.sh" --load "$mp67" >"$WORK/mp67.cur.out" 2>&1
 
 mp67_order=$(grep -n '^==== ' "$WORK/mp67.cur.out" | cut -d: -f2 | tr '\n' ' ')
-[ "$mp67_order" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
+[ "$mp67_order" = "==== .agents/rules/learned.md ==== ==== .agents/rules/contract.md ==== ==== .agents/purpose.md ==== ==== .agents/memory.md ==== " ] \
   && pass "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order" \
   || fail "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order ($mp67_order)"
 
@@ -7488,8 +7496,8 @@ grep -qE '^PAYLOAD: --load would write [0-9]+ bytes of a [0-9]+ byte budget \(le
 mp67_expected="$WORK/mp67.expected-tail.out"
 : >"$mp67_expected"
 for mp67_f in rules/learned.md rules/contract.md purpose.md memory.md; do
-  printf '\n==== .agent/%s ====\n' "$mp67_f" >>"$mp67_expected"
-  cat "$mp67/.agent/$mp67_f" >>"$mp67_expected"
+  printf '\n==== .agents/%s ====\n' "$mp67_f" >>"$mp67_expected"
+  cat "$mp67/.agents/$mp67_f" >>"$mp67_expected"
 done
 mp67_marker_line=$(grep -n '^==== ' "$WORK/mp67.cur.out" | head -1 | cut -d: -f1)
 mp67_actual="$WORK/mp67.actual-tail.out"
@@ -7506,21 +7514,21 @@ grep -qF "compaction" "$tplgen67" || missing67="$missing67 compaction-rerun"
 grep -qF "branch switch" "$tplgen67" || missing67="$missing67 branch-switch-rerun"
 grep -qF "opened only to edit it, to check its provenance, or to resolve a concrete uncertainty" "$tplgen67" || missing67="$missing67 rule-source"
 grep -qF "the catalog, read whole" "$tplgen67" || missing67="$missing67 routes-catalog"
-grep -qF "read \`.agent/rules/\` and \`.agent/docs/architecture.md\` directly and carry on" "$tplgen67" || missing67="$missing67 fallback"
+grep -qF "read \`.agents/rules/\` and \`.agents/docs/architecture.md\` directly and carry on" "$tplgen67" || missing67="$missing67 fallback"
 [ -z "$missing67" ] && pass "template: the generated entry point carries its timing, routing, and fallback phrases" || fail "template: the generated entry point carries its timing, routing, and fallback phrases (missing:$missing67)"
 
 ex67="$WORK/read-set-exclusions"
 mkdir -p "$ex67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$ex67" >/dev/null 2>&1
 finish_bootstrap "$ex67"
-mkdir -p "$ex67/.agent/docs/area/references" "$ex67/.agent/docs/references"
-printf '# Architecture\n\nRouting table placeholder.\n' >"$ex67/.agent/docs/architecture.md"
-printf '# Ordinary Doc\n<!-- Read when: testing exclusions -->\nOrdinary doc body.\n' >"$ex67/.agent/docs/ordinary.md"
-printf '# Area Reference\n<!-- Read when: never routed -->\nArea reference body, never a routes line.\n' >"$ex67/.agent/docs/area/references/one.md"
-printf '# Top Reference\n<!-- Read when: never routed -->\nTop-level reference body, never a routes line.\n' >"$ex67/.agent/docs/references/two.md"
+mkdir -p "$ex67/.agents/docs/area/references" "$ex67/.agents/docs/references"
+printf '# Architecture\n\nRouting table placeholder.\n' >"$ex67/.agents/docs/architecture.md"
+printf '# Ordinary Doc\n<!-- Read when: testing exclusions -->\nOrdinary doc body.\n' >"$ex67/.agents/docs/ordinary.md"
+printf '# Area Reference\n<!-- Read when: never routed -->\nArea reference body, never a routes line.\n' >"$ex67/.agents/docs/area/references/one.md"
+printf '# Top Reference\n<!-- Read when: never routed -->\nTop-level reference body, never a routes line.\n' >"$ex67/.agents/docs/references/two.md"
 "$IDXSH" ensure --root "$ex67" >/dev/null 2>"$WORK/ex67.err"
-ex67_gen=$(sed -n 2p "$ex67/.agent/indexes/current.md")
-ex67_dir="$ex67/.agent/indexes/$ex67_gen"
+ex67_gen=$(sed -n 2p "$ex67/.agents/indexes/current.md")
+ex67_dir="$ex67/.agents/indexes/$ex67_gen"
 
 grep -qrF -- 'This rubric loads on demand' "$ex67_dir" \
   && fail "exclusions: no published page carries rules/quality-bar.md's body" \
@@ -7548,10 +7556,10 @@ git -C "$bs67" config user.email tester@example.invalid
 git -C "$bs67" add -A
 git -C "$bs67" commit -qm bootstrap
 "$IDXSH" ensure --root "$bs67" >/dev/null 2>/dev/null
-bs67_gen1=$(sed -n 2p "$bs67/.agent/indexes/current.md")
+bs67_gen1=$(sed -n 2p "$bs67/.agents/indexes/current.md")
 
 git -C "$bs67" checkout -qb bs67-branch
-printf -- '\n- Test: run this every time.\n' >>"$bs67/.agent/rules/contract.md"
+printf -- '\n- Test: run this every time.\n' >>"$bs67/.agents/rules/contract.md"
 git -C "$bs67" add -A
 git -C "$bs67" commit -qm 'change a rule record'
 
@@ -7561,7 +7569,7 @@ bs67_check=$("$IDXSH" check --root "$bs67" 2>/dev/null)
   || fail "branch switch: index.sh check reports STALE after a record changes on a new branch ($bs67_check)"
 
 "$IDXSH" ensure --root "$bs67" >/dev/null 2>"$WORK/bs67.second.err"
-bs67_gen2=$(sed -n 2p "$bs67/.agent/indexes/current.md")
+bs67_gen2=$(sed -n 2p "$bs67/.agents/indexes/current.md")
 grep -q '^BUILT$' "$WORK/bs67.second.err" \
   && pass "branch switch: the next ensure republishes" \
   || fail "branch switch: the next ensure republishes"
@@ -7574,14 +7582,14 @@ mkdir -p "$fe67"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$fe67" >/dev/null 2>&1
 finish_bootstrap "$fe67"
 "$IDXSH" ensure --root "$fe67" >/dev/null 2>&1
-fe67_entry_before=$(cat "$fe67/.agent/indexes/current.md")
-printf -- '\n- Test: trigger a rebuild.\n' >>"$fe67/.agent/rules/contract.md"
+fe67_entry_before=$(cat "$fe67/.agents/indexes/current.md")
+printf -- '\n- Test: trigger a rebuild.\n' >>"$fe67/.agents/rules/contract.md"
 INDEX_FAIL_AT=before-publish "$IDXSH" ensure --root "$fe67" >/dev/null 2>"$WORK/fe67.err"
 fe67_rc=$?
 [ "$fe67_rc" -eq 1 ] && grep -q 'FALLBACK:' "$WORK/fe67.err" \
   && pass "failed ensure: an injected failure before publication is reported and exits 1" \
   || fail "failed ensure: an injected failure before publication is reported and exits 1"
-[ "$(cat "$fe67/.agent/indexes/current.md")" = "$fe67_entry_before" ] \
+[ "$(cat "$fe67/.agents/indexes/current.md")" = "$fe67_entry_before" ] \
   && pass "failed ensure: the published entry stays byte-identical after a failed ensure" \
   || fail "failed ensure: the published entry stays byte-identical after a failed ensure"
 
@@ -7590,9 +7598,9 @@ c68a="$WORK/canonical-records-only"
 mkdir -p "$c68a"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68a" >/dev/null 2>&1
 finish_bootstrap "$c68a"
-rm -f "$c68a/.agent/rules/learned.md"
-mkdir -p "$c68a/.agent/rules/learned"
-printf -- '- [2026-01-01] Record one.\n' >"$c68a/.agent/rules/learned/0001.md"
+rm -f "$c68a/.agents/rules/learned.md"
+mkdir -p "$c68a/.agents/rules/learned"
+printf -- '- [2026-01-01] Record one.\n' >"$c68a/.agents/rules/learned/0001.md"
 f68a=$(status_flags "$c68a")
 [ -z "$f68a" ] && pass "canonical source: a record-only node draws no REPAIR: or GROOM: naming rules/learned.md" \
   || fail "canonical source: a record-only node draws no REPAIR: or GROOM: naming rules/learned.md ($f68a)"
@@ -7601,8 +7609,8 @@ c68b="$WORK/canonical-neither"
 mkdir -p "$c68b"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68b" >/dev/null 2>&1
 finish_bootstrap "$c68b"
-rm -f "$c68b/.agent/rules/learned.md"
-mkdir -p "$c68b/.agent/rules/learned"
+rm -f "$c68b/.agents/rules/learned.md"
+mkdir -p "$c68b/.agents/rules/learned"
 f68b=$(status_flags "$c68b")
 [ "$f68b" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] \
   && pass "canonical source: an empty rules/learned/ and no aggregate draws exactly the record-directory REPAIR:" \
@@ -7612,9 +7620,9 @@ c68b2="$WORK/canonical-neither-nonmd"
 mkdir -p "$c68b2"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68b2" >/dev/null 2>&1
 finish_bootstrap "$c68b2"
-rm -f "$c68b2/.agent/rules/learned.md"
-mkdir -p "$c68b2/.agent/rules/learned"
-printf -- 'not a record\n' >"$c68b2/.agent/rules/learned/notes.txt"
+rm -f "$c68b2/.agents/rules/learned.md"
+mkdir -p "$c68b2/.agents/rules/learned"
+printf -- 'not a record\n' >"$c68b2/.agents/rules/learned/notes.txt"
 f68b2=$(status_flags "$c68b2")
 [ "$f68b2" = "REPAIR: rules/learned/ missing/empty — restore the records, or rules/learned.md on a node that keeps no record directory; the entry point loads them every session" ] \
   && pass "canonical source: a rules/learned/ holding only a non-.md file and no aggregate draws exactly the record-directory REPAIR:" \
@@ -7624,11 +7632,11 @@ c68c="$WORK/canonical-threshold-records"
 mkdir -p "$c68c"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$c68c" >/dev/null 2>&1
 finish_bootstrap "$c68c"
-rm -f "$c68c/.agent/rules/learned.md"
-mkdir -p "$c68c/.agent/rules/learned"
+rm -f "$c68c/.agents/rules/learned.md"
+mkdir -p "$c68c/.agents/rules/learned"
 i68c=1
 while [ "$i68c" -le 61 ]; do
-  printf -- '- [2026-01-01] Rule %s.\n' "$i68c" >"$c68c/.agent/rules/learned/$(printf '%04d' "$i68c").md"
+  printf -- '- [2026-01-01] Rule %s.\n' "$i68c" >"$c68c/.agents/rules/learned/$(printf '%04d' "$i68c").md"
   i68c=$((i68c + 1))
 done
 f68c=$(status_flags "$c68c")
@@ -7642,7 +7650,7 @@ mkdir -p "$c68d"
 finish_bootstrap "$c68d"
 i68d=1
 while [ "$i68d" -le 61 ]; do
-  printf -- '- [2026-01-01] Rule %s.\n' "$i68d" >>"$c68d/.agent/rules/learned.md"
+  printf -- '- [2026-01-01] Rule %s.\n' "$i68d" >>"$c68d/.agents/rules/learned.md"
   i68d=$((i68d + 1))
 done
 f68d=$(status_flags "$c68d")
@@ -7655,23 +7663,23 @@ mkdir -p "$d68"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$d68" >/dev/null 2>&1
 finish_bootstrap "$d68"
 f68e1=$(status_flags "$d68")
-printf '%s\n' "$f68e1" | grep -q '\.agent/indexes/' \
-  && fail "cache fault: no finding names .agent/indexes/ with the cache absent" \
-  || pass "cache fault: no finding names .agent/indexes/ with the cache absent"
+printf '%s\n' "$f68e1" | grep -q '\.agents/indexes/' \
+  && fail "cache fault: no finding names .agents/indexes/ with the cache absent" \
+  || pass "cache fault: no finding names .agents/indexes/ with the cache absent"
 
-mkdir -p "$d68/.agent/indexes"
+mkdir -p "$d68/.agents/indexes"
 f68e2=$(status_flags "$d68")
-printf '%s\n' "$f68e2" | grep -q '\.agent/indexes/' \
-  && fail "cache fault: no finding names .agent/indexes/ with an empty cache directory" \
-  || pass "cache fault: no finding names .agent/indexes/ with an empty cache directory"
+printf '%s\n' "$f68e2" | grep -q '\.agents/indexes/' \
+  && fail "cache fault: no finding names .agents/indexes/ with an empty cache directory" \
+  || pass "cache fault: no finding names .agents/indexes/ with an empty cache directory"
 
 "$IDXSH" ensure --root "$d68" >/dev/null 2>&1
-d68gen=$(sed -n 2p "$d68/.agent/indexes/current.md")
-printf 'damage\n' >>"$d68/.agent/indexes/$d68gen/rules-1.md"
+d68gen=$(sed -n 2p "$d68/.agents/indexes/current.md")
+printf 'damage\n' >>"$d68/.agents/indexes/$d68gen/rules-1.md"
 f68e3=$(status_flags "$d68")
-printf '%s\n' "$f68e3" | grep -q '\.agent/indexes/' \
-  && fail "cache fault: no finding names .agent/indexes/ with a damaged generation" \
-  || pass "cache fault: no finding names .agent/indexes/ with a damaged generation"
+printf '%s\n' "$f68e3" | grep -q '\.agents/indexes/' \
+  && fail "cache fault: no finding names .agents/indexes/ with a damaged generation" \
+  || pass "cache fault: no finding names .agents/indexes/ with a damaged generation"
 
 e68="$WORK/finish-cache-refresh"
 mkdir -p "$e68/src"
@@ -7680,14 +7688,14 @@ finish_bootstrap "$e68"
 printf 'export const a = 1\n' >"$e68/src/a.ts"
 git -C "$e68" init -q && git -C "$e68" add -A && git -C "$e68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 "$IDXSH" ensure --root "$e68" >/dev/null 2>&1
-e68_before=$(idx_mtime "$e68/.agent/indexes/current.md")
+e68_before=$(idx_mtime "$e68/.agents/indexes/current.md")
 sleep 1
-"$e68/.agent/scripts/docs.sh" new --name backend --read-when "backend services" "$e68" >/dev/null 2>&1
+"$e68/.agents/scripts/docs.sh" new --name backend --read-when "backend services" "$e68" >/dev/null 2>&1
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$e68/src/a.ts"
-out68e=$("$e68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "generated hand-back" "$e68" 2>&1)
+out68e=$("$e68/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "generated hand-back" "$e68" 2>&1)
 rc68e=$?
-n68e=$(grep -c '^- \[' "$e68/.agent/session-log.md")
-e68_after=$(idx_mtime "$e68/.agent/indexes/current.md")
+n68e=$(grep -c '^- \[' "$e68/.agents/session-log.md")
+e68_after=$(idx_mtime "$e68/.agents/indexes/current.md")
 [ "$rc68e" -eq 0 ] && [ "$n68e" -eq 1 ] && printf '%s' "$out68e" | grep -qF 'checkpoint.sh: recorded' \
   && pass "checkpoint.sh: a generated hand-back runs the cache refresh step and logs exactly once" \
   || fail "checkpoint.sh: a generated hand-back runs the cache refresh step and logs exactly once (rc=$rc68e entries=$n68e)"
@@ -7701,27 +7709,27 @@ mkdir -p "$f68/src"
 finish_bootstrap "$f68"
 printf 'export const a = 1\n' >"$f68/src/a.ts"
 git -C "$f68" init -q && git -C "$f68" add -A && git -C "$f68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-n68f0=$(grep -c '^- \[' "$f68/.agent/session-log.md")
+n68f0=$(grep -c '^- \[' "$f68/.agents/session-log.md")
 
-"$f68/.agent/scripts/docs.sh" new --name frontend --read-when "frontend widgets" "$f68" >/dev/null 2>&1
+"$f68/.agents/scripts/docs.sh" new --name frontend --read-when "frontend widgets" "$f68" >/dev/null 2>&1
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const b = 2\n' >"$f68/src/a.ts"
-INDEX_FAIL_AT=before-publish "$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "injected index failure" "$f68" >/dev/null 2>"$WORK/f68.err"
+INDEX_FAIL_AT=before-publish "$f68/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "injected index failure" "$f68" >/dev/null 2>"$WORK/f68.err"
 rc68f=$?
-n68f1=$(grep -c '^- \[' "$f68/.agent/session-log.md")
+n68f1=$(grep -c '^- \[' "$f68/.agents/session-log.md")
 f68_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68.err")
 [ "$rc68f" -eq 0 ] && [ "$n68f1" -eq "$((n68f0 + 1))" ] && [ "$f68_warn" -eq 1 ] \
-  && grep -qF '.agent/rules/' "$WORK/f68.err" && grep -qF '.agent/docs/' "$WORK/f68.err" \
+  && grep -qF '.agents/rules/' "$WORK/f68.err" && grep -qF '.agents/docs/' "$WORK/f68.err" \
   && pass "checkpoint.sh: a failing index.sh leaves exit status and log entry unchanged, with one warning line" \
   || fail "checkpoint.sh: a failing index.sh leaves exit status and log entry unchanged, with one warning line (rc=$rc68f entries=$n68f1 warn=$f68_warn)"
 
-rm -f "$f68/.agent/scripts/index.sh"
+rm -f "$f68/.agents/scripts/index.sh"
 printf '// Vendor caps retries at three by contract; a fourth attempt is rejected upstream.\nexport const c = 3\n' >"$f68/src/a.ts"
-"$f68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "absent indexer" "$f68" >/dev/null 2>"$WORK/f68g.err"
+"$f68/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "absent indexer" "$f68" >/dev/null 2>"$WORK/f68g.err"
 rc68g=$?
-n68g=$(grep -c '^- \[' "$f68/.agent/session-log.md")
+n68g=$(grep -c '^- \[' "$f68/.agents/session-log.md")
 f68g_warn=$(grep -c '^checkpoint.sh: ' "$WORK/f68g.err")
 [ "$rc68g" -eq 0 ] && [ "$n68g" -eq "$((n68f0 + 2))" ] && [ "$f68g_warn" -eq 1 ] \
-  && grep -qF '.agent/rules/' "$WORK/f68g.err" && grep -qF '.agent/docs/' "$WORK/f68g.err" \
+  && grep -qF '.agents/rules/' "$WORK/f68g.err" && grep -qF '.agents/docs/' "$WORK/f68g.err" \
   && pass "checkpoint.sh: an absent index.sh leaves exit status and log entry unchanged, with one warning line" \
   || fail "checkpoint.sh: an absent index.sh leaves exit status and log entry unchanged, with one warning line (rc=$rc68g entries=$n68g warn=$f68g_warn)"
 
@@ -7732,14 +7740,14 @@ finish_bootstrap "$g68"
 printf 'export const a = 1\n' >"$g68/src/a.ts"
 git -C "$g68" init -q && git -C "$g68" add -A && git -C "$g68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 printf 'export const a = 1\nexport const b = 2\n' >"$g68/src/a.ts"
-g68_actual=$("$g68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "manual mode, no refresh" "$g68" 2>&1)
+g68_actual=$("$g68/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "manual mode, no refresh" "$g68" 2>&1)
 printf '%s\n' "$g68_actual" | grep -qF 'checkpoint.sh: recorded' \
   && ! printf '%s\n' "$g68_actual" | grep -qF 'cache refresh' \
   && pass "checkpoint.sh: a manual-mode node records completion without a cache refresh" \
   || fail "checkpoint.sh: a manual-mode node records completion without a cache refresh ($g68_actual)"
-[ ! -d "$g68/.agent/indexes" ] \
-  && pass "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory" \
-  || fail "checkpoint.sh: a manual-mode node grows no .agent/indexes/ directory"
+[ ! -d "$g68/.agents/indexes" ] \
+  && pass "checkpoint.sh: a manual-mode node grows no .agents/indexes/ directory" \
+  || fail "checkpoint.sh: a manual-mode node grows no .agents/indexes/ directory"
 
 h68="$WORK/finish-markdown-exclusion"
 mkdir -p "$h68/src"
@@ -7747,14 +7755,14 @@ mkdir -p "$h68/src"
 finish_bootstrap "$h68"
 printf 'export const a = 1\n' >"$h68/src/a.ts"
 git -C "$h68" init -q && git -C "$h68" add -A && git -C "$h68" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
-printf '\nfor this pass, cache the response for five minutes.\n' >>"$h68/.agent/memory.md"
-n68h0=$(grep -c '^- \[' "$h68/.agent/session-log.md")
-out68h=$("$h68/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "markdown-only change under .agent/" "$h68" 2>&1)
+printf '\nfor this pass, cache the response for five minutes.\n' >>"$h68/.agents/memory.md"
+n68h0=$(grep -c '^- \[' "$h68/.agents/session-log.md")
+out68h=$("$h68/.agents/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "markdown-only change under .agents/" "$h68" 2>&1)
 rc68h=$?
-n68h1=$(grep -c '^- \[' "$h68/.agent/session-log.md")
+n68h1=$(grep -c '^- \[' "$h68/.agents/session-log.md")
 [ "$rc68h" -eq 0 ] && [ "$n68h1" -eq "$((n68h0 + 1))" ] && ! printf '%s' "$out68h" | grep -q 'BLOCK' \
-  && pass "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry" \
-  || fail "checkpoint.sh: the comment gate still excludes Markdown and .agent/, a Markdown-only .agent/ change reaches the log entry (rc=$rc68h entries=$n68h1)"
+  && pass "checkpoint.sh: the comment gate still excludes Markdown and .agents/, a Markdown-only .agents/ change reaches the log entry" \
+  || fail "checkpoint.sh: the comment gate still excludes Markdown and .agents/, a Markdown-only .agents/ change reaches the log entry (rc=$rc68h entries=$n68h1)"
 
 g69_usewhen=""
 g69_quoted=""
@@ -7805,7 +7813,7 @@ g69_badbytes=$(printf '%s' "$g69_baddesc" | LC_ALL=C wc -c | tr -d '[:space:]')
   || fail "skills: the description-bar checks catch a description that violates every rule at once (caught $g69_badhits/4)"
 
 g70skill="$reporoot/tools/skills/groom/SKILL.md"
-grep -qF 'Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run' "$g70skill" \
+grep -qF 'Close a generated-mode pass with `.agents/scripts/index.sh ensure` before the `status.sh` re-run' "$g70skill" \
   && grep -qF 'rebuilt from those records and never edited' "$g70skill" \
   && pass "groom skill: a generated-mode pass edits records and closes with index.sh ensure" \
   || fail "groom skill: a generated-mode pass edits records and closes with index.sh ensure"
@@ -7820,8 +7828,8 @@ grep -qF 'A record fold, split, or move runs this same procedure' "$g70skill" \
 
 g71_trim_docs() {
   g71td_dir="$1"
-  rm -f "$g71td_dir/.agent/docs/dup.md" "$g71td_dir/.agent/docs/badtable.md" "$g71td_dir/.agent/docs/noentry.md"
-  cat >"$g71td_dir/.agent/docs/architecture.md" <<'EOF'
+  rm -f "$g71td_dir/.agents/docs/dup.md" "$g71td_dir/.agents/docs/badtable.md" "$g71td_dir/.agents/docs/noentry.md"
+  cat >"$g71td_dir/.agents/docs/architecture.md" <<'EOF'
 # Architecture
 
 ### `hooked.md`
@@ -7845,18 +7853,18 @@ g71rc=$?
   && pass "groom fixture: the trimmed, finalized migrated node starts status-clean" \
   || fail "groom fixture: the trimmed, finalized migrated node starts status-clean ($(status_flags "$g71"))"
 
-printf 'LEARNED_MAX_RULES=2\n' >>"$g71/.agent/scripts/status.conf"
+printf 'LEARNED_MAX_RULES=2\n' >>"$g71/.agents/scripts/status.conf"
 g71_flagged=$(status_flags "$g71")
 printf '%s\n' "$g71_flagged" | grep -q '^GROOM: rules/learned/ > 2 rules' \
   && pass "groom fixture: lowering LEARNED_MAX_RULES draws the learned-rules GROOM line" \
   || fail "groom fixture: lowering LEARNED_MAX_RULES draws the learned-rules GROOM line ($g71_flagged)"
 
-g71r1=$(grep -lF 'First rule, flat' "$g71/.agent/rules/learned"/*.md)
-g71r2=$(grep -lF 'nested sub-bullet' "$g71/.agent/rules/learned"/*.md)
-g71r3=$(grep -lF 'multi paragraph' "$g71/.agent/rules/learned"/*.md)
-g71r4=$(grep -lF 'Fourth rule, flat' "$g71/.agent/rules/learned"/*.md)
+g71r1=$(grep -lF 'First rule, flat' "$g71/.agents/rules/learned"/*.md)
+g71r2=$(grep -lF 'nested sub-bullet' "$g71/.agents/rules/learned"/*.md)
+g71r3=$(grep -lF 'multi paragraph' "$g71/.agents/rules/learned"/*.md)
+g71r4=$(grep -lF 'Fourth rule, flat' "$g71/.agents/rules/learned"/*.md)
 
-g71_idx_before=$(idx_snapshot "$g71/.agent/indexes")
+g71_idx_before=$(idx_snapshot "$g71/.agents/indexes")
 
 [ "$(cat "$g71r4")" = '- [2026-01-04] Fourth rule, flat, last one.' ] \
   && pass "groom fixture: the record the pass does not touch is unchanged before grooming" \
@@ -7864,23 +7872,23 @@ g71_idx_before=$(idx_snapshot "$g71/.agent/indexes")
 
 printf -- '- [2026-01-01] First rule, flat, folded with the nested-sub-bullet rule. Trigger: something.\n' >"$g71r1"
 rm -f "$g71r2"
-printf '\n## Gotchas\n\n- Third rule, multi paragraph, moved from rules/learned/.\n' >>"$g71/.agent/docs/area/sub.md"
+printf '\n## Gotchas\n\n- Third rule, multi paragraph, moved from rules/learned/.\n' >>"$g71/.agents/docs/area/sub.md"
 rm -f "$g71r3"
-subst "$g71/.agent/docs/architecture.md" '/### `area\/sub.md`/,/^$/ { /Read when/a\
+subst "$g71/.agents/docs/architecture.md" '/### `area\/sub.md`/,/^$/ { /Read when/a\
 - **Sections:** Gotchas
 }'
 
-g71_idx_after=$(idx_snapshot "$g71/.agent/indexes")
+g71_idx_after=$(idx_snapshot "$g71/.agents/indexes")
 [ "$g71_idx_before" = "$g71_idx_after" ] \
-  && pass "groom: a groomed record set republishes with no hand edit under .agent/indexes/" \
-  || fail "groom: a groomed record set republishes with no hand edit under .agent/indexes/"
+  && pass "groom: a groomed record set republishes with no hand edit under .agents/indexes/" \
+  || fail "groom: a groomed record set republishes with no hand edit under .agents/indexes/"
 
 "$IDXSH" ensure --root "$g71" >"$WORK/g71-ensure.out" 2>&1
 g71ensurerc=$?
 [ "$g71ensurerc" -eq 0 ] && pass "groom fixture: index.sh ensure republishes after the record edits" \
   || fail "groom fixture: index.sh ensure republishes after the record edits (rc=$g71ensurerc)"
-g71gen=$(sed -n 2p "$g71/.agent/indexes/current.md")
-g71gendir="$g71/.agent/indexes/$g71gen"
+g71gen=$(sed -n 2p "$g71/.agents/indexes/current.md")
+g71gendir="$g71/.agents/indexes/$g71gen"
 
 grep -qF 'folded with the nested-sub-bullet rule' "$g71gendir"/rules-*.md \
   && ! grep -qF 'Second rule with a nested sub-bullet' "$g71gendir"/rules-*.md \
@@ -7890,7 +7898,7 @@ grep -qF 'folded with the nested-sub-bullet rule' "$g71gendir"/rules-*.md \
   || fail "groom fixture: the regenerated rules page carries the folded rule, not the deleted records' text"
 
 g71_docs_target=$(grep -F 'area/sub.md' "$g71gendir"/routes-*.md | sed -n 's/.*READ: //p' | head -n1)
-[ -n "$g71_docs_target" ] && [ -f "$g71_docs_target" ] && grep -qF 'Third rule, multi paragraph, moved from rules/learned/.' "$g71_docs_target" \
+[ -n "$g71_docs_target" ] && [ -f "$g71/$g71_docs_target" ] && grep -qF 'Third rule, multi paragraph, moved from rules/learned/.' "$g71/$g71_docs_target" \
   && pass "groom fixture: the docs page's routing entry resolves to the doc carrying the moved rule" \
   || fail "groom fixture: the docs page's routing entry resolves to the doc carrying the moved rule"
 
@@ -7902,12 +7910,12 @@ g71_after_flags=$(status_flags "$g71")
 g72="$WORK/mig-groomed-base"
 r61build "$g72"
 g71_trim_docs "$g72"
-sed "s/^  mode: ignore-all/  mode: track-shared/" "$g72/.agent/purpose.md" >"$g72/.agent/purpose.md.tmp"
-mv "$g72/.agent/purpose.md.tmp" "$g72/.agent/purpose.md"
+sed "s/^  mode: ignore-all/  mode: track-shared/" "$g72/.agents/purpose.md" >"$g72/.agents/purpose.md.tmp"
+mv "$g72/.agents/purpose.md.tmp" "$g72/.agents/purpose.md"
 git -C "$g72" init -q
 git -C "$g72" config user.name Tester
 git -C "$g72" config user.email tester@example.invalid
-git -C "$g72" add .agent
+git -C "$g72" add .agents
 git -C "$g72" commit -qm initial
 "$NODE" update "$g72" >/dev/null 2>&1
 git -C "$g72" add -A
@@ -7917,9 +7925,9 @@ git -C "$g72" add -A
 git -C "$g72" commit -qm finalize --allow-empty
 g72pre=$(git -C "$g72" symbolic-ref --short HEAD)
 
-g72r1=$(grep -lF 'First rule, flat' "$g72/.agent/rules/learned"/*.md)
-g72r2=$(grep -lF 'nested sub-bullet' "$g72/.agent/rules/learned"/*.md)
-g72r4=$(grep -lF 'Fourth rule, flat' "$g72/.agent/rules/learned"/*.md)
+g72r1=$(grep -lF 'First rule, flat' "$g72/.agents/rules/learned"/*.md)
+g72r2=$(grep -lF 'nested sub-bullet' "$g72/.agents/rules/learned"/*.md)
+g72r4=$(grep -lF 'Fourth rule, flat' "$g72/.agents/rules/learned"/*.md)
 g72r1rel=${g72r1#"$g72"/}
 g72r2rel=${g72r2#"$g72"/}
 g72r4rel=${g72r4#"$g72"/}
@@ -7963,13 +7971,13 @@ g72base=$(git -C "$g72" symbolic-ref --short HEAD)
   || fail "groomed-node base: status.sh is clear once the groomed base is committed ($(status_flags "$g72"))"
 
 git -C "$g72" checkout -qb grecA "$g72base"
-printf -- '- [2026-03-01] Branch A record, groomed base.\n' >"$g72/.agent/rules/learned/g72-branch-a.md"
-git -C "$g72" add .agent/rules/learned/g72-branch-a.md
+printf -- '- [2026-03-01] Branch A record, groomed base.\n' >"$g72/.agents/rules/learned/g72-branch-a.md"
+git -C "$g72" add .agents/rules/learned/g72-branch-a.md
 git -C "$g72" commit -qm "branch A record, groomed base"
 git -C "$g72" checkout -q "$g72base"
 git -C "$g72" checkout -qb grecB "$g72base"
-printf -- '- [2026-03-02] Branch B record, groomed base.\n' >"$g72/.agent/rules/learned/g72-branch-b.md"
-git -C "$g72" add .agent/rules/learned/g72-branch-b.md
+printf -- '- [2026-03-02] Branch B record, groomed base.\n' >"$g72/.agents/rules/learned/g72-branch-b.md"
+git -C "$g72" add .agents/rules/learned/g72-branch-b.md
 git -C "$g72" commit -qm "branch B record, groomed base"
 git -C "$g72" checkout -qb merge-ab "$g72base"
 git -C "$g72" merge -q --no-edit grecA >/dev/null 2>&1
@@ -7979,14 +7987,14 @@ g72mrc4=$?
 [ "$g72mrc3" -eq 0 ] && [ "$g72mrc4" -eq 0 ] \
   && pass "groomed node: two disjoint new records still merge clean" \
   || fail "groomed node: two disjoint new records still merge clean"
-"$g72/.agent/scripts/index.sh" ensure --root "$g72" >/dev/null 2>&1
-grep -qF 'Branch A record, groomed base.' "$g72/.agent/rules/learned.md" \
-  && grep -qF 'Branch B record, groomed base.' "$g72/.agent/rules/learned.md" \
+"$g72/.agents/scripts/index.sh" ensure --root "$g72" >/dev/null 2>&1
+grep -qF 'Branch A record, groomed base.' "$g72/.agents/rules/learned.md" \
+  && grep -qF 'Branch B record, groomed base.' "$g72/.agents/rules/learned.md" \
   && pass "groomed node: both merged records reach the regenerated aggregate" \
   || fail "groomed node: both merged records reach the regenerated aggregate"
 
 git -C "$g72" checkout -q "$g72base"
-g72cd_file=$(grep -lF 'Fourth rule, flat' "$g72/.agent/rules/learned"/*.md | head -n1)
+g72cd_file=$(grep -lF 'Fourth rule, flat' "$g72/.agents/rules/learned"/*.md | head -n1)
 g72cd_rel=${g72cd_file#"$g72"/}
 git -C "$g72" checkout -qb geditC "$g72base"
 printf -- '- [2026-01-04] Fourth rule, flat -- edited by C, groomed base.\n' >"$g72/$g72cd_rel"
@@ -8008,28 +8016,28 @@ g72mrc6=$?
 git -C "$g72" merge --abort >/dev/null 2>&1
 
 git -C "$g72" checkout -qb linear "$g72base"
-printf -- '- [2026-03-03] Linear commit one, groomed base.\n' >"$g72/.agent/rules/learned/g72-linear-one.md"
-git -C "$g72" add .agent/rules/learned/g72-linear-one.md
+printf -- '- [2026-03-03] Linear commit one, groomed base.\n' >"$g72/.agents/rules/learned/g72-linear-one.md"
+git -C "$g72" add .agents/rules/learned/g72-linear-one.md
 git -C "$g72" commit -qm "linear commit one, groomed base"
-printf -- '- [2026-03-04] Linear commit two, groomed base.\n' >"$g72/.agent/rules/learned/g72-linear-two.md"
-git -C "$g72" add .agent/rules/learned/g72-linear-two.md
+printf -- '- [2026-03-04] Linear commit two, groomed base.\n' >"$g72/.agents/rules/learned/g72-linear-two.md"
+git -C "$g72" add .agents/rules/learned/g72-linear-two.md
 git -C "$g72" commit -qm "linear commit two, groomed base"
-"$g72/.agent/scripts/index.sh" ensure --root "$g72" >/dev/null 2>&1
-grep -qF 'Linear commit one, groomed base.' "$g72/.agent/rules/learned.md" \
-  && grep -qF 'Linear commit two, groomed base.' "$g72/.agent/rules/learned.md" \
+"$g72/.agents/scripts/index.sh" ensure --root "$g72" >/dev/null 2>&1
+grep -qF 'Linear commit one, groomed base.' "$g72/.agents/rules/learned.md" \
+  && grep -qF 'Linear commit two, groomed base.' "$g72/.agents/rules/learned.md" \
   && pass "groomed node: both sequential commits' records still survive a linear replay" \
   || fail "groomed node: both sequential commits' records still survive a linear replay"
 
 lrn73="$WORK/learn-fixture"
 r61build "$lrn73"
 "$NODE" update "$lrn73" >/dev/null 2>&1
-LRN="$lrn73/.agent/scripts/learn.sh"
+LRN="$lrn73/.agents/scripts/learn.sh"
 
-lrn73_memdir_snapshot() { find "$1/.agent/memory" -type f | sort | xargs shasum 2>/dev/null | sort; }
+lrn73_memdir_snapshot() { find "$1/.agents/memory" -type f | sort | xargs shasum 2>/dev/null | sort; }
 lrn73_mem_before=$(lrn73_memdir_snapshot "$lrn73")
-cp "$lrn73/.agent/memory.md" "$WORK/lrn73-memory-md-before.md"
+cp "$lrn73/.agents/memory.md" "$WORK/lrn73-memory-md-before.md"
 
-lrn73_before_ids=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | sort)
+lrn73_before_ids=$(find "$lrn73/.agents/rules/learned" -maxdepth 1 -name '*.md' | sort)
 lrn73_pick=$(printf '%s\n' "$lrn73_before_ids" | head -n1)
 
 lrn73_dup_out=$("$LRN" lookup --file "$lrn73_pick" "$lrn73" 2>"$WORK/lrn73-lookup.err")
@@ -8050,8 +8058,8 @@ lrn73_new_out=$("$LRN" new --file "$WORK/lrn73-new-cand.md" "$lrn73" 2>"$WORK/lr
 lrn73_new_rc=$?
 [ "$lrn73_new_rc" -eq 0 ] && pass "learn.sh: new exits 0 on a well-formed, non-overlapping candidate" || fail "learn.sh: new exits 0 on a well-formed, non-overlapping candidate (rc=$lrn73_new_rc)"
 lrn73_new_id=$(printf '%s\n' "$lrn73_new_out" | awk -F'\t' '{print $2}')
-[ -f "$lrn73/.agent/rules/learned/$lrn73_new_id.md" ] && pass "learn.sh: new writes the record under its printed id" || fail "learn.sh: new writes the record under its printed id"
-diff -q "$WORK/lrn73-new-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+[ -f "$lrn73/.agents/rules/learned/$lrn73_new_id.md" ] && pass "learn.sh: new writes the record under its printed id" || fail "learn.sh: new writes the record under its printed id"
+diff -q "$WORK/lrn73-new-cand.md" "$lrn73/.agents/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
   && pass "learn.sh: the written record is byte-identical to the candidate" \
   || fail "learn.sh: the written record is byte-identical to the candidate"
 
@@ -8096,11 +8104,11 @@ lrn73_cpp_id=$(printf '%s\n' "$lrn73_cpp_out" | awk -F'\t' '{print $2}')
 [ -n "$lrn73_c_id" ] && [ -n "$lrn73_cpp_id" ] && [ "$lrn73_c_id" != "$lrn73_cpp_id" ] \
   && pass "learn.sh: C and C++ mint two distinct identities, neither overwriting the other" \
   || fail "learn.sh: C and C++ mint two distinct identities, neither overwriting the other (c=$lrn73_c_id cpp=$lrn73_cpp_id)"
-[ -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] && [ -f "$lrn73/.agent/rules/learned/$lrn73_cpp_id.md" ] \
+[ -f "$lrn73/.agents/rules/learned/$lrn73_c_id.md" ] && [ -f "$lrn73/.agents/rules/learned/$lrn73_cpp_id.md" ] \
   && pass "learn.sh: both the C and C++ records exist on disk" \
   || fail "learn.sh: both the C and C++ records exist on disk"
 
-lrn73_v0=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_new_id.md")
+lrn73_v0=$(git hash-object --no-filters -- "$lrn73/.agents/rules/learned/$lrn73_new_id.md")
 printf -- '- [2026-01-11] A brand-new rule, reworded. Trigger: a completely different cause.\n' >"$WORK/lrn73-revise-cand.md"
 lrn73_rev_out=$("$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-revise-cand.md" --expected "$lrn73_v0" "$lrn73" 2>"$WORK/lrn73-rev.err")
 lrn73_rev_rc=$?
@@ -8108,13 +8116,13 @@ lrn73_rev_rc=$?
 printf '%s\n' "$lrn73_rev_out" | grep -qF "revised	$lrn73_new_id	" \
   && pass "learn.sh: revise's result line names the same id" \
   || fail "learn.sh: revise's result line names the same id ($lrn73_rev_out)"
-[ -f "$lrn73/.agent/rules/learned/$lrn73_new_id.md" ] \
+[ -f "$lrn73/.agents/rules/learned/$lrn73_new_id.md" ] \
   && pass "learn.sh: revise keeps the record's filename — its identity" \
   || fail "learn.sh: revise keeps the record's filename — its identity"
-diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agents/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
   && pass "learn.sh: revise's record holds the new wording and Trigger clause" \
   || fail "learn.sh: revise's record holds the new wording and Trigger clause"
-lrn73_v1=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_new_id.md")
+lrn73_v1=$(git hash-object --no-filters -- "$lrn73/.agents/rules/learned/$lrn73_new_id.md")
 
 printf -- '- [2026-01-13] A stale racer with its own distinct wording. Trigger: an old version.\n' >"$WORK/lrn73-stale-cand.md"
 "$LRN" revise "$lrn73_new_id" --file "$WORK/lrn73-stale-cand.md" --expected "$lrn73_v0" "$lrn73" >"$WORK/lrn73-stale.out" 2>"$WORK/lrn73-stale.err"
@@ -8123,7 +8131,7 @@ lrn73_stale_rc=$?
 grep -qF "$lrn73_v1" "$WORK/lrn73-stale.err" \
   && pass "learn.sh: the stale refusal prints the current version" \
   || fail "learn.sh: the stale refusal prints the current version ($(cat "$WORK/lrn73-stale.err"))"
-diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agents/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
   && pass "learn.sh: a stale revise leaves the record byte-identical to the first revise's bytes" \
   || fail "learn.sh: a stale revise leaves the record byte-identical to the first revise's bytes"
 
@@ -8133,11 +8141,11 @@ lrn73_lost_rc=$?
 [ "$lrn73_lost_rc" -eq 3 ] \
   && pass "learn.sh: a second revise carrying the version the first one consumed also loses" \
   || fail "learn.sh: a second revise carrying the version the first one consumed also loses (rc=$lrn73_lost_rc)"
-diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agent/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
+diff -q "$WORK/lrn73-revise-cand.md" "$lrn73/.agents/rules/learned/$lrn73_new_id.md" >/dev/null 2>&1 \
   && pass "learn.sh: the record still holds the first revise's bytes after the lost update" \
   || fail "learn.sh: the record still holds the first revise's bytes after the lost update"
 
-"$LRN" revise "$lrn73_new_id" --file "$lrn73/.agent/rules/learned/$lrn73_new_id.md" --expected "$lrn73_v1" "$lrn73" >/dev/null 2>"$WORK/lrn73-revdup.err"
+"$LRN" revise "$lrn73_new_id" --file "$lrn73/.agents/rules/learned/$lrn73_new_id.md" --expected "$lrn73_v1" "$lrn73" >/dev/null 2>"$WORK/lrn73-revdup.err"
 lrn73_revdup_rc=$?
 [ "$lrn73_revdup_rc" -eq 5 ] \
   && pass "learn.sh: a revise whose body equals the record it targets refuses at exit 5" \
@@ -8145,18 +8153,18 @@ lrn73_revdup_rc=$?
 
 lrn73_absent_id="deadbeefcafe"
 printf -- '- [2026-01-18] A candidate for an id nothing has written yet. Trigger: an absent target.\n' >"$WORK/lrn73-absent-cand.md"
-lrn73_absent_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+lrn73_absent_before_count=$(find "$lrn73/.agents/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
 "$LRN" revise "$lrn73_absent_id" --file "$WORK/lrn73-absent-cand.md" --expected absent "$lrn73" >/dev/null 2>"$WORK/lrn73-revabsent.err"
 lrn73_revabsent_rc=$?
 [ "$lrn73_revabsent_rc" -eq 2 ] \
   && pass "learn.sh: revise against a nonexistent id with --expected absent refuses at exit 2" \
   || fail "learn.sh: revise against a nonexistent id with --expected absent refuses at exit 2 (rc=$lrn73_revabsent_rc)"
-lrn73_absent_after_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
-[ ! -f "$lrn73/.agent/rules/learned/$lrn73_absent_id.md" ] && [ "$lrn73_absent_before_count" -eq "$lrn73_absent_after_count" ] \
+lrn73_absent_after_count=$(find "$lrn73/.agents/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+[ ! -f "$lrn73/.agents/rules/learned/$lrn73_absent_id.md" ] && [ "$lrn73_absent_before_count" -eq "$lrn73_absent_after_count" ] \
   && pass "learn.sh: the absent-id revise writes no new record file under rules/learned/" \
   || fail "learn.sh: the absent-id revise writes no new record file under rules/learned/ (before=$lrn73_absent_before_count after=$lrn73_absent_after_count)"
 
-lrn73_before_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+lrn73_before_count=$(find "$lrn73/.agents/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
 printf -- 'No date stamp at all.\n' >"$WORK/lrn73-bad-nodate.md"
 "$LRN" new --file "$WORK/lrn73-bad-nodate.md" "$lrn73" >/dev/null 2>&1
 [ "$?" -eq 6 ] && pass "learn.sh: a candidate with no date stamp refuses at exit 6" || fail "learn.sh: a candidate with no date stamp refuses at exit 6"
@@ -8169,7 +8177,7 @@ printf -- '---\ndate: 2026-01-01\n---\nbody\n' >"$WORK/lrn73-bad-frontmatter.md"
 printf -- '- [2026-01-15] A rule.\n# A heading\n' >"$WORK/lrn73-bad-heading.md"
 "$LRN" new --file "$WORK/lrn73-bad-heading.md" "$lrn73" >/dev/null 2>&1
 [ "$?" -eq 6 ] && pass "learn.sh: a candidate carrying a heading refuses at exit 6" || fail "learn.sh: a candidate carrying a heading refuses at exit 6"
-lrn73_after_count=$(find "$lrn73/.agent/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
+lrn73_after_count=$(find "$lrn73/.agents/rules/learned" -maxdepth 1 -name '*.md' | wc -l | tr -d '[:space:]')
 [ "$lrn73_before_count" -eq "$lrn73_after_count" ] \
   && pass "learn.sh: every malformed candidate above wrote nothing" \
   || fail "learn.sh: every malformed candidate above wrote nothing (before=$lrn73_before_count after=$lrn73_after_count)"
@@ -8198,11 +8206,11 @@ grep -qF 'docs.sh' "$WORK/lrn73-surf-docs.err" \
 lrn73_surfgotchas_rc=$?
 [ "$lrn73_surfgotchas_rc" -eq 7 ] && pass "learn.sh: --surface gotchas refuses at exit 7" || fail "learn.sh: --surface gotchas refuses at exit 7 (rc=$lrn73_surfgotchas_rc)"
 
-lrn73_retire_v=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_c_id.md")
+lrn73_retire_v=$(git hash-object --no-filters -- "$lrn73/.agents/rules/learned/$lrn73_c_id.md")
 "$LRN" retire "$lrn73_c_id" --expected old-and-wrong "$lrn73" >/dev/null 2>"$WORK/lrn73-retire-stale.err"
 lrn73_retirestale_rc=$?
 [ "$lrn73_retirestale_rc" -eq 3 ] && pass "learn.sh: retire against a stale --expected refuses at exit 3" || fail "learn.sh: retire against a stale --expected refuses at exit 3 (rc=$lrn73_retirestale_rc)"
-[ -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] \
+[ -f "$lrn73/.agents/rules/learned/$lrn73_c_id.md" ] \
   && pass "learn.sh: a stale retire leaves the record in place" \
   || fail "learn.sh: a stale retire leaves the record in place"
 lrn73_retire_out=$("$LRN" retire "$lrn73_c_id" --expected "$lrn73_retire_v" "$lrn73" 2>"$WORK/lrn73-retire.err")
@@ -8211,22 +8219,22 @@ lrn73_retire_rc=$?
 printf '%s\n' "$lrn73_retire_out" | grep -qF "retired	$lrn73_c_id" \
   && pass "learn.sh: retire prints retired with the id" \
   || fail "learn.sh: retire prints retired with the id ($lrn73_retire_out)"
-[ ! -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] && pass "learn.sh: retire removes the record from disk" || fail "learn.sh: retire removes the record from disk"
+[ ! -f "$lrn73/.agents/rules/learned/$lrn73_c_id.md" ] && pass "learn.sh: retire removes the record from disk" || fail "learn.sh: retire removes the record from disk"
 
 lrn73_mem_after=$(lrn73_memdir_snapshot "$lrn73")
 [ "$lrn73_mem_before" = "$lrn73_mem_after" ] \
   && pass "learn.sh: memory/ is byte-identical before and after every fixture command above" \
   || fail "learn.sh: memory/ is byte-identical before and after every fixture command above"
-diff -q "$WORK/lrn73-memory-md-before.md" "$lrn73/.agent/memory.md" >/dev/null 2>&1 \
+diff -q "$WORK/lrn73-memory-md-before.md" "$lrn73/.agents/memory.md" >/dev/null 2>&1 \
   && pass "learn.sh: memory.md is byte-identical before and after every fixture command above" \
   || fail "learn.sh: memory.md is byte-identical before and after every fixture command above"
 
 lrn73_manual="$WORK/learn-manual"
 mkdir -p "$lrn73_manual"
 "$NODE" init --preset software-development --mode ignore-all "$lrn73_manual" >/dev/null 2>&1
-LRNM="$lrn73_manual/.agent/scripts/learn.sh"
+LRNM="$lrn73_manual/.agents/scripts/learn.sh"
 printf -- '- [2026-01-01] A manual-mode candidate.\n' >"$WORK/lrn73-manual-cand.md"
-cp "$lrn73_manual/.agent/rules/learned.md" "$WORK/lrn73-manual-learned-before.md"
+cp "$lrn73_manual/.agents/rules/learned.md" "$WORK/lrn73-manual-learned-before.md"
 
 "$LRNM" lookup --file "$WORK/lrn73-manual-cand.md" "$lrn73_manual" >/dev/null 2>&1
 [ "$?" -eq 0 ] \
@@ -8247,21 +8255,21 @@ mkdir -p "$lrn73_gen"
 "$NODE" init --preset software-development --mode track-all --indexes generated "$lrn73_gen" >/dev/null 2>&1
 finish_bootstrap "$lrn73_gen"
 git -C "$lrn73_gen" init -q 2>/dev/null
-LRNG="$lrn73_gen/.agent/scripts/learn.sh"
+LRNG="$lrn73_gen/.agents/scripts/learn.sh"
 printf -- '- [2026-01-02] Never retry a payment POST without an idempotency key.\n' >"$WORK/lrn73-gen-cand.md"
-[ ! -e "$lrn73_gen/.agent/rules/learned" ] \
+[ ! -e "$lrn73_gen/.agents/rules/learned" ] \
   && pass "learn.sh: a fresh generated-mode init has no rules/learned/ directory yet" \
   || fail "learn.sh: a fresh generated-mode init has no rules/learned/ directory yet"
 "$LRNG" new --file "$WORK/lrn73-gen-cand.md" "$lrn73_gen" >"$WORK/lrn73-gen-new.out" 2>"$WORK/lrn73-gen-new.err"
 lrn73_gennew_rc=$?
-lrn73_gen_records=$(find "$lrn73_gen/.agent/rules/learned" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+lrn73_gen_records=$(find "$lrn73_gen/.agents/rules/learned" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
 [ "$lrn73_gennew_rc" -eq 0 ] && [ "$lrn73_gen_records" -eq 1 ] \
   && pass "learn.sh: the first new on a fresh generated-mode node creates rules/learned/ and writes one record" \
   || fail "learn.sh: the first new on a fresh generated-mode node creates rules/learned/ and writes one record (rc=$lrn73_gennew_rc records=$lrn73_gen_records; $(cat "$WORK/lrn73-gen-new.err"))"
-grep -qF 'idempotency key' "$lrn73_gen/.agent/rules/learned.md" \
+grep -qF 'idempotency key' "$lrn73_gen/.agents/rules/learned.md" \
   && pass "learn.sh: the regenerated rules/learned.md carries the first record after the write" \
   || fail "learn.sh: the regenerated rules/learned.md carries the first record after the write"
-lrn73_gen_untracked=$(git -C "$lrn73_gen" status --porcelain --untracked-files=all -- .agent/rules/learned 2>/dev/null | grep -c '\.md$')
+lrn73_gen_untracked=$(git -C "$lrn73_gen" status --porcelain --untracked-files=all -- .agents/rules/learned 2>/dev/null | grep -c '\.md$')
 [ "${lrn73_gen_untracked:-0}" -eq 1 ] \
   && pass "learn.sh: the first record on a generated node is visible to git, unlike the ignored aggregate" \
   || fail "learn.sh: the first record on a generated node is visible to git, unlike the ignored aggregate (untracked=$lrn73_gen_untracked)"
@@ -8275,10 +8283,10 @@ lrn73_gen_untracked=$(git -C "$lrn73_gen" status --porcelain --untracked-files=a
   && pass "learn.sh: retire on a manual-mode node with no rules/learned/ refuses at exit 7" \
   || fail "learn.sh: retire on a manual-mode node with no rules/learned/ refuses at exit 7"
 
-diff -q "$WORK/lrn73-manual-learned-before.md" "$lrn73_manual/.agent/rules/learned.md" >/dev/null 2>&1 \
+diff -q "$WORK/lrn73-manual-learned-before.md" "$lrn73_manual/.agents/rules/learned.md" >/dev/null 2>&1 \
   && pass "learn.sh: rules/learned.md is byte-identical after every refused write on a manual-mode node" \
   || fail "learn.sh: rules/learned.md is byte-identical after every refused write on a manual-mode node"
-[ ! -e "$lrn73_manual/.agent/rules/learned" ] \
+[ ! -e "$lrn73_manual/.agents/rules/learned" ] \
   && pass "learn.sh: a manual-mode node still has no rules/learned/ directory after these refusals" \
   || fail "learn.sh: a manual-mode node still has no rules/learned/ directory after these refusals"
 
@@ -8292,13 +8300,13 @@ lrn73_boot_hits=$(grep -l 'learn\.sh' \
 lrn73_wire_init="$WORK/learn-wire-init"
 mkdir -p "$lrn73_wire_init"
 "$NODE" init --preset software-development --mode ignore-all "$lrn73_wire_init" >/dev/null 2>&1
-[ -x "$lrn73_wire_init/.agent/scripts/learn.sh" ] && pass "learn.sh: init installs it executable" || fail "learn.sh: init installs it executable"
+[ -x "$lrn73_wire_init/.agents/scripts/learn.sh" ] && pass "learn.sh: init installs it executable" || fail "learn.sh: init installs it executable"
 
 lrn73_wire_update="$WORK/learn-wire-update"
 mkdir -p "$lrn73_wire_update"
 make_v6_fixture "$lrn73_wire_update"
 "$NODE" update "$lrn73_wire_update" >"$WORK/lrn73-wire-update.out" 2>&1
-[ -x "$lrn73_wire_update/.agent/scripts/learn.sh" ] \
+[ -x "$lrn73_wire_update/.agents/scripts/learn.sh" ] \
   && pass "learn.sh: update installs it executable into an existing node" \
   || fail "learn.sh: update installs it executable into an existing node"
 grep -qF 'learn.sh' "$WORK/lrn73-wire-update.out" \
@@ -8321,13 +8329,13 @@ done
 rec75="$WORK/reconcile-fixture"
 mkdir -p "$rec75"
 make_v6_fixture "$rec75"
-rec75_modeline=$(grep -n '^  mode:' "$rec75/.agent/purpose.md" | head -1 | cut -d: -f1)
+rec75_modeline=$(grep -n '^  mode:' "$rec75/.agents/purpose.md" | head -1 | cut -d: -f1)
 awk -v ln="$rec75_modeline" \
   'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
-  "$rec75/.agent/purpose.md" >"$rec75/.agent/purpose.md.tmp"
-mv "$rec75/.agent/purpose.md.tmp" "$rec75/.agent/purpose.md"
+  "$rec75/.agents/purpose.md" >"$rec75/.agents/purpose.md.tmp"
+mv "$rec75/.agents/purpose.md.tmp" "$rec75/.agents/purpose.md"
 
-cat >"$rec75/.agent/rules/learned.md" <<'EOF'
+cat >"$rec75/.agents/rules/learned.md" <<'EOF'
 # Learned rules
 
 Binding rules distilled from operator corrections and failed verifications on this project.
@@ -8347,8 +8355,8 @@ Binding rules distilled from operator corrections and failed verifications on th
   - qualifier
 EOF
 
-mkdir -p "$rec75/.agent/docs"
-cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
+mkdir -p "$rec75/.agents/docs"
+cat >"$rec75/.agents/docs/architecture.md" <<'EOF'
 # Architecture
 
 ### `dup.md`
@@ -8360,17 +8368,17 @@ cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
 ### `badtable.md`
 Hand-edited row with no bold marker: whatever hook text.
 EOF
-cat >"$rec75/.agent/docs/dup.md" <<'EOF'
+cat >"$rec75/.agents/docs/dup.md" <<'EOF'
 # Dup
 
 Body.
 EOF
-cat >"$rec75/.agent/docs/badtable.md" <<'EOF'
+cat >"$rec75/.agents/docs/badtable.md" <<'EOF'
 # Badtable
 
 Body.
 EOF
-cat >"$rec75/.agent/docs/noentry.md" <<'EOF'
+cat >"$rec75/.agents/docs/noentry.md" <<'EOF'
 # Noentry
 
 Body.
@@ -8380,10 +8388,10 @@ EOF
 rec75_updrc=$?
 [ "$rec75_updrc" -eq 0 ] && pass "reconcile fixture: generated-mode update exits 0" || fail "reconcile fixture: generated-mode update exits 0 (rc=$rec75_updrc)"
 
-REC="$rec75/.agent/scripts/learn.sh"
-RECDOCS="$rec75/.agent/scripts/docs.sh"
-rec75_inv="$rec75/.agent/migration-inventory.md"
-rec75_learned="$rec75/.agent/rules/learned"
+REC="$rec75/.agents/scripts/learn.sh"
+RECDOCS="$rec75/.agents/scripts/docs.sh"
+rec75_inv="$rec75/.agents/migration-inventory.md"
+rec75_learned="$rec75/.agents/rules/learned"
 
 rec75_flat=$(grep -lF 'Flat merge-target rule' "$rec75_learned"/*.md)
 rec75_split=$(grep -lF 'Split-candidate rule' "$rec75_learned"/*.md)
@@ -8509,8 +8517,8 @@ grep -qF 'still exists' "$WORK/rec75-ref-existsretire.err" \
   || fail "reconcile refusal: the still-exists refusal names what it checked"
 [ "$(rec75_inv_snapshot)" = "$rec75_before" ] && pass "reconcile refusal: the still-exists refusal writes nothing" || fail "reconcile refusal: the still-exists refusal writes nothing"
 
-rec75_records_snapshot() { find "$1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
-rec75_docs_snapshot() { find "$1/.agent/docs" -type f 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
+rec75_records_snapshot() { find "$1/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
+rec75_docs_snapshot() { find "$1/.agents/docs" -type f 2>/dev/null | sort | xargs shasum 2>/dev/null | sort; }
 
 cp "$rec75_keep" "$WORK/rec75-keep-before.md"
 cp "$rec75_inv" "$WORK/rec75-inventory-before.md"
@@ -8567,7 +8575,7 @@ grep -qF "id=$rec75_retire_id | retired" "$rec75_inv" \
   && pass "reconcile retire: the inventory line now reads retired" \
   || fail "reconcile retire: the inventory line now reads retired"
 
-cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
+cat >"$rec75/.agents/docs/architecture.md" <<'EOF'
 # Architecture
 
 ### `dup.md`
@@ -8581,8 +8589,8 @@ cat >"$rec75/.agent/docs/architecture.md" <<'EOF'
 EOF
 for rec75_doc in dup badtable noentry; do
   printf '<!-- Read when: placeholder, to be set by rehook. -->\n' >"$WORK/rec75-$rec75_doc.hdr"
-  cat "$WORK/rec75-$rec75_doc.hdr" "$rec75/.agent/docs/$rec75_doc.md" >"$WORK/rec75-$rec75_doc.new"
-  mv "$WORK/rec75-$rec75_doc.new" "$rec75/.agent/docs/$rec75_doc.md"
+  cat "$WORK/rec75-$rec75_doc.hdr" "$rec75/.agents/docs/$rec75_doc.md" >"$WORK/rec75-$rec75_doc.new"
+  mv "$WORK/rec75-$rec75_doc.new" "$rec75/.agents/docs/$rec75_doc.md"
 done
 "$RECDOCS" rehook --name dup --read-when "reading about the duplicate entry" "$rec75" >"$WORK/rec75-rehook-dup.out" 2>&1
 rec75_rehook_dup_rc=$?
@@ -8594,7 +8602,7 @@ rec75_rehook_noentry_rc=$?
   && pass "reconcile doc repair: docs.sh rehook succeeds on all three repaired docs" \
   || fail "reconcile doc repair: docs.sh rehook succeeds on all three repaired docs (rc=$rec75_rehook_dup_rc/$rec75_rehook_badtable_rc/$rec75_rehook_noentry_rc)"
 for rec75_doc in dup badtable noentry; do
-  [ "$(sed -n 1p "$rec75/.agent/docs/$rec75_doc.md")" != '<!-- Read when: placeholder, to be set by rehook. -->' ] \
+  [ "$(sed -n 1p "$rec75/.agents/docs/$rec75_doc.md")" != '<!-- Read when: placeholder, to be set by rehook. -->' ] \
     && pass "reconcile doc repair: $rec75_doc.md's header now reads the real hook text" \
     || fail "reconcile doc repair: $rec75_doc.md's header now reads the real hook text"
   "$REC" resolve --id "$rec75_doc.md" --disposition migrated "$rec75" >"$WORK/rec75-resolve-$rec75_doc.out" 2>"$WORK/rec75-resolve-$rec75_doc.err"
@@ -8624,20 +8632,20 @@ grep -qF 'is not pending' "$WORK/rec75-ref-already.err" \
 rec75_2="$WORK/reconcile-fixture-2"
 mkdir -p "$rec75_2"
 make_v6_fixture "$rec75_2"
-rec75_2_modeline=$(grep -n '^  mode:' "$rec75_2/.agent/purpose.md" | head -1 | cut -d: -f1)
+rec75_2_modeline=$(grep -n '^  mode:' "$rec75_2/.agents/purpose.md" | head -1 | cut -d: -f1)
 awk -v ln="$rec75_2_modeline" \
   'NR==ln { print; print "  indexes: generated        # manual | generated"; next } { print }' \
-  "$rec75_2/.agent/purpose.md" >"$rec75_2/.agent/purpose.md.tmp"
-mv "$rec75_2/.agent/purpose.md.tmp" "$rec75_2/.agent/purpose.md"
-mkdir -p "$rec75_2/.agent/docs"
-cat >"$rec75_2/.agent/docs/noentry.md" <<'EOF'
+  "$rec75_2/.agents/purpose.md" >"$rec75_2/.agents/purpose.md.tmp"
+mv "$rec75_2/.agents/purpose.md.tmp" "$rec75_2/.agents/purpose.md"
+mkdir -p "$rec75_2/.agents/docs"
+cat >"$rec75_2/.agents/docs/noentry.md" <<'EOF'
 # Noentry
 
 Body.
 EOF
 "$NODE" update "$rec75_2" >"$WORK/rec75-2-update.out" 2>&1
-REC2="$rec75_2/.agent/scripts/learn.sh"
-rec75_2_inv="$rec75_2/.agent/migration-inventory.md"
+REC2="$rec75_2/.agents/scripts/learn.sh"
+rec75_2_inv="$rec75_2/.agents/migration-inventory.md"
 
 rec75_2_before=$(git hash-object --no-filters -- "$rec75_2_inv")
 "$REC2" resolve --id noentry.md --disposition retired "$rec75_2" >/dev/null 2>"$WORK/rec75-ref-docretired.err"
@@ -8691,10 +8699,10 @@ cp "$WORK/rec75-2-inv-before.md" "$rec75_2_inv"
 rec75_noinv="$WORK/reconcile-no-inventory"
 mkdir -p "$rec75_noinv"
 "$NODE" init --preset software-development --mode ignore-all --indexes generated "$rec75_noinv" >/dev/null 2>&1
-[ ! -f "$rec75_noinv/.agent/migration-inventory.md" ] \
+[ ! -f "$rec75_noinv/.agents/migration-inventory.md" ] \
   && pass "learn.sh pending: the no-inventory fixture genuinely carries no migration-inventory.md" \
   || fail "learn.sh pending: the no-inventory fixture genuinely carries no migration-inventory.md"
-RECNOINV="$rec75_noinv/.agent/scripts/learn.sh"
+RECNOINV="$rec75_noinv/.agents/scripts/learn.sh"
 rec75_noinv_pending_out=$("$RECNOINV" pending "$rec75_noinv" 2>"$WORK/rec75-noinv-pending.err")
 rec75_noinv_pending_rc=$?
 [ "$rec75_noinv_pending_rc" -eq 0 ] \
@@ -8714,7 +8722,7 @@ rec75_pending2_rc=$?
   || fail "learn.sh pending: a fully reconciled node's second run lists nothing ($rec75_pending2)"
 
 rec75_snapshot() {
-  { find "$1/.agent/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null; printf '%s\n' "$1/.agent/migration-inventory.md"; } \
+  { find "$1/.agents/rules/learned" -maxdepth 1 -name '*.md' 2>/dev/null; printf '%s\n' "$1/.agents/migration-inventory.md"; } \
     | sort | xargs shasum 2>/dev/null | sort
 }
 rec75_before_update=$(rec75_snapshot "$rec75")
@@ -8738,7 +8746,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1380
+EXPECTED_CHECKS=1381
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

@@ -3,7 +3,7 @@
 An on-demand audit of a node's link graph. Not on the load path: run it when grooming, before a restructuring pass, or whenever you want to know what the node holds that nothing points at.
 
 ```
-Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
+Usage: links.sh [root]    # root defaults to . — audits <root>/.agents/
 ```
 
 ## What it reports
@@ -13,13 +13,13 @@ Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
 | `ORPHAN:` | a file nothing in the node cites |
 | `BROKEN:` | a path a node file cites that does not exist |
 
-Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **No finding reaches the exit status** — the report is the product. The one non-zero exit is a usage error: a root holding no `.agent/`, which is not a finding about a node.
+Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **No finding reaches the exit status** — the report is the product. The one non-zero exit is a usage error: a root holding no `.agents/`, which is not a finding about a node.
 
 ## Scope
 
 The reference tier is what motivated it. `docs/<area>/references/` files carry no routing entry by design, so an uncited one is unreachable and `status.sh` cannot see it. The walk covers every non-exempt file.
 
-Scope is the node's own link graph. A path pointing outside `.agent/` — a source file, a task brief under `temp/` — is the project's to manage and its lifecycle is not the node's business, so it is never reported. Without that rule the report is dominated by session-log entries citing task briefs that were legitimately archived months earlier: a record of what happened, not a claim that the path still resolves.
+Scope is the node's own link graph. A path pointing outside `.agents/` — a source file, a task brief under `temp/` — is the project's to manage and its lifecycle is not the node's business, so it is never reported. Without that rule the report is dominated by session-log entries citing task briefs that were legitimately archived months earlier: a record of what happened, not a claim that the path still resolves.
 
 Shape alone cannot tell a project file from a node file. A bare `SKILL.md` looks exactly like a bare `learned.md`, and node docs really do cite each other by bare name. So an unresolved name is checked against the project's markdown too, not only the node's. A memory fact naming a real project file that sits in a subdirectory rather than at the project root is not a broken link.
 

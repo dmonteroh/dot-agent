@@ -94,7 +94,7 @@ A marker opens a comment only in the languages where it does. `#` opens one in s
 
 Skipped by default: **every hidden directory**, vendored and minified trees, and tooling pragmas (`eslint`, `shellcheck`, `noqa`, `@ts-`, and the rest).
 
-Hidden directories go generically — `(^|/)\.[^/]+/` — rather than by name. An AI tool's or an editor's own directory holds hooks and helpers the comment rule was never aimed at. A list of the tools we can name today would miss whichever arrives next. Matching by shape covers it on arrival and keeps the shipped core free of vendor tokens. It also covers `.agent/` itself, which used to be its own term.
+Hidden directories go generically — `(^|/)\.[^/]+/` — rather than by name. An AI tool's or an editor's own directory holds hooks and helpers the comment rule was never aimed at. A list of the tools we can name today would miss whichever arrives next. Matching by shape covers it on arrival and keeps the shipped core free of vendor tokens. It also covers `.agents/` itself, which used to be its own term.
 
 The honest cost: `.github/` is a hidden directory, so CI helpers written in a scanned language leave the scan too. A project that reviews those sets `EXCLUDE_RE` to a narrower list.
 

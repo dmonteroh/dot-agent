@@ -11,7 +11,7 @@ Usage: memory.sh lookup --query <text> [--limit <n>] [root]
          [--scope <project|package|root>] [--type <fact|reference>] [root]
 ```
 
-`root` defaults to `.` and `scope` defaults to `project`, `type` to `fact`. Writes `<root>/.agent/memory/<slug>.md` and appends its index line to `<root>/.agent/memory.md` — both or neither: every check runs before any write happens.
+`root` defaults to `.` and `scope` defaults to `project`, `type` to `fact`. Writes `<root>/.agents/memory/<slug>.md` and appends its index line to `<root>/.agents/memory.md` — both or neither: every check runs before any write happens.
 
 No size gate. Writes are never refused for length. `status.sh` flags outliers on the load path for grooming.
 
@@ -21,7 +21,7 @@ No size gate. Writes are never refused for length. `status.sh` flags outliers on
 
 `lookup` searches the initialized node's purpose, rules, memory index, fact files, and explicitly routed docs. The rules include manual `rules/learned.md` or generated `rules/learned/*.md` records. `docs/architecture.md` identifies the routed docs. It never scans the project generally or the user's home. The default limit is 20 and the accepted range is 1–100. When more matches exist, stdout remains records only and one stderr notice reports shown/total counts plus the larger `--limit` to try.
 
-Each result is `exact|overlap<TAB>.agent/path<TAB>version<TAB>excerpt`. Paths are project-relative, versions are Git object digests, and excerpts are single-line and capped at 240 characters. Case-insensitive phrase and identifier matches are emitted before shared-term overlaps. No output means no canonical match. It does not grant permission to write.
+Each result is `exact|overlap<TAB>.agents/path<TAB>version<TAB>excerpt`. Paths are project-relative, versions are Git object digests, and excerpts are single-line and capped at 240 characters. Case-insensitive phrase and identifier matches are emitted before shared-term overlaps. No output means no canonical match. It does not grant permission to write.
 
 ## Superseding
 

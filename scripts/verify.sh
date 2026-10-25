@@ -23,7 +23,7 @@ safe_value() { case "$1" in *$'\n'* | *$'\r'* | *$'\t'*) return 1 ;; esac; retur
 
 load_config() {
   cfg=$1
-  CHECK_DRIVER=.agent/scripts/checks.sh
+  CHECK_DRIVER=.agents/scripts/checks.sh
   POSITIVE_TEST_CHECKS='test'
   TEST_COUNT_FORMAT=tap
   TIMEOUT_SECONDS=300
@@ -154,14 +154,14 @@ while [ "$#" -gt 0 ]; do
 done
 root=$(da_root "$root") || exit 2
 safe_value "$root" || die "worktree path contains a control character"
-cfg="$root/.agent/scripts/verify.conf"
+cfg="$root/.agents/scripts/verify.conf"
 [ -f "$cfg" ] || cfg="$self_dir/verify.conf"
 load_config "$cfg"
 [ -n "$timeout" ] || timeout=$TIMEOUT_SECONDS
 case "$timeout" in '' | *[!0-9]*) die "timeout must be a positive integer" ;; esac
 [ "$timeout" -gt 0 ] || die "timeout must be a positive integer"
 if [ -n "$NON_GIT_INPUT_ROOTS" ]; then export DA_NON_GIT_INPUT_ROOTS=$NON_GIT_INPUT_ROOTS; else unset DA_NON_GIT_INPUT_ROOTS; fi
-export DA_VERIFY_CONFIG=.agent/scripts/verify.conf
+export DA_VERIFY_CONFIG=.agents/scripts/verify.conf
 export DA_CHECK_DRIVER=$CHECK_DRIVER
 state=$(da_state_dir "$root") || exit 2
 receipts="$state/receipts"

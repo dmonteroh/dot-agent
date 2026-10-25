@@ -130,7 +130,7 @@ done <"$changed_z"
 
 catalogs=()
 if [ "$CATALOGS" = auto ]; then
-  for catalog in "$root"/.agent/docs/*catalog*.md; do
+  for catalog in "$root"/.agents/docs/*catalog*.md; do
     [ -f "$catalog" ] && catalogs+=("$catalog")
   done
 else
