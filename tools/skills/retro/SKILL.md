@@ -51,7 +51,7 @@ A one-off mistake gets no script and no rule: it goes in the session log. A rule
 
 ## Record only what the evidence shows
 
-Writing nothing is the default outcome of a retro, not a failure of one. A lesson needs evidence it can cite: the correction, the failed check, or the review finding. Record what that evidence shows, not a cause you presume. When two changes landed together and you cannot tell which one fixed the failure, the lesson is confounded: say so in the trigger clause, or keep it in the session log until a later session separates them. An invented attribution misleads every later session that loads it.
+Writing nothing is the default outcome of a retro, not a failure of one. A lesson needs evidence it can cite: the correction, the failed check, or the review finding. Record what that evidence shows, not a cause you presume. When two changes landed together and you cannot tell which one fixed the failure, the lesson is confounded. Say so in the trigger clause, or keep it in the session log until a later session separates them. An invented attribution misleads every later session that loads it.
 
 If the answer generalizes past the source fix and this session, draft a rule. Otherwise the outcome belongs in the session log. A useful test: try to state the rule in one imperative sentence before writing anything down. If it only makes sense with a paragraph of backstory attached, keep asking until the generalizable version surfaces.
 

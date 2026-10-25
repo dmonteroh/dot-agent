@@ -14,8 +14,8 @@ Usage: absorb.sh mark [root]
 
 1. **`mark`**, in the worker's checkout, when the orchestrator dispatches it. It records the size and hash of every node Markdown file in `.agent/.state/absorb-base.tsv` of the worker's copy. That is the worker's base. Scripts, confs, `indexes/`, `archive/`, and `.state/` are not recorded and never travel.
 2. **`records --from <worker>`**, in the main checkout, when each attempt ends. Failed and discarded attempts are included, because a failed attempt's lesson is often the most valuable one. It merges the worker's experience records:
-   - entries appended to `session-log.md` and `memory.md`;
-   - new or superseded fact files under `memory/`;
+   - entries appended to `session-log.md` and `memory.md`
+   - new or superseded fact files under `memory/`
    - new or revised records under `rules/learned/`, or, on a node with no record directory, bullets appended to `rules/learned.md`.
 3. **`docs --from <worker>`**, in the main checkout, when the worker's code is integrated. It merges code-coupled writes: `purpose.md`, `rules/*.md` other than `learned.md`, and everything under `docs/`. In `track-shared` and `track-all`, git already carries the tracked files on the worker's branch. `docs` matters most for files git does not carry.
 
