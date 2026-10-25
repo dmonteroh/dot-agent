@@ -9,7 +9,7 @@ usage() {
 Usage: learn.sh lookup   --file <path|-> [root]
        learn.sh new      --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
        learn.sh revise   <id> --file <path|-> --expected <version> [root]
-       learn.sh retire   <id> --expected <version> [root]
+       learn.sh retire   <id> --expected <version> --enforced-by <path> [root]
        learn.sh pending  [root]
        learn.sh resolve  --id <id> --disposition <value> [root]
 
@@ -17,7 +17,8 @@ root defaults to . — the project root holding .agent/. A record lives at
 <root>/.agent/rules/learned/<id>.md; <id> is its filename without .md, a
 minted 12-character lowercase-hex identity. <version> is
 git hash-object --no-filters -- of that record file. --file - reads the
-candidate body from stdin. pending lists the migration's open
+candidate body from stdin. retire names, as a path under root, the check,
+script, doc, or surviving record that now enforces the rule. pending lists the migration's open
 semantic-review-pending and hook-missing items from
 <root>/.agent/migration-inventory.md; resolve closes one, --disposition
 one of migrated, "migrated (split into <id>[, <id>]...)",
@@ -28,7 +29,7 @@ EOF
 
 need_value() {
   case "${2-}" in
-  --file | --surface | --expected | --distinct | --id | --disposition)
+  --file | --surface | --expected | --distinct | --id | --disposition | --enforced-by)
     echo "learn.sh: $1 needs a value, got the flag $2" >&2
     usage >&2
     exit 2 ;;
@@ -476,12 +477,16 @@ revise)
 retire)
   id=""
   expected=""
+  enforced_by=""
   root="."
   while [ $# -gt 0 ]; do
     case "$1" in
     --expected)
       need_value "$@"
       expected="$2"; shift 2 ;;
+    --enforced-by)
+      need_value "$@"
+      enforced_by="$2"; shift 2 ;;
     -h | --help)
       usage; exit 0 ;;
     --*)
@@ -494,6 +499,21 @@ retire)
   [ -n "$id" ] || { echo "learn.sh: retire requires <id>" >&2; usage >&2; exit 2; }
   lrn_id_ok "$id" || { echo "learn.sh: <id> must be 12 lowercase hex characters (got '$id')" >&2; exit 2; }
   [ -n "$expected" ] || { echo "learn.sh: retire requires --expected <version>" >&2; usage >&2; exit 2; }
+  # A rule leaves only when something else now enforces it: a check, script,
+  # doc, contract section, or the record it was folded into.
+  [ -n "$enforced_by" ] || { echo "learn.sh: retire requires --enforced-by <path> — the check, script, doc, or record that now enforces this rule; keep the rule if nothing does" >&2; usage >&2; exit 2; }
+  case "$enforced_by" in
+  /* | ../* | */../* | .. | */..)
+    echo "learn.sh: --enforced-by must be a path inside the project root, relative to it (got '$enforced_by')" >&2; exit 2 ;;
+  esac
+  if [ ! -e "$root/$enforced_by" ]; then
+    echo "learn.sh: --enforced-by $enforced_by does not exist under $root — name the check, script, doc, or record that enforces this rule" >&2
+    exit 2
+  fi
+  case "${enforced_by#./}" in
+  ".agent/rules/learned/$id.md")
+    echo "learn.sh: --enforced-by names the record being retired — name what enforces the rule once it is gone" >&2; exit 2 ;;
+  esac
 
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"

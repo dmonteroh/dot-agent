@@ -61,6 +61,7 @@
 - Review useful discoveries from successful work, user corrections, and unexpected verification failures for durable knowledge.
 - A correction starts review and does not require a record.
 - Identify the failing source first. Fix its code, contract, doc, routing, or tooling and write no compensating rule.
+- Retire a learned rule only when you can name the check, script, doc, or record that now enforces it.
 - Task-specific requirements stay in task artifacts and the log. They create no durable record.
 - A durable preference updates its existing record at the scope the user stated.
 - A general behavioral lesson absent from canonical sources belongs in learned rules.
@@ -68,7 +69,7 @@
 - A lookup match needs review. No match is not permission to record.
 - Admit records on evidence and scope. Passing a text or comment check does not establish either.
 - Use `learn.sh lookup --file <candidate>` in either index mode before adding a lesson.
-- In generated mode, use `learn.sh new` or `revise` with the current record version.
+- In generated mode, use `learn.sh new`, `revise`, or `retire --enforced-by <path>` with the current record version.
 - In manual mode, merge near-duplicates in `rules/learned.md` after reading it.
 - Keep each learned rule imperative and within 40 words, without incident narration.
 

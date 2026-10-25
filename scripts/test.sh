@@ -7810,10 +7810,10 @@ grep -qF 'Close a generated-mode pass with `.agent/scripts/index.sh ensure` befo
   && grep -qF 'rebuilt from those records and never edited' "$g70skill" \
   && pass "groom skill: a generated-mode pass edits records and closes with index.sh ensure" \
   || fail "groom skill: a generated-mode pass edits records and closes with index.sh ensure"
-grep -qF 'A fold rewrites the record whose entry carries the earlier date and deletes the other record' "$g70skill" \
+grep -qF 'A fold rewrites the record whose entry carries the earlier date and retires the other with `learn.sh retire --enforced-by' "$g70skill" \
   && grep -qF 'lower-sorting filename surviving a tie on the same date' "$g70skill" \
-  && pass "groom skill: a fold keeps the earlier-dated record and deletes the other" \
-  || fail "groom skill: a fold keeps the earlier-dated record and deletes the other"
+  && pass "groom skill: a fold keeps the earlier-dated record and retires the other against it" \
+  || fail "groom skill: a fold keeps the earlier-dated record and retires the other against it"
 grep -qF 'A record fold, split, or move runs this same procedure' "$g70skill" \
   && grep -qF 'A dropped fact, qualifier, or source reference fails the pass' "$g70skill" \
   && pass "groom skill: a record fold, split, or move runs the anchor check" \
@@ -8200,13 +8200,13 @@ lrn73_surfgotchas_rc=$?
 [ "$lrn73_surfgotchas_rc" -eq 7 ] && pass "learn.sh: --surface gotchas refuses at exit 7" || fail "learn.sh: --surface gotchas refuses at exit 7 (rc=$lrn73_surfgotchas_rc)"
 
 lrn73_retire_v=$(git hash-object --no-filters -- "$lrn73/.agent/rules/learned/$lrn73_c_id.md")
-"$LRN" retire "$lrn73_c_id" --expected old-and-wrong "$lrn73" >/dev/null 2>"$WORK/lrn73-retire-stale.err"
+"$LRN" retire "$lrn73_c_id" --expected old-and-wrong --enforced-by .agent/rules/contract.md "$lrn73" >/dev/null 2>"$WORK/lrn73-retire-stale.err"
 lrn73_retirestale_rc=$?
 [ "$lrn73_retirestale_rc" -eq 3 ] && pass "learn.sh: retire against a stale --expected refuses at exit 3" || fail "learn.sh: retire against a stale --expected refuses at exit 3 (rc=$lrn73_retirestale_rc)"
 [ -f "$lrn73/.agent/rules/learned/$lrn73_c_id.md" ] \
   && pass "learn.sh: a stale retire leaves the record in place" \
   || fail "learn.sh: a stale retire leaves the record in place"
-lrn73_retire_out=$("$LRN" retire "$lrn73_c_id" --expected "$lrn73_retire_v" "$lrn73" 2>"$WORK/lrn73-retire.err")
+lrn73_retire_out=$("$LRN" retire "$lrn73_c_id" --expected "$lrn73_retire_v" --enforced-by .agent/rules/contract.md "$lrn73" 2>"$WORK/lrn73-retire.err")
 lrn73_retire_rc=$?
 [ "$lrn73_retire_rc" -eq 0 ] && pass "learn.sh: retire exits 0 against a fresh --expected" || fail "learn.sh: retire exits 0 against a fresh --expected (rc=$lrn73_retire_rc)"
 printf '%s\n' "$lrn73_retire_out" | grep -qF "retired	$lrn73_c_id" \
@@ -8271,7 +8271,7 @@ lrn73_gen_untracked=$(git -C "$lrn73_gen" status --porcelain --untracked-files=a
 [ "$?" -eq 7 ] \
   && pass "learn.sh: revise on a manual-mode node with no rules/learned/ refuses at exit 7" \
   || fail "learn.sh: revise on a manual-mode node with no rules/learned/ refuses at exit 7"
-"$LRNM" retire deadbeefcafe --expected absent "$lrn73_manual" >/dev/null 2>&1
+"$LRNM" retire deadbeefcafe --expected absent --enforced-by .agent/rules/contract.md "$lrn73_manual" >/dev/null 2>&1
 [ "$?" -eq 7 ] \
   && pass "learn.sh: retire on a manual-mode node with no rules/learned/ refuses at exit 7" \
   || fail "learn.sh: retire on a manual-mode node with no rules/learned/ refuses at exit 7"
@@ -8473,7 +8473,7 @@ EOF
 rec75_merge_rev_rc=$?
 [ "$rec75_merge_rev_rc" -eq 0 ] && pass "reconcile merge: revising the target to fold in the source exits 0" || fail "reconcile merge: revising the target to fold in the source exits 0 (rc=$rec75_merge_rev_rc)"
 rec75_mergesrc_v0=$(git hash-object --no-filters -- "$rec75_mergesrc")
-"$REC" retire "$rec75_mergesrc_id" --expected "$rec75_mergesrc_v0" "$rec75" >"$WORK/rec75-merge-retire.out" 2>"$WORK/rec75-merge-retire.err"
+"$REC" retire "$rec75_mergesrc_id" --expected "$rec75_mergesrc_v0" --enforced-by ".agent/rules/learned/$rec75_flat_id.md" "$rec75" >"$WORK/rec75-merge-retire.out" 2>"$WORK/rec75-merge-retire.err"
 rec75_merge_retire_rc=$?
 [ "$rec75_merge_retire_rc" -eq 0 ] && pass "reconcile merge: retiring the source's own record exits 0" || fail "reconcile merge: retiring the source's own record exits 0 (rc=$rec75_merge_retire_rc)"
 rec75_merge_resolve_out=$("$REC" resolve --id "$rec75_mergesrc_id" --disposition "migrated (merged into $rec75_flat_id)" "$rec75" 2>"$WORK/rec75-merge-resolve.err")
@@ -8555,7 +8555,7 @@ rec75_docs_after=$(rec75_docs_snapshot "$rec75")
   || fail "reconcile keep: every doc under docs/ is byte-identical across the resolve"
 
 rec75_retire_v0=$(git hash-object --no-filters -- "$rec75_retire")
-"$REC" retire "$rec75_retire_id" --expected "$rec75_retire_v0" "$rec75" >"$WORK/rec75-retire.out" 2>"$WORK/rec75-retire.err"
+"$REC" retire "$rec75_retire_id" --expected "$rec75_retire_v0" --enforced-by .agent/rules/contract.md "$rec75" >"$WORK/rec75-retire.out" 2>"$WORK/rec75-retire.err"
 rec75_retire_rmrc=$?
 [ "$rec75_retire_rmrc" -eq 0 ] && pass "reconcile retire: retiring the record exits 0" || fail "reconcile retire: retiring the record exits 0 (rc=$rec75_retire_rmrc)"
 rec75_retire_resolve_out=$("$REC" resolve --id "$rec75_retire_id" --disposition retired "$rec75" 2>"$WORK/rec75-retire-resolve.err")
@@ -8739,7 +8739,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1381
+EXPECTED_CHECKS=1382
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

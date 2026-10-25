@@ -49,7 +49,16 @@ revised_version=$(printf '%s\n' "$revised" | awk -F '\t' '$1=="revised" {print $
 [ -n "$revised_version" ] && [ "$revised_version" != "$learn_version" ] && ok 'generated revise preserves expected-version behavior' || bad 'generated revise preserves expected-version behavior'
 if printf '%s\n' '- [2026-09-27] Retune zircon widgets before launch.' | "$here/scripts/learn.sh" revise "$learn_id" --file - --expected stale "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
 [ "$status" -eq 3 ] && ok 'generated revise retains stale exit 3' || bad 'generated revise retains stale exit 3'
-"$here/scripts/learn.sh" retire "$learn_id" --expected "$revised_version" "$node" >/dev/null 2>&1
+retire_refused() { # expects a refusal at exit 2 that leaves the record in place
+  if "$here/scripts/learn.sh" retire "$learn_id" --expected "$revised_version" "$@" "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
+  [ "$status" -eq 2 ] && [ -e "$node/.agent/rules/learned/$learn_id.md" ]
+}
+retire_refused && ok 'retire without --enforced-by is refused' || bad 'retire without --enforced-by is refused'
+retire_refused --enforced-by scripts/no-such-check.sh && ok 'retire naming a missing enforcer is refused' || bad 'retire naming a missing enforcer is refused'
+retire_refused --enforced-by /etc/hosts && ok 'retire naming a path outside the root is refused' || bad 'retire naming a path outside the root is refused'
+retire_refused --enforced-by ../outside && ok 'retire naming a parent path is refused' || bad 'retire naming a parent path is refused'
+retire_refused --enforced-by ".agent/rules/learned/$learn_id.md" && ok 'retire naming the record itself is refused' || bad 'retire naming the record itself is refused'
+"$here/scripts/learn.sh" retire "$learn_id" --expected "$revised_version" --enforced-by .agent/rules/core.md "$node" >/dev/null 2>&1
 [ ! -e "$node/.agent/rules/learned/$learn_id.md" ] && ok 'generated retire retains versioned removal' || bad 'generated retire retains versioned removal'
 
 learn_race_bin="$tmp/learn-race-bin"
@@ -97,7 +106,7 @@ rm -f "$learn_race_state"
 if LEARN_REAL_GIT="$learn_real_git" LEARN_RACE_TARGET="$retire_race_target" \
   LEARN_RACE_STATE="$learn_race_state" LEARN_RACE_NEWER="$retire_race_newer" \
   PATH="$learn_race_bin:$PATH" "$here/scripts/learn.sh" retire dddddddddddd \
-    --expected "$retire_race_expected" "$node" >/dev/null 2>&1; then
+    --expected "$retire_race_expected" --enforced-by .agent/rules/core.md "$node" >/dev/null 2>&1; then
   status=0
 else
   status=$?
