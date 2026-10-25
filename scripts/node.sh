@@ -540,9 +540,9 @@ enable_generated_indexes() {
   return 0
 }
 
-# Before 6.3, skills were installed inside the node at .agent/skills/, read
-# through .claude/skills and .codex/skills symlinks. Codex no longer reads
-# .codex/skills, and most agent tools read .agents/skills/ beside the node.
+# Before 6.3, skills were installed inside the node at .agent/skills/ and read
+# through per-tool symlinks. Most agent tools now read .agents/skills/ beside
+# the node, and one of those symlink locations is no longer read at all.
 migrate_skills_location() {
   local root="$1" old="$1/.agent/skills" new="$1/.agents/skills" entry name link target clashes=""
   [ -d "$old" ] && [ ! -L "$old" ] || return 0
@@ -578,7 +578,7 @@ migrate_skills_location() {
     if [ "$link" = "$root/.claude/skills" ]; then
       ln -sfn ../.agents/skills "$link" && echo "node.sh: repointed $link to ../.agents/skills"
     else
-      rm -f "$link" && echo "node.sh: removed $link — Codex reads .agents/skills/ itself"
+      rm -f "$link" && echo "node.sh: removed $link — that tool reads .agents/skills/ itself"
     fi
   done
   return 0
