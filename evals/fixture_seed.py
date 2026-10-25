@@ -144,6 +144,10 @@ def check_premise(built_dir, premise):
     path = premise.get("path")
     if not path:
         return False, "premise has no \"path\": %r" % (premise,)
+    # The frozen eval sets name the node .agent/, the directory revisions
+    # before 6.3 used. A fixture built at a current revision keeps it at .agents/.
+    if path.startswith(".agent/") and not os.path.isdir(os.path.join(built_dir, ".agent")):
+        path = ".agents/" + path[len(".agent/"):]
     full = os.path.join(built_dir, path)
     if "exists" in premise:
         ok = os.path.exists(full) == bool(premise["exists"])
@@ -189,7 +193,12 @@ def main(argv):
         if len(args) != 1:
             die("fill-contract takes exactly one path")
         path = args[0]
-        write(path, fill_contract(read(path)))
+        answers = None
+        # A node built at a current revision lives at .agents/, so its
+        # driver answer names that directory.
+        if "/.agents/" in os.path.abspath(path).replace(os.sep, "/"):
+            answers = {k: v.replace(".agent/", ".agents/") for k, v in CONTRACT_ANSWERS.items()}
+        write(path, fill_contract(read(path), answers))
     elif command == "route-sections":
         if len(args) != 2:
             die("route-sections takes a path and a sections string")

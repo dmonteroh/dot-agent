@@ -402,6 +402,14 @@ verifier_cleanup() {
 # leaves cleanup to the caller (mark_stage_void -> verifier_cleanup) instead
 # of removing the directory inline, which is what makes the early-registration
 # safe rather than redundant.
+# Pinned control revisions build the node at .agent/ (before 6.3), current
+# revisions at .agents/. Every capture reads whichever directory the fixture has.
+LEGACY_NODE_PREFIX=.agent/
+NODE_PREFIX=.agents/
+node_dir() {
+  if [ -f "$1/.agent/purpose.md" ] && [ ! -f "$1/.agents/purpose.md" ]; then printf '.agent'; else printf '.agents'; fi
+}
+
 verifier_snapshot() {
   local fixdir="$1" snapshot
   # The script logic (status.sh, comments.sh) comes from this repo's own
@@ -417,11 +425,16 @@ verifier_snapshot() {
   chmod 700 "$snapshot" || return 1
   cp "$selfdir/../scripts/status.sh" "$snapshot/status.sh" || return 1
   cp "$selfdir/../scripts/comments.sh" "$snapshot/comments.sh" || return 1
-  if [ -f "$fixdir/.agent/scripts/status.conf" ]; then
-    cp "$fixdir/.agent/scripts/status.conf" "$snapshot/status.conf" || return 1
+  if [ -f "$fixdir/$(node_dir "$fixdir")/scripts/status.conf" ]; then
+    cp "$fixdir/$(node_dir "$fixdir")/scripts/status.conf" "$snapshot/status.conf" || return 1
   fi
-  if [ -f "$fixdir/.agent/scripts/comments.conf" ]; then
-    cp "$fixdir/.agent/scripts/comments.conf" "$snapshot/comments.conf" || return 1
+  if [ -f "$fixdir/$(node_dir "$fixdir")/scripts/comments.conf" ]; then
+    cp "$fixdir/$(node_dir "$fixdir")/scripts/comments.conf" "$snapshot/comments.conf" || return 1
+  fi
+  # This repo's checkers look for .agents/. A pre-6.3 fixture gets copies that
+  # look for .agent/ instead, with the logic otherwise unchanged.
+  if [ "$(node_dir "$fixdir")" = .agent ]; then
+    perl -pi -e 's/\.agents(?![A-Za-z0-9_])/.agent/g' "$snapshot/status.sh" "$snapshot/comments.sh" || return 1
   fi
   chmod 500 "$snapshot/status.sh" "$snapshot/comments.sh" || return 1
   [ ! -f "$snapshot/status.conf" ] || chmod 400 "$snapshot/status.conf"
@@ -474,8 +487,8 @@ verifier_restore_status_conf() {
   # Nothing to restore when the fixture has no node: status.sh is not run
   # against it at all (see the status capture below), and there is no
   # $fixdir/.agent/scripts to write into.
-  [ -d "$fixdir/.agent/scripts" ] || return 0
-  target="$fixdir/.agent/scripts/status.conf"
+  [ -d "$fixdir/$(node_dir "$fixdir")/scripts" ] || return 0
+  target="$fixdir/$(node_dir "$fixdir")/scripts/status.conf"
   if [ -n "$VERIFIER_STATUS_CONF_HASH" ]; then
     cp "$VERIFIER_ACTIVE_DIR/status.conf" "$target"
   else
@@ -772,8 +785,8 @@ release_iter_lock() {
 capture_index_manifest() {
   local dir="$1" out="$2" listfile p h
   listfile=$(mktemp "${TMPDIR:-/tmp}/dot-agent-eval-idxmanifest.XXXXXX") || return 1
-  if [ -d "$dir/.agent/indexes" ]; then
-    ( cd "$dir" && find .agent/indexes -type f -print0 2>/dev/null ) >"$listfile"
+  if [ -d "$dir/$(node_dir "$dir")/indexes" ]; then
+    ( cd "$dir" && find "$(node_dir .)/indexes" -type f -print0 2>/dev/null ) >"$listfile"
   else
     : >"$listfile"
   fi
@@ -846,6 +859,9 @@ claude_run() {
       session_start=1
       turntext="${turntext#"$TURN_SESSION_RESTART"}" ;;
     esac
+    # The frozen prompt sets name the node .agent/. A fixture built at a
+    # current revision keeps it at .agents/, so the prompt says so too.
+    [ "$(node_dir "$fixdir")" = .agent ] || turntext=${turntext//"$LEGACY_NODE_PREFIX"/$NODE_PREFIX}
     now=$(date +%s)
     remaining=$((TIMEOUT - (now - start_ts)))
     if [ "$remaining" -le 0 ]; then
@@ -966,6 +982,9 @@ codex_run() {
       session_start=1
       turntext="${turntext#"$TURN_SESSION_RESTART"}" ;;
     esac
+    # The frozen prompt sets name the node .agent/. A fixture built at a
+    # current revision keeps it at .agents/, so the prompt says so too.
+    [ "$(node_dir "$fixdir")" = .agent ] || turntext=${turntext//"$LEGACY_NODE_PREFIX"/$NODE_PREFIX}
     now=$(date +%s)
     remaining=$((TIMEOUT - (now - start_ts)))
     if [ "$remaining" -le 0 ]; then
@@ -1445,9 +1464,9 @@ while [ "$rep" -le "$repeats_eff" ]; do
       mark_stage_void "$rundir" contract_changed "contract file changed after run configuration was locked" 2
       any_void=1; rep=$((rep + 1)); continue
     }
-    "$selfdir/run_lib.py" install-contract "$contract_file" "$fixdir/.agent/rules/contract.md" \
+    "$selfdir/run_lib.py" install-contract "$contract_file" "$fixdir/$(node_dir "$fixdir")/rules/contract.md" \
       >"$rundir/contract-install.txt" 2>&1 && \
-      git -C "$fixdir" add .agent/rules/contract.md && \
+      git -C "$fixdir" add "$(node_dir "$fixdir")/rules/contract.md" && \
       git -C "$fixdir" -c user.name=eval -c user.email=eval@local \
         -c commit.gpgsign=false commit -q -m "eval fixture: contract variant"
     stage_rc=$?
@@ -1569,7 +1588,7 @@ EOF
       "artifact capture failed while staging the fixture (exit $stage_rc)" "$stage_rc"
     any_void=1; rep=$((rep + 1)); continue
   fi
-  git -C "$fixdir" diff --cached "$base" -- . ':(exclude).agent' \
+  git -C "$fixdir" diff --cached "$base" -- . ":(exclude)$(node_dir "$fixdir")" \
     >"$rundir/outputs/diff.patch" 2>/dev/null
   stage_rc=$?
   if [ "$stage_rc" -ne 0 ]; then
@@ -1577,7 +1596,7 @@ EOF
       "artifact capture failed while reading the project diff (exit $stage_rc)" "$stage_rc"
     any_void=1; rep=$((rep + 1)); continue
   fi
-  git -C "$fixdir" diff --cached "$base" -- .agent \
+  git -C "$fixdir" diff --cached "$base" -- "$(node_dir "$fixdir")" \
     >"$rundir/outputs/node-diff.patch" 2>/dev/null
   stage_rc=$?
   if [ "$stage_rc" -ne 0 ]; then
@@ -1587,8 +1606,8 @@ EOF
   fi
 
   node_files="$rundir/outputs/.node-files"
-  if [ -d "$fixdir/.agent" ]; then
-    ( cd "$fixdir" && find .agent -type f -print0 2>/dev/null ) >"$node_files"
+  if [ -d "$fixdir/$(node_dir "$fixdir")" ]; then
+    ( cd "$fixdir" && find "$(node_dir .)" -type f -print0 2>/dev/null ) >"$node_files"
   else
     : >"$node_files"
   fi
@@ -1635,7 +1654,7 @@ EOF
   # restored into the fixture right before this call, overwriting whatever
   # the agent may have left there. Hashing the snapshot alone would not
   # stop status.sh from reading a mutated fixture-side status.conf.
-  if [ -d "$fixdir/.agent" ]; then
+  if [ -d "$fixdir/$(node_dir "$fixdir")" ]; then
     if ! verifier_restore_status_conf "$fixdir"; then
       mark_stage_void "$rundir" verifier_snapshot_failed \
         "could not restore the trusted status.conf before status capture" 1

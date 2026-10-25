@@ -214,7 +214,7 @@ def main(argv):
             o = {"transcript": read(os.path.join(outs, "session-transcript.txt")),
                  "diff": read(os.path.join(outs, "diff.patch")),
                  "node_diff": read(os.path.join(outs, "node-diff.patch")),
-                 "node_tree": read(os.path.join(outs, "node-tree.txt"))}
+                 "node_tree": re.sub(r"(?<![A-Za-z0-9_])\.agents/", ".agent/", read(os.path.join(outs, "node-tree.txt")) or "")}
             changed = False
             for r in recs:
                 if r.get("passed") is not None:
