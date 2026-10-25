@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Triages session corrections and failures against their canonical source before retaining durable lessons. Use after a user correction, non-obvious verification fix, agreed-plan deviation, or comment-hygiene breach, and at session close. Routes surviving lessons to rules/learned.md, a docs Gotchas entry, or comments.conf vocabulary. Also harvests a tool-native memory silo into .agents/.
+description: Triages session corrections and failures against their canonical source before retaining durable lessons. Use after a user correction, non-obvious verification fix, agreed-plan deviation, or comment-hygiene breach, and at session close. Routes surviving lessons to rules/learned.md, a docs Gotchas entry, or comments.conf vocabulary. Also harvests a tool-native memory silo into .agent/.
 ---
 
 # Retro
@@ -49,17 +49,17 @@ Draft the rule clause first. Add the trigger clause only if a future session wou
 
 ## Merge, don't append
 
-On a node running `indexes: generated`, run `.agents/scripts/learn.sh lookup` against the draft rule before adding a new entry. If it names a duplicate or an overlapping record, revise the record it names with `.agents/scripts/learn.sh revise` — broaden the imperative, or fold in the new trigger — rather than leaving both for the grooming threshold to reconcile later. Pass `--distinct` only after reading the records the refusal names and confirming the draft is genuinely a separate rule.
+On a node running `indexes: generated`, run `.agent/scripts/learn.sh lookup` against the draft rule before adding a new entry. If it names a duplicate or an overlapping record, revise the record it names with `.agent/scripts/learn.sh revise` — broaden the imperative, or fold in the new trigger — rather than leaving both for the grooming threshold to reconcile later. Pass `--distinct` only after reading the records the refusal names and confirming the draft is genuinely a separate rule.
 
 On a manual-mode node, `rules/learned/` does not exist and `learn.sh` refuses there, so merge near-duplicates by hand in `rules/learned.md` instead: read the file first, and edit the existing entry rather than adding a new one that says the same thing.
 
 ## Route by scope
 
-What you found becomes one of four kinds, each owned by one surface and one writer: a task requirement stays in the task's own artifacts and the session log, at its stated scope, with no durable record; a project fact goes to `.agents/scripts/memory.sh new`, or the owning doc when it is stable knowledge about how the system works; a durable preference the user states in their own turn updates the existing canonical record with `.agents/scripts/memory.sh supersede --slug <slug>`; a behavioral lesson that generalizes past this session is a learned record, written with `.agents/scripts/learn.sh`.
+What you found becomes one of four kinds, each owned by one surface and one writer: a task requirement stays in the task's own artifacts and the session log, at its stated scope, with no durable record; a project fact goes to `.agent/scripts/memory.sh new`, or the owning doc when it is stable knowledge about how the system works; a durable preference the user states in their own turn updates the existing canonical record with `.agent/scripts/memory.sh supersede --slug <slug>`; a behavioral lesson that generalizes past this session is a learned record, written with `.agent/scripts/learn.sh`.
 
-Behavioral rules stay in `learned.md`. Some rules are really an area-specific mechanic: a library quirk, an API gotcha, a SQL or CSS behavior. Those belong in the matching `.agents/docs/<area>.md` file instead, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer in `learned.md` for cross-area hazards.
+Behavioral rules stay in `learned.md`. Some rules are really an area-specific mechanic: a library quirk, an API gotcha, a SQL or CSS behavior. Those belong in the matching `.agent/docs/<area>.md` file instead, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer in `learned.md` for cross-area hazards.
 
-A comment-hygiene lesson first routes to `comments.sh`. If the gate already catches the shape, write nothing. Otherwise add a project-specific repeatable shape to `.agents/scripts/comments.conf`, so the next occurrence is mechanical: a citation format goes to `BLOCK_RE_EXTRA`, a house narration phrasing to `NARRATION_RE_EXTRA`, a generated path the gate should skip to `EXCLUDE_RE_EXTRA`. When the gate blocked something real, the fix is `CONSTRAINT_RE_EXTRA`, not an exception.
+A comment-hygiene lesson first routes to `comments.sh`. If the gate already catches the shape, write nothing. Otherwise add a project-specific repeatable shape to `.agent/scripts/comments.conf`, so the next occurrence is mechanical: a citation format goes to `BLOCK_RE_EXTRA`, a house narration phrasing to `NARRATION_RE_EXTRA`, a generated path the gate should skip to `EXCLUDE_RE_EXTRA`. When the gate blocked something real, the fix is `CONSTRAINT_RE_EXTRA`, not an exception.
 
 Write a `learned.md` rule for it only when no pattern can express what went wrong. This is the fix ladder in miniature. A rule that was already written and breached anyway needs a check, not a restatement.
 
@@ -67,4 +67,4 @@ Write a `learned.md` rule for it only when no pattern can express what went wron
 
 This is a repair path, not a routine step. See operating-model.md's Native tool memory section for why. It applies only when retro finds a tool-collected silo. That happens when the native-memory setting wasn't applied to this node, or when another tool populated its own store.
 
-Check the tool's native memory location for entries about this project. For Claude Code, that is wherever `autoMemoryEnabled` would have written. If any entries exist, fold their content into the right `.agents/` file: a fact into `memory/`, a behavioral rule into `learned.md`. Then delete the silo. A node with the setting correctly applied has nothing to harvest. Don't go looking for one.
+Check the tool's native memory location for entries about this project. For Claude Code, that is wherever `autoMemoryEnabled` would have written. If any entries exist, fold their content into the right `.agent/` file: a fact into `memory/`, a behavioral rule into `learned.md`. Then delete the silo. A node with the setting correctly applied has nothing to harvest. Don't go looking for one.

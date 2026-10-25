@@ -6,7 +6,7 @@ Appends one session-log entry per `session-log.md`'s header contract. It stamps 
 Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
 ```
 
-`root` defaults to `.` and the script appends to `<root>/.agents/session-log.md`. Refuses to run if that file does not already exist — an uninitialized node.
+`root` defaults to `.` and the script appends to `<root>/.agent/session-log.md`. Refuses to run if that file does not already exist — an uninitialized node.
 
 ## The entry
 

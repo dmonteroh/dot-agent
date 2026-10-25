@@ -2,12 +2,12 @@
 
 > **This directory belongs to the dot-agent repository, not to the harness.**
 > Nothing here is installed into a node, copied into a project adopting
-> `.agents/`, or refreshed by `node.sh update`. It is this project's own test
+> `.agent/`, or refreshed by `node.sh update`. It is this project's own test
 > bench, exactly as `scripts/test.sh` is. What a node receives is the list
 > under **Directory structure** in the operating model, and `test.sh` pins
 > that a freshly created node contains none of this.
 >
-> If you are adopting `.agents/` in a project: you want `README.md` at the
+> If you are adopting `.agent/` in a project: you want `README.md` at the
 > repository root. You will never need this file.
 
 `scripts/test.sh` checks the corpus as an artifact: the text is present, the scripts behave, the shared blocks match. Every one of those checks passes on a corpus that no agent obeys. This directory covers the other half — whether a session under this corpus behaves differently from a session without it — and it is the only place in the repo where the answer comes from running an agent rather than from reading one.
@@ -16,7 +16,7 @@ What the runs so far found is written up in [What the September 2026 evaluations
 
 ## In plain terms
 
-An eval is a small, realistic situation and a list of things a good session does in it. The bench builds a tiny project with a fresh `.agents/` node inside it, plants one trap (a doc the routing hook does not name, a memory fact due for an update, a file carrying an instruction aimed at the agent, a test that was already red), hands a real agent one prompt in that project, and records everything the session leaves behind: the diff, the `.agents/` diff, the reply, and the sequence of tool calls. Then it grades that record against the list.
+An eval is a small, realistic situation and a list of things a good session does in it. The bench builds a tiny project with a fresh `.agent/` node inside it, plants one trap (a doc the routing hook does not name, a memory fact due for an update, a file carrying an instruction aimed at the agent, a test that was already red), hands a real agent one prompt in that project, and records everything the session leaves behind: the diff, the `.agent/` diff, the reply, and the sequence of tool calls. Then it grades that record against the list.
 
 The list is the point. Each item is a checkable claim about the session's actions, artifacts, or reply. Scripts settle most of them. A blind reviewer grades the thirty-three that need judgement.
 
@@ -31,7 +31,7 @@ Every one of these exists because a run without it produced a wrong conclusion a
 | Bias | What the bench does about it |
 | --- | --- |
 | **The corpus was written from the evals' failing transcripts, so it may have learned the test** | A held-out set with reworded prompts (`heldout.json`, selected with `EVALS_SPEC`). A contamination audit (`contamination.py`) that measures shared phrases and, with `--judge`, asks a model whether any corpus passage describes the same situation as an eval prompt whatever the vocabulary. One variant scored best on the canonical set and turned out to retell 11 of the 19 scenarios as worked examples; it was the only arm to score below the base on held-out. |
-| **A score can lean on rows that only the mechanism can pass** | Every assertion is tagged in `assertion-kinds.json` as *behavior* (an outcome any instruction set could produce), *conformance* (a format, a script, a flag, a load order), or *information* (the answer exists only inside `.agents/`). Reports show all three strata, and a harness-free arm is judged on behavior rows only. |
+| **A score can lean on rows that only the mechanism can pass** | Every assertion is tagged in `assertion-kinds.json` as *behavior* (an outcome any instruction set could produce), *conformance* (a format, a script, a flag, a load order), or *information* (the answer exists only inside `.agent/`). Reports show all three strata, and a harness-free arm is judged on behavior rows only. |
 | **One run per cell hides the noise** | The same corpus moved by ±2 assertions across four identical runs. Repeats are a recorded budget (`REPEATS` in `agents.conf`), and `pooled.py` judges a candidate against every prior run of the baseline, bucketing each assertion by pass rate rather than by one bit: a "unique failure" needs the candidate at or below half and the baseline at or above three quarters. |
 | **The grader could know the arm** | Run ids are hashes; the arm mapping lives in `arm-map.json`, which no grader opens, and `rollup.py` voids a pass if an arm name reaches any grading record as the condition — a path or id component, a key or whole field value, or the name written beside the experiment's own vocabulary. It is not a bare substring match: arms are named for what they are, `node` is also the corpus's word for itself, and a guard that forces the operator to rename the thing being measured taxes the blind rather than protecting it. `triage.py` proposes manual verdicts from the record alone and never reads the mapping. Blindness is nominal for a harness-versus-none comparison — a transcript that runs `status.sh` reveals its arm — and is stated as such. |
 | **Manual grading drifts between runs** | `triage.py` applies one fixed rule per manual assertion and quotes the evidence; it was calibrated against the previous human grades and agreed everywhere except one shape the human had scored both ways. The rule now applied is written down. |
@@ -42,17 +42,6 @@ Every one of these exists because a run without it produced a wrong conclusion a
 | **A flag is trusted instead of verified** | A feasibility pass found Codex loading a personal writing-style skill despite `--ignore-user-config`. `run.sh` now writes an isolation block into every cell's `run-meta.json` — the disposable config directory, the stripped provider variables, and any name from a fixed list that turned up in the trace anyway — so a run whose block is non-empty is reported as configuration-specific evidence rather than trusted as isolated. |
 
 What the bench does not do: it does not vary the scenarios (a paraphrase is not a new situation; that needs a new fixture), it does not run on a real repository (the base fixture is ten lines of TypeScript; the learning fixture adds a dozen small files), and its manual grades are made by the same lineage that writes the corpus. Those limits are stated in every report.
-
-## The node directory across revisions
-
-Revisions before 6.3 build the node at `.agent/`. Later ones build it at `.agents/`. The pinned controls (`2f779b7`, `5001189`) are older, so a corpus arm can compare an `.agent/` fixture with an `.agents/` one. The frozen prompt sets (`spec.json`, `heldout.json`) keep the `.agent/` name, and the bench bridges the two without editing them:
-
-- `fixtures.sh` plants every trap into whichever directory the revision built, and gives the controller's writers a copy rewritten for `.agent/` when the node is there.
-- `fixture_seed.py` checks a premise's `.agent/` path at `.agents/` when that is where the node lives.
-- `run.sh` reads the fixture's own directory for every capture, rewrites `.agent/` to `.agents/` in each turn's prompt for a current-revision fixture, and gives a pre-6.3 fixture copies of the trusted `status.sh` and `comments.sh` that look for `.agent/`.
-- `grade.py` and `triage.py` read the node-path artifacts (`node-diff.patch`, `node-tree.txt`, the index manifests) back in the spec's `.agent/` names. The files on disk keep the real directory.
-
-A comparison between a pre-6.3 and a 6.3 revision therefore varies the directory name as well as the corpus. The rename's own validation run is that comparison, and its expected delta is zero.
 
 ## The method
 
@@ -95,13 +84,13 @@ The eight `learning-*` evals correspond one-to-one with the eight admission case
 
 ## Fixtures
 
-Fourteen, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Most arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. `ts-service-flagged` exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token. `ts-service-partial-migration` is flagged too, deliberately: its whole point is an open migration backlog. Four more exist only on a generated node, each seeding a specific fault `--indexes generated` can reach: `ts-service-index-fault` (a truncated, non-verifying published entry), `ts-service-no-indexer` (the indexer itself removed after the cache warmed), `ts-service-branch-switched` (a cache built on a second branch, checkout left on this one — index.sh's own `.gitignore` of `.agents/indexes/` means a checkout never touches it), and `ts-service-partial-migration` (a migration-inventory.md carrying both an open `semantic-review-pending` rule and an open `hook-missing` doc). `ts-service-learning` carries the application code the eight learning-admission prompts talk about — a shared retry helper, webhook send and receive paths, an exchange-rate cache with no expiry, three paginated admin endpoints sharing one default, a generated webhook schema with its generator and YAML sources, a hand-run diagnostic script, and a rename checklist — and documents none of it in `.agents/`. The first calibration run (2026-09-20) built those eight evals on the bare `ts-service` tree; every session correctly refused to invent the missing code, and the positive half of seven cases graded 0/N for that reason alone. Each prompt's feature now has a build-time premise, so a prompt about code the fixture lacks refuses to run instead of grading a refusal.
+Fourteen, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Most arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. `ts-service-flagged` exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token. `ts-service-partial-migration` is flagged too, deliberately: its whole point is an open migration backlog. Four more exist only on a generated node, each seeding a specific fault `--indexes generated` can reach: `ts-service-index-fault` (a truncated, non-verifying published entry), `ts-service-no-indexer` (the indexer itself removed after the cache warmed), `ts-service-branch-switched` (a cache built on a second branch, checkout left on this one — index.sh's own `.gitignore` of `.agent/indexes/` means a checkout never touches it), and `ts-service-partial-migration` (a migration-inventory.md carrying both an open `semantic-review-pending` rule and an open `hook-missing` doc). `ts-service-learning` carries the application code the eight learning-admission prompts talk about — a shared retry helper, webhook send and receive paths, an exchange-rate cache with no expiry, three paginated admin endpoints sharing one default, a generated webhook schema with its generator and YAML sources, a hand-run diagnostic script, and a rename checklist — and documents none of it in `.agent/`. The first calibration run (2026-09-20) built those eight evals on the bare `ts-service` tree; every session correctly refused to invent the missing code, and the positive half of seven cases graded 0/N for that reason alone. Each prompt's feature now has a build-time premise, so a prompt about code the fixture lacks refuses to run instead of grading a refusal.
 
-`--indexes <manual|generated>` defaults to `manual`. The builder passes the flag when the pinned corpus advertises it and omits it for an older manual-only corpus. Generated fixtures require a corpus that supports the flag. After seeding, they run `.agents/scripts/index.sh ensure` and arrive with a warm cache. `run.sh` maps `--index-mode manual|generated` to this flag and records the value in `run-config.json`.
+`--indexes <manual|generated>` defaults to `manual`. The builder passes the flag when the pinned corpus advertises it and omits it for an older manual-only corpus. Generated fixtures require a corpus that supports the flag. After seeding, they run `.agent/scripts/index.sh ensure` and arrive with a warm cache. `run.sh` maps `--index-mode manual|generated` to this flag and records the value in `run-config.json`.
 
 `run.sh` also passes `--eval <id>`, so fixture construction checks only that scenario's premises. A direct builder call without `--eval` retains the maintenance check over every scenario sharing the fixture.
 
-Two modifier flags build harness-free control arms on the same fixtures: `--no-harness` moves the node aside and ships no entry point; `--generic-claude` replaces it with an ordinary hand-written instructions file. Both are restricted to the evals whose assertions never touch the `.agents/` tree, and two of those seven measure information availability rather than behavior, because their answer only exists inside `.agents/docs/`.
+Two modifier flags build harness-free control arms on the same fixtures: `--no-harness` moves the node aside and ships no entry point; `--generic-claude` replaces it with an ordinary hand-written instructions file. Both are restricted to the evals whose assertions never touch the `.agent/` tree, and two of those seven measure information availability rather than behavior, because their answer only exists inside `.agent/docs/`.
 
 ## Assertions
 
@@ -109,7 +98,7 @@ Two classes. An **artifact assertion** names a checkable property of a named out
 
 Each assertion carries a stable `id` (joins the arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind. A third file, `assertion-kinds.json`, tags each id as behavior, conformance, or information; it is kept beside the spec rather than inside it so the frozen spec stays frozen.
 
-The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. Beyond those, a `.agents/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once. The grading copies of `status.sh` and `comments.sh` are snapshotted from this repository, never taken from the node under test, so a corpus revision cannot grade itself.
+The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once. The grading copies of `status.sh` and `comments.sh` are snapshotted from this repository, never taken from the node under test, so a corpus revision cannot grade itself.
 
 That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content, whether a durable write is correctly scoped, deduplicated, or superseded. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Thirty-three of the one hundred eleven are manual.
 
@@ -221,9 +210,9 @@ Concurrent sessions contend for the machine and account, which inflates duration
                               # trace anyway
       outputs/
         diff.patch           # project tree, fixture base -> end
-        node-diff.patch      # .agents/ tree, fixture base -> end
-        node-tree.txt        # every .agents/ file with content, for absence checks
-        indexes-before.txt   # one "path digest" line per .agents/indexes/ file,
+        node-diff.patch      # .agent/ tree, fixture base -> end
+        node-tree.txt        # every .agent/ file with content, for absence checks
+        indexes-before.txt   # one "path digest" line per .agent/indexes/ file,
                               # taken right after the fixture build
         indexes-after.txt    # the same manifest, taken at capture time — the only
                               # way to see a hand-edit of a generated page, since

@@ -34,37 +34,6 @@ install_node_scripts() {
   done
 }
 
-# The node owns only these paths under .agents/. Everything else there
-# (skills/, other tools' files) belongs to the project, so no tracking mode
-# ignores the directory as a whole.
-NODE_SHARED_PATHS=(purpose.md rules/ docs/)
-NODE_PERSONAL_PATHS=(memory.md memory/ session-log.md archive/ scripts/ indexes/ migration-inventory.md '.*' '*.tmp' '*.tmp.*')
-
-node_gitignore_lines() {
-  local mode="$1" indexes="$2" path
-  case "$mode" in
-  ignore-all)
-    for path in "${NODE_SHARED_PATHS[@]}" "${NODE_PERSONAL_PATHS[@]}"; do printf '.agents/%s\n' "$path"; done ;;
-  track-shared)
-    for path in "${NODE_PERSONAL_PATHS[@]}"; do printf '.agents/%s\n' "$path"; done
-    [ "$indexes" != generated ] || printf '.agents/rules/learned.md\n' ;;
-  track-all)
-    [ "$indexes" != generated ] || printf '.agents/indexes/\n.agents/rules/learned.md\n' ;;
-  esac
-}
-
-# Appends each missing line of the mode's block; never removes a line.
-write_node_gitignore() {
-  local gitignore="$1/.gitignore" line missing=""
-  while IFS= read -r line; do
-    [ -e "$gitignore" ] && grep -qxF -- "$line" "$gitignore" && continue
-    missing="$missing$line"$'\n'
-  done < <(node_gitignore_lines "$2" "$3")
-  [ -n "$missing" ] || return 0
-  if [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ]; then echo >>"$gitignore"; fi
-  printf '%s' "$missing" >>"$gitignore"
-}
-
 usage() {
   cat <<'EOF'
 Usage:
@@ -73,7 +42,7 @@ Usage:
   node.sh finalize [root]
 
 init defaults --indexes to manual. update preserves the manifest value when
---indexes is omitted. root defaults to . — the script operates on <root>/.agents
+--indexes is omitted. root defaults to . — the script operates on <root>/.agent
 EOF
 }
 
@@ -185,7 +154,7 @@ remove_migration_target() {
 write_session_log_header() {
   cat >"$1" <<'EOF'
 # Session log
-<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agents/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
 EOF
 }
 
@@ -202,7 +171,7 @@ memory_headers_stale() {
 write_memory_header() {
   cat >"$1" <<'EOF'
 # Memory
-<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agents/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agents/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
+<!-- Index only, one line per fact file, newest last. Reorder by relevance only when grooming. Format: - [Title](memory/slug.md) — hook. No prose, no facts inline: a fact that lives only as a line here and not as its own file under memory/ is not recorded. Delete the line when its file is deleted. Preferred writer: .agent/scripts/memory.sh new (scaffolds the fact file and its index line together). This contract covers memory/ too, so fact files carry no header of their own. Each holds one durable fact under date, scope, and type frontmatter. Keep a fact only if work in this node changes when it is true: one carried in from another repo or a migration earns its place again or is dropped. Before writing, search purpose, rules, routed docs, source, and existing facts. If one already states it, update that source or its routing, write no fact, and say which source states it. A defect fixed in the harness or a tool creates no compensating fact. Two halves that would be superseded at different times are two files. Supersede in place with .agent/scripts/memory.sh supersede --slug <slug> --fact "…", which rewrites the fact, restamps the date, and keeps the filename. No dated narratives, no command output, no history. As small as the fact allows. Stable knowledge about how the system works goes to docs/ without a pointer fact; architecture.md already routes it. type: reference points outward at a URL, dashboard, ticket, or spec the node does not own: checked for reachability, not superseded like a fact. -->
 EOF
 }
 
@@ -516,10 +485,20 @@ enable_generated_indexes() {
     echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
   fi
 
-  # ignore-all may live in .git/info/exclude instead, so adoption writes no
-  # .gitignore for it.
-  if [ "$egi_home" -eq 0 ] && [ "$egi_mode" != ignore-all ]; then
-    write_node_gitignore "$egi_root" "$egi_mode" generated
+  egi_gitignore="$egi_root/.gitignore"
+  if [ "$egi_home" -eq 0 ]; then
+    case "$egi_mode" in
+    track-shared | track-all)
+      if [ ! -e "$egi_gitignore" ] || ! grep -qxF ".agent/indexes/" "$egi_gitignore"; then
+        [ -s "$egi_gitignore" ] && [ -n "$(tail -c 1 "$egi_gitignore")" ] && echo >>"$egi_gitignore"
+        printf '.agent/indexes/\n' >>"$egi_gitignore"
+      fi
+      if [ ! -e "$egi_gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$egi_gitignore"; then
+        [ -s "$egi_gitignore" ] && [ -n "$(tail -c 1 "$egi_gitignore")" ] && echo >>"$egi_gitignore"
+        printf '.agent/rules/learned.md\n' >>"$egi_gitignore"
+      fi
+      ;;
+    esac
   fi
 
   "$egi_agent/scripts/index.sh" ensure --root "$egi_root" >/dev/null \
@@ -548,122 +527,16 @@ enable_generated_indexes() {
     egi_untrack_skip="mode is ignore-all"
   elif ! git -C "$egi_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     egi_untrack_skip="$egi_root is not inside a git work tree"
-  elif ! git -C "$egi_root" ls-files --error-unmatch -- .agents/rules/learned.md >/dev/null 2>&1; then
-    egi_untrack_skip=".agents/rules/learned.md is not tracked"
+  elif ! git -C "$egi_root" ls-files --error-unmatch -- .agent/rules/learned.md >/dev/null 2>&1; then
+    egi_untrack_skip=".agent/rules/learned.md is not tracked"
   fi
   if [ -z "$egi_untrack_skip" ]; then
-    git -C "$egi_root" rm --cached --quiet -- .agents/rules/learned.md \
-      || { echo "node.sh: git rm --cached .agents/rules/learned.md failed under $egi_root — aborting" >&2; return 1; }
+    git -C "$egi_root" rm --cached --quiet -- .agent/rules/learned.md \
+      || { echo "node.sh: git rm --cached .agent/rules/learned.md failed under $egi_root — aborting" >&2; return 1; }
   else
-    echo "node.sh: skipped untracking .agents/rules/learned.md ($egi_untrack_skip)"
+    echo "node.sh: skipped untracking .agent/rules/learned.md ($egi_untrack_skip)"
   fi
   rm -f "$egi_bullets_before"
-  return 0
-}
-
-# Rewrites every `.agent` path token in a file to `.agents`; prints the file
-# when it changed.
-rewrite_node_token() {
-  [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  grep -q '\.agent\([^A-Za-z0-9_]\|$\)' "$1" || return 0
-  perl -pi -e 's/\.agent(?![A-Za-z0-9_])/.agents/g' "$1" || return 1
-  printf '%s\n' "$1"
-}
-
-move_node_entry() {
-  if [ "$3" -eq 1 ] && [ -n "$(git -C "$1" ls-files -- ".agent/$2" 2>/dev/null)" ]; then
-    git -C "$1" mv -- ".agent/$2" ".agents/$2" && return 0
-  else
-    mv -- "$1/.agent/$2" "$1/.agents/$2" && return 0
-  fi
-  echo "node.sh: moving .agent/$2 failed — re-run update to resume" >&2
-  return 1
-}
-
-# Moves a node from <root>/.agent (before 6.3) to <root>/.agents. Resumable:
-# purpose.md moves last, so an interrupted run still finds the old manifest.
-relocate_legacy_node() {
-  local root="$1" old="$1/.agent" new="$1/.agents" entry name clashes="" in_git=0
-  local mode indexes version backup changed="" link target file
-  [ -d "$old" ] && [ ! -L "$old" ] && [ -f "$old/purpose.md" ] || return 0
-  if [ -L "$new" ] || { [ -e "$new" ] && [ ! -d "$new" ]; }; then
-    echo "node.sh: $new exists and is not a plain directory — cannot move $old there" >&2
-    return 1
-  fi
-  if [ -e "$new/purpose.md" ]; then
-    echo "node.sh: both $old and $new hold a node manifest — reconcile them by hand, then re-run update" >&2
-    return 1
-  fi
-  for entry in "$old"/* "$old"/.[!.]* "$old"/..?*; do
-    [ -e "$entry" ] || [ -L "$entry" ] || continue
-    name=${entry##*/}
-    if [ -e "$new/$name" ] || [ -L "$new/$name" ]; then clashes="$clashes $name"; fi
-  done
-  if [ -n "$clashes" ]; then
-    echo "node.sh: cannot move $old to $new — these names exist in both:$clashes. Move the copies in $new aside, then re-run update" >&2
-    return 1
-  fi
-
-  mode=$(grep -m1 '^  mode:' "$old/purpose.md" | sed -E 's/^[[:space:]]*mode:[[:space:]]*([A-Za-z-]+).*/\1/')
-  indexes=$(grep -m1 '^  indexes:' "$old/purpose.md" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
-  version=$(grep -m1 '^  version:' "$old/purpose.md" | sed -E 's/^[[:space:]]*version:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
-  if [ "$mode" != track-all ]; then
-    backup="$root/.agent.backup-v$version-relocate"
-    if [ ! -e "$backup" ]; then
-      cp -R "$old" "$backup" || { echo "node.sh: backup to $backup failed — aborting before moving the node" >&2; return 1; }
-      echo "node.sh: backed up node to $backup"
-    fi
-  fi
-
-  git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && in_git=1
-  mkdir -p "$new" || { echo "node.sh: could not create $new" >&2; return 1; }
-  for entry in "$old"/* "$old"/.[!.]* "$old"/..?*; do
-    [ -e "$entry" ] || [ -L "$entry" ] || continue
-    name=${entry##*/}
-    [ "$name" = purpose.md ] || move_node_entry "$root" "$name" "$in_git" || return 1
-  done
-  move_node_entry "$root" purpose.md "$in_git" || return 1
-  rmdir "$old" 2>/dev/null || echo "node.sh: $old is not empty after the move — inspect what is left there" >&2
-  echo "node.sh: moved the node from $old to $new"
-
-  # Node text names its own paths. The session log and archive/ are history.
-  while IFS= read -r file; do
-    changed="$changed$(rewrite_node_token "$file")"$'\n'
-  done < <(find "$new" \( -path "$new/archive" -o -path "$new/skills" -o -path "$new/indexes" -o -path "$new/.state" \) -prune -o \
-    -type f \( -name '*.md' -o -name '*.conf' -o -name 'checks.sh' \) ! -path "$new/session-log.md" -print)
-  for file in CLAUDE.md AGENTS.md GEMINI.md .github/copilot-instructions.md .claude/CLAUDE.md .codex/AGENTS.md \
-    .claude/settings.json .claude/settings.local.json .git/info/exclude; do
-    changed="$changed$(rewrite_node_token "$root/$file")"$'\n'
-  done
-  changed=$(printf '%s' "$changed" | sed '/^$/d')
-  [ -z "$changed" ] || printf 'node.sh: rewrote .agent paths to .agents in:\n%s\n' "$changed"
-
-  link="$root/.claude/skills"
-  if [ -L "$link" ]; then
-    target=$(readlink "$link")
-    case "$target" in
-    *.agent/skills | *.agent/skills/)
-      ln -sfn "${target%.agent/skills*}.agents/skills" "$link" && echo "node.sh: repointed $link to ${target%.agent/skills*}.agents/skills" ;;
-    esac
-  fi
-  link="$root/.codex/skills"
-  if [ -L "$link" ]; then
-    case "$(readlink "$link")" in
-    *.agent/skills | *.agent/skills/)
-      rm -f "$link" && echo "node.sh: removed $link — Codex reads .agents/skills natively" ;;
-    esac
-  fi
-
-  if [ "$(cd "$root" && pwd -P)" != "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ] && [ -f "$root/.gitignore" ]; then
-    grep -vxF -e '.agent/' -e '.agent/*' -e '!.agent/purpose.md' -e '!.agent/rules/' -e '!.agent/docs/' \
-      -e '.agent/indexes/' -e '.agent/rules/learned.md' "$root/.gitignore" >"$root/.gitignore.node-tmp"
-    if ! cmp -s "$root/.gitignore" "$root/.gitignore.node-tmp"; then
-      cat "$root/.gitignore.node-tmp" >"$root/.gitignore"
-      echo "node.sh: removed the pre-6.3 node entries from $root/.gitignore"
-      write_node_gitignore "$root" "$mode" "${indexes:-manual}"
-    fi
-    rm -f "$root/.gitignore.node-tmp"
-  fi
   return 0
 }
 
@@ -720,27 +593,11 @@ init)
     exit 1 ;;
   esac
 
-  agent="$root/.agents"
-  # .agents/ may already exist for other tools (skills/ from an installer, say).
-  # A node exists only when its manifest does; init never touches foreign content.
-  if [ -L "$agent" ] || { [ -e "$agent" ] && [ ! -d "$agent" ]; }; then
-    echo "node.sh: $agent exists and is not a plain directory — refusing" >&2
+  agent="$root/.agent"
+  if [ -e "$agent" ]; then
+    echo "node.sh: $agent already exists — refusing to overwrite a live node" >&2
     exit 1
   fi
-  if [ -f "$root/.agent/purpose.md" ]; then
-    echo "node.sh: a node from before 6.3 lives at $root/.agent — run node.sh update to move it to .agents/ instead of init" >&2
-    exit 1
-  fi
-  if [ -e "$agent/purpose.md" ]; then
-    echo "node.sh: $agent/purpose.md already exists — refusing to overwrite a live node" >&2
-    exit 1
-  fi
-  for owned in rules memory docs archive scripts indexes memory.md session-log.md; do
-    if [ -e "$agent/$owned" ]; then
-      echo "node.sh: $agent/$owned already exists but no node manifest does — init never overwrites it; move it aside first" >&2
-      exit 1
-    fi
-  done
 
   mkdir -p "$agent/rules" "$agent/memory" "$agent/docs" "$agent/archive" "$agent/scripts" \
     || { echo "node.sh: could not create the node skeleton under $agent" >&2; exit 1; }
@@ -752,7 +609,7 @@ init)
   cat >"$agent/rules/learned.md" <<'EOF'
 # Learned rules
 
-Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agents/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
+Binding rules distilled from operator corrections and failed verifications on this project, after the canonical-source check in `contract.md`. A correction that exposes a defect in the contract, docs, code, or tooling is fixed there and produces no compensating rule. Merging and compressing entries is allowed. Drop a rule when its failure mode becomes mechanically enforced. Behavioral rules stay here. Area gotchas go to the matching `.agent/docs/` file under `## Gotchas`. Authoring and curation rules: `contract.md`, Self-learning.
 
 <!-- Format: - [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>. -->
 EOF
@@ -766,7 +623,7 @@ dot-agent:
   preset: $preset
   mode: $mode        # ignore-all | track-shared | track-all
   indexes: $indexes        # manual | generated
-  children: []              # repo-relative paths to child .agents/ nodes
+  children: []              # repo-relative paths to child .agent/ nodes
 ---
 
 # Purpose
@@ -783,7 +640,50 @@ EOF
     { [ "$mode" = "track-all" ] && [ "$indexes" != generated ]; } \
       || echo "node.sh: skipped gitignore at \$HOME (a pattern there can apply to every repo) — if ~ is version-controlled, add the entries to that repo's gitignore by hand"
   else
-    write_node_gitignore "$root" "$mode" "$indexes"
+  case "$mode" in
+  ignore-all)
+    gitignore="$root/.gitignore"
+    if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/" "$gitignore"; then
+      [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+      printf '.agent/\n' >>"$gitignore"
+    fi
+    ;;
+  track-shared)
+    gitignore="$root/.gitignore"
+    if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/*" "$gitignore"; then
+      {
+        [ -s "$gitignore" ] && echo
+        echo ".agent/*"
+        echo "!.agent/purpose.md"
+        echo "!.agent/rules/"
+        echo "!.agent/docs/"
+      } >>"$gitignore"
+    fi
+    if [ "$indexes" = generated ]; then
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/indexes/" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/indexes/\n' >>"$gitignore"
+      fi
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/rules/learned.md\n' >>"$gitignore"
+      fi
+    fi
+    ;;
+  track-all)
+    if [ "$indexes" = generated ]; then
+      gitignore="$root/.gitignore"
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/indexes/" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/indexes/\n' >>"$gitignore"
+      fi
+      if [ ! -e "$gitignore" ] || ! grep -qxF ".agent/rules/learned.md" "$gitignore"; then
+        [ -s "$gitignore" ] && [ -n "$(tail -c 1 "$gitignore")" ] && echo >>"$gitignore"
+        printf '.agent/rules/learned.md\n' >>"$gitignore"
+      fi
+    fi
+    ;;
+  esac
   fi
 
   echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes)"
@@ -816,12 +716,11 @@ update)
     usage >&2
     exit 1 ;;
   esac
-  relocate_legacy_node "$root" || exit 1
-  agent="$root/.agents"
+  agent="$root/.agent"
   purpose="$agent/purpose.md"
 
   if [ ! -d "$agent" ]; then
-    echo "node.sh: no .agents directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+    echo "node.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
     exit 1
   fi
 
@@ -899,10 +798,10 @@ EOF
     shape_backup=""
     if [ "$mode" != "track-all" ]; then
       if [ "$desired_indexes" = generated ] && [ "$indexes" != generated ]; then
-        adoption_backup="$root/.agents.backup-v$oldversion-indexes-generated"
+        adoption_backup="$root/.agent.backup-v$oldversion-indexes-generated"
       fi
       if [ "$shape_stale" -eq 1 ]; then
-        shape_backup="$root/.agents.backup-v$oldversion-shape"
+        shape_backup="$root/.agent.backup-v$oldversion-shape"
       fi
       for candidate_backup in "$adoption_backup" "$shape_backup"; do
         [ -n "$candidate_backup" ] || continue
@@ -957,7 +856,7 @@ EOF
   fi
 
   if [ "$mode" != "track-all" ]; then
-    backup="$root/.agents.backup-v$oldversion"
+    backup="$root/.agent.backup-v$oldversion"
     if [ -e "$backup" ]; then
       if [ "$migration_target" = "$TARGET_VERSION" ]; then
         echo "node.sh: $backup already holds the pre-migration node — resuming the interrupted update"
@@ -1056,15 +955,11 @@ EOF
 
 finalize)
   root="${1:-.}"
-  agent="$root/.agents"
+  agent="$root/.agent"
   purpose="$agent/purpose.md"
 
-  if [ -f "$root/.agent/purpose.md" ]; then
-    echo "node.sh: the node still lives at $root/.agent — run node.sh update first; it moves the node to .agents/" >&2
-    exit 1
-  fi
   if [ ! -d "$agent" ]; then
-    echo "node.sh: no .agents directory at $agent — run from the node's project root, or pass that root as an argument" >&2
+    echo "node.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
     exit 1
   fi
 

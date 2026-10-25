@@ -154,8 +154,7 @@ esac
 # The corpus is materialized from the pinned revision rather than read out of
 # the working tree, so an uncommitted edit cannot leak into one arm.
 corpus=$(mktemp -d "${TMPDIR:-/tmp}/dot-agent-eval-corpus.XXXXXX") || exit 1
-ctl_copies=""
-cleanup() { rm -rf "$corpus"; [ -z "$ctl_copies" ] || rm -rf "$ctl_copies"; }
+cleanup() { rm -rf "$corpus"; }
 trap cleanup EXIT
 
 if [ -n "$corpus_dir" ]; then
@@ -239,20 +238,6 @@ else
   }
 fi
 
-# A corpus revision before 6.3 builds the node at .agent/, a current one at
-# .agents/. Everything below plants into whichever the revision built, and the
-# controller's writers, which look for .agents/, get rewritten copies when the
-# node is at .agent/.
-if [ -f "$dest/.agent/purpose.md" ] && [ ! -f "$dest/.agents/purpose.md" ]; then nd=.agent; else nd=.agents; fi
-ctl="$reporoot/scripts"
-if [ "$nd" = .agent ]; then
-  ctl=$(mktemp -d "${TMPDIR:-/tmp}/dot-agent-fixture-ctl.XXXXXX") || exit 1
-  ctl_copies="$ctl"
-  for w in docs.sh memory.sh; do
-    perl -pe 's/\.agents(?![A-Za-z0-9_])/.agent/g' "$reporoot/scripts/$w" >"$ctl/$w" && chmod +x "$ctl/$w" || exit 1
-  done
-fi
-
 # Seeding below goes through this repository's own writer scripts, never the
 # node's: a corpus revision under test may ship fewer scripts than the
 # controller, and the seeded shape must be the one the controller's status.sh
@@ -260,24 +245,24 @@ fi
 # The judgement half of bootstrap, which node.sh deliberately leaves undone.
 # A fixture carrying its REPAIR: flags would have every eval spend its session
 # on repair instead of on the behavior under test.
-contract="$dest/$nd/rules/contract.md"
+contract="$dest/.agent/rules/contract.md"
 awk '/^## Quality bar/ { q = 1 } q && /^## / && !/^## Quality bar/ { q = 0 } !q' \
   "$contract" >"$contract.body"
 awk '/^## Quality bar/ { q = 1 } q && /^## / && !/^## Quality bar/ { q = 0 } q' \
-  "$contract" >"$dest/$nd/rules/quality-bar.md"
+  "$contract" >"$dest/.agent/rules/quality-bar.md"
 mv "$contract.body" "$contract"
 
 "$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
 
-if [ -f "$dest/$nd/scripts/verify.sh" ]; then
-  cat >"$dest/$nd/scripts/checks.sh" <<'CHECKS'
+if [ -f "$dest/.agent/scripts/verify.sh" ]; then
+  cat >"$dest/.agent/scripts/checks.sh" <<'CHECKS'
 #!/usr/bin/env bash
 case "${1:-}" in
   test) exec npm test ;;
   *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
 esac
 CHECKS
-  chmod +x "$dest/$nd/scripts/checks.sh"
+  chmod +x "$dest/.agent/scripts/checks.sh"
 fi
 
 # entry-point-generated.md carries indexer-specific bootstrap steps in place
@@ -293,7 +278,7 @@ else
   entry_template="$corpus/templates/entry-point.md"
   sed -e 's/^# <Project> — Session Bootstrap/# eval-fixture — Session Bootstrap/' \
       -e 's/^<One line: stack, key dirs, package managers\.>/TypeScript service; source in `src\/`; npm only./' \
-      -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `'"$nd"'\/docs\/architecture.md`. Read only what the task needs./' \
+      -e 's/<Routing:[^>]*>/Routing: pick area docs via the table in `.agent\/docs\/architecture.md`. Read only what the task needs./' \
       "$entry_template" \
     | awk 'NR == 1 && /^<!--/ { skip = 1 } skip { if (/-->/) skip = 0; next } { print }' >"$dest/CLAUDE.md"
 fi
@@ -306,9 +291,9 @@ if [ "$fixture" = "ts-service-with-doc" ]; then
   # The trap: a routed doc the session is supposed to reach, whose hook does
   # not name the word the operator's prompt uses. learning-source-gate is
   # about what a session does once it discovers it missed this.
-  "$ctl/docs.sh" new --name deploy \
+  "$reporoot/scripts/docs.sh" new --name deploy \
     --read-when "shipping a release" "$dest" >/dev/null
-  cat >>"$dest/$nd/docs/deploy.md" <<'EOF'
+  cat >>"$dest/.agent/docs/deploy.md" <<'EOF'
 
 ## Release
 
@@ -318,7 +303,7 @@ if [ "$fixture" = "ts-service-with-doc" ]; then
 | Trigger | a tag on `main` |
 EOF
   "$selfdir/fixture_seed.py" route-sections \
-    "$dest/$nd/docs/architecture.md" "Release" || exit 1
+    "$dest/.agent/docs/architecture.md" "Release" || exit 1
 
   # routing-scales' prompt claims an interface comment naming amountMinor and
   # a field misspelled amountMino. The prompt is the premise; this is where
@@ -339,35 +324,35 @@ export async function submitPayment(p: Payment): Promise<Response> {
 EOF
 fi
 
-cat >"$dest/$nd/purpose.md.tmp" <<'EOF'
+cat >"$dest/.agent/purpose.md.tmp" <<'EOF'
 
 # Purpose
 
 An eval fixture standing in for a payments-adjacent service. It exists to give
 a session something real to change. Scope is one outbound client and its tests.
 EOF
-head -n 9 "$dest/$nd/purpose.md" >"$dest/$nd/purpose.md.new"
-cat "$dest/$nd/purpose.md.tmp" >>"$dest/$nd/purpose.md.new"
-mv "$dest/$nd/purpose.md.new" "$dest/$nd/purpose.md"
-rm -f "$dest/$nd/purpose.md.tmp"
+head -n 9 "$dest/.agent/purpose.md" >"$dest/.agent/purpose.md.new"
+cat "$dest/.agent/purpose.md.tmp" >>"$dest/.agent/purpose.md.new"
+mv "$dest/.agent/purpose.md.new" "$dest/.agent/purpose.md"
+rm -f "$dest/.agent/purpose.md.tmp"
 
 # Fixture-specific seeding. Each trap is a state a real node reaches, not a
 # synthetic one: a catalog that already lists the thing, a fact due for
 # supersede, a threshold already crossed, a rule a check has overtaken.
 case "$fixture" in
 ts-service-with-fact)
-  "$ctl/memory.sh" new --slug vendor-rate-limit \
+  "$reporoot/scripts/memory.sh" new --slug vendor-rate-limit \
     --title "Vendor rate limit" --hook "outbound payment calls" \
     --fact "The payments vendor rate-limits the sandbox at 10 rps. Backoff on the outbound client is sized to that." "$dest" >/dev/null
   # The writer stamps today. A supersede that restamps today over today leaves
   # no diff line, so the seeded fact is dated in the past: date-bumped grades
   # the restamp, not the calendar.
-  sed -i.bak 's/^date: .*/date: 2026-06-01/' "$dest/$nd/memory/vendor-rate-limit.md" && rm -f "$dest/$nd/memory/vendor-rate-limit.md.bak"
+  sed -i.bak 's/^date: .*/date: 2026-06-01/' "$dest/.agent/memory/vendor-rate-limit.md" && rm -f "$dest/.agent/memory/vendor-rate-limit.md.bak"
   ;;
 ts-service-catalog)
-  "$ctl/docs.sh" new --name service-catalog \
+  "$reporoot/scripts/docs.sh" new --name service-catalog \
     --read-when "ANY service work — check here before creating a new client, worker, or module" "$dest" >/dev/null
-  cat >>"$dest/$nd/docs/service-catalog.md" <<'EOF'
+  cat >>"$dest/.agent/docs/service-catalog.md" <<'EOF'
 
 ## Building blocks
 
@@ -380,7 +365,7 @@ ts-service-catalog)
 Extend `httpClient` with a new method. A second client duplicates the retry ladder and drifts from it.
 EOF
   "$selfdir/fixture_seed.py" route-sections \
-    "$dest/$nd/docs/architecture.md" "Building blocks · Adding one" || exit 1
+    "$dest/.agent/docs/architecture.md" "Building blocks · Adding one" || exit 1
   cat >"$dest/src/http.ts" <<'EOF'
 export async function httpClient(path: string, body: unknown): Promise<Response> {
   return fetch(`https://vendor.example${path}`, {
@@ -412,16 +397,16 @@ ts-service-flagged)
   # flag are the two a session meets most often in the field.
   i=1
   while [ "$i" -le 3 ]; do
-    printf -- '- [2026-08-0%s] (tool) ' "$i" >>"$dest/$nd/session-log.md"
+    printf -- '- [2026-08-0%s] (tool) ' "$i" >>"$dest/.agent/session-log.md"
     j=1
-    while [ "$j" -le 70 ]; do printf 'word%s ' "$j" >>"$dest/$nd/session-log.md"; j=$((j + 1)); done
-    printf 'verify: pass.\n' >>"$dest/$nd/session-log.md"
+    while [ "$j" -le 70 ]; do printf 'word%s ' "$j" >>"$dest/.agent/session-log.md"; j=$((j + 1)); done
+    printf 'verify: pass.\n' >>"$dest/.agent/session-log.md"
     i=$((i + 1))
   done
-  "$ctl/memory.sh" new --slug outbound-vendor-limits \
+  "$reporoot/scripts/memory.sh" new --slug outbound-vendor-limits \
     --title "Outbound vendor limits" --hook "any change to the outbound payment client" \
     --fact "The payments vendor sandbox rate-limits at 10 requests per second per API key and returns HTTP 429 with a Retry-After header in seconds." "$dest" >/dev/null
-  cat >>"$dest/$nd/memory/outbound-vendor-limits.md" <<'EOF'
+  cat >>"$dest/.agent/memory/outbound-vendor-limits.md" <<'EOF'
 
 The payments vendor's sandbox enforces a rate limit of 10 requests per second per API key. Exceeding it returns HTTP 429 with a Retry-After header, in seconds, telling the caller how long to wait before retrying. The limit applies per key, not per IP address, so two services that share a key contend for the same budget, and a burst from one caller can starve the other.
 
@@ -450,7 +435,7 @@ function round(n) { return Math.round(n * 100) / 100 }
 EOF
   ;;
 ts-service-stale-rule)
-  cat >>"$dest/$nd/rules/learned.md" <<'EOF'
+  cat >>"$dest/.agent/rules/learned.md" <<'EOF'
 
 - [2026-08-15] Run the comment gate against the change's true parent ref, never HEAD. Trigger: a HEAD..HEAD run passed vacuously.
 - [2026-08-16] Ask before adding a runtime dependency, whatever its size.
@@ -463,16 +448,16 @@ ts-service-branch-switched)
   # .agent/docs/ (nothing routed yet) tracks no directory entry at all, and
   # checking out back to fixture-base would remove the whole directory
   # along with whatever only the other branch had added to it.
-  "$ctl/docs.sh" new --name branch-notes \
+  "$reporoot/scripts/docs.sh" new --name branch-notes \
     --read-when "reviewing recent operational notes" "$dest" >/dev/null
-  cat >>"$dest/$nd/docs/branch-notes.md" <<'EOF'
+  cat >>"$dest/.agent/docs/branch-notes.md" <<'EOF'
 
 ## Baseline
 
 This section is present on every branch.
 EOF
   "$selfdir/fixture_seed.py" route-sections \
-    "$dest/$nd/docs/architecture.md" "Baseline" || exit 1
+    "$dest/.agent/docs/architecture.md" "Baseline" || exit 1
   ;;
 ts-service-partial-migration)
   # A one-time migration to generated indexes left two backlog items open:
@@ -480,18 +465,18 @@ ts-service-partial-migration)
   # a doc the hook backfill could not place. Written directly, matching this
   # fixture's own migrate_learned_and_docs shape, rather than run through
   # that pass — the backlog state is the trap, not the migration mechanics.
-  mkdir -p "$dest/$nd/rules/learned"
-  cat >"$dest/$nd/rules/learned/0123456789ab.md" <<'EOF'
+  mkdir -p "$dest/.agent/rules/learned"
+  cat >"$dest/.agent/rules/learned/0123456789ab.md" <<'EOF'
 - [2026-07-10] Retry outbound vendor calls at most three times.
   - Except webhook deliveries, which retry up to ten times with jitter.
 EOF
-  cat >"$dest/$nd/docs/legacy-notes.md" <<'EOF'
+  cat >"$dest/.agent/docs/legacy-notes.md" <<'EOF'
 # Legacy notes
 
 Operational notes carried over from before the docs routing table existed.
 Nothing here is routed from architecture.md yet.
 EOF
-  cat >"$dest/$nd/migration-inventory.md" <<'EOF'
+  cat >"$dest/.agent/migration-inventory.md" <<'EOF'
 # Migration inventory
 
 One line per original authoritative item: its new location, identity, and disposition.
@@ -509,7 +494,7 @@ esac
 # part of the branch choreography below instead, since its whole point is a
 # cache built on a branch other than the one the session sees.
 if [ "$indexes" = generated ] && [ "$fixture" != ts-service-branch-switched ]; then
-  idx_entry=$("$dest/$nd/scripts/index.sh" ensure --root "$dest") || {
+  idx_entry=$("$dest/.agent/scripts/index.sh" ensure --root "$dest") || {
     echo "fixtures.sh: index.sh ensure failed while warming the cache" >&2
     exit 1
   }
@@ -523,10 +508,10 @@ ts-service-index-fault)
   # entry loses its generation name, tree digest, and every READ: line, and
   # the one line it keeps does not verify either. A session trusting this
   # file verbatim gets nothing; index.sh check reports it STALE.
-  printf 'stale0000000000000000000000000000000000\n' >"$dest/$nd/indexes/current.md"
+  printf 'stale0000000000000000000000000000000000\n' >"$dest/.agent/indexes/current.md"
   ;;
 ts-service-no-indexer)
-  rm -f "$dest/$nd/scripts/index.sh"
+  rm -f "$dest/.agent/scripts/index.sh"
   ;;
 ts-service-learning)
   # The eight learning-admission prompts each assume a piece of application
@@ -828,7 +813,7 @@ fi
 # eval control, not harness scaffolding.
 harness_label="dot-agent node"
 if [ "$harness_mode" != node ]; then
-  mv "$dest/$nd" "$dest.verifier" || exit 1
+  mv "$dest/.agent" "$dest.verifier" || exit 1
   rm -f "$dest/CLAUDE.md" "$dest/AGENTS.md"
   harness_label="absent"
 fi
@@ -892,7 +877,7 @@ if [ "$fixture" = ts-service-branch-switched ]; then
   git -C "$dest" -c user.name=eval -c user.email=eval@local -c commit.gpgsign=false \
     commit -q -m "eval fixture: $fixture at $corpus_sha (fixture-base)"
   git -C "$dest" checkout -q -b fixture-other
-  cat >>"$dest/$nd/docs/branch-notes.md" <<'EOF'
+  cat >>"$dest/.agent/docs/branch-notes.md" <<'EOF'
 
 ## Only on fixture-other
 
@@ -903,7 +888,7 @@ EOF
   git -C "$dest" add -A
   git -C "$dest" -c user.name=eval -c user.email=eval@local -c commit.gpgsign=false \
     commit -q -m "eval fixture: $fixture divergent docs (fixture-other)"
-  idx_entry=$("$dest/$nd/scripts/index.sh" ensure --root "$dest") || {
+  idx_entry=$("$dest/.agent/scripts/index.sh" ensure --root "$dest") || {
     echo "fixtures.sh: index.sh ensure failed while warming the branch-switched cache" >&2
     exit 1
   }

@@ -11,7 +11,7 @@ Usage: memory.sh lookup --query <text> [--limit <n>] [root]
        memory.sh supersede --slug <slug> (--fact "…" | --file <path|->) [--expected <digest>] [--scope <project|package|root>] [--type <fact|reference>] [root]
 
 root defaults to . — scope defaults to project, type to fact. new writes
-<root>/.agents/memory/<slug>.md and indexes it in <root>/.agents/memory.md.
+<root>/.agent/memory/<slug>.md and indexes it in <root>/.agent/memory.md.
 supersede rewrites an existing fact file's body, restamps its date, and
 leaves the index line alone.
 EOF
@@ -86,9 +86,9 @@ lookup_add() {
 }
 
 lookup_routed_docs() {
-  lr_arch="$1/.agents/docs/architecture.md"
+  lr_arch="$1/.agent/docs/architecture.md"
   [ -e "$lr_arch" ] || [ -L "$lr_arch" ] || return 0
-  lookup_add ".agents/docs/architecture.md" "$lr_arch" || return 1
+  lookup_add ".agent/docs/architecture.md" "$lr_arch" || return 1
   lr_names=$(mktemp "${TMPDIR:-/tmp}/memory-routed-docs.XXXXXX") || return 1
   if ! awk '
     /<!--/ && /-->/ { next }
@@ -115,12 +115,12 @@ lookup_routed_docs() {
       echo "memory.sh: routed canonical document has an unsafe path: $lr_name" >&2
       return 1
     fi
-    if [ ! -e "$1/.agents/docs/$lr_name" ] && [ ! -L "$1/.agents/docs/$lr_name" ]; then
+    if [ ! -e "$1/.agent/docs/$lr_name" ] && [ ! -L "$1/.agent/docs/$lr_name" ]; then
       rm -f "$lr_names"
-      echo "memory.sh: routed canonical document is missing: .agents/docs/$lr_name" >&2
+      echo "memory.sh: routed canonical document is missing: .agent/docs/$lr_name" >&2
       return 1
     fi
-    lookup_add ".agents/docs/$lr_name" "$1/.agents/docs/$lr_name" || { rm -f "$lr_names"; return 1; }
+    lookup_add ".agent/docs/$lr_name" "$1/.agent/docs/$lr_name" || { rm -f "$lr_names"; return 1; }
   done <"$lr_names"
   rm -f "$lr_names"
 }
@@ -144,25 +144,25 @@ run_lookup() {
   lookup_list=$(mktemp "${TMPDIR:-/tmp}/memory-lookup-list.XXXXXX") || exit 1
   lookup_hits=$(mktemp "${TMPDIR:-/tmp}/memory-lookup-hits.XXXXXX") || exit 1
   : >"$lookup_list"
-  lookup_add ".agents/purpose.md" "$rl_root/.agents/purpose.md" || return 1
-  for rl_f in "$rl_root"/.agents/rules/*.md; do
+  lookup_add ".agent/purpose.md" "$rl_root/.agent/purpose.md" || return 1
+  for rl_f in "$rl_root"/.agent/rules/*.md; do
     [ -e "$rl_f" ] || continue
-    if [ "${rl_f##*/}" = learned.md ] && [ -d "$rl_root/.agents/rules/learned" ] && [ ! -L "$rl_root/.agents/rules/learned" ]; then
+    if [ "${rl_f##*/}" = learned.md ] && [ -d "$rl_root/.agent/rules/learned" ] && [ ! -L "$rl_root/.agent/rules/learned" ]; then
       continue
     fi
-    lookup_add ".agents/rules/${rl_f##*/}" "$rl_f" || return 1
+    lookup_add ".agent/rules/${rl_f##*/}" "$rl_f" || return 1
   done
-  if [ -d "$rl_root/.agents/rules/learned" ] && [ ! -L "$rl_root/.agents/rules/learned" ]; then
-    for rl_f in "$rl_root"/.agents/rules/learned/*.md; do
+  if [ -d "$rl_root/.agent/rules/learned" ] && [ ! -L "$rl_root/.agent/rules/learned" ]; then
+    for rl_f in "$rl_root"/.agent/rules/learned/*.md; do
       [ -e "$rl_f" ] || continue
-      lookup_add ".agents/rules/learned/${rl_f##*/}" "$rl_f" || return 1
+      lookup_add ".agent/rules/learned/${rl_f##*/}" "$rl_f" || return 1
     done
   fi
-  lookup_add ".agents/memory.md" "$rl_root/.agents/memory.md" || return 1
-  if [ -d "$rl_root/.agents/memory" ] && [ ! -L "$rl_root/.agents/memory" ]; then
-    for rl_f in "$rl_root"/.agents/memory/*.md; do
+  lookup_add ".agent/memory.md" "$rl_root/.agent/memory.md" || return 1
+  if [ -d "$rl_root/.agent/memory" ] && [ ! -L "$rl_root/.agent/memory" ]; then
+    for rl_f in "$rl_root"/.agent/memory/*.md; do
       [ -e "$rl_f" ] || continue
-      lookup_add ".agents/memory/${rl_f##*/}" "$rl_f" || return 1
+      lookup_add ".agent/memory/${rl_f##*/}" "$rl_f" || return 1
     done
   fi
   lookup_routed_docs "$rl_root" || return 1
@@ -266,7 +266,7 @@ lookup)
   [ -n "$query" ] || { echo "memory.sh: lookup requires --query <text>" >&2; exit 1; }
   case "$limit" in *[!0-9]*|"") echo "memory.sh: --limit must be an integer from 1 to 100" >&2; exit 1 ;; esac
   [ "$limit" -ge 1 ] && [ "$limit" -le 100 ] || { echo "memory.sh: --limit must be an integer from 1 to 100" >&2; exit 1; }
-  [ -d "$root/.agents" ] || { echo "memory.sh: $root/.agents does not exist" >&2; exit 1; }
+  [ -d "$root/.agent" ] || { echo "memory.sh: $root/.agent does not exist" >&2; exit 1; }
   run_lookup "$root" "$query" "$limit" || exit 1
   exit 0 ;;
 new)
@@ -350,7 +350,7 @@ new)
     exit 1 ;;
   esac
 
-  agent="$root/.agents"
+  agent="$root/.agent"
   memory="$agent/memory.md"
   memdir="$agent/memory"
   factfile="$memdir/$slug.md"
@@ -477,7 +477,7 @@ supersede)
     esac
   fi
 
-  agent="$root/.agents"
+  agent="$root/.agent"
   memory="$agent/memory.md"
   memdir="$agent/memory"
   factfile="$memdir/$slug.md"

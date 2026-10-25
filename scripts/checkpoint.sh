@@ -61,7 +61,7 @@ done
 [ -z "$checks" ] || [ -z "$receipts" ] || die 'choose --checks or --verification'
 case "$requested_verify" in ''|pass|fail|n/a) ;; *) die '--verify must be pass, fail, or n/a' ;; esac
 root=$(da_root "$root") || exit 1
-scripts="$root/.agents/scripts"
+scripts="$root/.agent/scripts"
 for helper in review.sh status.sh log.sh verify.sh; do
   [ -f "$scripts/$helper" ] || die "$scripts/$helper is missing; update this node"
 done
@@ -76,13 +76,13 @@ git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && is_git=1
 if [ "$is_git" -eq 0 ]; then
   [ -z "$base" ] || die '--base requires a Git worktree'
   non_git_inputs=$(sed -n 's/^NON_GIT_INPUT_ROOTS=//p' "$scripts/verify.conf" 2>/dev/null | head -n 1)
-  export DA_NON_GIT_INPUT_ROOTS=".agents${non_git_inputs:+ $non_git_inputs}"
+  export DA_NON_GIT_INPUT_ROOTS=".agent${non_git_inputs:+ $non_git_inputs}"
 fi
 
 state=$(da_state_dir "$root") || exit 1
 lock="$state/checkpoint.lock"
 da_lock "$lock" || { lock=""; die 'another checkpoint or log writer owns this node'; }
-log="$root/.agents/session-log.md"
+log="$root/.agent/session-log.md"
 [ -f "$log" ] && [ ! -L "$log" ] || die 'session-log.md must be a regular initialized file'
 pending="$state/checkpoint.pending"
 last="$state/checkpoint.last"
@@ -96,7 +96,7 @@ clear_pending() {
   rmdir "$pending" || die 'checkpoint recovery contains unexpected files'
 }
 publish_log() {
-  publish=$(mktemp "$root/.agents/.session-log.checkpoint.XXXXXX") || die 'could not create log replacement'
+  publish=$(mktemp "$root/.agent/.session-log.checkpoint.XXXXXX") || die 'could not create log replacement'
   cp -p -- "$log" "$publish" || die 'could not preserve log metadata'
   cat "$pending/log" >"$publish" || die 'could not prepare log replacement'
   [ "$(hash_file "$publish")" = "$pending_after" ] || die 'checkpoint recovery log failed its digest check'
@@ -134,7 +134,7 @@ if [ -f "$last" ] && [ "$(cat "$last")" = "$identity" ]; then
   exit 0
 fi
 if [ "$node_only" -eq 1 ] && [ "$is_git" -eq 1 ]; then
-  product_changes=$(git -C "$root" status --porcelain -- . ':(exclude).agents' 2>/dev/null) || die 'could not inspect product changes'
+  product_changes=$(git -C "$root" status --porcelain -- . ':(exclude).agent' 2>/dev/null) || die 'could not inspect product changes'
   [ -z "$product_changes" ] || die '--node-only cannot skip review of product changes'
 fi
 if [ -z "$base" ] && [ "$is_git" -eq 1 ]; then
@@ -203,13 +203,13 @@ while IFS=$'\t' read -r severity code path message; do
 done <"$status_out"
 [ "$blocked" -eq 0 ] || die 'status findings block completion; no log entry written'
 
-indexes=$(sed -n 's/^  indexes:[[:space:]]*\([a-z]*\).*/\1/p' "$root/.agents/purpose.md" | head -n 1)
+indexes=$(sed -n 's/^  indexes:[[:space:]]*\([a-z]*\).*/\1/p' "$root/.agent/purpose.md" | head -n 1)
 if [ "$indexes" = generated ]; then
   echo '== cache refresh'
   if [ -f "$scripts/index.sh" ]; then
-    bash "$scripts/index.sh" ensure --root "$root" >/dev/null || printf '%s\n' 'checkpoint.sh: cache refresh failed; read .agents/rules/ and .agents/docs/ directly' >&2
+    bash "$scripts/index.sh" ensure --root "$root" >/dev/null || printf '%s\n' 'checkpoint.sh: cache refresh failed; read .agent/rules/ and .agent/docs/ directly' >&2
   else
-    printf '%s\n' 'checkpoint.sh: index.sh is missing; read .agents/rules/ and .agents/docs/ directly' >&2
+    printf '%s\n' 'checkpoint.sh: index.sh is missing; read .agent/rules/ and .agent/docs/ directly' >&2
   fi
 fi
 

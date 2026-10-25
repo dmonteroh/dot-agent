@@ -51,24 +51,12 @@ def die(msg):
     sys.exit(2)
 
 
-# The frozen eval sets name the node .agent/, the directory every revision
-# before 6.3 used. A fixture built at a current revision keeps it at .agents/,
-# so the artifacts that list node paths are read back in the spec's names.
-NODE_PATH_ARTIFACTS = ("node-diff.patch", "node-tree.txt", "indexes-before.txt", "indexes-after.txt")
-_CURRENT_NODE_RE = re.compile(r"(?<![A-Za-z0-9_])\.agents/")
-
-
-def spec_node_paths(text):
-    return _CURRENT_NODE_RE.sub(".agent/", text)
-
-
 def art(name):
     p = os.path.join(OUT, name)
     if not os.path.exists(p):
         return None
     with open(p, encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
-    return spec_node_paths(text) if name in NODE_PATH_ARTIFACTS else text
+        return fh.read()
 
 
 def a(name):

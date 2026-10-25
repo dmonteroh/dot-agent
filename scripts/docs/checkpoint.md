@@ -47,7 +47,7 @@ Repeating a successful checkpoint for unchanged content returns `unchanged`, wit
 
 Log publication uses a sibling temporary file and atomic replacement. A private recovery record holds the intended log and its before/after digests. If publication was interrupted, the next invocation finishes that record once. Unexpected concurrent log edits stop recovery for inspection.
 
-Private state lives in the worktree's self-ignored `.agents/.state` directory, including non-Git nodes. It is never loaded as memory. See [runtime.md](runtime.md).
+Private state lives in the worktree's self-ignored `.agent/.state` directory, including non-Git nodes. It is never loaded as memory. See [runtime.md](runtime.md).
 
 ## Exit status
 

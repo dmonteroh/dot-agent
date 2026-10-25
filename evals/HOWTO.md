@@ -2,7 +2,7 @@
 
 Every fixture in this set is built with `--preset software-development` (`fixtures.sh:144`). Running the eval suite described here is the software-development check — there is no separate mode to select. This walks through running it once, end to end, to answer one question: does the corpus at the revision you are about to ship behave the way the field release did, or better?
 
-This is not a tool for auditing an already-adopted project's `.agents/` install. It rebuilds its own fixtures from a pinned corpus revision and never touches your project tree. If you adopted `.agents/` somewhere and want to know whether that install is current, that is `node.sh update`'s question, not this one — see the repository root `README.md`.
+This is not a tool for auditing an already-adopted project's `.agent/` install. It rebuilds its own fixtures from a pinned corpus revision and never touches your project tree. If you adopted `.agent/` somewhere and want to know whether that install is current, that is `node.sh update`'s question, not this one — see the repository root `README.md`.
 
 ## What you need
 
@@ -107,7 +107,7 @@ Two groups of evals don't belong in that loop, because each names a different va
 
   `--index-mode` threads into `fixtures.sh`'s own `--indexes` flag, mirroring `--harness` exactly, and is recorded in `run-config.json` beside `harness` under the same drift check. `node-mode` locks agent, model, *and* corpus ref together, rather than just two of them the way `corpus` and `agent` each do — name the two arms for what they are (`generated`, `manual`) so a rollup reads as behavior rather than as a coin flip. See `README.md`'s "The method" for the full picture.
 
-  Each generated-mode cell also writes `indexes-before.txt` and `indexes-after.txt` under `outputs/` — one path-and-digest line per `.agents/indexes/` file, the first taken right after the fixture build, the second at capture time. Diff the two when a generated-index assertion looks wrong: `node-diff.patch` is staged, so `.gitignore` hides the whole `.agents/indexes/` tree from it on a generated node, and the manifest pair is the only place a hand-edit of a generated page actually shows up.
+  Each generated-mode cell also writes `indexes-before.txt` and `indexes-after.txt` under `outputs/` — one path-and-digest line per `.agent/indexes/` file, the first taken right after the fixture build, the second at capture time. Diff the two when a generated-index assertion looks wrong: `node-diff.patch` is staged, so `.gitignore` hides the whole `.agent/indexes/` tree from it on a generated node, and the manifest pair is the only place a hand-edit of a generated page actually shows up.
 
   One of the sixteen, `handoff-reload`, also carries a turn separator baked into its prompt, `|HANDOFF|` in place of the ordinary `||`: the turn after it starts under a fresh session id, over the same unchanged working tree, instead of resuming the session in progress. Nothing to pass on the command line for this — the prompt already encodes it — but expect `session-transcript.txt` and `trace.jsonl` to show a real discontinuity partway through. Read it as a handoff, a session restart this harness can force, never as the provider actually compacting context, which neither CLI exposes a way to trigger on demand.
 

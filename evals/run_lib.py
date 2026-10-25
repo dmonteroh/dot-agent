@@ -504,7 +504,7 @@ def _root_aliases(root):
     return sorted({r for r in out if r and r != "/"}, key=len, reverse=True)
 
 
-_NODE_PATH_RE = re.compile(r"(?:^|\s)/\S*/\.agents?/")
+_NODE_PATH_RE = re.compile(r"(?:^|\s)/\S*/\.agent/")
 
 
 def _reject_absolute(rec):

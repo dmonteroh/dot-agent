@@ -3,7 +3,7 @@ set -eu
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/capture-v63.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/project/.agents" "$scratch/project/src"
+mkdir -p "$scratch/project/.agent" "$scratch/project/src"
 root="$scratch/project"
 printf 'first\n' >"$root/src/file"
 git -C "$root" init -q
@@ -18,8 +18,8 @@ bash "$capture" show --id session-a --root "$root" >"$scratch/first"
 grep -q 'changed' "$scratch/first"
 bash "$capture" show --id session-a --root "$root" >"$scratch/second"
 cmp "$scratch/first" "$scratch/second"
-[ ! -e "$root/.agents/session-log.md" ] || exit 1
-[ ! -e "$root/.agents/memory.md" ] || exit 1
+[ ! -e "$root/.agent/session-log.md" ] || exit 1
+[ ! -e "$root/.agent/memory.md" ] || exit 1
 bash "$capture" clear --id session-a --root "$root" >/dev/null
 if bash "$capture" show --id session-a --root "$root" >/dev/null 2>&1; then exit 1; fi
 if bash "$capture" begin --id ../outside --root "$root" >/dev/null 2>&1; then exit 1; fi

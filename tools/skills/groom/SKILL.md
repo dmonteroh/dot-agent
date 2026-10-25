@@ -1,17 +1,17 @@
 ---
 name: groom
-description: "Clears the GROOM: flags .agents/scripts/status.sh prints — one procedure per flagged file (session-log.md, a memory/*.md fact, the memory.md index, rules/learned.md or a rules/learned/ record, an oversized docs/ file, memory/legacy.md) — and runs the on-demand orphan/broken-link audit. Use when a status check prints a GROOM: line, or when auditing a node's links."
+description: "Clears the GROOM: flags .agent/scripts/status.sh prints — one procedure per flagged file (session-log.md, a memory/*.md fact, the memory.md index, rules/learned.md or a rules/learned/ record, an oversized docs/ file, memory/legacy.md) — and runs the on-demand orphan/broken-link audit. Use when a status check prints a GROOM: line, or when auditing a node's links."
 ---
 
-# Grooming `.agents/`
+# Grooming `.agent/`
 
-The binding rule — that `GROOM:` flags get handled as part of the current session — lives in the node's `.agents/rules/contract.md`. It comes from the preset's Kernel and Continuity contract. The threshold defaults live at the top of the node's own `.agents/scripts/status.sh`. The operating model's design decisions explain where each number came from. A project tunes them in `.agents/scripts/status.conf`, which survives `node.sh update`. Script edits don't.
+The binding rule — that `GROOM:` flags get handled as part of the current session — lives in the node's `.agent/rules/contract.md`. It comes from the preset's Kernel and Continuity contract. The threshold defaults live at the top of the node's own `.agent/scripts/status.sh`. The operating model's design decisions explain where each number came from. A project tunes them in `.agent/scripts/status.conf`, which survives `node.sh update`. Script edits don't.
 
 This skill is an optional walkthrough of *how* to clear each flag. It adds no obligation beyond what those two sources already state. A node with no skills installed grooms fine without it.
 
 ## Use this skill when
 
-`.agents/scripts/status.sh` printed a `GROOM:` line, or the operator asked for a link audit (`links.sh`).
+`.agent/scripts/status.sh` printed a `GROOM:` line, or the operator asked for a link audit (`links.sh`).
 
 ## Do not use this skill when
 
@@ -21,17 +21,17 @@ This skill is an optional walkthrough of *how* to clear each flag. It adds no ob
 
 This skill also works as a subagent brief. Per the contract's subagent rule, a session may delegate its `GROOM:` flags to one dispatched worker. Assign that worker explicitly to write only the flagged files. A small model such as Haiku is fine. The scripts do the exacting parts. Pass the worker the `GROOM:` lines and this file. Then re-run `status.sh` yourself. The cleared flag is the confirmation, not the worker's report.
 
-Start by running `.agents/scripts/status.sh`. Read the exact `GROOM:` line: it names the file and the threshold it crossed. Handle each flag below. Then re-run `status.sh` to confirm it's clear.
+Start by running `.agent/scripts/status.sh`. Read the exact `GROOM:` line: it names the file and the threshold it crossed. Handle each flag below. Then re-run `status.sh` to confirm it's clear.
 
 ## Generated-mode nodes
 
-On a node running `indexes: generated`, the `rules/learned.md` and oversized-`docs/`-file `GROOM:` lines below flag content that lives in the canonical records under `.agents/rules/` and `.agents/docs/`, `rules/learned/` included. The other `GROOM:` flags in this file (`session-log.md`, a `memory/*.md` fact, the `memory.md` index, `memory/legacy.md`) name files that are never generated and are unaffected by this mode. Files under `.agents/indexes/` are rebuilt from those records and never edited: a hand edit there is swept at the next refresh with no warning. Close a generated-mode pass with `.agents/scripts/index.sh ensure` before the `status.sh` re-run that confirms the flag cleared.
+On a node running `indexes: generated`, the `rules/learned.md` and oversized-`docs/`-file `GROOM:` lines below flag content that lives in the canonical records under `.agent/rules/` and `.agent/docs/`, `rules/learned/` included. The other `GROOM:` flags in this file (`session-log.md`, a `memory/*.md` fact, the `memory.md` index, `memory/legacy.md`) name files that are never generated and are unaffected by this mode. Files under `.agent/indexes/` are rebuilt from those records and never edited: a hand edit there is swept at the next refresh with no warning. Close a generated-mode pass with `.agent/scripts/index.sh ensure` before the `status.sh` re-run that confirms the flag cleared.
 
 ## `session-log.md` over threshold
 
 Entries are newest-last, one per line. Grooming is size-based, not time-based. The dates inside entries are context for when something happened, nothing else.
 
-Work from the top of the file, oldest first. Move the oldest entries, in original order, into `.agents/archive/session-log-archive.md`. Create that file with a one-line header comment if it doesn't exist yet. Then delete those moved lines from `session-log.md`. Keep roughly the newest half of the entry threshold in place, so the flag doesn't fire again next session. The flag names the number.
+Work from the top of the file, oldest first. Move the oldest entries, in original order, into `.agent/archive/session-log-archive.md`. Create that file with a one-line header comment if it doesn't exist yet. Then delete those moved lines from `session-log.md`. Keep roughly the newest half of the entry threshold in place, so the flag doesn't fire again next session. The flag names the number.
 
 The entry-shape flag (`entries over N words`) is a different fix. The flagged entries breached the header format's per-entry ceiling — usually hand-written narratives that bypassed `log.sh`. Rewrite each to the header template: task, area, outcome, ≤25 words, `verify:` field. Route any durable detail the narrative carried to `memory/`, if it passes the retention test, or to the matching `docs/` file. Most of it is transcript, and transcript is dropped, not moved.
 
@@ -41,13 +41,13 @@ This flag is a per-session cost, not cosmetics. Oversized entries ride the statu
 
 The threshold is a review trigger, not a cap. A file this size likely holds more than one fact. Re-read the contract in `memory.md`'s header, which covers every file in `memory/`. It requires one fact per file, kept only while work in this node changes when it is true.
 
-If the file holds one fact that grew wordy, rewrite it tighter in place: same filename, refreshed date. If it holds two facts that would be superseded at different times, split it. Run `.agents/scripts/memory.sh new` for the second fact under a new slug. Then trim the original down to just the first fact. Both slugs end up indexed in `memory.md`.
+If the file holds one fact that grew wordy, rewrite it tighter in place: same filename, refreshed date. If it holds two facts that would be superseded at different times, split it. Run `.agent/scripts/memory.sh new` for the second fact under a new slug. Then trim the original down to just the first fact. Both slugs end up indexed in `memory.md`.
 
-If the file is stable knowledge about how the system works, move it to the matching `.agents/docs/` file and remove the fact and index line. `architecture.md` already routes the doc. If it mixes that knowledge with current state, keep only the current state in memory.
+If the file is stable knowledge about how the system works, move it to the matching `.agent/docs/` file and remove the fact and index line. `architecture.md` already routes the doc. If it mixes that knowledge with current state, keep only the current state in memory.
 
 ## `memory.md` index over its review threshold
 
-Read every index line. For facts that are stale, superseded, or no longer true, drop the index line. Move the fact file to `.agents/archive/`. Groom by archiving, not deletion. In `ignore-all` and `track-shared` modes `memory/` never enters git. A deleted fact is gone for good, while an archived one stays recoverable.
+Read every index line. For facts that are stale, superseded, or no longer true, drop the index line. Move the fact file to `.agent/archive/`. Groom by archiving, not deletion. In `ignore-all` and `track-shared` modes `memory/` never enters git. A deleted fact is gone for good, while an archived one stays recoverable.
 
 Where two lines describe the same underlying fact, consolidate into one `memory/<slug>.md`. Then drop the redundant line and archive its file. If every line is live and true, nothing is wrong. Raise the threshold at the top of the node's `status.sh` instead of retiring good memory.
 
@@ -59,16 +59,16 @@ On a node running generated indexes, `rules/learned/` holds one record per rule 
 
 Then check whether the contract, routed docs, code, or tooling now owns each rule's behavior. Drop a rule whose failure mode is mechanically prevented, and fix the canonical source instead of retaining a local restatement. Version control keeps the history. A rule such as "run this script against the correct ref" expires when the script resolves that ref itself.
 
-Some entries are really an area-specific mechanic: a library, API, SQL, or CSS gotcha rather than a behavioral rule. Move each of those to the matching `.agents/docs/<area>.md` file, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer behind if it's a cross-area hazard.
+Some entries are really an area-specific mechanic: a library, API, SQL, or CSS gotcha rather than a behavioral rule. Move each of those to the matching `.agent/docs/<area>.md` file, under a `## Gotchas` heading and in the same entry format. Leave at most a one-line pointer behind if it's a cross-area hazard.
 
-The word trigger fires under the rule ceiling and means something different. The entries themselves are over the file's ~40-word target. Compress them in place rather than retiring rules. An entry that needs its incident retold is not distilled yet. Domain detail past the target belongs in the matching `.agents/docs/` file, with a pointer left here. This file is always-loaded with no tier below it. So every word here is paid in every session on the project.
+The word trigger fires under the rule ceiling and means something different. The entries themselves are over the file's ~40-word target. Compress them in place rather than retiring rules. An entry that needs its incident retold is not distilled yet. Domain detail past the target belongs in the matching `.agent/docs/` file, with a pointer left here. This file is always-loaded with no tier below it. So every word here is paid in every session on the project.
 
 ## A `docs/` area doc over its size threshold
 
 The threshold is a review trigger. Past it, the doc costs more to load than most tasks need from it. This is the one grooming flag whose fix is lossy by default. So the doc's own header contract states the invariant: **restructuring changes shape, never content.** The savings come from structure — no operational fact is dropped to hit a word count. Read the file in full before editing it. Work the two moves in this order:
 
 1. Tighten in place. Convert repeated "X is/does/lives-in Y" invariant prose into a table (`Concern | Rule | Where`) or one-fact-per-line bullets. Collapse a multi-sentence paragraph that states one fact into one terse bullet. Group near-duplicate mini-sections under one heading. Telegraphic style is right here — fragments, colons, arrows. Prose survives only where it carries the *why*.
-2. Split by sub-area when one file genuinely covers several. Create `docs/<area>/<sub-doc>.md` files via `.agents/scripts/docs.sh new --name <area>/<sub-doc> --read-when "…"`. Each gets its own routing entry. Move each section's content to its sub-doc. Then delete the original file and its routing entry, once every section has a home. Routing stays in the single `docs/architecture.md` table. A sub-doc loads only when its hook matches the task.
+2. Split by sub-area when one file genuinely covers several. Create `docs/<area>/<sub-doc>.md` files via `.agent/scripts/docs.sh new --name <area>/<sub-doc> --read-when "…"`. Each gets its own routing entry. Move each section's content to its sub-doc. Then delete the original file and its routing entry, once every section has a home. Routing stays in the single `docs/architecture.md` table. A sub-doc loads only when its hook matches the task.
 
 3. Move irreducible depth out of the routed layer. Some material has its value in being complete rather than in being read. Examples include a full schema, an exhaustive option or error-code table, and a worked example. That material goes to `docs/<area>/references/<name>.md`, cited by path from the area doc in the same edit. Reference files carry no `Read when:` header, get no routing entry, and have no size trigger. `status.sh` skips them. Use this move when tightening would cost facts and splitting would only spread the same bulk across more routed docs.
 
@@ -90,18 +90,18 @@ Re-run `status.sh` after either move.
 
 ## The link audit, when you have the node open anyway
 
-`status.sh` never reports orphans: an uncited file costs nothing to load, so it has no place on the load path. Grooming is when it is worth knowing. Run `.agents/scripts/links.sh` and read the two findings it prints:
+`status.sh` never reports orphans: an uncited file costs nothing to load, so it has no place on the load path. Grooming is when it is worth knowing. Run `.agent/scripts/links.sh` and read the two findings it prints:
 
 - `ORPHAN:` — nothing in the node cites this file. For a `docs/<area>/references/` file this is the failure the tier is exposed to. It carries no routing entry, so uncited means unreachable. Cite it from its area doc, or retire it to `archive/` if the area no longer needs it. Elsewhere, an orphan is a question rather than a defect — decide, don't reflexively delete.
 - `BROKEN:` — this file cites a node path that does not exist. Usually a rename that missed a reference, or a doc split whose old path survived in a sibling. Fix the citation. If the target is genuinely gone, remove the sentence that points at it rather than leaving a dead path.
 
-It is advisory and always exits 0. Paths outside `.agents/` are out of scope. The session log, `archive/`, and `rules/` are not read as citation sources. So what it prints is the node's own graph.
+It is advisory and always exits 0. Paths outside `.agent/` are out of scope. The session log, `archive/`, and `rules/` are not read as citation sources. So what it prints is the node's own graph.
 
 ## `memory/legacy.md` exists
 
 This file is the mechanical output of `scripts/node.sh update`'s memory-split migration. It holds the node's pre-6.1 `memory.md` prose body, moved verbatim.
 
-Read it and identify each distinct durable fact inside it. Run `.agents/scripts/memory.sh new` once per fact, with its own slug, title, and hook. Keep each body as small as the fact allows. `status.sh` flags outliers for review.
+Read it and identify each distinct durable fact inside it. Run `.agent/scripts/memory.sh new` once per fact, with its own slug, title, and hook. Keep each body as small as the fact allows. `status.sh` flags outliers for review.
 
 A split is not a shape migration. Each fact faces the retention and canonical-source tests on the way through. Drop a fact that no longer changes work here or that purpose, rules, routed docs, source, or another fact already states. A tool this project stopped using and stable architecture already present in a routed doc are both examples.
 

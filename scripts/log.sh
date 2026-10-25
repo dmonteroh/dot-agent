@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
 
-root defaults to . — appends to <root>/.agents/session-log.md
+root defaults to . — appends to <root>/.agent/session-log.md
 EOF
 }
 
@@ -98,7 +98,7 @@ if [ -n "$bad_token" ]; then
   exit 1
 fi
 
-conf="$root/.agents/scripts/log.conf"
+conf="$root/.agent/scripts/log.conf"
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
 if [ -f "$conf" ]; then
   v=$(conf_get SUMMARY_MAX_WORDS)
@@ -158,7 +158,7 @@ if [ "$summary_words" -gt "$SUMMARY_MAX_WORDS" ]; then
   exit 1
 fi
 
-log="$root/.agents/session-log.md"
+log="$root/.agent/session-log.md"
 if [ ! -f "$log" ]; then
   echo "log.sh: $log does not exist — refusing to write outside an initialized node" >&2
   exit 1
