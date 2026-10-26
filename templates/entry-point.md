@@ -3,7 +3,9 @@
 
 <One line: stack, key dirs, package managers.> Everything else lives in `.agent/` and loads below. Never restate it here and never add a section.
 
-**One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Load the node before working on the request.
+**One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Do not answer, plan, or edit before the steps have run. A one-line request, such as remember this or summarise that, is a task like any other.
+
+Execute with tools, in order:
 
 1. Run `bash .agent/scripts/status.sh --load` and read its output: rules, purpose, memory index, and recent entries. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
 2. Open the `memory/` fact files whose hooks match the task.
