@@ -7,7 +7,7 @@
 
 Execute with tools, in order:
 
-1. Run `bash .agent/scripts/status.sh --load` and read its output: rules, purpose, memory index, and recent entries. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
+1. Run `bash .agent/scripts/status.sh --load` — one call. It prints recent session-log entries, any GROOM:/REPAIR:/INDEX: flags, then the always-loaded files in order: `.agent/rules/learned.md` and `.agent/rules/contract.md` (binding), `.agent/purpose.md` (scope and boundaries), `.agent/memory.md` (the fact index). Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
 2. Open the `memory/` fact files whose hooks match the task.
 3. <Routing: pick area docs via the table in `.agent/docs/architecture.md`. Read only what the task needs.>
 
