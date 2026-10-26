@@ -3,11 +3,9 @@
 
 <One line: stack, key dirs, package managers.> Everything else lives in `.agent/` and loads below. Never restate it here and never add a section.
 
-**One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Do not answer, plan, or edit before the steps have run. A one-line request, such as remember this or summarise that, is a task like any other.
+**One conversation is one session: the steps below run once in it**, with tools. A new user message does not start a new session. Do not open this file with a tool when its content is already present in your context. Load the node before working on the request.
 
-Execute with tools, in order:
-
-1. Run `bash .agent/scripts/status.sh --load` — one call. It prints recent session-log entries, any GROOM:/REPAIR:/INDEX: flags, then the always-loaded files in order: `.agent/rules/learned.md` and `.agent/rules/contract.md` (binding), `.agent/purpose.md` (scope and boundaries), `.agent/memory.md` (the fact index). Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
+1. Run `bash .agent/scripts/status.sh --load` and read its output: rules, purpose, memory index, and recent entries. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
 2. Open the `memory/` fact files whose hooks match the task.
 3. <Routing: pick area docs via the table in `.agent/docs/architecture.md`. Read only what the task needs.>
 
