@@ -22,6 +22,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 - The retro skill adds a cheapest-fix ladder, an attribution discipline, and a project-versus-root scope test.
 - Skills install at `.agents/skills/` beside the node, where most agent tools read them. Claude Code reads them through a `.claude/skills` symlink. `status.sh` checks installed skills against the Agent Skills specification. The node stays at `.agent/`, because Codex's sandbox keeps `.agents/` read-only.
 - Generated index paths are relative to the project root, so a copied node's cache stays current. `status.sh --load` writes nothing.
+- The entry point keeps v6.2's fuller bootstrap: one conversation is one session, do not answer, plan, or edit before the steps have run, and the load is one call whose output holds the always-loaded files. Claude loaded the node first in 91–96% of benched sessions under this text and 77–78% under the shorter one. `ENTRYPOINT_MAX_WORDS` rises to 800 with it.
 
 See the [v6.3 trial guide](scripts/docs/v6.3-trial.md) for installation and migration. Verification records remain local, outside loaded memory. Pattern-based review still requires agent judgment.
 

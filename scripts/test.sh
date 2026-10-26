@@ -636,7 +636,7 @@ if mode == "verifier-attack" and turn == 1:
     open(".agent/scripts/status.sh", "w").write(payload)
     open(".agent/scripts/comments.sh", "w").write(payload)
     # ENTRYPOINT_MAX_WORDS=1 would spuriously flag CLAUDE.md under the
-    # tampered value (the trusted default, 600, does not); EXCLUDE_RE_EXTRA
+    # tampered value (the trusted default, 800, does not); EXCLUDE_RE_EXTRA
     # would hide the file above from comments.sh entirely if honored.
     open(".agent/scripts/status.conf", "w").write("ENTRYPOINT_MAX_WORDS=1\n")
     open(".agent/scripts/comments.conf", "w").write("EXCLUDE_RE_EXTRA=verifier-attack\n")
@@ -5712,7 +5712,7 @@ status_flags "$ew" | grep -q 'CLAUDE.md' && fail "status.sh: a wiring-sized entr
 
 printf '\n%s\n' "$(words_n 900)" >>"$ew/CLAUDE.md"
 f41=$(status_flags "$ew")
-printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 600 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
+printf '%s\n' "$f41" | grep -qF 'GROOM: CLAUDE.md > 800 words' && pass "status.sh: an entry point grown past wiring is flagged" || fail "status.sh: an entry point grown past wiring is flagged ($f41)"
 
 printf 'ENTRYPOINT_MAX_WORDS=2000\n' >"$ew/.agent/scripts/status.conf"
 status_flags "$ew" | grep -q 'CLAUDE.md > ' && fail "status.conf: the entry-point threshold tunes per node" || pass "status.conf: the entry-point threshold tunes per node"

@@ -39,7 +39,7 @@ Direct writers do not refuse writes for size. Strict checkpoint policy blocks co
 | `LEARNED_MAX_RULES` | 60 | chosen default |
 | `LEARNED_MAX_WORDS` | 2400 | the 60-rule ceiling × the file's own ~40-word entry target, so it fires first when entries bloat past that target |
 | `DOCS_MAX_WORDS` | 2000 | chosen default |
-| `ENTRYPOINT_MAX_WORDS` | 600 | the original template's ~289-word body, ~300 once filled, with 2× grace |
+| `ENTRYPOINT_MAX_WORDS` | 800 | the 6.3 template's ~397-word body, ~400 once filled, with 2× grace. The template grew from ~264 words after the v6.3 bench measured Claude loading the node first in 77–78% of sessions under the short text and 91–96% under this one |
 | `TAIL_LINES` | 25 | chosen default |
 | `PAYLOAD_MAX_BYTES` | 30000 | the harness's tool-result cap — "about 30 KB on Claude Code, measured" (see `--load` below and `operating-model.md`) — not a chosen headroom figure |
 | `PROBE_TOOLS` | `rg fd jq gh python3 curl tree` | the tools a session is expected to have |
