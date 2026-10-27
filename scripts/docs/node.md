@@ -6,21 +6,24 @@ Run from the source repo. It is not copied into a node.
 
 ```
 Usage:
-  node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [root]
-  node.sh update [--indexes <manual|generated>] [root]
+  node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
+  node.sh update [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh finalize [root]
 ```
 
 - `<name>` matches a file in `presets/` (currently `software-development`, `academic-research`, `domain-knowledge`).
 - `<mode>` is one of `ignore-all`, `track-shared`, `track-all`.
 - `--indexes` is `manual` or `generated`. `init` defaults it to `manual`. `update` preserves the manifest value when the flag is omitted, adopts generated mode when requested, and refuses generated-to-manual conversion outside the procedure below.
+- `--hooks` is `session-start` or `none`. `init` defaults it to `session-start`. `update` preserves the manifest value when the flag is omitted, and records `session-start` for a manifest with no `hooks` line.
 - `root` defaults to `.` and the script reads and writes `<root>/.agent`.
 
 Header contracts in `operating-model.md` remain the format authority: this script writes files that carry their own header contracts, and produces nothing a header contract does not already describe.
 
 ## What init writes
 
-The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the fourteen managed helpers listed by `SHIPPED_SCRIPTS`, six starter configurations, and the project-owned `checks.sh` driver.
+The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the fifteen managed helpers listed by `SHIPPED_SCRIPTS`, six starter configurations, and the project-owned `checks.sh` driver. Unless `--hooks none` is given, it also runs `tools/hooks/install.sh`, which adds the session-start hook to the project's Claude Code and Codex settings ([session-start.md](session-start.md)).
+
+The manifest's `hooks` field records `session-start` or `none`. Every `update` applies it again: `session-start` adds the hook where it is missing, and `none` removes it. A node whose manifest predates the field gains `hooks: session-start` and the hook on its next `update`. The hook files sit outside `.agent/`, so the tracking mode decides who sees them: committed for the team in `track-shared` and `track-all`, personal in `ignore-all`, listed in `.git/info/exclude` rather than the shared `.gitignore`. A failed hook install is reported and never fails `init` or `update`, because the entry point still loads the node.
 
 The manifest's `indexes` field records `manual` or `generated`, next to `mode`. It defaults to `manual` when `--indexes` is omitted. A manifest with no `indexes` line at all — every node created before this field existed — reads as `manual` too, the same value an absent field already means. Nothing about such a node's behavior changes until it is turned on by hand. `generated` decides which lines `init` and `update` add to the gitignore and, at `update`, whether the learned-rules migration below runs. It also changes what a session reads: `status.sh` and `checkpoint.sh` read the manifest's `indexes` field themselves (each greps `purpose.md` for the `indexes:` line) and switch their own behavior on it, and `learn.sh` reads it to decide whether a write should also refresh the generated cache. The read-path wiring an agent installs is `templates/entry-point-generated.md`, the generated-mode counterpart to `templates/entry-point.md` (`scripts/docs/index.md`).
 

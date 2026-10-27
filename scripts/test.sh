@@ -152,7 +152,7 @@ leaked43b=$(find "$evleak2" -path '*eval*' -o -name 'spec.json' -o -name 'agents
 extra43=""
 for f43 in "$evleak"/.agent/scripts/*; do
   case "$(basename "$f43")" in
-  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | index.sh | learn.sh | runtime.sh | verify.sh | review.sh | capture.sh | absorb.sh | checks.sh | status.conf | log.conf | comments.conf | verify.conf | review.conf | checkpoint.conf) ;;
+  status.sh | log.sh | memory.sh | docs.sh | links.sh | comments.sh | checkpoint.sh | index.sh | learn.sh | runtime.sh | verify.sh | review.sh | capture.sh | absorb.sh | session-start.sh | checks.sh | status.conf | log.conf | comments.conf | verify.conf | review.conf | checkpoint.conf) ;;
   *) extra43="$extra43 $(basename "$f43")" ;;
   esac
 done
@@ -3076,9 +3076,9 @@ legacy="$v6root/.agent/memory/legacy.md"
 
 grep -qF "[Legacy memory](memory/legacy.md)" "$v6root/.agent/memory.md" 2>/dev/null && pass "update: memory.md is the new index with the legacy line" || fail "update: memory.md is the new index with the legacy line"
 
-grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pb-noversion"
-grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' >"$WORK/pa-noversion"
-diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version, migration_target, and indexes lines" || fail "update: manifest diff touches only the version, migration_target, and indexes lines"
+grep -v '^  version:' "$WORK/purpose-before.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' | grep -v '^  hooks:' >"$WORK/pb-noversion"
+grep -v '^  version:' "$v6root/.agent/purpose.md" | grep -v '^  migration_target:' | grep -v '^  indexes:' | grep -v '^  hooks:' >"$WORK/pa-noversion"
+diff -q "$WORK/pb-noversion" "$WORK/pa-noversion" >/dev/null 2>&1 && pass "update: manifest diff touches only the version, migration_target, indexes, and hooks lines" || fail "update: manifest diff touches only the version, migration_target, indexes, and hooks lines"
 grep -q '^  version: 6$' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: version stays at 6 (unbumped) — finalize's job" || fail "update: version stays at 6 (unbumped) — finalize's job"
 grep -q '^  migration_target: "6.3"' "$v6root/.agent/purpose.md" 2>/dev/null && pass "update: migration_target is now \"6.3\"" || fail "update: migration_target is now \"6.3\""
 [ "$(grep -A1 '^  version:' "$v6root/.agent/purpose.md" | tail -n1)" = '  migration_target: "6.3"' ] && pass "update: migration_target is inserted right after version" || fail "update: migration_target is inserted right after version"
@@ -4415,7 +4415,7 @@ printf '# Team conventions\n\nUse conventional commits.\n' >"$bc/.github/copilot
 
 nm="$WORK/native-memory"
 mkdir -p "$nm/.claude"
-"$NODE" init --preset software-development --mode track-all "$nm" >/dev/null 2>&1
+"$NODE" init --preset software-development --mode track-all --hooks none "$nm" >/dev/null 2>&1
 finish_bootstrap "$nm"
 f24=$(HOME="$WORK/nm-empty-home" status_flags "$nm")
 printf '%s\n' "$f24" | grep -qF 'autoMemoryEnabled is set nowhere' && pass "native memory: an unconfigured .claude/ draws a REPAIR flag" || fail "native memory: an unconfigured .claude/ draws a REPAIR flag ($f24)"
@@ -4727,7 +4727,7 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
   scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
-  scripts/learn.sh \
+  scripts/learn.sh scripts/session-start.sh \
   scripts/comments.conf scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
@@ -8798,7 +8798,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1385
+EXPECTED_CHECKS=1386
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

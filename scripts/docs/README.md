@@ -18,11 +18,12 @@ These docs remain in the source repository. Nodes receive managed helpers, start
 | `index.sh` | Generated context cache | [index.md](index.md) |
 | `learn.sh` | Learned-record lookup and versioned writing | [learn.md](learn.md) |
 | `absorb.sh` | Merging a worker checkout's node back into the main node | [absorb.md](absorb.md) |
+| `session-start.sh` | The session-start hook body: the load, before the first turn | [session-start.md](session-start.md) |
 | `checks.sh` | Project-owned check driver | [v6.3-trial.md](v6.3-trial.md) |
 | `node.sh` | Source-repository installer and updater | [node.md](node.md) |
 | `test.sh` | Source-repository regression suite | [test.md](test.md) |
 
-The fourteen managed helpers are replaced atomically on update. Existing configurations and `checks.sh` are preserved. `node.sh`, `test.sh`, this documentation, and evaluation files are not installed into nodes.
+The fifteen managed helpers are replaced atomically on update. Existing configurations and `checks.sh` are preserved. `node.sh`, `test.sh`, this documentation, and evaluation files are not installed into nodes.
 
 ## Arguments and output
 

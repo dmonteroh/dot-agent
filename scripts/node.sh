@@ -9,7 +9,7 @@ SOURCE_URL="https://github.com/dmonteroh/dot-agent"
 selfdir=$(cd "$(dirname "$0")" && pwd)
 srcroot=$(cd "$selfdir/.." && pwd)
 
-SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh absorb.sh)
+SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh absorb.sh session-start.sh)
 SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf review.conf)
 
 install_node_scripts() {
@@ -37,12 +37,14 @@ install_node_scripts() {
 usage() {
   cat <<'EOF'
 Usage:
-  node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [root]
-  node.sh update [--indexes <manual|generated>] [root]
+  node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
+  node.sh update [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh finalize [root]
 
-init defaults --indexes to manual. update preserves the manifest value when
---indexes is omitted. root defaults to . — the script operates on <root>/.agent
+init defaults --indexes to manual and --hooks to session-start.
+update preserves the manifest value when either flag is omitted, and
+records session-start for a manifest with no hooks line. root defaults
+to . — the script operates on <root>/.agent
 EOF
 }
 
@@ -115,6 +117,71 @@ write_indexes() {
     return 1
   fi
   mv "$wi_new" "$wi_purpose"
+}
+
+write_hooks() {
+  wh_purpose="$1"
+  wh_value="$2"
+  wh_new="$(dirname "$wh_purpose")/.purpose.md.new"
+  wh_old_lines=$(wc -l <"$wh_purpose" 2>/dev/null || echo 0)
+  if grep -q '^  hooks:' "$wh_purpose"; then
+    wh_line=$(grep -n -m1 '^  hooks:' "$wh_purpose" | cut -d: -f1)
+    sed -E "${wh_line}s/^(  hooks:).*/\1 $wh_value        # session-start | none/" "$wh_purpose" >"$wh_new"
+    wh_rc=$?
+    wh_expect_lines="$wh_old_lines"
+  else
+    wh_line=$(grep -n -m1 '^  indexes:' "$wh_purpose" | cut -d: -f1)
+    [ -n "$wh_line" ] || wh_line=$(grep -n -m1 '^  mode:' "$wh_purpose" | cut -d: -f1)
+    awk -v n="$wh_line" -v val="$wh_value" \
+      'NR==n { print; print "  hooks: " val "        # session-start | none"; next } { print }' \
+      "$wh_purpose" >"$wh_new"
+    wh_rc=$?
+    wh_expect_lines=$((wh_old_lines + 1))
+  fi
+  wh_new_lines=$(wc -l <"$wh_new" 2>/dev/null || echo 0)
+  if [ "$wh_rc" -ne 0 ] || [ ! -s "$wh_new" ] \
+    || [ "$wh_new_lines" -ne "$wh_expect_lines" ] \
+    || ! grep -qF "hooks: $wh_value" "$wh_new"; then
+    [ -f "$wh_new" ] && rm -f "$wh_new"
+    return 1
+  fi
+  mv "$wh_new" "$wh_purpose"
+}
+
+# Harness hooks are optional wiring: a failure here is reported, and the node
+# still works through its entry point.
+apply_hooks() {
+  ah_root="$1"
+  ah_value="$2"
+  ah_installer="$srcroot/tools/hooks/install.sh"
+  if [ ! -f "$ah_installer" ]; then
+    echo "node.sh: hooks: $ah_installer is missing, so no harness hook was changed"
+    return 0
+  fi
+  if [ "$ah_value" = none ]; then
+    bash "$ah_installer" --remove "$ah_root" | sed 's/^/node.sh: /'
+  else
+    bash "$ah_installer" "$ah_root" | sed 's/^/node.sh: /'
+  fi
+  [ "${PIPESTATUS[0]}" -eq 0 ] \
+    || echo "node.sh: hooks: not every harness file was updated; the entry point still loads the node"
+  return 0
+}
+
+# Records the hooks value update settles on and applies it.
+reconcile_hooks() {
+  rh_root="$1"
+  rh_purpose="$2"
+  if [ -z "$hooks_line" ] || [ "$desired_hooks" != "$hooks" ]; then
+    write_hooks "$rh_purpose" "$desired_hooks" \
+      || { echo "node.sh: failed to record hooks in $rh_purpose" >&2; return 1; }
+    if [ -z "$hooks_line" ]; then
+      echo "node.sh: hooks: $desired_hooks backfilled into $rh_purpose"
+    else
+      echo "node.sh: hooks: $desired_hooks recorded in $rh_purpose"
+    fi
+  fi
+  apply_hooks "$rh_root" "$desired_hooks"
 }
 
 write_version() {
@@ -589,9 +656,13 @@ init)
   preset=""
   mode=""
   indexes=""
+  hooks=""
   root="."
   while [ $# -gt 0 ]; do
     case "$1" in
+    --hooks)
+      [ $# -ge 2 ] || { echo "node.sh: --hooks needs a value" >&2; usage >&2; exit 1; }
+      hooks="$2"; shift 2 ;;
     --preset)
       [ $# -ge 2 ] || { echo "node.sh: --preset needs a value" >&2; usage >&2; exit 1; }
       preset="$2"; shift 2 ;;
@@ -636,6 +707,14 @@ init)
     usage >&2
     exit 1 ;;
   esac
+  hooks="${hooks:-session-start}"
+  case "$hooks" in
+  session-start | none) ;;
+  *)
+    echo "node.sh: unknown --hooks: '$hooks' (must be session-start or none)" >&2
+    usage >&2
+    exit 1 ;;
+  esac
 
   agent="$root/.agent"
   if [ -e "$agent" ]; then
@@ -667,6 +746,7 @@ dot-agent:
   preset: $preset
   mode: $mode        # ignore-all | track-shared | track-all
   indexes: $indexes        # manual | generated
+  hooks: $hooks        # session-start | none
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 
@@ -730,17 +810,23 @@ EOF
   esac
   fi
 
-  echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes)"
+  [ "$hooks" = none ] || apply_hooks "$root" "$hooks"
+
+  echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes, hooks=$hooks)"
   echo 'node.sh: configure scripts/checks.sh and verify.conf for project checks; existing drivers and configuration survive updates'
   exit 0
   ;;
 
 update)
   requested_indexes=""
+  requested_hooks=""
   root="."
   root_seen=0
   while [ $# -gt 0 ]; do
     case "$1" in
+    --hooks)
+      [ $# -ge 2 ] || { echo "node.sh: --hooks needs a value" >&2; usage >&2; exit 1; }
+      requested_hooks="$2"; shift 2 ;;
     --indexes)
       [ $# -ge 2 ] || { echo "node.sh: --indexes needs a value" >&2; usage >&2; exit 1; }
       requested_indexes="$2"; shift 2 ;;
@@ -757,6 +843,13 @@ update)
   "" | manual | generated) ;;
   *)
     echo "node.sh: unknown --indexes: '$requested_indexes' (must be manual or generated)" >&2
+    usage >&2
+    exit 1 ;;
+  esac
+  case "$requested_hooks" in
+  "" | session-start | none) ;;
+  *)
+    echo "node.sh: unknown --hooks: '$requested_hooks' (must be session-start or none)" >&2
     usage >&2
     exit 1 ;;
   esac
@@ -788,6 +881,9 @@ EOF
   indexes_line=$(grep -m1 '^  indexes:' "$purpose")
   indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
   [ -n "$indexes" ] || indexes=manual
+  hooks_line=$(grep -m1 '^  hooks:' "$purpose")
+  hooks=$(printf '%s\n' "$hooks_line" | sed -E 's/^[[:space:]]*hooks:[[:space:]]*([A-Za-z-]+).*/\1/')
+  desired_hooks="${requested_hooks:-${hooks:-session-start}}"
   migration_target_line=$(grep -m1 '^  migration_target:' "$purpose")
   migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
 
@@ -883,6 +979,7 @@ EOF
     fi
 
     install_node_scripts "$agent" || exit 1
+    reconcile_hooks "$root" "$purpose" || exit 1
 
     if [ "$requested_indexes" = generated ]; then
       enable_generated_indexes "$root" "$agent" "$mode" || exit 1
@@ -984,6 +1081,7 @@ EOF
   header_note="$migrate_note; $migrate_doc_note; $migrate_log_note"
 
   install_node_scripts "$agent" || exit 1
+  reconcile_hooks "$root" "$purpose" || exit 1
 
   if [ "$indexes" = generated ]; then
     enable_generated_indexes "$root" "$agent" "$mode" || exit 1

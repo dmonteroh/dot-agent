@@ -8,7 +8,7 @@
 Execute with tools, in order:
 
 1. Run `bash .agent/scripts/index.sh ensure` and read the entry path it prints, then open every page it lists. Listed paths are relative to the folder that holds `.agent/`. A rule page is the rule read. a rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty.
-2. Run `bash .agent/scripts/status.sh --load` — one call. It prints recent session-log entries, any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes, then `.agent/purpose.md` (scope and boundaries) and `.agent/memory.md` (the fact index). Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
+2. Run `bash .agent/scripts/status.sh --load` — one call, unless a `dot-agent session-start hook` block holds its output. It prints recent session-log entries, any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes, then `.agent/purpose.md` (scope and boundaries) and `.agent/memory.md` (the fact index). Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
 3. Open the `memory/` fact files whose hooks match the task.
 4. Routing: the routes pages step 1 opened are the catalog, read whole. `.agent/docs/architecture.md` is the routing table behind them and the fallback when no cache exists.
 
@@ -20,4 +20,4 @@ Check names live in `.agent/scripts/checks.sh`. Helper `--help` explains details
 
 Exception — subagents: flags are the orchestrator's to handle, and so is `checkpoint.sh`. Read everything else. Write `.agent/` only through its scripts, and log with `log.sh`.
 
-Keep every entry-point mirror identical. When editing one, mirror the others.
+Keep every entry-point mirror identical.

@@ -49,7 +49,9 @@ project-root/
 │   │                       # + learn.sh, the learned-rule admission
 │   │                       # helper: lookup|new|revise|retire
 │   │                       # + absorb.sh, merging a worker checkout's
-│   │                       # node back: mark|records|docs —
+│   │                       # node back: mark|records|docs
+│   │                       # + session-start.sh, the session-start hook
+│   │                       # body that hands a harness the --load output —
 │   │                       # node-owned tunables seeded at init:
 │   │                       # comments, status, log, verify, review, and checkpoint confs.
 │   │                       # Each script's usage is its own header; each
@@ -271,6 +273,7 @@ dot-agent:
   preset: software-development
   mode: track-shared        # ignore-all | track-shared | track-all
   indexes: manual           # manual | generated — absent reads as manual
+  hooks: session-start      # session-start | none — update backfills session-start
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 ```
@@ -348,7 +351,7 @@ The gitignore above is `indexes: manual`'s shape. `indexes: generated` adds exac
 
 ### Native tool memory
 
-`.agent/` is meant to be the durable memory, which means disabling tool-native memory too — via the tool's *setting*, not via instructions. Four reasons, all architectural. `~` is ephemeral in devcontainers, so home-directory memory dies with the container. Repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store. Solo projects still want their memory versioned. Agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer.
+`.agent/` is meant to be the durable memory, which means disabling tool-native memory too — via the tool's *setting*, not via instructions. Four reasons, all architectural. `~` is ephemeral in devcontainers, so home-directory memory dies with the container. Repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store. Solo projects still want their memory versioned. Agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer. `node.sh` writes it into the settings file where it installs the session-start hook, unless that file already sets the key.
 
 `status.sh` checks the setting the way it checks everything else on the load path: by reading the files that request it, not by evaluating the tool's effective configuration. It inspects `.claude/settings.json`, `.claude/settings.local.json`, and the user-level `~/.claude/settings.json` textually for `autoMemoryEnabled`; set true in one of them, or set nowhere the node can inherit it from, is a `REPAIR:` line. It does not read the tool's managed or enterprise settings, command-line setting overrides, or environment overrides, so a clean result establishes only that these three files request the tool's own store off, not that it is off.
 
@@ -452,6 +455,14 @@ Neither is enforcement. The suite checks that the gate is present and precedes t
 The bootstrap is one tool call, not five, and the hand-back is one, not three. `status.sh --load` prints the always-loaded set after its findings, each file under a marker naming its path, and the entry point tells the session to read them from that output and never open them again; `checkpoint.sh` closes the session (see [The checkpoint call](#the-checkpoint-call)). The shape came from measurement: USD per tool call was flat across every corpus size tried, and the harness made three to four times the calls of a plain instructions file, so calls are what a session's cost is made of. The printed set must stay under the harness's tool-result cap — about 30 KB on Claude Code, measured — which a filled `contract.md` plus the three small files clears at under 20 KB; `status.sh`'s `LOAD:` line is the number to watch. That cap is also enforced: `status.sh` prints a `PAYLOAD:` line every run measuring the exact bytes `--load` would write (the four files, marker overhead included) against `PAYLOAD_MAX_BYTES`, a tunable defaulted to 30000 — the published cap made executable, not a chosen headroom figure. Over budget, `--load` prints one `REPAIR:` line naming the four paths and writes no marker and no file content, so a session never receives a payload the harness would truncate mid-file; the check still exits 0. One side effect is named in the template: a session that answers mid-turn, runs `checkpoint.sh`, and closes with a wrap-up line has answered, but its final message has not, so the template says the final message is the report itself.
 
 The template also states its own boundary: an entry point is wiring, and the project's scope, constraints, and architecture live in `purpose.md` and `docs/`, which step 1 prints and step 3 opens anyway. The pull the other way is constant — the entry point is the file a human edits when a tool misbehaves — and what lands there is a second copy of `purpose.md` that no check reads and no groom pass touches, paid on every message by every tool that keeps the file resident. `status.sh` puts a `GROOM:` threshold on it for the same reason the other tiers have one: the boundary held only as prose until a script measured it. Step 1 prints the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
+
+### The session-start hook
+
+Claude Code and Codex can run a command when a session starts and hand its output to the model. `node.sh` uses that to make step 1 happen without the agent. It wires `.agent/scripts/session-start.sh` into each harness's settings, and the script prints the `status.sh --load` output under a `dot-agent session-start hook` header. Both entry-point templates skip the load step when that block holds the output. The entry point stays the fallback for every other case: a tool without hooks, a hook a policy disabled, a Codex hook not yet approved, or a load bigger than the harness takes.
+
+The load-first rate is what this protects. With the entry point alone, Claude made `status.sh --load` its first call in about 78% of bench sessions, and skipped it mostly on question-shaped prompts. A delivered payload removes the step to skip and one tool call per session. A payload over the harness's limit (10,000 characters on Claude Code) arrives as one line telling the agent to make the call first. The effect on pass rates and cost is not yet measured. Until a hook arm runs, the eval fixtures stay hook-free.
+
+The manifest's `hooks` field (`session-start` or `none`) records the choice, and every `update` re-applies it. The tracking mode decides where the wiring lands. `track-shared` and `track-all` commit it in `.claude/settings.json` and `.codex/hooks.json` for the whole team. `ignore-all` keeps it in `.claude/settings.local.json` and `.codex/hooks.json`, both listed in `.git/info/exclude`. A root node writes the user-level files. Codex runs a project hook only after each developer approves it once with `/hooks`, per checkout. The hook's definition is kept fixed so dot-agent updates never ask again. The per-file details, the team view, and what was verified live are in [`scripts/docs/session-start.md`](scripts/docs/session-start.md).
 
 ### Subagents and parallel sessions
 
@@ -633,6 +644,8 @@ The 2026-09-21 release validation closes F9 against the confirmed historical con
 Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check. The shipped scripts enforce observable checks within the cooperative trust boundary. The V4/V5-era Claude Code compliance hooks were removed in V6.1, because a Stop-time file-diff check cannot tell whether durable facts changed this session; the load-path status check and `scripts/checkpoint.sh` replaced them, not nothing. See `CHANGELOG.md` for the removal rationale.
 
 **Claude Code settings:** [`tools/claude-code/`](tools/claude-code/) ships `settings-example.json` — `"autoMemoryEnabled": false` (see [Native tool memory](#native-tool-memory)) plus a permissions allowlist for `.agent/**` writes.
+
+**Harness hooks:** [`tools/hooks/install.sh`](tools/hooks/install.sh) adds or removes the session-start hook in Claude Code and Codex settings. `node.sh` runs it by default (see [The session-start hook](#the-session-start-hook)). It loads context and enforces nothing, so the removal of the V4/V5 compliance hooks still stands.
 
 **Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live beside the node at `.agents/skills/`, which Codex, Gemini CLI, OpenCode, GitHub Copilot, Cursor, Amp, and Antigravity read directly. Claude Code reads only `.claude/skills/`, so it gets a symlink (`.claude/skills` → `.agents/skills`): one reviewable, tool-neutral location. The node itself stays at `.agent/`, because Codex's `workspace-write` sandbox keeps `.agents/` read-only and a node is written every session. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule. A skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
 

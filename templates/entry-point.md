@@ -7,7 +7,7 @@
 
 Execute with tools, in order:
 
-1. Run `bash .agent/scripts/status.sh --load` — one call. It prints recent session-log entries, any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes, then the four always-loaded files in order: `.agent/rules/learned.md` (accumulated corrections, binding), `.agent/rules/contract.md` (binding), `.agent/purpose.md` (scope and boundaries), `.agent/memory.md` (the fact index). Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
+1. Run `bash .agent/scripts/status.sh --load` — one call, unless a `dot-agent session-start hook` block holds its output. It prints recent session-log entries, any GROOM:/REPAIR:/INDEX: flags and TOOLS: notes, then the four always-loaded files in order: `.agent/rules/learned.md` (accumulated corrections, binding), `.agent/rules/contract.md` (binding), `.agent/purpose.md` (scope and boundaries), `.agent/memory.md` (the fact index). Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
 2. Open the `memory/` fact files whose hooks match the task.
 3. <Routing: pick area docs via the table in `.agent/docs/architecture.md`. Read only what the task needs.>
 
@@ -19,4 +19,4 @@ Check names live in `.agent/scripts/checks.sh`. Helper `--help` explains details
 
 Exception — subagents: flags are the orchestrator's to handle, and so is `checkpoint.sh`. Read everything else. Write `.agent/` only through its scripts, and log with `log.sh`.
 
-Keep every entry-point mirror identical. When editing one, mirror the others.
+Keep every entry-point mirror identical.

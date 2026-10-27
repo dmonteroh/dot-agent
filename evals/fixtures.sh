@@ -213,6 +213,13 @@ EOF
 esac
 
 node_help=$("$corpus/scripts/node.sh" --help 2>&1 || true)
+# Fixtures stay hook-free whatever the corpus defaults to: a session-start
+# hook changes how the load arrives, so it is an arm of its own, never a side
+# effect of the corpus revision.
+node_hooks_args=""
+case "$node_help" in
+*--hooks*) node_hooks_args="--hooks none" ;;
+esac
 node_indexes_flag=""
 case "$node_help" in
 *--indexes*) node_indexes_flag="--indexes" ;;
@@ -226,13 +233,13 @@ esac
 
 if [ -n "$node_indexes_flag" ]; then
   "$corpus/scripts/node.sh" init --preset software-development --mode track-all \
-    --indexes "$indexes" "$dest" >/dev/null || {
+    --indexes "$indexes" $node_hooks_args "$dest" >/dev/null || {
     echo "fixtures.sh: node.sh init failed" >&2
     exit 1
   }
 else
   "$corpus/scripts/node.sh" init --preset software-development --mode track-all \
-    "$dest" >/dev/null || {
+    $node_hooks_args "$dest" >/dev/null || {
     echo "fixtures.sh: node.sh init failed" >&2
     exit 1
   }

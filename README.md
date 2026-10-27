@@ -54,6 +54,7 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 │                   # + index.sh, the generated-index builder (indexes: generated only)
 │                   # + learn.sh, the learned-rule admission helper
 │                   # + absorb.sh, which merges a worker checkout's node back
+│                   # + session-start.sh, which hands the load to a session-start hook
 └── indexes/        # indexes: generated only — rendered from rules/ and docs/,
                     # gitignored, disposable, rebuilt by index.sh
 ```
@@ -90,7 +91,7 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then
 5. Write purpose.md from what I told you in step 1: what this node is for and what it holds. Leave the dot-agent frontmatter block at the top of the file untouched.
 6. List any existing project nodes in the manifest's children.
 7. Wire my tools at the root from the canonical entry-point template. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. For Claude Code, the entry point is ~/.claude/CLAUDE.md. Fill every <…> placeholder. Delete the template's own header comment. Write every path absolute, since sessions run from project directories. That means ~/.agent/..., and `bash ~/.agent/scripts/status.sh ~` for the status step. Keep every entry point you write byte-identical to the others of the same kind.
-8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in ~/.claude/settings.json.
+8. Disable Claude Code's native memory: "autoMemoryEnabled": false in ~/.claude/settings.json. node.sh already set it there unless the file set the key before; check its value.
 9. Last, run `bash ~/.agent/scripts/status.sh ~`. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
 Ask me anything you can't infer.
@@ -110,7 +111,7 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then
 5. Move contract.md's `## Quality bar` section into rules/quality-bar.md. After the move, that section is gone from contract.md and the rubric loads on demand.
 6. Write purpose.md from what step 1 established. Cover what this project is, who it's for, its key constraints, and where to change what. Leave the dot-agent frontmatter block at the top of the file untouched.
 7. Wire my tools from the canonical entry-point template into CLAUDE.md and AGENTS.md. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. Add .github/copilot-instructions.md if I use Copilot Chat or code review. Fill every <…> placeholder: the project line and the doc routing. Delete the template's own header comment. Keep every entry point of the same kind byte-identical.
-8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in .claude/settings.json.
+8. Disable Claude Code's native memory: "autoMemoryEnabled": false in .claude/settings.json, or .claude/settings.local.json for ignore-all. node.sh already set it in the file where it wired the session-start hook, unless that file set the key before; check its value.
 9. If I have a root ~/.agent/, add this node to its manifest's children.
 10. Last, run `bash .agent/scripts/status.sh` from this project's root. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
@@ -118,6 +119,8 @@ Ask me anything you can't infer. Don't guess.
 ```
 
 The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap, and `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
+
+`node.sh init` also wires a session-start hook into Claude Code and Codex, so a session starts with the node already loaded instead of depending on the agent to run the first step. It follows the tracking mode. In `track-shared` and `track-all` it goes in `.claude/settings.json` and `.codex/hooks.json`, committed for the whole team. In `ignore-all` it goes in `.claude/settings.local.json` and `.codex/hooks.json`, listed in `.git/info/exclude` so they stay personal. Teammates on Claude Code need to do nothing beyond the `node.sh update` that installs the node's scripts in their checkout. Codex asks each developer to approve the hook once with `/hooks`. Until then it skips the hook, and the entry point loads the node as before. Pass `--hooks none` to `init` or `update` to leave it out. [`scripts/docs/session-start.md`](scripts/docs/session-start.md) has the details.
 
 ### Updating an existing node
 
@@ -156,7 +159,7 @@ Team-specific vocabulary lives in `comments.conf` beside the gate. It covers the
 
 The status check uses `status.conf`, and the log writer uses `log.conf`. `LOG_INCLUDE_BRANCH=true` stamps the checked-out branch on each entry. Configuration and the project-owned `checks.sh` driver survive update. Managed runtime scripts are refreshed atomically, including on version-current nodes. The operating model's "The comment gate" section documents every key.
 
-If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed beside the node into `.agents/skills/`, which most agent tools read directly. Claude Code reads them through a `.claude/skills` symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed beside the node into `.agents/skills/`, which most agent tools read directly. Claude Code reads them through a `.claude/skills` symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). [`tools/hooks/`](tools/hooks/) holds the session-start hook installer `node.sh` runs. The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 

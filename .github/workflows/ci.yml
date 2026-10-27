@@ -52,7 +52,7 @@ jobs:
       # way.
       - run: |
           status=0
-          for f in scripts/*.sh scripts/tests/*.sh evals/*.sh; do
+          for f in scripts/*.sh scripts/tests/*.sh evals/*.sh tools/hooks/*.sh; do
             echo "shellcheck: $f"
             shellcheck --severity=warning "$f" || status=1
           done
