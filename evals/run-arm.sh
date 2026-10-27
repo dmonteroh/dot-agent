@@ -6,6 +6,7 @@
 #                   [--evals <id,id,...>] [--harness node|generic|none]
 #                   [--index-mode manual|generated]
 #                   [--contract-file <variant.md>]
+#                   [--hook-mode none|session-start]
 #                   [--treatment-arm <name>] <workspace> <arm> <corpus-ref>
 #
 # run.sh locks only its metadata writes (arm-map.json, run-config.json), so
@@ -24,7 +25,9 @@
 # whole arm asks what the node itself is worth rather than what one revision
 # of it changed. --index-mode (default manual) selects run.sh's own
 # --index-mode flag: the node-mode arm variable's generated-vs-manual
-# comparison. A workspace records one treatment arm and refuses any run
+# comparison. --hook-mode passes run.sh's own --hook-mode and narrows the
+# batch to the corpus-variable evals, the only ones a hook-mode comparison
+# covers. A workspace records one treatment arm and refuses any run
 # that disagrees, so every arm but the treatment needs --treatment-arm
 # naming it. Passing it on both arms lets them start together: whichever run
 # reaches the fresh iteration first records the same design.
@@ -40,6 +43,7 @@ Usage: run-arm.sh [--jobs N] [--agent claude|codex] [--spec <spec.json>]
                   [--evals <id,id,...>] [--harness node|generic|none]
                   [--index-mode manual|generated]
                   [--contract-file <variant.md>]
+                  [--hook-mode none|session-start]
                   [--treatment-arm <name>] <workspace> <arm> <corpus-ref>
 
 Runs every eval in the spec (default: spec.json; --evals narrows it) for one
@@ -53,6 +57,8 @@ both arms agree on which one is the treatment, and either may create the
 workspace.
 --contract-file installs a pinned prose variant into each fixture before
 the agent runs. Use it with a spec whose arm variable is contract.
+--hook-mode runs the hook-mode comparison over the corpus-variable evals:
+none for the control arm, session-start for the treatment.
 USAGE
 }
 
@@ -64,6 +70,7 @@ harness=node
 index_mode=manual
 treatment=""
 contract_file=""
+hook_mode=""
 while [ $# -gt 0 ]; do
   case "$1" in
   --jobs) jobs="${2:-}"; shift 2 ;;
@@ -72,6 +79,7 @@ while [ $# -gt 0 ]; do
   --evals) only="${2:-}"; shift 2 ;;
   --harness) harness="${2:-}"; shift 2 ;;
   --index-mode) index_mode="${2:-}"; shift 2 ;;
+  --hook-mode) hook_mode="${2:-}"; shift 2 ;;
   --treatment-arm) treatment="${2:-}"; shift 2 ;;
   --contract-file)
     [ -n "${2:-}" ] || { echo "run-arm.sh: --contract-file needs a path" >&2; exit 2; }
@@ -95,6 +103,10 @@ case "$index_mode" in
 manual | generated) ;;
 *) echo "run-arm.sh: --index-mode must be manual or generated (got '$index_mode')" >&2; exit 2 ;;
 esac
+case "$hook_mode" in
+"" | none | session-start) ;;
+*) echo "run-arm.sh: --hook-mode must be none or session-start (got '$hook_mode')" >&2; exit 2 ;;
+esac
 if [ -n "$contract_file" ]; then
   contract_file=$(cd "$(dirname "$contract_file")" && pwd)/$(basename "$contract_file")
   [ -f "$contract_file" ] || { echo "run-arm.sh: no such contract: $contract_file" >&2; exit 2; }
@@ -115,7 +127,11 @@ log="$workspace/run.log"
 # that took the longest in every run so far; the rest follow in spec order.
 ids=$(python3 -c '
 import json, sys
-ids = [e["id"] for e in json.load(open(sys.argv[1]))["evals"]]
+spec = json.load(open(sys.argv[1]))
+ids = [e["id"] for e in spec["evals"]]
+if sys.argv[3]:
+    default = spec.get("arms", {}).get("variable", "corpus")
+    ids = [e["id"] for e in spec["evals"] if (e.get("arm_variable") or default) == "corpus"]
 only = [x for x in sys.argv[2].split(",") if x]
 if only:
     missing = [x for x in only if x not in ids]
@@ -124,19 +140,20 @@ if only:
     ids = [i for i in ids if i in only]
 slow = ["groom-acts-on-flags", "routing-catalog-first", "continuity-writes-back", "verify-no-false-done", "comments-feature"]
 print("\n".join([i for i in slow if i in ids] + [i for i in ids if i not in slow]))
-' "$specfile" "$only") || exit 2
+' "$specfile" "$only" "$hook_mode") || exit 2
 
-export RUN_ARM_WORKSPACE="$workspace" RUN_ARM_ARM="$arm" RUN_ARM_REF="$ref" RUN_ARM_AGENT="$agent" RUN_ARM_LOG="$log" RUN_ARM_ROOT="$reporoot" RUN_ARM_HARNESS_FLAG="$harness_flag" RUN_ARM_INDEX_MODE="$index_mode" RUN_ARM_TREATMENT="$treatment" RUN_ARM_CONTRACT_FILE="$contract_file"
+export RUN_ARM_WORKSPACE="$workspace" RUN_ARM_ARM="$arm" RUN_ARM_REF="$ref" RUN_ARM_AGENT="$agent" RUN_ARM_LOG="$log" RUN_ARM_ROOT="$reporoot" RUN_ARM_HARNESS_FLAG="$harness_flag" RUN_ARM_INDEX_MODE="$index_mode" RUN_ARM_TREATMENT="$treatment" RUN_ARM_CONTRACT_FILE="$contract_file" RUN_ARM_HOOK_MODE="$hook_mode"
 run_one() {
   local id="$1" rc
-  local contract_args=()
+  local contract_args=() hook_args=()
   [ -z "$RUN_ARM_CONTRACT_FILE" ] || contract_args=(--contract-file "$RUN_ARM_CONTRACT_FILE")
+  [ -z "$RUN_ARM_HOOK_MODE" ] || hook_args=(--hook-mode "$RUN_ARM_HOOK_MODE")
   # Unquoted on purpose: empty means the default node fixture, and an empty
   # quoted word would reach run.sh as an argument it rejects.
   # shellcheck disable=SC2086
   (cd "$RUN_ARM_ROOT" && evals/run.sh --eval "$id" --arm "$RUN_ARM_ARM" --treatment-arm "$RUN_ARM_TREATMENT" \
     --agent "$RUN_ARM_AGENT" --corpus-ref "$RUN_ARM_REF" --workspace "$RUN_ARM_WORKSPACE" \
-    --index-mode "$RUN_ARM_INDEX_MODE" "${contract_args[@]}" \
+    --index-mode "$RUN_ARM_INDEX_MODE" ${contract_args[@]+"${contract_args[@]}"} ${hook_args[@]+"${hook_args[@]}"} \
     $RUN_ARM_HARNESS_FLAG) \
     >"$RUN_ARM_WORKSPACE/logs/$RUN_ARM_ARM/$id.log" 2>&1
   rc=$?
@@ -145,7 +162,7 @@ run_one() {
 }
 export -f run_one
 
-echo "START $arm ref=$ref agent=$agent harness=$harness index_mode=$index_mode treatment=$treatment jobs=$jobs spec=$(basename "$specfile") $(date +%H:%M:%S)" >>"$log"
+echo "START $arm ref=$ref agent=$agent harness=$harness index_mode=$index_mode hook_mode=${hook_mode:-unset} treatment=$treatment jobs=$jobs spec=$(basename "$specfile") $(date +%H:%M:%S)" >>"$log"
 printf '%s\n' "$ids" | xargs -n 1 -P "$jobs" bash -c 'run_one "$0"'
 batch_rc=$?
 if [ "$batch_rc" -ne 0 ]; then

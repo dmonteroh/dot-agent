@@ -29,7 +29,7 @@ See the [v6.3 trial guide](scripts/docs/v6.3-trial.md) for installation and migr
 
 ### Contributor validation
 
-Focused shell suites cover receipts, record writers, structured findings, checkpoint recovery, migration, and worker merges, and run beside the main suite. `test.sh` refuses eval, assertion, and fixture names in the node-landing corpus, and `evals/HOWTO.md` gains an ablation recipe for measuring one section. The evaluation fixtures configure project checks when the tested corpus provides verification tooling. Historical research and smoke comparisons remain under `evals/` and are never installed into a node.
+Focused shell suites cover receipts, record writers, structured findings, checkpoint recovery, migration, and worker merges, and run beside the main suite. `test.sh` refuses eval, assertion, and fixture names in the node-landing corpus, and `evals/HOWTO.md` gains an ablation recipe for measuring one section. A `hook-mode` arm variable measures the session-start hook against the same node without it. A hook-delivered load counts as the load in the trace, and `evals/load_first.py` reports the share of sessions that began with one. The evaluation fixtures configure project checks when the tested corpus provides verification tooling. Historical research and smoke comparisons remain under `evals/` and are never installed into a node.
 
 ---
 

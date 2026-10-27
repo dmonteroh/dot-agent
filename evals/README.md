@@ -52,6 +52,13 @@ Paired control. Each eval prompt runs under a single arm variable, and the resul
 | `corpus` (default) | node bootstrapped from the revision under test | node bootstrapped from a pinned baseline revision | did this change to the corpus change behavior? |
 | `agent` | the candidate agent | the baseline agent, named in `run-config.json` | does this corpus work on that harness too? |
 | `node-mode` | the node built `--indexes generated` | the same node, same corpus ref, same agent, built `--indexes manual` | does generated-file routing behave differently from the current file-based routing? |
+| `hook-mode` | the node built with its session-start hook (`--hook-mode session-start`) | the same node without it (`--hook-mode none`), same corpus ref, agent, harness, and index mode | does loading the node from a session-start hook change behavior, load-first rate, or cost? |
+
+`hook-mode` runs over the corpus-variable evals. Passing `--hook-mode` on both arms turns those evals into the hook comparison. Both arms then launch the same way, which differs from an ordinary run so that hooks can fire. Claude runs without `--safe-mode`, which disables every hook.
+
+In place of safe mode, Claude gets `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, so `CLAUDE.md` still arrives only as the appended system prompt, and `--include-hook-events`, so the stream records what the hook delivered. Codex is told, for the invocation only, that the fixture is a trusted project. In the treatment it is also told the hash of the fixture's one hook, which `run_lib.py codex-hook-trust` reads from Codex's own app-server.
+
+A delivered load becomes a `hook` event in `trace.jsonl`, and `grade.py` counts it like the `status.sh --load` call it stands for. A load too big for Claude's 10,000-character hook limit arrives as a pointer, which is not a load: the agent's own call is what counts. A treatment session that shows no delivery voids as `hook_not_delivered`. These launches are not the ones the corpus and node-mode comparisons use, so a hook-mode arm is compared with its own control, never pooled with ordinary runs.
 
 Vary one, never both. A delta from two moving variables is attributable to neither. `node-mode` is the one exception that locks three things at once — agent, model, *and* corpus ref — rather than two, because neither pinned control revision (`2f779b7`, `5001189`) ships `index.sh` or `learn.sh`: a corpus arm against either would measure the absence of a file, not the behavior of a mechanism. Four evals whose fault state has no manual-mode counterpart at all (a corrupted cache, a missing indexer, a branch-switched cache, a migration backlog) run generated-only and are reported as feasibility evidence, never a delta.
 
@@ -117,6 +124,7 @@ That leaves manual grading for what genuinely needs judgement: whether a constra
 | `contamination.py` — lexical and scenario-shape leakage from the eval set into a corpus revision | complete |
 | `assertion-kinds.json` — behavior / conformance / information per assertion | complete |
 | `run-arm.sh` — every eval of one arm into one workspace, `--jobs N` at a time | complete |
+| `load_first.py` — the share of graded sessions whose first trace event is the node load, by hook or by call | complete |
 
 Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters, and the contamination judge, drive the operator's own logged-in CLI session, the same one you already use interactively.
 
@@ -220,7 +228,10 @@ Concurrent sessions contend for the machine and account, which inflates duration
                               # whole tree from it on a generated node
         session-transcript.txt   # `## Turn N` sections containing final text
         trace.jsonl          # one {"seq","event","tool","action","text"} object per
-                              # tool call, action in read|write|execute|search|other
+                              # tool call, action in read|write|execute|search|other;
+                              # event "hook" marks a load a session-start hook delivered
+        hook-deliveries.txt  # hook-mode treatment only: one session-or-thread id,
+                              # payload|pointer, and call line per hook output
         status-after.txt     # status.sh over the node afterwards
         gate.txt             # comments.sh over the diff
       grading.json           # one record per assertion, with evidence — absent

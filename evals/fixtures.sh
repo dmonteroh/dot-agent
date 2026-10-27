@@ -13,6 +13,7 @@
 #                    [--indexes <manual|generated>]
 #                    [--eval <eval-id>]
 #                    [--no-harness | --generic-claude]
+#                    [--hooks <none|session-start>]
 #        fixtures.sh <fixture> <destination> --corpus-dir <path>
 #        fixtures.sh --list
 
@@ -29,6 +30,7 @@ Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
                    [--indexes <manual|generated>]
                    [--eval <eval-id>]
                    [--no-harness | --generic-claude]
+                   [--hooks <none|session-start>]
        fixtures.sh <fixture> <destination> --corpus-dir <path>
        fixtures.sh --list
 
@@ -53,6 +55,12 @@ AGENTS.md) in its place — a plausible non-dot-agent alternative rather than
 nothing. The moved-aside node is outside the fixture's git repository and
 outside the agent's working directory; it is kept rather than deleted so the
 built arm stays inspectable after the run.
+
+--hooks defaults to none: the node is built without the session-start hook
+whatever the corpus defaults to, so the load arrives the way it always has.
+session-start keeps the hook node.sh installs in .claude/settings.json and
+.codex/hooks.json. It is the treatment of the hook-mode comparison, needs a
+corpus whose node.sh advertises --hooks, and needs the node harness.
 
 Fixtures:
   ts-service                a TypeScript service with an outbound HTTP client
@@ -105,6 +113,8 @@ harness_mode="node"
 # manual unless asked, so every fixture built with no flag at all stays
 # byte-identical to what this builder produced before --indexes existed.
 indexes="manual"
+# none (the default) or session-start — node.sh's own --hooks value.
+hooks="none"
 eval_id=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -117,6 +127,12 @@ while [ $# -gt 0 ]; do
     *) echo "fixtures.sh: --indexes must be manual or generated (got '${2:-}')" >&2; exit 2 ;;
     esac
     indexes="$2"; shift 2 ;;
+  --hooks)
+    case "${2:-}" in
+    none | session-start) ;;
+    *) echo "fixtures.sh: --hooks must be none or session-start (got '${2:-}')" >&2; exit 2 ;;
+    esac
+    hooks="$2"; shift 2 ;;
   --no-harness)
     [ "$harness_mode" = node ] || {
       echo "fixtures.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
@@ -128,6 +144,10 @@ while [ $# -gt 0 ]; do
   *) echo "fixtures.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+if [ "$hooks" = session-start ] && [ "$harness_mode" != node ]; then
+  echo "fixtures.sh: --hooks session-start needs the node harness" >&2; exit 2
+fi
 
 case " $FIXTURES " in
 *" $fixture "*) ;;
@@ -213,12 +233,18 @@ EOF
 esac
 
 node_help=$("$corpus/scripts/node.sh" --help 2>&1 || true)
-# Fixtures stay hook-free whatever the corpus defaults to: a session-start
-# hook changes how the load arrives, so it is an arm of its own, never a side
-# effect of the corpus revision.
+# Fixtures stay hook-free unless --hooks asks otherwise, whatever the corpus
+# defaults to: a session-start hook changes how the load arrives, so it is an
+# arm of its own, never a side effect of the corpus revision.
 node_hooks_args=""
 case "$node_help" in
-*--hooks*) node_hooks_args="--hooks none" ;;
+*--hooks*) node_hooks_args="--hooks $hooks" ;;
+*)
+  if [ "$hooks" = session-start ]; then
+    echo "fixtures.sh: corpus $corpus_sha does not support session-start hooks" >&2
+    exit 1
+  fi
+  ;;
 esac
 node_indexes_flag=""
 case "$node_help" in
@@ -292,7 +318,16 @@ fi
 cp "$dest/CLAUDE.md" "$dest/AGENTS.md"
 
 mkdir -p "$dest/.claude"
-printf '{\n  "autoMemoryEnabled": false\n}\n' >"$dest/.claude/settings.json"
+if [ "$hooks" = session-start ]; then
+  # node.sh wrote this file with the hook and autoMemoryEnabled:false. Keep it
+  # as installed: the installed wiring is what the arm measures.
+  grep -q '"autoMemoryEnabled": false' "$dest/.claude/settings.json" 2>/dev/null \
+    && grep -qF '.agent/scripts/session-start.sh' "$dest/.claude/settings.json" \
+    && grep -qF '.agent/scripts/session-start.sh' "$dest/.codex/hooks.json" 2>/dev/null \
+    || { echo "fixtures.sh: node.sh did not install the session-start hook" >&2; exit 1; }
+else
+  printf '{\n  "autoMemoryEnabled": false\n}\n' >"$dest/.claude/settings.json"
+fi
 
 if [ "$fixture" = "ts-service-with-doc" ]; then
   # The trap: a routed doc the session is supposed to reach, whose hook does
@@ -913,6 +948,7 @@ fixtures.sh: built $fixture at $dest
   corpus sha:  $corpus_sha
   harness:     $harness_label
   indexes:     $indexes${idx_entry:+ (entry: $idx_entry)}
+  hooks:       $hooks
   fixture base: $(git -C "$dest" rev-parse HEAD)
 
 Record both shas in run-config.json. The fixture base is the ref every

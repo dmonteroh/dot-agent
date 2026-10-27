@@ -144,6 +144,10 @@ def trace():
     only integer seq and string text; accept exactly that shape as a call so
     historical artifacts remain gradeable without letting partial records
     masquerade as calls.
+
+    A "hook" event is a load a session-start hook delivered before the
+    agent's first turn (hook-mode arms only). It counts like the call it
+    stands for, so status.sh assertions read a delivered load as a load.
     """
     raw = need("trace.jsonl")
     events = []
@@ -179,7 +183,7 @@ def trace():
         if ev["action"] not in ("read", "write", "execute", "search", "other"):
             raise InvalidTrace("trace.jsonl line %d has invalid action %r" %
                                (line_no, ev["action"]))
-        if ev["event"] == "call":
+        if ev["event"] in ("call", "hook"):
             events.append((ev["seq"], ev["text"]))
     return events
 

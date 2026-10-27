@@ -24,6 +24,7 @@
 #                --corpus-ref <ref> --workspace <dir> [--iteration <n>]
 #                [--treatment-arm <name>] [--no-harness | --generic-claude]
 #                [--index-mode <manual|generated>] [--contract-file <path>]
+#                [--hook-mode <none|session-start>]
 #        run.sh --dry-run ...        # build and print every turn, drive nothing
 #        run.sh --list-arms          # resolved executables and versions, no model call
 #        run.sh --probe-agent <claude|codex>   # one live readiness call
@@ -49,6 +50,21 @@
 # ref all held constant — the only paired control the generated-index and
 # learn.sh mechanisms have, since neither pinned control revision ships
 # index.sh or learn.sh.
+#
+# --hook-mode none|session-start turns a corpus-variable eval into a
+# hook-mode comparison: both arms pass it, the control with none and the
+# treatment with session-start, so the arm variable is the session-start
+# hook and nothing else. session-start builds the fixture with the hook
+# node.sh installs. In this comparison both arms launch the same way, and the
+# way differs from an ordinary run, because hooks have to be able to fire:
+# Claude runs without --safe-mode (which disables every hook), with
+# CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 so CLAUDE.md still arrives only through
+# --append-system-prompt-file, and with --include-hook-events so the stream
+# shows what the hook delivered. Codex gets this fixture as a trusted
+# project for the invocation, and in the treatment the exact hash of the
+# fixture's own hook, read from Codex's app-server, as trusted. Nothing is
+# persisted to any config. A treatment session whose hook delivered nothing
+# voids rather than grading as a hook-free run.
 
 set -u
 
@@ -855,8 +871,15 @@ claude_run() {
 
     claude_args=(--print --input-format stream-json --output-format stream-json --verbose
                  --model "$model" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
-                 --allowedTools "Read,Write,Edit,Bash" --permission-mode acceptEdits
-                 --safe-mode --no-chrome)
+                 --allowedTools "Read,Write,Edit,Bash" --permission-mode acceptEdits)
+    # A hook-mode comparison needs hooks able to fire in both arms, and
+    # --safe-mode disables them all. Both arms drop it alike; the header
+    # comment lists what replaces it.
+    if [ "${arm_variable:-}" = hook-mode ]; then
+      claude_args+=(--include-hook-events --no-chrome)
+    else
+      claude_args+=(--safe-mode --no-chrome)
+    fi
     [ -n "$effort" ] && claude_args+=(--effort "$effort")
     if [ "$turnindex" -eq 1 ] || [ "$session_start" -eq 1 ]; then
       session_id=$("$selfdir/run_lib.py" new-session-id) || {
@@ -877,8 +900,14 @@ claude_run() {
       overall_rc=86
       break
     fi
-    CLAUDE_CONFIG_DIR="$claude_home" run_with_timeout "$remaining" "$inputfile" "$fixdir" \
-      "$outdir/.active-process.pid" "$bin" "${claude_args[@]}" >"$turnout" 2>>"$stderr"
+    if [ "${arm_variable:-}" = hook-mode ]; then
+      CLAUDE_CONFIG_DIR="$claude_home" CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 \
+        run_with_timeout "$remaining" "$inputfile" "$fixdir" \
+        "$outdir/.active-process.pid" "$bin" "${claude_args[@]}" >"$turnout" 2>>"$stderr"
+    else
+      CLAUDE_CONFIG_DIR="$claude_home" run_with_timeout "$remaining" "$inputfile" "$fixdir" \
+        "$outdir/.active-process.pid" "$bin" "${claude_args[@]}" >"$turnout" 2>>"$stderr"
+    fi
     rc=$?
     agent_identity_check claude after || rc=86
     rm -f "$inputfile"
@@ -936,7 +965,7 @@ EOF
 codex_run() {
   local fixdir outdir model effort bin stdout stderr thread_id start_ts codex_home
   local overall_rc turnindex turntext now remaining args turnout rc promptfile terminal_counts
-  local session_start
+  local session_start hook_args project_trust hook_trust
   fixdir="$1"; outdir="$2"; model="$3"; effort="$4"; bin="$5"
 
   stdout="$outdir/agent-stdout.txt"; stderr="$outdir/agent-stderr.txt"
@@ -952,6 +981,26 @@ codex_run() {
   fi
   codex_home="$CODEX_ACTIVE_HOME"
   RUN_ISOLATION_CONFIG_DIR="$codex_home"
+
+  # A hook-mode comparison trusts this fixture as a project in both arms, so
+  # its .codex/ layer loads alike. The treatment also trusts the one hook
+  # definition its fixture carries, by the hash Codex itself reports. Both are
+  # -c overrides for this invocation; nothing is written to any config.
+  hook_args=()
+  if [ "${arm_variable:-}" = hook-mode ]; then
+    project_trust=$(printf '{"%s"={trust_level="trusted"}}' "$(canonical_path "$fixdir")")
+    hook_args=(-c "projects=$project_trust")
+    if [ "${hook_mode:-none}" = session-start ]; then
+      if ! hook_trust=$(CODEX_HOME="$codex_home" "$selfdir/run_lib.py" codex-hook-trust \
+          "$bin" "$project_trust" "$fixdir" 2>>"$stderr"); then
+        AGENT_FAILURE_STATUS="hook_trust_failed"
+        AGENT_FAILURE_REASON="could not read the fixture's session-start hook hash from codex app-server"
+        codex_home_cleanup
+        return 1
+      fi
+      hook_args+=(-c "hooks.state=$hook_trust")
+    fi
+  fi
 
   thread_id=""
   start_ts=$(date +%s)
@@ -994,6 +1043,7 @@ codex_run() {
     fi
     # A disposable home does not disable account-synced plugins or app connectors.
     args+=(-c features.apps=false -c features.plugins=false -c features.remote_plugin=false)
+    args+=(${hook_args[@]+"${hook_args[@]}"})
     args+=(-)
 
     promptfile="$outdir/.codex-turn-$turnindex.prompt"
@@ -1053,6 +1103,11 @@ codex_run() {
       break
     fi
   done
+  # The --json stream carries no hook events; the rollout under this
+  # disposable home keeps what the hook delivered, until cleanup removes it.
+  if [ "${arm_variable:-}" = hook-mode ] && [ "${hook_mode:-none}" = session-start ]; then
+    "$selfdir/run_lib.py" codex-hook-deliveries "$codex_home" >"$outdir/hook-deliveries.txt" 2>>"$stderr"
+  fi
   codex_home_cleanup
   return "$overall_rc"
 }
@@ -1083,7 +1138,8 @@ extract_codex_trace() {
   : >"$rundir/outputs/session-transcript.txt"
   "$selfdir/run_lib.py" extract-codex-trace "$rundir/outputs/agent-stdout.txt" \
     "$rundir/outputs/trace.jsonl" "$rundir/outputs/session-transcript.txt" \
-    "$fixdir" "$runid" "$runner_root"
+    "$fixdir" "$runid" "$runner_root" \
+    "$([ -f "$rundir/outputs/hook-deliveries.txt" ] && printf '%s' "$rundir/outputs/hook-deliveries.txt")"
 }
 
 # ---------------------------------------------------------------------------
@@ -1095,11 +1151,11 @@ extract_codex_trace() {
 
 lock_run_config() {
   local iterdir arm_variable treatment agent arm model corpus_ref repeats bin ver effort cfgfile
-  local bin_real bin_hash ver_output harness index_mode contract_hash
+  local bin_real bin_hash ver_output harness index_mode contract_hash hooks
   iterdir="$1"; arm_variable="$2"; treatment="$3"; agent="$4"; arm="$5"; model="$6"
   corpus_ref="$7"; repeats="$8"; bin="$9"; ver="${10}"; effort="${11}"
   bin_real="${12}"; bin_hash="${13}"; ver_output="${14}"; harness="${15}"; index_mode="${16}"
-  contract_hash="${17}"
+  contract_hash="${17}"; hooks="${18}"
   cfgfile="$iterdir/run-config.json"
 
   if [ ! -f "$cfgfile" ]; then
@@ -1117,14 +1173,14 @@ lock_run_config() {
     IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
       CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
       AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" CH="$contract_hash" \
-      "$selfdir/run_lib.py" lock-run-config-create || return 2
+      HKM="$hooks" "$selfdir/run_lib.py" lock-run-config-create || return 2
     return 0
   fi
 
   IT="$iterdir" AV="$arm_variable" TA="$treatment" AG="$agent" AM="$arm" MD="$model" \
     CR="$corpus_ref" RP="$repeats" AB="$bin" AV2="$ver" AE="$effort" \
     AR="$bin_real" AH="$bin_hash" AO="$ver_output" HM="$harness" IM="$index_mode" CH="$contract_hash" \
-    "$selfdir/run_lib.py" lock-run-config-update
+    HKM="$hooks" "$selfdir/run_lib.py" lock-run-config-update
   return $?
 }
 
@@ -1161,6 +1217,7 @@ if [ "${1:-}" = "--list-arms" ]; then
   echo "  agent      locks the corpus ref; varies the candidate agent"
   echo "  node-mode  locks agent, model, and corpus ref; varies --index-mode"
   echo "  contract   locks agent, model, corpus ref, harness, and index mode; varies --contract-file"
+  echo "  hook-mode  locks agent, model, corpus ref, harness, and index mode; varies --hook-mode"
   exit 0
 fi
 
@@ -1248,6 +1305,8 @@ evalid=""; arm=""; agent=""; corpus_ref=""; workspace=""; iteration=""; dry=0; t
 harness_mode="node"
 index_mode="manual"
 contract_file=""
+hook_mode="none"
+hook_mode_given=0
 while [ $# -gt 0 ]; do
   case "$1" in
   --eval) evalid="${2:-}"; shift 2 ;;
@@ -1274,6 +1333,12 @@ while [ $# -gt 0 ]; do
     *) echo "run.sh: --index-mode must be manual or generated (got '${2:-}')" >&2; exit 2 ;;
     esac
     index_mode="$2"; shift 2 ;;
+  --hook-mode)
+    case "${2:-}" in
+    none | session-start) ;;
+    *) echo "run.sh: --hook-mode must be none or session-start (got '${2:-}')" >&2; exit 2 ;;
+    esac
+    hook_mode="$2"; hook_mode_given=1; shift 2 ;;
   --dry-run) dry=1; shift ;;
   *) echo "run.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -1311,6 +1376,13 @@ if [ -n "$contract_file" ]; then
   [ "$harness_mode" = node ] || { echo "run.sh: --contract-file requires the node harness" >&2; exit 2; }
   [ -f "$contract_file" ] || { echo "run.sh: contract file not found: $contract_file" >&2; exit 2; }
   contract_hash=$(file_sha256 "$contract_file")
+fi
+if [ "$hook_mode_given" -eq 1 ]; then
+  [ "$arm_variable" = corpus ] || {
+    echo "run.sh: --hook-mode varies the hook on a corpus-variable eval; '$evalid' varies $arm_variable" >&2; exit 2; }
+  [ "$harness_mode" = node ] || { echo "run.sh: --hook-mode requires the node harness" >&2; exit 2; }
+  [ -z "$contract_file" ] || { echo "run.sh: --hook-mode and --contract-file vary different things" >&2; exit 2; }
+  arm_variable="hook-mode"
 fi
 
 # Turns: a "turns" array if the spec entry carries one, else the current
@@ -1385,7 +1457,8 @@ mkdir -p "$iterdir" || exit 1
 acquire_iter_lock "$iterdir/.metadata.lock" || exit 2
 lock_run_config "$iterdir" "$arm_variable" "$treatment" "$agent" "$arm" "$agent_model" \
   "$corpus_ref" "$REPEATS" "$agent_bin" "$agent_ver" "$agent_effort" \
-  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode" "$index_mode" "$contract_hash"
+  "$agent_bin_real" "$agent_bin_hash" "$agent_ver_output" "$harness_mode" "$index_mode" "$contract_hash" \
+  "$hook_mode"
 lock_run_config_rc=$?
 release_iter_lock
 [ "$lock_run_config_rc" -eq 0 ] || exit 2
@@ -1415,7 +1488,8 @@ while [ "$rep" -le "$repeats_eff" ]; do
     MODEL="${agent_model:-not recorded}" EFFORT="${agent_effort:-not recorded}" \
     TRACE_FORMAT="$trace_format" TURNS="${#turns[@]}" ARM_VARIABLE="$arm_variable" \
     TIMEOUT_S="$TIMEOUT" REPEATS_PER_CELL="$REPEATS" STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    CONTRACT_SHA256="$contract_hash" META_PATH="$rundir/run-meta.json" "$selfdir/run_lib.py" run-meta-init
+    CONTRACT_SHA256="$contract_hash" META_PATH="$rundir/run-meta.json" \
+    HOOK_MODE="$([ "$arm_variable" = hook-mode ] && printf '%s' "$hook_mode")" "$selfdir/run_lib.py" run-meta-init
 
   acquire_iter_lock "$iterdir/.metadata.lock" || exit 1
   "$selfdir/run_lib.py" arm-map-update "$iterdir/arm-map.json" "$runid" "$arm"
@@ -1428,6 +1502,7 @@ while [ "$rep" -le "$repeats_eff" ]; do
   ACTIVE_RUN_DIR="$rundir"
   fixdir="$rundir/fixture"
   fixture_args=("$fixture" "$fixdir" --corpus-ref "$corpus_ref" --indexes "$index_mode" --eval "$evalid")
+  [ "$arm_variable" != hook-mode ] || fixture_args+=(--hooks "$hook_mode")
   case "$harness_mode" in
   none) fixture_args+=(--no-harness) ;;
   generic) fixture_args+=(--generic-claude) ;;
@@ -1559,6 +1634,32 @@ EOF
     any_void=1
     rep=$((rep + 1))
     continue
+  fi
+
+  # A hook-mode treatment measures the hook only if it fired: one delivery,
+  # payload or pointer, at every session start. Fewer means the session ran
+  # hook-free, and grading it would credit the control's behavior to the
+  # treatment, so it voids instead.
+  if [ "$arm_variable" = hook-mode ] && [ "$hook_mode" = session-start ]; then
+    if [ "$agent" = claude ]; then
+      "$selfdir/run_lib.py" claude-hook-deliveries "$rundir/outputs/agent-stdout.txt" \
+        >"$rundir/outputs/hook-deliveries.txt"
+    fi
+    sessions_started=0
+    for t in "${turns[@]}"; do
+      case "$t" in
+      "$TURN_SESSION_RESTART"*) sessions_started=$((sessions_started + 1)) ;;
+      esac
+    done
+    sessions_started=$((sessions_started + 1))
+    hook_file="$rundir/outputs/hook-deliveries.txt"
+    hooks_ok=$(awk -F '\t' '$2 == "payload" || $2 == "pointer"' "$hook_file" 2>/dev/null | wc -l | tr -d '[:space:]')
+    hooks_bad=$(awk -F '\t' 'NF && $2 != "payload" && $2 != "pointer"' "$hook_file" 2>/dev/null | wc -l | tr -d '[:space:]')
+    if [ ! -f "$hook_file" ] || [ "${hooks_ok:-0}" -lt "$sessions_started" ] || [ "${hooks_bad:-0}" -ne 0 ]; then
+      mark_stage_void "$rundir" hook_not_delivered \
+        "session-start hook delivered ${hooks_ok:-0} of $sessions_started session starts (${hooks_bad:-0} unreadable)" 1
+      any_void=1; rep=$((rep + 1)); continue
+    fi
   fi
 
   # ---- capture the artifact set ------------------------------------------

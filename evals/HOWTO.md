@@ -137,6 +137,19 @@ Every assertion lands in one bucket. Each bucket names a different fact about th
 
 Zero regressions is the bar, not a rising aggregate pass rate. Check `rollup.json`'s `concentration_pct_of_delta` (`top_assertion`, `top_two_assertions`) so one loud assertion is not standing in for the whole set. Check `duration_s` too, if one arm visibly took a different number of turns to get there.
 
+## Measure the session-start hook
+
+The hook-mode comparison holds the corpus, agent, harness, and index mode fixed and varies only whether the fixture keeps the session-start hook. Use a corpus ref whose `node.sh` advertises `--hooks`. Run it on both agents and both prompt sets, one workspace per agent and prompt set:
+
+```
+evals/run-arm.sh --jobs 3 --agent claude --hook-mode session-start --treatment-arm hookon "$W" hookon "$REF"
+evals/run-arm.sh --jobs 3 --agent claude --hook-mode none --treatment-arm hookon "$W" hookoff "$REF"
+evals/rollup.py "$W/iteration-1"
+evals/load_first.py "$W"
+```
+
+`--hook-mode` narrows `run-arm.sh` to the corpus-variable evals. Read `load_first.py` beside the rollup: it reports how many sessions began with the load and whether a hook or a call delivered it. Compare cost with `pooled.py --baseline "$W:hookoff" --candidate "$W:hookon"`. A treatment cell that voids as `hook_not_delivered` means the hook never reached that session. Read the cell's `agent-stderr.txt` before rerunning it.
+
 ## Measure what one section is worth
 
 A corpus section that every arm passes with or without it may be costing always-loaded words for nothing, and a trimmed corpus has lost exactly the rules it cut before (`v6.2-evals-september-2026.md`). Measure a section before removing it, one section per arm:

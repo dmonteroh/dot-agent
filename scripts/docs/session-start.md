@@ -61,4 +61,4 @@ Both harnesses match on how the session started. The hook matches `startup|clear
   - On Claude Code, the over-limit pointer made `status.sh --load` the first call.
 
   Firing after compaction rests on both vendors' documentation, not a live run.
-- **No bench run yet.** Whether the hook changes pass rates or cost has not been measured. Eval fixtures pass `--hooks none`, so existing arms are unchanged until a hook arm is added.
+- **No bench result yet.** Whether the hook changes pass rates or cost has not been measured. Eval fixtures build without the hook unless a run asks for it, so the corpus and node-mode comparisons are unchanged. The `hook-mode` arm variable measures it (`evals/HOWTO.md`, "Measure the session-start hook").
