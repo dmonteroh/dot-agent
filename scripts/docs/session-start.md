@@ -7,7 +7,7 @@ session-start.sh [--max-bytes N]
 ```
 
 - It finds its node from its own location, `<node>/.agent/scripts/`, and runs `status.sh --load` there. The output is byte-identical to the entry point's own call.
-- The header names the call and the node: `dot-agent session-start hook: the output of `…` for the node at <path> follows`. Both entry-point templates tell the agent to skip the load step when this block holds the output.
+- The header names the call and the node: `dot-agent session-start hook: the output of `…` for the node at .agent/ follows` (`~/.agent/` for a root node). It never names an absolute path, because the `--load` output itself carries only relative ones. Both entry-point templates tell the agent to skip the load step when this block holds the output.
 - `--max-bytes` is the most the harness will take. Over it, the script prints one line instead, naming the call and telling the agent to make it first. The default, 30000, is the tool-result cap `PAYLOAD_MAX_BYTES` defaults to.
 - Any problem (no `status.sh`, a failed run, a bad limit) prints nothing and exits 0. The entry point's load step then runs as it always did, so the hook can only save a call, never cost a session.
 

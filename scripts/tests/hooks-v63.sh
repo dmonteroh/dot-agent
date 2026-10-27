@@ -37,7 +37,7 @@ bash "$scratch/no-node/.agent/scripts/session-start.sh" || fail 'nonzero exit wi
 h="$scratch/home"
 mkdir -p "$h"
 HOME="$h" node init --preset domain-knowledge --mode track-all "$h" >"$scratch/home-init.out"
-HOME="$h" bash "$h/.agent/scripts/session-start.sh" --max-bytes 10 | grep -qF '`bash ~/.agent/scripts/status.sh --load ~`' || fail 'root pointer is not absolute'
+HOME="$h" bash "$h/.agent/scripts/session-start.sh" --max-bytes 10 | grep -qF '`bash ~/.agent/scripts/status.sh --load ~` for the node at ~/.agent/ prints' || fail 'root pointer does not name the root call and node'
 grep -qF '$HOME/.agent/scripts/session-start.sh' "$h/.claude/settings.json" || fail 'root Claude hook not in HOME settings'
 grep -qF '$HOME/.agent/scripts/session-start.sh' "$h/.codex/hooks.json" || fail 'root Codex hook not in HOME hooks.json'
 [ ! -e "$h/.gitignore" ] || fail 'root install wrote a gitignore at HOME'
@@ -60,7 +60,8 @@ claude_cmd=$(json "$t/.claude/settings.json" 'd["hooks"]["SessionStart"][1]["hoo
 codex_cmd=$(json "$t/.codex/hooks.json" 'd["hooks"]["SessionStart"][0]["hooks"][0]["command"]')
 (cd "$scratch" && CLAUDE_PROJECT_DIR="$t" sh -c "$claude_cmd") | head -n 1 | grep -qF 'dot-agent session-start hook:' || fail 'Claude command did not run the hook'
 (cd "$scratch" && CLAUDE_PROJECT_DIR="$t" sh -c "$claude_cmd") | head -n 1 | grep -qF 'over this hook'"'"'s 10000-byte limit' || fail 'Claude command does not apply its limit'
-(cd "$t" && sh -c "$codex_cmd") | head -n 1 | grep -qF "for the node at $t follows" || fail 'Codex command did not deliver the payload'
+(cd "$t" && sh -c "$codex_cmd") | head -n 1 | grep -qF 'for the node at .agent/ follows' || fail 'Codex command did not deliver the payload'
+! (cd "$t" && sh -c "$codex_cmd") | head -n 1 | grep -qF "$t" || fail 'hook header carries the absolute node path'
 [ -z "$(cd "$scratch" && sh -c "$codex_cmd")" ] || fail 'Codex command printed outside a node'
 (cd "$scratch" && sh -c "$codex_cmd") || fail 'Codex command failed outside a node'
 [ -z "$(cd "$t" && bash .agent/scripts/status.sh . | grep -E '^REPAIR: .*autoMemoryEnabled')" ] || fail 'install left a native-memory repair'

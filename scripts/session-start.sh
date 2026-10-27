@@ -28,22 +28,29 @@ scripts=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || exit 0
 node=$(cd "$scripts/../.." 2>/dev/null && pwd -P) || exit 0
 [ -f "$scripts/status.sh" ] || exit 0
 
+# The header names the node the way the entry point does, never by absolute
+# path: the --load output itself carries only relative paths, and an absolute
+# one here would hand the session a long path to retype that the call never
+# shows it.
 home=$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)
 if [ -n "$home" ] && [ "$node" = "$home" ]; then
   call='bash ~/.agent/scripts/status.sh --load ~'
+  # shellcheck disable=SC2088 # printed for the agent to read, never expanded
+  where='~/.agent/'
 else
   call='bash .agent/scripts/status.sh --load'
+  where='.agent/'
 fi
 
 out=$(cd "$node" && bash "$scripts/status.sh" --load . 2>/dev/null </dev/null) || exit 0
 [ -n "$out" ] || exit 0
 
-header="dot-agent session-start hook: the output of \`$call\` for the node at $node follows, run for this session. Read it here and do not make that call again."
+header="dot-agent session-start hook: the output of \`$call\` for the node at $where follows, run for this session. Read it here and do not make that call again."
 size=$(printf '%s\n%s\n' "$header" "$out" | wc -c | tr -d '[:space:]')
 if [ "$size" -le "$max_bytes" ]; then
   printf '%s\n%s\n' "$header" "$out"
 else
   printf 'dot-agent session-start hook: `%s` for the node at %s prints %s bytes, over this hook'"'"'s %s-byte limit, so its output is not here. Make that call as your first tool call, before you answer, plan, or edit.\n' \
-    "$call" "$node" "$size" "$max_bytes"
+    "$call" "$where" "$size" "$max_bytes"
 fi
 exit 0
