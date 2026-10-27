@@ -348,6 +348,54 @@ printf '%s\n' "$status_output" | grep -q '.agent/.state' \
   && bad "git status exposed state files" || ok "git status does not expose state files"
 chmod -R u+w "$readonly_git/.git"
 
+# Output past OUTPUT_MAX_BYTES: failure lines first, then the tail, all
+# numbered, within the limit, with the full output kept beside the receipts.
+out_root="$tmp/output project"
+new_git "$out_root"
+cat >>"$out_root/.agent/scripts/verify.conf" <<'EOF'
+OUTPUT_MAX_BYTES=4000
+EOF
+cat >"$out_root/.agent/scripts/checks.sh" <<'EOF'
+#!/usr/bin/env bash
+noise() { i=$1; while [ "$i" -le "$2" ]; do printf 'progress line %s of a long run\n' "$i"; i=$((i + 1)); done; }
+case "$1" in
+  long)
+    noise 1 99
+    printf 'not ok 3 - currency rounding\n  at src/money.ts:12\n'
+    noise 102 3000
+    exit 1 ;;
+  quiet) noise 1 3000 ;;
+  *) exit 9 ;;
+esac
+EOF
+chmod +x "$out_root/.agent/scripts/checks.sh"
+git -C "$out_root" add . && git -C "$out_root" commit -qm initial
+out_verify="$out_root/.agent/scripts/verify.sh"
+expect_rc 1 "long failing output still fails" bash "$out_verify" run long --root "$out_root"
+long_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
+[ "$(wc -c <"$tmp/stderr" | tr -d '[:space:]')" -le 4000 ] && ok "long output stays within OUTPUT_MAX_BYTES" || bad "long output is $(wc -c <"$tmp/stderr") bytes"
+has '^100\| not ok 3 - currency rounding$' "$tmp/stderr" && has '^101\|   at src/money\.ts:12$' "$tmp/stderr" \
+  && ok "the failing line and the line after it print, numbered" || bad "failure lines missing from long output"
+[ "$(grep -n '^--- failure lines ---$' "$tmp/stderr" | cut -d: -f1)" -lt "$(grep -n '^100| ' "$tmp/stderr" | cut -d: -f1)" ] \
+  && [ "$(grep -n '^100| ' "$tmp/stderr" | cut -d: -f1)" -lt "$(grep -n '^--- last lines ---$' "$tmp/stderr" | cut -d: -f1)" ] \
+  && ok "failure lines print before the tail" || bad "failure lines are not first"
+has '^3000\| progress line 3000 of a long run$' "$tmp/stderr" && ok "the last line prints" || bad "tail missing the last line"
+saved="$out_root/.agent/.state/output/$long_id.log"
+[ "$(wc -l <"$saved" | tr -d '[:space:]')" = 3000 ] && cmp -s "$saved" <(cd "$out_root" && bash .agent/scripts/checks.sh long) \
+  && ok "the full output is kept under the receipt id" || bad "full output was not kept intact"
+has "\.agent/\.state/output/$long_id\.log" "$tmp/stderr" && ok "the header names the kept output" || bad "header does not name the kept output"
+expect_rc 0 "long passing output passes" bash "$out_verify" run quiet --root "$out_root"
+has '^--- failure lines ---$' "$tmp/stderr" && ! grep -Eq '^[0-9]+\| ' <(sed -n '/^--- failure lines ---$/,/^--- last lines ---$/p' "$tmp/stderr") \
+  && has '^3000\| ' "$tmp/stderr" && ok "no match leaves the failure section empty and fills with the tail" || bad "no-match output is wrong"
+expect_rc 1 "short output prints whole" bash "$verify" run fail --root "$root"
+[ "$(cat "$tmp/stderr")" = "$(printf '1..1\nnot ok 1 - failure')" ] && ok "output under the limit is unchanged" || bad "short output was altered: $(cat "$tmp/stderr")"
+printf 'OUTPUT_FAILURE_PATTERN=(\n' >>"$out_root/.agent/scripts/verify.conf"
+expect_rc 1 "a broken failure pattern still reports the run" bash "$out_verify" run long --root "$out_root"
+has 'selection failed' "$tmp/stderr" && has '^progress line 3000 of a long run$' "$tmp/stderr" \
+  && ok "a failed selection falls back to the plain tail" || bad "fallback tail missing"
+printf 'OUTPUT_MAX_BYTES=many\n' >>"$out_root/.agent/scripts/verify.conf"
+expect_rc 2 "a non-numeric OUTPUT_MAX_BYTES is refused" bash "$out_verify" run long --root "$out_root"
+
 printf '1..%s\n' "$((pass + fail))"
 printf '# passed %s; failed %s\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

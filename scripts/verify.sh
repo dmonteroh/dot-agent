@@ -28,6 +28,10 @@ load_config() {
   TEST_COUNT_FORMAT=tap
   TIMEOUT_SECONDS=300
   NON_GIT_INPUT_ROOTS=
+  # The harness tool-result cap PAYLOAD_MAX_BYTES defaults to (30000), less a
+  # chosen 1000 bytes for the receipt record printed on stdout.
+  OUTPUT_MAX_BYTES=29000
+  OUTPUT_FAILURE_PATTERN='not ok|FAIL|Error|ERROR|error:|Exception|Traceback|panic:|[Aa]ssert'
   [ -f "$cfg" ] || return 0
   while IFS= read -r cfg_line || [ -n "$cfg_line" ]; do
     case "$cfg_line" in '' | \#*) continue ;; esac
@@ -37,6 +41,8 @@ load_config() {
       TEST_COUNT_FORMAT=*) TEST_COUNT_FORMAT=${cfg_line#*=} ;;
       TIMEOUT_SECONDS=*) TIMEOUT_SECONDS=${cfg_line#*=} ;;
       NON_GIT_INPUT_ROOTS=*) NON_GIT_INPUT_ROOTS=${cfg_line#*=} ;;
+      OUTPUT_MAX_BYTES=*) OUTPUT_MAX_BYTES=${cfg_line#*=} ;;
+      OUTPUT_FAILURE_PATTERN=*) OUTPUT_FAILURE_PATTERN=${cfg_line#*=} ;;
       *) die "invalid configuration line in $cfg" ;;
     esac
   done <"$cfg"
@@ -45,6 +51,69 @@ load_config() {
   case "$TEST_COUNT_FORMAT" in tap | none) ;; *) die "unsupported TEST_COUNT_FORMAT: $TEST_COUNT_FORMAT" ;; esac
   case "$TIMEOUT_SECONDS" in '' | *[!0-9]*) die "TIMEOUT_SECONDS must be a positive integer" ;; esac
   [ "$TIMEOUT_SECONDS" -gt 0 ] || die "TIMEOUT_SECONDS must be a positive integer"
+  case "$OUTPUT_MAX_BYTES" in '' | *[!0-9]*) die "OUTPUT_MAX_BYTES must be a positive integer" ;; esac
+  [ "$OUTPUT_MAX_BYTES" -gt 0 ] || die "OUTPUT_MAX_BYTES must be a positive integer"
+  safe_value "$OUTPUT_FAILURE_PATTERN" && [ -n "$OUTPUT_FAILURE_PATTERN" ] || die "OUTPUT_FAILURE_PATTERN must be one non-empty line"
+}
+
+# Prints the driver's output on stderr within OUTPUT_MAX_BYTES. Output that
+# fits prints whole. Longer output prints the lines matching
+# OUTPUT_FAILURE_PATTERN, each with the lines after it, then as many of the
+# last lines as fit, every line numbered against the full output, which is
+# kept beside the receipts. A harness cuts an oversized tool result wherever
+# its limit falls, which can drop the one failing assertion; choosing what
+# to drop here keeps it. If the selection fails, the plain tail prints.
+emit_output() {
+  eo_file=$1 eo_saved=$2
+  eo_size=$(wc -c <"$eo_file" | tr -d '[:space:]')
+  if [ "$eo_size" -le "$OUTPUT_MAX_BYTES" ]; then
+    cat "$eo_file" >&2
+    return 0
+  fi
+  if [ -n "$eo_saved" ]; then
+    eo_where="the full output is kept at $eo_saved"
+  else
+    eo_where="the full output could not be kept"
+  fi
+  eo_pick=$(mktemp "${TMPDIR:-/tmp}/verify-pick.XXXXXX") || eo_pick=
+  # Five lines after a match: an assertion message and the first frames of
+  # its stack (chosen default).
+  if [ -n "$eo_pick" ] && awk -v max="$OUTPUT_MAX_BYTES" -v pat="$OUTPUT_FAILURE_PATTERN" \
+      -v size="$eo_size" -v where="$eo_where" -v ctx=5 '
+    { line[NR] = $0 }
+    END {
+      header = "verify.sh: check output is " size " bytes, over the " max "-byte limit. Lines matching the failure pattern come first, then the last lines; numbers count lines of the full output, and " where "."
+      budget = max - length(header) - 1 - length("--- failure lines ---") - 1 - length("--- last lines ---") - 1
+      for (i = 1; i <= NR; i++)
+        if (line[i] ~ pat)
+          for (j = i; j <= i + ctx && j <= NR; j++) keep[j] = 1
+      half = int(budget / 2); used = 0
+      for (i = 1; i <= NR; i++) {
+        if (!keep[i]) continue
+        cost = length(i "| " line[i]) + 1
+        if (used + cost > half) break
+        sel[i] = 1; used += cost
+      }
+      first = NR + 1
+      for (i = NR; i >= 1; i--) {
+        if (sel[i]) continue
+        cost = length(i "| " line[i]) + 1
+        if (used + cost > budget) break
+        used += cost; first = i
+      }
+      print header
+      print "--- failure lines ---"
+      for (i = 1; i <= NR; i++) if (sel[i]) print i "| " line[i]
+      print "--- last lines ---"
+      for (i = first; i <= NR; i++) if (!sel[i]) print i "| " line[i]
+    }' "$eo_file" >"$eo_pick" 2>/dev/null; then
+    cat "$eo_pick" >&2
+  else
+    echo "verify.sh: check output is $eo_size bytes, over the $OUTPUT_MAX_BYTES-byte limit, and failure-line selection failed; the last bytes follow, and $eo_where." >&2
+    tail -c "$OUTPUT_MAX_BYTES" "$eo_file" >&2
+  fi
+  [ -z "$eo_pick" ] || rm -f "$eo_pick"
+  return 0
 }
 
 is_positive_check() {
@@ -102,6 +171,11 @@ cancel_watchdog() {
 }
 
 cleanup_run() {
+  # A run that exits before printing its output (a failed fingerprint, no
+  # receipt) still shows the session what the check said.
+  if [ -n "${out_tmp:-}" ] && [ "${output_emitted:-0}" -eq 0 ] && [ -s "$out_tmp" ]; then
+    emit_output "$out_tmp" "" || :
+  fi
   [ -z "${out_tmp:-}" ] || rm -f "$out_tmp"
   [ -z "${watchdog_marker:-}" ] || rm -f "$watchdog_marker"
   cancel_watchdog
@@ -207,7 +281,7 @@ if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ -z "$NO
 fi
 driver="$root/$CHECK_DRIVER"
 [ -f "$driver" ] && [ ! -L "$driver" ] || die "check driver is missing or unsafe: $CHECK_DRIVER"
-lock="$state/verify.lock"; lock_owned=0; out_tmp=; child=; watchdog=; watchdog_marker=
+lock="$state/verify.lock"; lock_owned=0; out_tmp=; child=; watchdog=; watchdog_marker=; output_emitted=0
 da_lock "$lock" || exit 2
 lock_owned=1
 trap cleanup_run EXIT
@@ -247,7 +321,6 @@ else
 fi
 watchdog=
 if [ -f "$watchdog_marker" ]; then timed_out=1; driver_rc=124; else timed_out=0; fi
-tail -c 65536 "$out_tmp" >&2
 after=$(da_fingerprint "$root") || exit 2
 count=unknown
 [ "$TEST_COUNT_FORMAT" != tap ] || count=$(tap_count "$out_tmp")
@@ -278,5 +351,13 @@ while :; do
   tries=$((tries + 1)); [ "$tries" -lt 100 ] || die "could not allocate receipt id"
 done
 chmod 444 "$receipt" 2>/dev/null || :
+saved=
+if [ "$(wc -c <"$out_tmp" | tr -d '[:space:]')" -gt "$OUTPUT_MAX_BYTES" ] \
+  && mkdir -p "$state/output" 2>/dev/null && cp "$out_tmp" "$state/output/$id.log" 2>/dev/null; then
+  saved="$state/output/$id.log"
+  case "$saved" in "$root"/*) saved=${saved#"$root"/} ;; esac
+fi
+emit_output "$out_tmp" "$saved"
+output_emitted=1
 print_record "$id" "$status" "$check" "$driver_rc" "$count"
 case "$driver_rc:$status" in 124:*) exit 124 ;; *:pass) exit 0 ;; *) exit 1 ;; esac
