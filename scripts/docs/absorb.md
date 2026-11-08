@@ -28,10 +28,23 @@ Usage: absorb.sh mark [root]
 | A file new in the worker, absent in the main node | Copied |
 | A new learned record whose rule `learn.sh lookup` reports as a duplicate | `duplicate`, not copied |
 | A file the worker changed, unchanged in the main node since the base | Copied over |
+| A doc whose `Checked:` stamp names a commit the main checkout's `HEAD` does not contain | Applied without the stamp line, with a reason |
 | A file both sides changed, or the main node removed | `conflict`, the main node keeps its version |
 | A file the worker removed | `not-applied`: retirement stays with the orchestrator, against a named enforcer (`learn.sh retire --enforced-by`) |
 
 Near-duplicates that differ in wording pass, as they do through `learn.sh`. Grooming catches them later. A conflict is not merged line by line: the base records hashes, not content, so `absorb.sh` cannot tell which lines each side changed. Reconcile a conflict by hand from the worker's copy.
+
+## Checked stamps
+
+A doc's `Checked:` stamp names the commit at which its cited code was read (see `docs.md`). A worker stamps at its own `HEAD`. An orchestrator that integrates task commits by cherry-pick or rebase gives the main checkout copies of those commits, never the stamped commit itself. In the main checkout `links.sh` would then report every change since the branch point as `STALE:`, and once the task branch is gone it would report a stamp that names no commit.
+
+So `docs` drops the stamp line from a doc it applies unless the main checkout's `HEAD` contains the stamped commit. The rest of the doc is copied byte for byte, and the doc arrives unchecked. The decision prints as a third field on its `applied` line:
+
+```
+applied	docs/client.md	dropped its Checked stamp 1a2b3c4, a commit the main checkout's HEAD does not contain. Re-read the code it cites, then restamp it with docs.sh check
+```
+
+A stamp at a commit the main checkout already holds is kept, for example a stamp written in a worker dispatched from the integrated `HEAD`. A main node that already holds the worker's file as the worker wrote it, because git carried it, is left as git left it.
 
 When anything under `rules/` or `docs/` was applied on a node with `indexes: generated`, `absorb.sh` runs the node's `index.sh ensure` once at the end.
 
@@ -44,7 +57,7 @@ When anything under `rules/` or `docs/` was applied on a node with `indexes: gen
 
 ## Output and exit status
 
-One tab-separated line per decision: `applied`, `duplicate`, `conflict`, or `not-applied`, then the path, then a reason for the last two. Unchanged files print nothing, so a repeated run prints nothing.
+One tab-separated line per decision: `applied`, `duplicate`, `conflict`, or `not-applied`, then the path, then a reason for the last two and for an `applied` doc whose stamp was dropped. Unchanged files print nothing, so a repeated run prints nothing.
 
 | Code | Meaning |
 | --- | --- |

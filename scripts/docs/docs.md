@@ -22,6 +22,8 @@ A doc may carry `<!-- Checked: <short-sha> -->` on the line after its `Read when
 
 `new` stamps a new doc at `HEAD`, because its body is written against the code at that commit. Outside a git repository with commits, `new` writes the doc unstamped. A doc with no stamp is unchecked: `links.sh` reports nothing for it.
 
+A stamp written in a worker's checkout names a commit of that checkout. `absorb.sh docs` drops it when it merges the doc back, unless the main checkout's `HEAD` contains that commit, so a doc integrated by cherry-pick arrives unchecked (see `absorb.md`).
+
 The stamp is a separate comment line so every existing reader of the `Read when:` header keeps working unchanged. `status.sh`, `sync`, `rehook`, and `index.sh` read only the `Read when:` line, and comments are stripped before citations and word counts are taken.
 
 ## Syncing routing metadata

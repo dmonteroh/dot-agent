@@ -91,4 +91,73 @@ wait "$holder" 2>/dev/null || :
 [ ! -e "$main/.agent/memory/locked.md" ] || fail 'a refused memory write left a fact file'
 bash "$main/.agent/scripts/memory.sh" new --slug unlocked --title Unlocked --hook 'lock test' --fact 'Free.' "$main" >/dev/null \
   || fail 'memory.sh did not recover a lock whose owner died'
+
+# A worker's Checked stamp names a commit in the worker's checkout. An
+# integration by cherry-pick gives the main checkout a copy of that commit,
+# never the commit itself, so the stamp would read as stale or broken there.
+proj="$scratch/stamped"
+mkdir -p "$proj/src"
+g() { git -C "$proj" "$@"; }
+g init -q
+g config user.email test@example.invalid
+g config user.name test
+bash "$repo/scripts/node.sh" init --preset software-development --mode ignore-all --hooks none "$proj" >/dev/null
+printf 'export const client = 1;\n' >"$proj/src/client.ts"
+printf 'export const other = 1;\n' >"$proj/src/other.ts"
+g add -A && g commit -qm base
+pabsorb="$proj/.agent/scripts/absorb.sh"
+plinks="$proj/.agent/scripts/links.sh"
+stamp_in() { sed -n 's/^<!-- Checked: \(.*\) -->$/\1/p' "$1"; }
+stamped_worker() { # name, branch — a git worktree of the project carrying a copy of its node, marked at dispatch
+  g worktree add -q -b "$2" "$scratch/$1"
+  cp -R "$proj/.agent" "$scratch/$1/.agent"
+  bash "$scratch/$1/.agent/scripts/absorb.sh" mark "$scratch/$1" >/dev/null || fail "mark failed in $1"
+}
+
+stamped_worker sw1 task-1
+sw1="$scratch/sw1"
+printf 'export const client = 2;\n' >"$sw1/src/client.ts"
+git -C "$sw1" commit -qam 'client retries'
+bash "$sw1/.agent/scripts/docs.sh" new --name client --read-when 'client retries' "$sw1" >/dev/null
+printf '\nRetries live in `src/client.ts`.\n' >>"$sw1/.agent/docs/client.md"
+task_commit=$(git -C "$sw1" rev-parse --short HEAD)
+[ "$(stamp_in "$sw1/.agent/docs/client.md")" = "$task_commit" ] || fail 'the worker doc was not stamped at the task commit'
+printf 'export const other = 2;\n' >"$proj/src/other.ts"
+g commit -qam 'other work'
+g cherry-pick task-1 >/dev/null
+! g merge-base --is-ancestor "$task_commit" HEAD || fail 'the cherry-pick made the task commit an ancestor'
+
+out=$(bash "$pabsorb" docs --from "$sw1" "$proj") || fail "docs exited $? integrating a stamped doc"
+links_out=$(bash "$plinks" "$proj")
+! printf '%s\n' "$links_out" | grep -q '^STALE: docs/client.md' || fail "links.sh reports the absorbed doc stale: $links_out"
+! printf '%s\n' "$links_out" | grep -q 'docs/client.md is stamped at' || fail "links.sh reports the absorbed doc's stamp unknown: $links_out"
+[ -z "$(stamp_in "$proj/.agent/docs/client.md")" ] || fail 'the absorbed doc kept a stamp the main checkout does not hold'
+printf '%s\n' "$out" | grep -q "^applied	docs/client.md	dropped its Checked stamp $task_commit" \
+  || fail "absorb did not report the dropped stamp: $out"
+cmp -s <(grep -v '^<!-- Checked: ' "$sw1/.agent/docs/client.md") "$proj/.agent/docs/client.md" \
+  || fail 'dropping the stamp changed the rest of the doc'
+out=$(bash "$pabsorb" docs --from "$sw1" "$proj") || fail "a second docs run exited $? after a dropped stamp"
+[ -z "$out" ] || fail "a second docs run applied something again: $out"
+cp "$proj/.agent/docs/client.md" "$scratch/client.absorbed"
+cp "$sw1/.agent/docs/client.md" "$proj/.agent/docs/client.md"
+out=$(bash "$pabsorb" docs --from "$sw1" "$proj") || fail "docs exited $? over a doc git already carried"
+[ -z "$out" ] || fail "docs rewrote a doc the main node already holds as the worker wrote it: $out"
+cp "$scratch/client.absorbed" "$proj/.agent/docs/client.md"
+
+# A stamp at a commit the main checkout already holds is kept, and so is the
+# drift check it opts the doc into.
+stamped_worker sw2 task-2
+sw2="$scratch/sw2"
+bash "$sw2/.agent/scripts/docs.sh" check --name client "$sw2" >/dev/null
+printf '<!-- Read when: legacy billing -->\n<!-- Checked: 0123abc -->\n# Legacy\n\nCalls `src/client.ts`.\n' >"$sw2/.agent/docs/legacy.md"
+head_commit=$(g rev-parse --short HEAD)
+out=$(bash "$pabsorb" docs --from "$sw2" "$proj") || fail "docs exited $? integrating a doc stamped at an ancestor"
+printf '%s\n' "$out" | grep -qxF 'applied	docs/client.md' || fail "a stamp at an ancestor was reported: $out"
+[ "$(stamp_in "$proj/.agent/docs/client.md")" = "$head_commit" ] || fail 'a stamp at an ancestor of HEAD was dropped'
+printf '%s\n' "$out" | grep -q '^applied	docs/legacy.md	dropped its Checked stamp 0123abc' || fail "a stamp naming no commit was kept: $out"
+[ -z "$(stamp_in "$proj/.agent/docs/legacy.md")" ] || fail 'a stamp naming no commit reached the main node'
+printf 'export const client = 3;\n' >"$proj/src/client.ts"
+g commit -qam 'client change after the check'
+bash "$plinks" "$proj" | grep -q "^STALE: docs/client.md cites src/client.ts, changed in 1 commit since checked at $head_commit" \
+  || fail 'the kept stamp does not report a later change to the cited code'
 exit 0

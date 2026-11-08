@@ -26,6 +26,8 @@ learned.md, and docs/. Run it when the worker's code is integrated.
 
 A file is applied only when the main node has not changed it since the
 worker's base; otherwise it is a conflict and stays as the main node has it.
+A doc's Checked stamp is dropped unless the main checkout's HEAD contains the
+stamped commit, so a doc integrated by cherry-pick arrives unchecked.
 Removals are reported, never applied. Output is one TSV line per decision:
 applied, duplicate, conflict, or not-applied, then the path.
 Exit 0 when nothing conflicted, 3 when something did, 2 on refusal.
@@ -153,25 +155,55 @@ absorb_appended() { # rel — appends each new line the main file does not alrea
   report applied "$rel"
 }
 
+# A doc's Checked stamp names the commit its cited code was read at. A worker
+# stamps at its own HEAD, and an integration by cherry-pick or rebase copies
+# that commit instead of bringing it, so in the main checkout the stamp would
+# report every later change as stale, or name no commit at all once the
+# worker's branch is gone. The doc arrives unchecked instead, unless the main
+# checkout's HEAD already contains the stamped commit.
+stamp_line_of() { # file → the line number of its Checked stamp in the first five lines, or nothing
+  head -n 5 "$1" | grep -n '^<!-- Checked: .* -->$' | head -n 1 | cut -d: -f1
+}
+stamp_held() { # stamp → 0 when it names a commit the main checkout's HEAD contains
+  case "$1" in '' | *[!0123456789abcdef]*) return 1 ;; esac
+  git -C "$root" merge-base --is-ancestor "$1^{commit}" HEAD 2>/dev/null
+}
+
 absorb_file() { # rel — a whole-file record or doc
-  local rel="$1" b bhash whash mhash
+  local rel="$1" b bhash whash ahash mhash at="" stamp="" note=""
   b=$(base_of "$rel")
   whash=$(hash_file "$worker_node/$rel")
   bhash=${b#*$'\t'}
   [ -z "$b" ] || [ "$whash" != "$bhash" ] || return 0
+  # $tmp gets the form the main node receives: the worker's file, less a stamp
+  # the main checkout does not hold. head and tail copy the rest byte for byte.
+  case "$rel" in docs/*) at=$(stamp_line_of "$worker_node/$rel") ;; esac
+  if [ -n "$at" ]; then
+    stamp=$(sed -n "${at}s/^<!-- Checked: \\(.*\\) -->\$/\\1/p" "$worker_node/$rel")
+    if stamp_held "$stamp"; then at=""; fi
+  fi
+  if [ -n "$at" ]; then
+    { [ "$at" -eq 1 ] || head -n "$((at - 1))" "$worker_node/$rel"; tail -n +"$((at + 1))" "$worker_node/$rel"; } >"$tmp" \
+      || { conflict "$rel" "could not drop its Checked stamp"; return 0; }
+    note="dropped its Checked stamp $stamp, a commit the main checkout's HEAD does not contain. Re-read the code it cites, then restamp it with docs.sh check"
+  else
+    cp "$worker_node/$rel" "$tmp" || { conflict "$rel" "could not read it"; return 0; }
+  fi
+  ahash=$(hash_file "$tmp")
   if [ -f "$main_node/$rel" ]; then
     mhash=$(hash_file "$main_node/$rel")
-    [ "$mhash" != "$whash" ] || return 0
+    # Git may already have carried the worker's file, stamp and all.
+    [ "$mhash" != "$ahash" ] && [ "$mhash" != "$whash" ] || return 0
     if [ -z "$b" ]; then conflict "$rel" "the main node created a different file with this name"; return 0; fi
     if [ "$mhash" != "$bhash" ]; then conflict "$rel" "the main node changed it since the worker's base"; return 0; fi
   elif [ -n "$b" ]; then
     conflict "$rel" "the main node removed it since the worker's base"; return 0
   fi
-  mkdir -p "$(dirname "$main_node/$rel")" && cp "$worker_node/$rel" "$tmp" && mv -f "$tmp" "$main_node/$rel" \
+  mkdir -p "$(dirname "$main_node/$rel")" && mv -f "$tmp" "$main_node/$rel" \
     || { conflict "$rel" "could not write it"; return 0; }
   tmp=$(mktemp "$state/.absorb.XXXXXX") || exit 2
   case "$rel" in rules/* | docs/*) rules_changed=1 ;; esac
-  report applied "$rel"
+  if [ -n "$note" ]; then printf 'applied\t%s\t%s\n' "$rel" "$note"; else report applied "$rel"; fi
 }
 
 report_removals() { # glob-free prefix filter as an awk regex

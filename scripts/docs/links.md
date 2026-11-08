@@ -40,7 +40,7 @@ A doc under `docs/` opts in by carrying a stamp on the line after its `Read when
 # Payments
 ```
 
-The stamp is the commit at which someone last read the code the doc cites and confirmed the doc matches it. `docs.sh check --name <doc>` writes it, and `docs.sh new` stamps a new doc at creation. links.sh only reads the stamp. It never moves it, because a stamp moved by the audit would record a check nobody made.
+The stamp is the commit at which someone last read the code the doc cites and confirmed the doc matches it. `docs.sh check --name <doc>` writes it, and `docs.sh new` stamps a new doc at creation. links.sh only reads the stamp. It never moves it, because a stamp moved by the audit would record a check nobody made. `absorb.sh docs` drops a worker's stamp that names a commit the main checkout's `HEAD` does not contain, so a doc integrated by cherry-pick reads as unchecked instead of stale (see `absorb.md`).
 
 For each stamped doc, links.sh collects the project paths it cites: backticked tokens and markdown link targets that resolve to an existing file or directory outside `.agent/`. A path resolves against the project root or against the doc's own directory. A trailing `:<line>` on a backticked path is dropped. It then asks git which commits after the stamp touched each path:
 
