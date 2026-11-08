@@ -258,7 +258,7 @@ The vocabulary grows through retro, not by hand-tuning. A shape the gate already
 
 ### The checkpoint call
 
-`checkpoint.sh --checks <check> --tool <name> --area <name> --summary "…"` runs configured verification, diff review, status, and logging. `--verification <receipt-id>` reuses evidence for unchanged inputs. A bare `--verify pass` is refused. Failed and manual-only work can use `--verify fail` or `--verify n/a`.
+`checkpoint.sh --checks <check> --tool <name> --area <name> --summary "…"` runs diff review, status, configured verification, and logging, in that order. `--verification <receipt-id>` reuses evidence for unchanged inputs. A bare `--verify pass` is refused. Failed and manual-only work can use `--verify fail` or `--verify n/a`.
 
 The check driver, `.agent/scripts/checks.sh`, holds the project's actual commands. `verify.conf` declares test-count expectations. A zero or unknown count cannot satisfy a configured positive-count requirement. Receipts remain private execution evidence, outside loaded context. They do not prove semantic coverage or form a security boundary against an agent that can edit local files.
 
