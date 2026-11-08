@@ -7,11 +7,22 @@ Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh rehook --name <file> --read-when "…" [root]
        docs.sh sync --name <file> [--read-when "…"] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
+       docs.sh check --name <file> [root]
 ```
 
 `root` defaults to `.` and `.md` is appended to `<file>` if missing. `new` writes `<root>/.agent/docs/<file>` and appends a row to `<root>/.agent/docs/architecture.md`, creating it with a minimal routing header if it does not already exist.
 
 `rehook` rewrites an existing doc's `Read when:` header line and its `- **Read when:**` routing row to the new text, both or neither (each is written to a temporary and swapped in together). It is the fix for a routed doc a session failed to reach: the hook did not name the word the task used. The preset's Self-learning rule sends that case here rather than to a learned rule, because the row was the source and the row is now fixed.
+
+## The Checked stamp
+
+A doc may carry `<!-- Checked: <short-sha> -->` on the line after its `Read when:` header. The stamp is the commit at which someone last read the code the doc cites and confirmed the doc matches it. `links.sh` reports a cited project path that changed in a later commit as `STALE:` (see `links.md`).
+
+`check` writes the stamp. Run it after re-reading the cited code and fixing the doc, never in place of that. It records the current `HEAD` short sha, replacing an existing stamp in the doc's first five lines or inserting one after the `Read when:` header. A doc with neither gets the stamp as its first line. The rest of the doc is copied byte for byte. It refuses `architecture.md`, a doc with two stamps, and a root that is not a git repository with commits. When the project has uncommitted changes outside `.agent/`, it says the stamp does not cover them. Restamp after committing them if the doc describes them.
+
+`new` stamps a new doc at `HEAD`, because its body is written against the code at that commit. Outside a git repository with commits, `new` writes the doc unstamped. A doc with no stamp is unchecked: `links.sh` reports nothing for it.
+
+The stamp is a separate comment line so every existing reader of the `Read when:` header keeps working unchanged. `status.sh`, `sync`, `rehook`, and `index.sh` read only the `Read when:` line, and comments are stripped before citations and word counts are taken.
 
 ## Syncing routing metadata
 

@@ -10,10 +10,13 @@ Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh rehook --name <file> --read-when "…" [root]
        docs.sh sync --name <file> [--read-when "…"] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
+       docs.sh check --name <file> [root]
 
 root defaults to . — new writes <root>/.agent/docs/<file> and a routing row
 in <root>/.agent/docs/architecture.md; rehook rewrites an existing doc's
 "Read when:" header and its routing row to the new text, both or neither.
+check records HEAD in the doc's "Checked:" stamp, after you have re-read the
+code the doc cites; links.sh reports cited paths changed since that commit.
 EOF
 }
 
@@ -203,12 +206,18 @@ new)
 
   title=$(printf '%s' "$leaf" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++){$i=toupper(substr($i,1,1)) substr($i,2)} print}')
 
+  # A new doc is written against the code at HEAD, so it starts stamped there.
+  # Outside a git repository with commits it starts unstamped instead.
+  stamp_line=""
+  new_sha=$(git -C "$root" rev-parse --short 'HEAD^{commit}' 2>/dev/null) && stamp_line="<!-- Checked: $new_sha -->"
+
   new_doc_tmp="$doc.new.tmp.$$"
   new_arch_tmp="$arch.new.tmp.$$"
-  if cat >"$new_doc_tmp" <<EOF
-<!-- Read when: $readwhen -->
-# $title
-EOF
+  if {
+    printf '<!-- Read when: %s -->\n' "$readwhen"
+    [ -z "$stamp_line" ] || printf '%s\n' "$stamp_line"
+    printf '# %s\n' "$title"
+  } >"$new_doc_tmp"
   then :
   else
     echo "docs.sh: could not stage $doc — nothing was written" >&2
@@ -435,6 +444,63 @@ catalog)
   mv "$cat_tmp" "$catdoc" || { rm -f "$cat_tmp"; exit 1; }
   printf 'cataloged\t%s\t%s\n' "$name" "$(git hash-object --no-filters -- "$catdoc")"
   exit 0
+  ;;
+
+check)
+  name=""
+  root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --name) need_value "$@"; name="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    --*) echo "docs.sh: unknown flag: $1" >&2; usage >&2; exit 1 ;;
+    *) root="$1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || { echo "docs.sh: check requires --name <file>" >&2; exit 1; }
+  filename=$(doc_filename "$name") || { echo "docs.sh: --name must be a safe path under .agent/docs/ (got '$name')" >&2; exit 1; }
+  if [ "$filename" = architecture.md ]; then
+    echo "docs.sh: architecture.md is the routing table, not a doc that cites code" >&2
+    exit 1
+  fi
+  doc="$root/.agent/docs/$filename"
+  [ -f "$doc" ] && [ ! -L "$doc" ] || { echo "docs.sh: $doc is not a regular document" >&2; exit 1; }
+  check_root_phys=$(cd "$root" 2>/dev/null && pwd -P) || exit 1
+  check_parent_phys=$(cd "$(dirname "$doc")" 2>/dev/null && pwd -P) || exit 1
+  case "$check_parent_phys" in "$check_root_phys"/*) ;; *) echo "docs.sh: --name resolves outside the project" >&2; exit 1 ;; esac
+  sha=$(git -C "$root" rev-parse --short 'HEAD^{commit}' 2>/dev/null) || {
+    echo "docs.sh: check records a commit, and $root is not a git repository with commits — nothing was written" >&2
+    exit 1
+  }
+
+  stamp_count=$(head -n 5 "$doc" | grep -c '^<!-- Checked: .* -->$')
+  [ "$stamp_count" -le 1 ] || { echo "docs.sh: $doc has more than one Checked stamp — keep one, then rerun check" >&2; exit 1; }
+  # The stamp replaces the old one in place, or sits on the line after the
+  # Read when header, or opens a doc that has neither. head and tail copy the
+  # rest of the doc byte for byte.
+  if [ "$stamp_count" -eq 1 ]; then
+    at=$(head -n 5 "$doc" | grep -n '^<!-- Checked: .* -->$' | head -n 1 | cut -d: -f1)
+    keep=$((at - 1))
+  else
+    at=$(head -n 5 "$doc" | grep -n '^<!-- Read when: .* -->$' | head -n 1 | cut -d: -f1)
+    [ -n "$at" ] || at=0
+    keep=$at
+  fi
+  check_tmp="$doc.check.tmp.$$"
+  if {
+    [ "$keep" -eq 0 ] || head -n "$keep" "$doc" | awk 1
+    printf '<!-- Checked: %s -->\n' "$sha"
+    tail -n +$((at + 1)) "$doc"
+  } >"$check_tmp" && mv "$check_tmp" "$doc"; then
+    echo "docs.sh: stamped docs/$filename as checked at $sha"
+    if [ -n "$(git -C "$root" status --porcelain -- . ':(exclude).agent' 2>/dev/null)" ]; then
+      echo "docs.sh: the stamp records HEAD ($sha) — uncommitted changes outside .agent/ are not part of it, so restamp after committing them if this doc describes them"
+    fi
+    exit 0
+  fi
+  rm -f "$check_tmp"
+  echo "docs.sh: could not write the stamp to $doc — the doc is unchanged" >&2
+  exit 1
   ;;
 
 rehook)

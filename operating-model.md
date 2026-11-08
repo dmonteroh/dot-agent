@@ -134,8 +134,11 @@ This header is the one that pays rent on every session: `learned.md` is always-l
 
 ```markdown
 <!-- Read when: <one-line hook, same text as this doc's architecture.md entry> -->
+<!-- Checked: <short sha> -->
 # <Area>
 ```
+
+The second line is optional. It is the commit at which someone last read the code the doc cites and confirmed the doc matches it. `docs.sh new` writes it at creation, and `docs.sh check` moves it after a session re-reads that code. `links.sh` compares it against git history (see [The link audit](#the-link-audit)). A doc without it is unchecked, and nothing reports on it. It sits on its own line so every reader of the hook line is unchanged.
 
 The shape rules a doc used to carry — facts as tables or one-fact-per-line bullets, prose for the *why* alone, timeless phrasing, a cited path rather than a restated behavior, `## Gotchas` for area traps, and restructuring that changes shape and never content — are the preset's `docs/` bullet, loaded in every session that opens a doc. `docs.sh new` restates them in its output, where they reach the session writing the doc and cost nothing on every later read. Sub-doc routing is what settled it: one area doc could carry a header for a few percent of its size, a directory of sub-docs and reference files cannot, and the rules were already stated in a file loaded alongside them.
 
@@ -188,12 +191,13 @@ This is the tier that lets the size trigger stay honest. Before it, a doc over t
 
 ### The link audit
 
-`scripts/links.sh` walks the node's internal link graph on demand and reports two directions:
+`scripts/links.sh` walks the node's internal link graph on demand and reports two directions, plus one drift finding for docs that opt in:
 
 | Finding | Means |
 | --- | --- |
 | `ORPHAN:` | a file in the node that nothing cites |
 | `BROKEN:` | a node path a node file cites that does not exist |
+| `STALE:` | a project path a stamped doc cites changed in a commit after the doc's `Checked:` stamp |
 
 It exists because the reference tier removed the last mechanism that could notice an unreachable file, and it is off the load path on purpose. An orphan is a review trigger with a slow clock: sometimes a file that should be cited, sometimes one that should be retired, occasionally neither. Nothing about it needs deciding before this session's first edit. Run it when grooming, before a restructuring pass, or when a node has been through enough hands to have drifted. No finding reaches its exit status. The report is the product.
 
@@ -202,6 +206,10 @@ Three genres of file are excluded as citation *sources*, because naming a file i
 Those exclusions are what makes the output readable. Without them the report is dominated by session-log entries citing task briefs that were legitimately archived months earlier — a record of what happened, not a claim that the path still resolves. Scoped, what is left is the genuine case: a dangling doc reference, or an entry point still naming a file a rename left behind.
 
 Deciding *whether a name addresses the node at all* is the other half, and shape cannot settle it. A bare `SKILL.md` in a memory fact looks exactly like a bare `learned.md` in a doc, and node docs really do cite each other by bare name. So a name the node cannot resolve is checked against the project's markdown before it is reported. A memory fact naming a real project file that sits in a subdirectory rather than at the project root is not a broken link. What survives is the case no script can settle: a path naming a file in a *third* repo, such as a skill documenting where its consuming project should keep its config. That one stays reported, because the audit is tuned to over-report rather than to miss a real dangling link, and because a finding here is a review trigger and not an error.
+
+The link graph cannot show the other way a doc rots: the code it describes changes and the doc does not. A stale doc reads exactly like a current one. The drift check is the one place the audit reads paths outside the node. For each doc stamped `<!-- Checked: <sha> -->`, it collects the existing project files and directories the doc cites and asks git which commits after the stamp touched them. Each touched path is one `STALE:` line, such as `STALE: docs/payments.md cites src/client.ts, changed in 3 commits since checked at abc1234`. A commit that also changed the doc is not counted, because the doc moved with the code.
+
+The audit never moves a stamp. A stamp records that someone read the code, and only that session knows it did. So `docs.sh check` is the writer, run after the re-read. Outside a git repository, or with a stamp that is not a known commit, the check prints one line saying so. Like every other finding here, nothing it reports reaches the exit status.
 
 ### The comment gate
 

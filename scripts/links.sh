@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -u
+unset CDPATH
 
 root="${1:-.}"
 case "$root" in
@@ -10,8 +11,10 @@ Usage: links.sh [root]
 
 Reports ORPHAN: (a file in the node nothing cites) and BROKEN: (a node path
 cited by a node file that does not exist). Paths outside .agent/ are out of
-scope. root defaults to . — findings never change the exit status. A root
-holding no .agent/ is a usage error and exits 1.
+scope for both. A doc under docs/ stamped <!-- Checked: <sha> --> by
+docs.sh check also gets STALE: (a project path it cites changed in a commit
+after the stamp). root defaults to . — findings never change the exit status.
+A root holding no .agent/ is a usage error and exits 1.
 EOF
   exit 0 ;;
 esac
@@ -147,6 +150,96 @@ done
 
 if [ "$findings" -eq 0 ]; then
   echo "links.sh: $audited files audited, no orphans or broken links"
+fi
+
+# The drift check is opt-in per doc: only a doc docs.sh check has stamped is
+# compared against git history, and a node with no stamp prints nothing here.
+stamp_of() { # the doc's Checked stamp, from its opening lines
+  head -n 5 "$1" | sed -n 's/^<!-- Checked: \(.*\) -->$/\1/p' | head -n 1
+}
+project_path() { # $1 a cited path, $2 the citing doc's directory: the project-relative path, or nothing
+  pp_c=${1#./}
+  [ -n "$pp_c" ] || return 0
+  for pp_base in "$root" "$2"; do
+    pp_t="$pp_base/$pp_c"
+    [ -e "$pp_t" ] || continue
+    if [ -d "$pp_t" ]; then
+      pp_p=$(cd "$pp_t" 2>/dev/null && pwd -P) || continue
+    else
+      pp_p=$(cd "$(dirname "$pp_t")" 2>/dev/null && pwd -P) || continue
+      pp_p="$pp_p/${pp_t##*/}"
+    fi
+    case "$pp_p" in "$root_phys"/*) ;; *) continue ;; esac
+    pp_rel=${pp_p#"$root_phys"/}
+    case "$pp_rel" in .agent | .agent/* | .git | .git/*) return 0 ;; esac
+    [ -d "$pp_t" ] && pp_rel="$pp_rel/"
+    printf '%s\n' "$pp_rel"
+    return 0
+  done
+}
+
+stamped=()
+unstamped=0
+for f in "${nodefiles[@]}"; do
+  case "${f#"$agent"/}" in
+  docs/architecture.md) continue ;;
+  docs/*) ;;
+  *) continue ;;
+  esac
+  if [ -n "$(stamp_of "$f")" ]; then stamped+=("$f"); else unstamped=$((unstamped + 1)); fi
+done
+
+if [ "${#stamped[@]}" -gt 0 ]; then
+  root_phys=$(cd "$root" && pwd -P)
+  if ! command -v git >/dev/null 2>&1 \
+    || ! git -C "$root" rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null 2>&1; then
+    echo "links.sh: ${#stamped[@]} docs carry a Checked stamp, but $root is not a git repository with commits — drift check skipped"
+    exit 0
+  fi
+  stale=0
+  for d in "${stamped[@]}"; do
+    rel=${d#"$agent"/}
+    stamp=$(stamp_of "$d")
+    known=1
+    case "$stamp" in *[!0123456789abcdef]*) known=0 ;; esac
+    if [ "$known" -eq 1 ]; then
+      git -C "$root" rev-parse --verify --quiet "$stamp^{commit}" >/dev/null 2>&1 || known=0
+    fi
+    if [ "$known" -eq 0 ]; then
+      echo "links.sh: $rel is stamped at $stamp, which is not a commit in this repository — re-read the code it cites, then restamp it with docs.sh check"
+      continue
+    fi
+    # A commit that also changed the doc is not counted: the doc moved with
+    # the code, which is what restamping in the same change records.
+    doc_commits=$(git -C "$root" --literal-pathspecs log --format=%H "$stamp..HEAD" -- ".agent/$rel" 2>/dev/null | tr '\n' ' ')
+    dir=$(dirname "$d")
+    seen=$'\n'
+    while IFS= read -r cand; do
+      [ -n "$cand" ] || continue
+      path=$(project_path "$cand" "$dir")
+      [ -n "$path" ] || continue
+      case "$seen" in *$'\n'"$path"$'\n'*) continue ;; esac
+      seen="$seen$path"$'\n'
+      n=$(git -C "$root" --literal-pathspecs log --format=%H "$stamp..HEAD" -- "$path" 2>/dev/null \
+        | awk -v skip="$doc_commits" '
+            BEGIN { k = split(skip, s, " "); for (i = 1; i <= k; i++) moved[s[i]] = 1 }
+            NF && !($1 in moved) { c++ }
+            END { print c + 0 }
+          ')
+      [ "$n" -gt 0 ] || continue
+      if [ "$n" -eq 1 ]; then word=commit; else word=commits; fi
+      echo "STALE: $rel cites $path, changed in $n $word since checked at $stamp"
+      stale=$((stale + 1))
+    done <<EOF
+$(strip_comments "$d" | grep -oE '\]\([^)]+\)' 2>/dev/null | sed 's/^](//; s/)$//; s/[[:space:]].*//; s/#.*//'
+  strip_comments "$d" | grep -oE '`[^`]+`' 2>/dev/null | tr -d '`' | sed 's/:[0-9][0-9-]*$//')
+EOF
+  done
+  if [ "$stale" -eq 0 ]; then
+    echo "links.sh: drift check — ${#stamped[@]} stamped docs, $unstamped unstamped, no cited project path changed since its stamp"
+  else
+    echo "links.sh: drift check — ${#stamped[@]} stamped docs, $unstamped unstamped, $stale stale citations — re-read the cited code, update the doc, then restamp it with docs.sh check --name <doc>"
+  fi
 fi
 
 exit 0
