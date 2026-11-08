@@ -63,6 +63,9 @@ load_config() {
 # kept beside the receipts. A harness cuts an oversized tool result wherever
 # its limit falls, which can drop the one failing assertion; choosing what
 # to drop here keeps it. If the selection fails, the plain tail prints.
+# With TAP output, every failing result line is chosen before any context
+# line, so one failure's context never crowds out another failure's name.
+# A "not ok" marked "# TODO" is an expected failure and is not chosen.
 emit_output() {
   eo_file=$1 eo_saved=$2
   eo_size=$(wc -c <"$eo_file" | tr -d '[:space:]')
@@ -78,18 +81,32 @@ emit_output() {
   eo_pick=$(mktemp "${TMPDIR:-/tmp}/verify-pick.XXXXXX") || eo_pick=
   # Five lines after a match: an assertion message and the first frames of
   # its stack (chosen default).
+  eo_tap=0
+  [ "$TEST_COUNT_FORMAT" != tap ] || eo_tap=1
   if [ -n "$eo_pick" ] && awk -v max="$OUTPUT_MAX_BYTES" -v pat="$OUTPUT_FAILURE_PATTERN" \
-      -v size="$eo_size" -v where="$eo_where" -v ctx=5 '
+      -v size="$eo_size" -v where="$eo_where" -v ctx=5 -v tap="$eo_tap" '
     { line[NR] = $0 }
     END {
-      header = "verify.sh: check output is " size " bytes, over the " max "-byte limit. Lines matching the failure pattern come first, then the last lines; numbers count lines of the full output, and " where "."
+      if (tap) first_part = "Failing TAP results, then lines matching the failure pattern, come first"
+      else first_part = "Lines matching the failure pattern come first"
+      header = "verify.sh: check output is " size " bytes, over the " max "-byte limit. " first_part ", then the last lines; numbers count lines of the full output, and " where "."
       budget = max - length(header) - 1 - length("--- failure lines ---") - 1 - length("--- last lines ---") - 1
-      for (i = 1; i <= NR; i++)
-        if (line[i] ~ pat)
+      for (i = 1; i <= NR; i++) {
+        tapfail = tap && line[i] ~ /^[[:space:]]*not ok([[:space:]]|$)/
+        if (tapfail && line[i] ~ /#[[:space:]]*[Tt][Oo][Dd][Oo]/) continue
+        if (tapfail) failed[i] = 1
+        if (tapfail || line[i] ~ pat)
           for (j = i; j <= i + ctx && j <= NR; j++) keep[j] = 1
+      }
       half = int(budget / 2); used = 0
       for (i = 1; i <= NR; i++) {
-        if (!keep[i]) continue
+        if (!failed[i]) continue
+        cost = length(i "| " line[i]) + 1
+        if (used + cost > half) break
+        sel[i] = 1; used += cost
+      }
+      for (i = 1; i <= NR; i++) {
+        if (!keep[i] || sel[i]) continue
         cost = length(i "| " line[i]) + 1
         if (used + cost > half) break
         sel[i] = 1; used += cost

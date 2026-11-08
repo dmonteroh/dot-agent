@@ -365,6 +365,18 @@ case "$1" in
     noise 102 3000
     exit 1 ;;
   quiet) noise 1 3000 ;;
+  manyfail)
+    printf 'TAP version 13\n1..21\n'
+    k=1
+    while [ "$k" -le 20 ]; do
+      noise 1 100
+      printf 'not ok %s - case %s\n' "$k" "$k"
+      f=1; while [ "$f" -le 5 ]; do printf '  at frame %s of case %s\n' "$f" "$k"; f=$((f + 1)); done
+      [ "$k" -ne 10 ] || printf 'not ok 21 - flaky # TODO fix later\n'
+      k=$((k + 1))
+    done
+    noise 1 100
+    exit 1 ;;
   *) exit 9 ;;
 esac
 EOF
@@ -387,6 +399,22 @@ has "\.agent/\.state/output/$long_id\.log" "$tmp/stderr" && ok "the header names
 expect_rc 0 "long passing output passes" bash "$out_verify" run quiet --root "$out_root"
 has '^--- failure lines ---$' "$tmp/stderr" && ! grep -Eq '^[0-9]+\| ' <(sed -n '/^--- failure lines ---$/,/^--- last lines ---$/p' "$tmp/stderr") \
   && has '^3000\| ' "$tmp/stderr" && ok "no match leaves the failure section empty and fills with the tail" || bad "no-match output is wrong"
+# TAP output: every failing result is named before any failure's context, and
+# an expected failure marked TODO is not chosen.
+expect_rc 1 "many failing TAP results still fail" bash "$out_verify" run manyfail --root "$out_root"
+[ "$(wc -c <"$tmp/stderr" | tr -d '[:space:]')" -le 4000 ] && ok "many failing TAP results stay within OUTPUT_MAX_BYTES" || bad "many-failure output is $(wc -c <"$tmp/stderr") bytes"
+sed -n '/^--- failure lines ---$/,/^--- last lines ---$/p' "$tmp/stderr" >"$tmp/failure-section"
+named=0; k=1
+while [ "$k" -le 20 ]; do
+  has "^[0-9]+\\| not ok $k - case $k\$" "$tmp/failure-section" && named=$((named + 1))
+  k=$((k + 1))
+done
+[ "$named" -eq 20 ] && ok "every failing TAP result prints in the failure section" || bad "only $named of 20 failing TAP results printed"
+has '\| not ok 1 - case 1$' "$tmp/failure-section" && has '\|   at frame 1 of case 1$' "$tmp/failure-section" \
+  && ok "context lines fill the rest of the failure section" || bad "no context printed after the failing results"
+! has 'flaky # TODO' "$tmp/failure-section" && ok "a TODO failure is not chosen as a failure line" || bad "a TODO failure was chosen"
+has 'Failing TAP results, then lines matching the failure pattern, come first' "$tmp/stderr" \
+  && ok "the header names the failing TAP results" || bad "header does not name the failing TAP results"
 expect_rc 1 "short output prints whole" bash "$verify" run fail --root "$root"
 [ "$(cat "$tmp/stderr")" = "$(printf '1..1\nnot ok 1 - failure')" ] && ok "output under the limit is unchanged" || bad "short output was altered: $(cat "$tmp/stderr")"
 # --output-share N divides the limit, so N runs printed into one tool result

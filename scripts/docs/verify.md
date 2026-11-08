@@ -15,6 +15,7 @@ The check's output prints on stderr. Output within `OUTPUT_MAX_BYTES` (default 2
 
 - A header states the output's size and where the full output is kept: `.agent/.state/output/<receipt-id>.log`.
 - Every line matching `OUTPUT_FAILURE_PATTERN` prints first, with the five lines after it, up to half the limit.
+- With `TEST_COUNT_FORMAT=tap`, every failing TAP result line (`not ok`, indented subtests included) is chosen before any other line in that half, so one failure's context cannot crowd out another failure's name. A `not ok` marked `# TODO` is an expected failure and is not chosen.
 - As many of the last lines as fit fill the rest.
 - Every printed line carries its line number in the full output.
 
