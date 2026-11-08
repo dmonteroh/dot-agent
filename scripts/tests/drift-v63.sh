@@ -121,6 +121,29 @@ out=$("$LINKS" "$proj" 2>&1)
 check "a restamped doc has no STALE line" \
   '! printf "%s\n" "$out" | grep -q "^STALE:"'
 
+printf 'export const gone = 1;\n' >"$proj/src/gone.ts"
+printf '%s\n' 'Retries live in `src/gone.ts`, never in `src/never-existed.ts`.' >>"$pay"
+commit "cite gone"
+"$DOCS" check --name payments "$proj" >/dev/null 2>&1
+commit "restamp payments"
+gone_stamp=$(sed -n 2p "$pay" | sed 's/^<!-- Checked: \(.*\) -->$/\1/')
+g mv src/gone.ts src/moved.ts
+commit "rename gone"
+out=$("$LINKS" "$proj" 2>&1)
+check "a cited file renamed after the stamp is a STALE line" \
+  'printf "%s\n" "$out" | grep -qxF "STALE: docs/payments.md cites src/gone.ts, removed or renamed in 1 commit since checked at $gone_stamp"'
+check "a cited path git never held is not reported" \
+  '! printf "%s\n" "$out" | grep -qF "never-existed"'
+g rm -q src/other.ts
+printf '%s\n' 'Other is gone.' >>"$pay"
+commit "remove other with its doc"
+out=$("$LINKS" "$proj" 2>&1)
+check "a removal committed with the doc is not counted against it" \
+  '! printf "%s\n" "$out" | grep -qF "cites src/other.ts"'
+"$DOCS" check --name payments "$proj" >/dev/null 2>&1
+commit "restamp after rename"
+head_now=$(g rev-parse --short HEAD)
+
 leg="$proj/.agent/docs/legacy.md"
 printf '%s\n%s' '<!-- Read when: legacy billing -->' '# Legacy without a final newline' >"$leg"
 cp "$leg" "$before"

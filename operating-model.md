@@ -197,7 +197,7 @@ This is the tier that lets the size trigger stay honest. Before it, a doc over t
 | --- | --- |
 | `ORPHAN:` | a file in the node that nothing cites |
 | `BROKEN:` | a node path a node file cites that does not exist |
-| `STALE:` | a project path a stamped doc cites changed in a commit after the doc's `Checked:` stamp |
+| `STALE:` | a project path a stamped doc cites changed, or was removed or renamed, in a commit after the doc's `Checked:` stamp |
 
 It exists because the reference tier removed the last mechanism that could notice an unreachable file, and it is off the load path on purpose. An orphan is a review trigger with a slow clock: sometimes a file that should be cited, sometimes one that should be retired, occasionally neither. Nothing about it needs deciding before this session's first edit. Run it when grooming, before a restructuring pass, or when a node has been through enough hands to have drifted. No finding reaches its exit status. The report is the product.
 

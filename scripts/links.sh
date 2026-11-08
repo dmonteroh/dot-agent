@@ -178,6 +178,35 @@ project_path() { # $1 a cited path, $2 the citing doc's directory: the project-r
   done
 }
 
+# A cited path that no longer exists is checked against the tree at the
+# stamp: if it was a project path then, it was removed or renamed since, the
+# worst drift a doc can carry. Only a path git held at the stamp counts, so
+# an arbitrary backticked word is never reported.
+gone_path() { # $1 a cited path, $2 the citing doc's directory, $3 the stamp: the project-relative path, or nothing
+  gp_c=${1#./}
+  gp_c=${gp_c%/}
+  case "$gp_c" in '' | /* | *[[:space:]]*) return 0 ;; esac
+  gp_docdir=${2#"$root"/}
+  gp_docdir=${gp_docdir#./}
+  for gp_try in "$gp_c" "$gp_docdir/$gp_c"; do
+    gp_n=$(printf '%s\n' "$gp_try" | awk -F/ '{
+      n = 0
+      for (i = 1; i <= NF; i++) {
+        if ($i == "" || $i == ".") continue
+        if ($i == "..") { if (n == 0) { print ""; exit } n--; continue }
+        part[++n] = $i
+      }
+      out = part[1]; for (i = 2; i <= n; i++) out = out "/" part[i]
+      print out
+    }')
+    case "$gp_n" in '' | .agent | .agent/* | .git | .git/*) continue ;; esac
+    [ ! -e "$root/$gp_n" ] || continue
+    gp_type=$(git -C "$root" cat-file -t "$3:$gp_n" 2>/dev/null) || continue
+    if [ "$gp_type" = tree ]; then printf '%s/\n' "$gp_n"; else printf '%s\n' "$gp_n"; fi
+    return 0
+  done
+}
+
 stamped=()
 unstamped=0
 for f in "${nodefiles[@]}"; do
@@ -217,7 +246,12 @@ if [ "${#stamped[@]}" -gt 0 ]; then
     while IFS= read -r cand; do
       [ -n "$cand" ] || continue
       path=$(project_path "$cand" "$dir")
-      [ -n "$path" ] || continue
+      gone=0
+      if [ -z "$path" ]; then
+        path=$(gone_path "$cand" "$dir" "$stamp")
+        [ -n "$path" ] || continue
+        gone=1
+      fi
       case "$seen" in *$'\n'"$path"$'\n'*) continue ;; esac
       seen="$seen$path"$'\n'
       n=$(git -C "$root" --literal-pathspecs log --format=%H "$stamp..HEAD" -- "$path" 2>/dev/null \
@@ -228,7 +262,11 @@ if [ "${#stamped[@]}" -gt 0 ]; then
           ')
       [ "$n" -gt 0 ] || continue
       if [ "$n" -eq 1 ]; then word=commit; else word=commits; fi
-      echo "STALE: $rel cites $path, changed in $n $word since checked at $stamp"
+      if [ "$gone" -eq 1 ]; then
+        echo "STALE: $rel cites $path, removed or renamed in $n $word since checked at $stamp"
+      else
+        echo "STALE: $rel cites $path, changed in $n $word since checked at $stamp"
+      fi
       stale=$((stale + 1))
     done <<EOF
 $(strip_comments "$d" | grep -oE '\]\([^)]+\)' 2>/dev/null | sed 's/^](//; s/)$//; s/[[:space:]].*//; s/#.*//'

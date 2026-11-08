@@ -12,7 +12,7 @@ Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
 |---|---|
 | `ORPHAN:` | a file nothing in the node cites |
 | `BROKEN:` | a path a node file cites that does not exist |
-| `STALE:` | a project path a stamped doc cites changed in a commit after the doc's stamp |
+| `STALE:` | a project path a stamped doc cites changed, or was removed or renamed, in a commit after the doc's stamp |
 
 Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **No finding reaches the exit status** — the report is the product. The one non-zero exit is a usage error: a root holding no `.agent/`, which is not a finding about a node.
 
@@ -48,6 +48,14 @@ For each stamped doc, links.sh collects the project paths it cites: backticked t
 STALE: docs/payments.md cites src/client.ts, changed in 3 commits since checked at abc1234
 ```
 
+A cited path that no longer exists is checked against the tree at the stamp. If git held it there, it was removed or renamed since, and the line says so:
+
+```
+STALE: docs/payments.md cites src/retry.ts, removed or renamed in 1 commit since checked at abc1234
+```
+
+A backticked word that git never held at the stamp is not a path, so it is never reported.
+
 A commit that also changed the doc is not counted. The doc moved with the code, which is what restamping in the same change records. One summary line follows: how many docs are stamped, how many are not, and how many citations are stale.
 
 Three cases print one line instead of findings, and none of them changes the exit status:
@@ -59,8 +67,6 @@ Three cases print one line instead of findings, and none of them changes the exi
 | a stamp is not a commit in this repository | `links.sh: docs/<doc> is stamped at <stamp>, which is not a commit in this repository — …` |
 
 A doc with no stamp is unchecked. It produces no finding and is counted in the summary line only.
-
-The check sees paths that still exist. A cited file that was deleted or renamed after the stamp is not collected, so the check stays quiet about it.
 
 ## Exemptions
 
