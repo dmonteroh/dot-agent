@@ -148,8 +148,10 @@ verify="$requested_verify"
 if [ -n "$checks" ]; then
   case "$checks" in ,*|*,|*,,*) die 'empty check name' ;; esac
   IFS=',' read -r -a check_names <<<"$checks"
+  # Every check's output lands in this one tool result, and verify.sh sizes
+  # its limit for a whole result, so each check gets an equal share of it.
   for check_name in "${check_names[@]}"; do
-    result=$(bash "$scripts/verify.sh" run "$check_name" --root "$root")
+    result=$(bash "$scripts/verify.sh" run "$check_name" --root "$root" --output-share "${#check_names[@]}")
     run_rc=$?
     IFS=$'\t' read -r tag receipt outcome recorded_check command_exit count extra <<<"$result"
     [ "$tag" = receipt ] && [ -n "$receipt" ] && [ -z "${extra:-}" ] || die "verification did not produce a receipt (exit $run_rc)"

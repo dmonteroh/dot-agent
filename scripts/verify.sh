@@ -11,7 +11,7 @@ self_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 usage() {
   cat <<'EOF'
 Usage:
-  verify.sh run CHECK [--root ROOT] [--timeout SECONDS]
+  verify.sh run CHECK [--root ROOT] [--timeout SECONDS] [--output-share N]
   verify.sh check RECEIPT [--root ROOT]
   verify.sh --help
   verify.sh --version
@@ -209,6 +209,7 @@ esac
 
 root=.
 timeout=
+output_share=1
 if [ "$op" = run ]; then
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   check=$1; shift
@@ -223,6 +224,9 @@ while [ "$#" -gt 0 ]; do
     --timeout)
       [ "$op" = run ] || die "--timeout is valid only with run"
       [ "$#" -ge 2 ] || die "--timeout needs a value"; timeout=$2; shift 2 ;;
+    --output-share)
+      [ "$op" = run ] || die "--output-share is valid only with run"
+      [ "$#" -ge 2 ] || die "--output-share needs a value"; output_share=$2; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -234,6 +238,16 @@ load_config "$cfg"
 [ -n "$timeout" ] || timeout=$TIMEOUT_SECONDS
 case "$timeout" in '' | *[!0-9]*) die "timeout must be a positive integer" ;; esac
 [ "$timeout" -gt 0 ] || die "timeout must be a positive integer"
+case "$output_share" in '' | *[!0-9]*) die "output share must be a positive integer" ;; esac
+[ "$output_share" -gt 0 ] || die "output share must be a positive integer"
+# A caller that prints several runs into one tool result (checkpoint.sh
+# --checks) passes their count, so the runs together stay within one limit.
+# The limit never drops below 1 byte. A share smaller than the trimming
+# header prints the header and section markers alone.
+if [ "$output_share" -gt 1 ]; then
+  OUTPUT_MAX_BYTES=$((10#$OUTPUT_MAX_BYTES / 10#$output_share))
+  [ "$OUTPUT_MAX_BYTES" -gt 0 ] || OUTPUT_MAX_BYTES=1
+fi
 if [ -n "$NON_GIT_INPUT_ROOTS" ]; then export DA_NON_GIT_INPUT_ROOTS=$NON_GIT_INPUT_ROOTS; else unset DA_NON_GIT_INPUT_ROOTS; fi
 export DA_VERIFY_CONFIG=.agent/scripts/verify.conf
 export DA_CHECK_DRIVER=$CHECK_DRIVER

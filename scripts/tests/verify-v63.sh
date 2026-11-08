@@ -389,6 +389,24 @@ has '^--- failure lines ---$' "$tmp/stderr" && ! grep -Eq '^[0-9]+\| ' <(sed -n 
   && has '^3000\| ' "$tmp/stderr" && ok "no match leaves the failure section empty and fills with the tail" || bad "no-match output is wrong"
 expect_rc 1 "short output prints whole" bash "$verify" run fail --root "$root"
 [ "$(cat "$tmp/stderr")" = "$(printf '1..1\nnot ok 1 - failure')" ] && ok "output under the limit is unchanged" || bad "short output was altered: $(cat "$tmp/stderr")"
+# --output-share N divides the limit, so N runs printed into one tool result
+# stay within one limit together.
+expect_rc 1 "a shared limit still reports the failing run" bash "$out_verify" run long --root "$out_root" --output-share 2
+[ "$(wc -c <"$tmp/stderr" | tr -d '[:space:]')" -le 2000 ] && has 'over the 2000-byte limit' "$tmp/stderr" \
+  && ok "--output-share 2 halves OUTPUT_MAX_BYTES" || bad "shared output is $(wc -c <"$tmp/stderr") bytes"
+has '^100\| not ok 3 - currency rounding$' "$tmp/stderr" && has '^3000\| ' "$tmp/stderr" \
+  && ok "a shared limit keeps the failing line and the last line" || bad "shared output lost the failing or last line"
+expect_rc 1 "a share smaller than the header still reports the run" bash "$out_verify" run long --root "$out_root" --output-share 4000
+has 'over the 1-byte limit' "$tmp/stderr" && has '^--- last lines ---$' "$tmp/stderr" && ! has '^[0-9]+\| ' "$tmp/stderr" \
+  && ok "a 1-byte share prints the header and section markers alone" || bad "tiny share output is wrong: $(head -c 400 "$tmp/stderr")"
+expect_rc 1 "a share of 1 runs" bash "$verify" run fail --root "$root" --output-share 1
+[ "$(cat "$tmp/stderr")" = "$(printf '1..1\nnot ok 1 - failure')" ] && ok "a share of 1 leaves short output unchanged" || bad "share 1 altered output: $(cat "$tmp/stderr")"
+expect_rc 1 "short output under a shared limit prints whole" bash "$verify" run fail --root "$root" --output-share 3
+[ "$(cat "$tmp/stderr")" = "$(printf '1..1\nnot ok 1 - failure')" ] && ok "short output under a shared limit is unchanged" || bad "share 3 altered short output: $(cat "$tmp/stderr")"
+expect_rc 2 "a zero output share is refused" bash "$out_verify" run long --root "$out_root" --output-share 0
+expect_rc 2 "a non-numeric output share is refused" bash "$out_verify" run long --root "$out_root" --output-share two
+expect_rc 2 "a missing output share value is refused" bash "$out_verify" run long --root "$out_root" --output-share
+expect_rc 2 "an output share with check is refused" bash "$out_verify" check "$long_id" --root "$out_root" --output-share 2
 printf 'OUTPUT_FAILURE_PATTERN=(\n' >>"$out_root/.agent/scripts/verify.conf"
 expect_rc 1 "a broken failure pattern still reports the run" bash "$out_verify" run long --root "$out_root"
 has 'selection failed' "$tmp/stderr" && has '^progress line 3000 of a long run$' "$tmp/stderr" \

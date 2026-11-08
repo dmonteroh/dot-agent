@@ -110,4 +110,28 @@ for boundary in before after; do
   checkpoint --verify n/a || { cat "$scratch/err" >&2; fail "recovery failed at $boundary"; }
   [ "$(entries)" -eq "$((before + 1))" ] || fail "recovery duplicated or lost the entry at $boundary"
 done
+# Every check's output lands in one tool result, so the checks share one
+# OUTPUT_MAX_BYTES limit.
+printf 'OUTPUT_MAX_BYTES=4000\n' >>"$project/.agent/scripts/verify.conf"
+cat >"$project/.agent/scripts/checks.sh" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+case "$1" in
+  long1 | long2)
+    i=1
+    while [ "$i" -le 3000 ]; do printf '%s progress line %s of a long run\n' "$1" "$i"; i=$((i + 1)); done ;;
+  *) exit 2 ;;
+esac
+EOF
+printf 'const shared = 2\n' >"$project/src/client.ts"
+checkpoint --checks long1,long2 || { cat "$scratch/err" >&2; fail 'two long checks could not checkpoint'; }
+[ "$(wc -c <"$scratch/err" | tr -d ' ')" -le 4000 ] || fail "two long checks printed $(wc -c <"$scratch/err" | tr -d ' ') bytes, over the 4000-byte limit"
+[ "$(grep -c 'over the 2000-byte limit' "$scratch/err")" -eq 2 ] || fail 'two checks did not each get half the limit'
+grep -q '^3000| long1 progress line 3000 ' "$scratch/err" && grep -q '^3000| long2 progress line 3000 ' "$scratch/err" || fail 'a shared limit dropped the last line of a check'
+printf 'const shared = 1\n' >"$project/src/client.ts"
+checkpoint --checks long1 || { cat "$scratch/err" >&2; fail 'one long check could not checkpoint'; }
+single=$(wc -c <"$scratch/err" | tr -d ' ')
+[ "$single" -le 4000 ] && [ "$single" -gt 2000 ] || fail "one long check printed $single bytes, not the whole 4000-byte limit"
+grep -q 'over the 4000-byte limit' "$scratch/err" || fail 'one check did not get the whole limit'
+
 printf 'checkpoint-v63: verification, stale evidence, deduplication, policies, locking, and publication recovery passed\n'

@@ -3,7 +3,7 @@
 `verify.sh` runs one named project check and records the result together with a fingerprint of the inputs it observed. It establishes execution evidence. It does not prove that a check provides adequate semantic coverage.
 
 ```
-verify.sh run CHECK [--root ROOT] [--timeout SECONDS]
+verify.sh run CHECK [--root ROOT] [--timeout SECONDS] [--output-share N]
 verify.sh check RECEIPT [--root ROOT]
 ```
 
@@ -18,7 +18,9 @@ The check's output prints on stderr. Output within `OUTPUT_MAX_BYTES` (default 2
 - As many of the last lines as fit fill the rest.
 - Every printed line carries its line number in the full output.
 
-If the selection itself fails, for example on an invalid pattern, the plain last bytes print instead. A run that exits before its receipt is written still prints its output. The limit applies per check, so `checkpoint.sh --checks` with several checks can print up to the limit once for each.
+If the selection itself fails, for example on an invalid pattern, the plain last bytes print instead. A run that exits before its receipt is written still prints its output.
+
+`--output-share N` divides the limit by N for one run, so N runs printed into one tool result stay within one limit together. `checkpoint.sh --checks` passes the number of checks it runs. The limit never drops below 1 byte. A share smaller than the trimming header prints only the header and the section markers, and the full output is still kept.
 
 TAP counts require one unindented `1..N` plan and exactly N sequentially numbered top-level results. Nested plans are ignored. Missing, malformed, or duplicate top-level plans produce an unknown count. Incomplete result sets also produce an unknown count. A zero or unknown count makes a check named by `POSITIVE_TEST_CHECKS` inconclusive. A source change during the check also makes the result inconclusive.
 

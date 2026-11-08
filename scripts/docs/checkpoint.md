@@ -15,6 +15,8 @@ checkpoint.sh --tool NAME --area NAME --summary TEXT \
 
 `--checks` runs named checks through `verify.sh`. `--verification` consumes existing receipts for unchanged inputs. The two options are mutually exclusive.
 
+Each check's output prints on stderr. The checks share one `OUTPUT_MAX_BYTES` limit equally, so their combined output fits one tool result. See [verify.md](verify.md) for how long output is trimmed.
+
 A valid receipt determines the recorded verification status. Known failures and inconclusive checks stop automatic publication. Fix and retry, or explicitly add `--verify fail` to record a final failed outcome. A bare `--verify pass` is refused. `--verify fail` and `--verify n/a` remain explicit reports for failed or manual-only work.
 
 Logging failed work is allowed. A successful checkpoint means the record was written, not that project tests passed. The output names the recorded verification status.
