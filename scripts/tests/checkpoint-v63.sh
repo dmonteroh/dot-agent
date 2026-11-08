@@ -55,6 +55,26 @@ printf 'const amount = 4\n' >"$project/src/client.ts"
 if checkpoint --verification "$receipt"; then fail 'stale receipt was accepted'; fi
 [ "$(entries)" -eq 1 ] || fail 'stale receipt appended a log entry'
 
+# Review and status run before verification, so a finding that blocks costs
+# no check run.
+check_runs() { wc -l <"$project/.agent/.state/check-count" | tr -d ' '; }
+runs_before=$(check_runs)
+before=$(entries)
+printf 'const amount = 5\n// const amount = 4;\n' >"$project/src/client.ts"
+if checkpoint --checks test; then fail 'a blocking review finding let checkpoint complete'; fi
+grep -q 'diff review blocked' "$scratch/err" || fail 'the review block was not the reason checkpoint stopped'
+[ "$(check_runs)" -eq "$runs_before" ] || fail 'verification ran before the diff review that blocked'
+[ "$(entries)" -eq "$before" ] || fail 'a blocked review appended an entry'
+printf 'const amount = 5\n' >"$project/src/client.ts"
+cp "$project/.agent/scripts/status.conf" "$scratch/status.conf"
+printf 'LOG_MAX_ENTRIES=0\n' >"$project/.agent/scripts/status.conf"
+if checkpoint --checks test; then fail 'a blocking status finding let checkpoint complete'; fi
+grep -q 'status findings block completion' "$scratch/err" || fail 'the status block was not the reason checkpoint stopped'
+[ "$(check_runs)" -eq "$runs_before" ] || fail 'verification ran before the status check that blocked'
+cp "$scratch/status.conf" "$project/.agent/scripts/status.conf"
+if checkpoint; then fail 'checkpoint ran with no verification flag'; fi
+grep -q 'supply --checks' "$scratch/err" || fail 'a missing verification flag was not refused first'
+
 printf 'zero\n' >"$project/.agent/scripts/test-mode"
 before=$(entries)
 if checkpoint --checks test; then fail 'zero-test result did not stop automatic completion'; fi

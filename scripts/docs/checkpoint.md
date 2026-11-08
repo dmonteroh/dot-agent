@@ -25,6 +25,8 @@ Checkpoint validates receipts again before publishing the log. A source edit bet
 
 ## Review and health
 
+Review and status run before verification. A finding that blocks stops checkpoint before any check runs, so a fix costs one check run rather than two. A check that changes the inputs they read records an inconclusive result, and receipts are validated again before logging.
+
 For Git work, `review.sh` invokes the comment gate and reports catalog and coverage candidates. Its blocking or execution errors stop checkpoint. Advisory review candidates still need agent judgment.
 
 `status.sh --format tsv` supplies stable finding codes. The default `POLICY=strict` in `checkpoint.conf` blocks every actionable finding. `--policy completion` defers advisory maintenance while structural defects remain blocking. Informational tool notes do not block either policy.

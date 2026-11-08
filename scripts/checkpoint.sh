@@ -144,6 +144,40 @@ if [ -z "$base" ] && [ "$is_git" -eq 1 ]; then
   base=HEAD
 fi
 
+if [ -z "$checks" ] && [ -z "$receipts" ]; then
+  [ "$requested_verify" != pass ] || die '--verify pass requires --checks or --verification; run verify.sh for execution evidence'
+  [ -n "$requested_verify" ] || die 'supply --checks, --verification, or an explicit --verify fail|n/a'
+fi
+
+# Review and status run before verification. A finding they block on costs
+# seconds to find, while a check can take minutes and would run again after
+# the fix. A check that changes the inputs they read records an inconclusive
+# result, and receipts are checked again before logging.
+if [ "$is_git" -eq 1 ] && [ "$node_only" -eq 0 ]; then
+  review_args=(--root "$root")
+  [ -z "$base" ] || review_args+=(--base "$base")
+  bash "$scripts/review.sh" "${review_args[@]}" || die 'diff review blocked or could not run; no log entry written'
+else
+  echo 'REVIEW: DIFF_UNAVAILABLE node-only or non-Git work; no product diff inspected'
+fi
+status_out=$(mktemp "${TMPDIR:-/tmp}/checkpoint-status.XXXXXX") || exit 1
+status_err=$(mktemp "${TMPDIR:-/tmp}/checkpoint-status.XXXXXX") || exit 1
+bash "$scripts/status.sh" --format tsv "$root" >"$status_out" 2>"$status_err"
+status_rc=$?
+if [ "$status_rc" -ne 0 ] || [ -s "$status_err" ]; then
+  head -c 1000 "$status_err" >&2
+  die 'status check failed to run cleanly; no log entry written'
+fi
+blocked=0
+while IFS=$'\t' read -r severity code path message; do
+  [ -n "$severity" ] || continue
+  case "$severity" in block|advisory) ;; *) die 'status returned an invalid severity' ;; esac
+  [ -n "$code" ] && [ -n "$path" ] && [ -n "$message" ] || die 'status returned an incomplete finding'
+  printf '%s: %s %s %s\n' "$severity" "$code" "$path" "$message"
+  if [ "$severity" = block ] || [ "$policy" = strict ]; then blocked=1; fi
+done <"$status_out"
+[ "$blocked" -eq 0 ] || die 'status findings block completion; no log entry written'
+
 verify="$requested_verify"
 if [ -n "$checks" ]; then
   case "$checks" in ,*|*,|*,,*) die 'empty check name' ;; esac
@@ -174,36 +208,7 @@ if [ -n "$receipts" ]; then
     die "checks failed or were inconclusive; fix and retry, or record the final failure with --verification $receipts --verify fail"
   fi
   [ "$requested_verify" != fail ] || verify=fail
-elif [ "$verify" = pass ]; then
-  die '--verify pass requires --checks or --verification; run verify.sh for execution evidence'
-elif [ -z "$verify" ]; then
-  die 'supply --checks, --verification, or an explicit --verify fail|n/a'
 fi
-
-if [ "$is_git" -eq 1 ] && [ "$node_only" -eq 0 ]; then
-  review_args=(--root "$root")
-  [ -z "$base" ] || review_args+=(--base "$base")
-  bash "$scripts/review.sh" "${review_args[@]}" || die 'diff review blocked or could not run; no log entry written'
-else
-  echo 'REVIEW: DIFF_UNAVAILABLE node-only or non-Git work; no product diff inspected'
-fi
-status_out=$(mktemp "${TMPDIR:-/tmp}/checkpoint-status.XXXXXX") || exit 1
-status_err=$(mktemp "${TMPDIR:-/tmp}/checkpoint-status.XXXXXX") || exit 1
-bash "$scripts/status.sh" --format tsv "$root" >"$status_out" 2>"$status_err"
-status_rc=$?
-if [ "$status_rc" -ne 0 ] || [ -s "$status_err" ]; then
-  head -c 1000 "$status_err" >&2
-  die 'status check failed to run cleanly; no log entry written'
-fi
-blocked=0
-while IFS=$'\t' read -r severity code path message; do
-  [ -n "$severity" ] || continue
-  case "$severity" in block|advisory) ;; *) die 'status returned an invalid severity' ;; esac
-  [ -n "$code" ] && [ -n "$path" ] && [ -n "$message" ] || die 'status returned an incomplete finding'
-  printf '%s: %s %s %s\n' "$severity" "$code" "$path" "$message"
-  if [ "$severity" = block ] || [ "$policy" = strict ]; then blocked=1; fi
-done <"$status_out"
-[ "$blocked" -eq 0 ] || die 'status findings block completion; no log entry written'
 
 indexes=$(sed -n 's/^  indexes:[[:space:]]*\([a-z]*\).*/\1/p' "$root/.agent/purpose.md" | head -n 1)
 if [ "$indexes" = generated ]; then

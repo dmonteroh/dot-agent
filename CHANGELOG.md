@@ -10,7 +10,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 - Presets retain scope, evidence, and continuity admission while moving detailed comment judgment into the on-demand rubric.
 - `verify.sh` runs project-owned checks and records results tied to current inputs. Configure `checks.sh` and `verify.conf` before using `checkpoint.sh --checks test`. Output over `OUTPUT_MAX_BYTES` prints its failure lines first, then the tail, numbered against the full output kept under `.agent/.state/output/`, so a long failing run is never cut at the failure. `checkpoint.sh --checks` splits that limit across the checks it runs.
-- Checkpoint accepts current verification receipts, reviews the diff, and records unchanged completed content once. A bare `--verify pass` is refused.
+- Checkpoint accepts current verification receipts, reviews the diff, and records unchanged completed content once. A bare `--verify pass` is refused. Review and status run before verification, so a blocking finding stops checkpoint before any check runs.
 - `review.sh` adds advisory catalog and test-coverage findings, including helpers added inside existing modules.
 - The opt-in `capture.sh` prototype preserves a session-start fingerprint for interruption checks. Runtime adapters supply session IDs. It creates no memory or log entries.
 - Status offers stable TSV finding codes. Strict policy remains the default. Completion policy defers size-only maintenance.
