@@ -27,6 +27,14 @@ Or the session is closing and a lesson may be worth keeping. A worker under an o
 - The lesson already has a `learned.md` entry and its failure mode is still unenforced — merge or broaden that entry in place (see below). Remove it when code or tooling now prevents the failure.
 - No tool-native memory silo exists — don't go looking for one. The harvesting section states its own gate.
 
+## Draft from the evidence before reading the records
+
+Write your own account first, from this session alone. Name the trigger, the evidence it left (the correction, the failed check, or the review finding), and the lesson in one sentence, or write that there is none. Do this before you open `rules/learned.md`, the learned records, memory facts, or earlier retro output. Keep the draft in your working notes, never in the node.
+
+Existing records anchor a retro that reads them first. It tends to see the session in their terms: it reinforces a rule that only looks related, or files a near-duplicate, and it misses the lesson the records do not already hold.
+
+Then run the source check below and the duplicate check under "Merge, don't append", and reconcile your draft with what they turn up. If a record already states the draft, the draft revises or reinforces that record and adds nothing new. If the draft differs from a record it resembles, say how before you change either.
+
 ## Find the failing source before distilling
 
 The preset's Self-learning section is part of `rules/contract.md`. A trigger starts this check. It does not guarantee a new rule.

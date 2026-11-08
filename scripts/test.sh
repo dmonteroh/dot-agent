@@ -4623,6 +4623,12 @@ retro_skill="$reporoot/tools/skills/retro/SKILL.md"
 retro_merge=$(awk '/^## Merge, don.t append/ { inq = 1 } inq && /^## / && !/^## Merge, don.t append/ { inq = 0 } inq' "$retro_skill")
 printf '%s\n' "$retro_merge" | grep -qF "learn.sh" && pass "retro skill: the merge walkthrough calls learn.sh" || fail "retro skill: the merge walkthrough calls learn.sh"
 
+rd_draft=$(grep -n '^## Draft from the evidence before reading the records$' "$retro_skill" | cut -d: -f1)
+rd_source=$(grep -n '^## Find the failing source before distilling$' "$retro_skill" | cut -d: -f1)
+[ -n "$rd_draft" ] && [ -n "$rd_source" ] && [ "$rd_draft" -lt "$rd_source" ] \
+  && awk '/^## Draft from the evidence/ { inq = 1; next } inq && /^## / { exit } inq' "$retro_skill" | grep -qF 'before you open `rules/learned.md`' \
+  && pass "retro skill: the evidence draft comes before reading learned records" || fail "retro skill: the evidence draft comes before reading learned records"
+
 retro_route=$(awk '/^## Route by scope/ { inq = 1 } inq && /^## / && !/^## Route by scope/ { inq = 0 } inq' "$retro_skill")
 rt_ok=1
 for rt_kind in "no durable record" ".agent/scripts/memory.sh new" ".agent/scripts/memory.sh supersede" ".agent/scripts/learn.sh"; do
@@ -8798,7 +8804,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1387
+EXPECTED_CHECKS=1388
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
