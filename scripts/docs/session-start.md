@@ -56,9 +56,8 @@ Both harnesses match on how the session started. The hook matches `startup|clear
 
 - **Working directory.** The Codex command is relative to the session's working directory, like the entry point's own call. A session started in a subdirectory gets no hook, and the entry point loads the node.
 - **Generated indexes.** The hook covers the `status.sh --load` step only. The `index.sh ensure` step stays with the agent.
-- **What was checked live, and what was not.** The hook was checked live on Claude Code 2.1.310 and Codex 0.159.0 on 2026-10-27, both headless:
-  - The payload arrived and was used without a tool call.
-  - On Claude Code, the over-limit pointer made `status.sh --load` the first call.
-
-  Firing after compaction rests on both vendors' documentation, not a live run.
-- **No bench result yet.** Whether the hook changes pass rates or cost has not been measured. Eval fixtures build without the hook unless a run asks for it, so the corpus and node-mode comparisons are unchanged. The `hook-mode` arm variable measures it (`evals/HOWTO.md`, "Measure the session-start hook").
+- **What was checked live.** The hook was checked live on Claude Code 2.1.310 and Codex 0.159.0, both headless:
+  - The payload arrived and was used without a tool call (2026-10-27).
+  - On Claude Code, the over-limit pointer made `status.sh --load` the first call (2026-10-27).
+  - After a compaction, the hook delivered the payload again on both, and the session still answered from it (2026-11-08). On Claude Code the compaction was a manual `/compact` on a resumed session. On Codex it was an automatic compaction forced with a low `model_auto_compact_token_limit`. A resumed turn after the compaction got no extra delivery.
+- **Bench result.** On 2026-10-27 the `hook-mode` comparison (`evals/HOWTO.md`, "Measure the session-start hook") ran 19 evals on both CLIs and both prompt sets at three repeats. With the hook, every session started with the load. Claude's share rose from 81% and 82% without it. Pass rates did not move, with no regression and no discriminating assertion. Claude sessions cost 4.1% to 4.9% less at list price. Codex ran the load again after a delivered payload in 2 of 114 sessions. A rerun of those two evals (2026-11-08, six sessions) showed none, so the entry point's skip sentence is unchanged. Eval fixtures still build without the hook unless a run asks for it, so the corpus and node-mode comparisons are unchanged.
