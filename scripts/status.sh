@@ -14,30 +14,39 @@ ENTRYPOINT_MAX_WORDS=800
 TAIL_LINES=25
 PROBE_TOOLS="rg fd jq gh python3 curl tree"
 PAYLOAD_MAX_BYTES=30000
+HOOK_MAX_BYTES=10000
+MEMORY_INDEX_BYTES=5000
 
 root="."
 load=0
+tail_arg=""
 format=text
 while [ $# -gt 0 ]; do
   case "$1" in
   -h | --help)
     cat <<'EOF'
-Usage: status.sh [--load] [--format tsv] [root]
+Usage: status.sh [--load] [--tail <n>] [--format tsv] [root]
 
-Prints the recent session-log entries, then one line per finding: GROOM: (a
-file crossed a grooming threshold), REPAIR: (a canonical file or bootstrap
-step is missing), INDEX: (a docs/ file and the routing table disagree), plus
-advisory TOOLS: and LOAD: lines. No finding prints on pass.
+Prints one line per finding: GROOM: (a file crossed a grooming
+threshold), REPAIR: (a canonical file or bootstrap step is missing),
+INDEX: (a docs/ file and the routing table disagree), plus advisory
+TOOLS:, LOAD:, PAYLOAD:, and HOOK: lines, then the recent session-log
+entries under a "==== .agent/session-log.md, newest <n> entries ===="
+marker. No finding prints on pass.
 
---load then prints the always-loaded set, each under a "==== <path> ===="
-marker, so the bootstrap is one call. In manual mode (indexes: manual, the
-default) that set is rules/learned.md, rules/contract.md, purpose.md,
-memory.md. In generated mode (indexes: generated) it is purpose.md and
-memory.md only, preceded by one line pointing at the index pages that carry
-the rule bodies instead. A PAYLOAD: line reports the exact bytes this set
-would write against PAYLOAD_MAX_BYTES; over budget, --load prints one line
-(REPAIR:, naming the mode's paths) instead, with no marker and no file
-content written.
+--load prints the always-loaded set between the findings and the log tail,
+each file under a "==== <path> ====" marker, so the bootstrap is one call.
+In manual mode (indexes: manual, the default) that set is rules/learned.md,
+rules/contract.md, purpose.md, memory.md. In generated mode (indexes:
+generated) it is purpose.md and memory.md only, preceded by the index pages
+to open (index.sh check FRESH) or the canonical paths to read when the
+cache is stale. PAYLOAD: reports the exact bytes --load writes, every line
+included, against PAYLOAD_MAX_BYTES; over budget, --load prints one line
+(REPAIR:, naming the mode's paths) in place of the files and pages. HOOK:
+prints when the session-start hook could not deliver this output whole.
+
+--tail <n> prints the newest n session-log entries in place of TAIL_LINES;
+0 prints none.
 
 root defaults to . — checks <root>/.agent/ and exits 0 whatever it finds. A
 root holding no .agent/ is a usage error and exits 1.
@@ -48,6 +57,14 @@ combined with --load.
 EOF
     exit 0 ;;
   --load) load=1 ;;
+  --tail)
+    case "${2:-}" in
+    '' | *[!0-9]*)
+      echo "status.sh: --tail requires a whole number" >&2
+      exit 1 ;;
+    esac
+    tail_arg=$2
+    shift ;;
   --format)
     if [ $# -lt 2 ] || [ "$2" != tsv ]; then
       echo "status.sh: --format requires tsv" >&2
@@ -75,13 +92,16 @@ escape_tsv() {
   REPLY=${REPLY//$'\n'/\\n}
 }
 
+# Text output is collected in notes and written at the end, so PAYLOAD: can
+# count every byte --load writes before any of it is written.
+notes=""
 finding() { # severity code path message default-text
   if [ "$format" = tsv ]; then
     escape_tsv "$3"; finding_path=$REPLY
     escape_tsv "$4"; finding_message=$REPLY
     printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$finding_path" "$finding_message"
   else
-    printf '%s\n' "$5"
+    notes+="$5"$'\n'
   fi
 }
 
@@ -118,8 +138,14 @@ if [[ -f "$conf" ]]; then
   conf_num ENTRYPOINT_MAX_WORDS
   conf_num TAIL_LINES
   conf_num PAYLOAD_MAX_BYTES
+  conf_num HOOK_MAX_BYTES
+  conf_num MEMORY_INDEX_BYTES
   v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
 fi
+# MEMORY_INDEX_BYTES is half of HOOK_MAX_BYTES unless the conf pins it, so a
+# node that lowers its hook limit moves the memory trigger with it.
+[[ -n "$(conf_get MEMORY_INDEX_BYTES)" ]] || MEMORY_INDEX_BYTES=$((HOOK_MAX_BYTES / 2))
+[[ -n "$tail_arg" ]] && TAIL_LINES=$tail_arg
 log="$agent/session-log.md"
 memory="$agent/memory.md"
 memdir="$agent/memory"
@@ -156,13 +182,6 @@ learned_dir_active() {
   [[ -d "$learned_dir" ]] && [[ ! -L "$learned_dir" ]] || return 1
   [[ -n "$(find "$learned_dir" -type f -name '*.md' -print -quit 2>/dev/null)" ]]
 }
-
-if [[ "$format" == text && -s "$log" ]]; then
-  recent=$(grep '^- \[' "$log" | tail -n "$TAIL_LINES")
-  if [[ -n "$recent" ]]; then
-    printf '%s\n\n' "$recent"
-  fi
-fi
 
 if [[ "${#conf_repair_messages[@]}" -gt 0 ]]; then
   for conf_i in "${!conf_repair_messages[@]}"; do
@@ -340,6 +359,10 @@ if [[ -s "$memory" ]]; then
   if [[ "$mem_entries" -gt "$MEMORY_MAX_ENTRIES" ]]; then
     finding advisory MEMORY_INDEX_OVERSIZE memory.md "> $MEMORY_MAX_ENTRIES index entries — review for stale or superseded lines; move retired fact files to archive/ and drop their index lines, raise the threshold if all are live" "GROOM: memory.md > $MEMORY_MAX_ENTRIES index entries — review for stale or superseded lines; move retired fact files to archive/ and drop their index lines, raise the threshold if all are live"
   fi
+  mem_bytes=$(wc -c <"$memory" | tr -d '[:space:]')
+  if [[ "$mem_bytes" -gt "$MEMORY_INDEX_BYTES" ]]; then
+    finding advisory MEMORY_INDEX_BYTES_OVERSIZE memory.md "is $mem_bytes bytes, over MEMORY_INDEX_BYTES ($MEMORY_INDEX_BYTES, half the session-start hook's HOOK_MAX_BYTES) — every session loads it whole: shorten hooks to one clause, retire superseded lines to archive/, or raise the threshold in status.conf if all are live and short" "GROOM: memory.md is $mem_bytes bytes, over MEMORY_INDEX_BYTES ($MEMORY_INDEX_BYTES, half the session-start hook's HOOK_MAX_BYTES) — every session loads it whole: shorten hooks to one clause, retire superseded lines to archive/, or raise the threshold in status.conf if all are live and short"
+  fi
 fi
 if [[ -e "$memdir/legacy.md" ]]; then
   finding block MEMORY_LEGACY_UNSPLIT memory/legacy.md "exists — split legacy.md into fact files" "GROOM: memory/legacy.md exists — split legacy.md into fact files"
@@ -505,15 +528,17 @@ if [[ -n "$missing" ]]; then
   case " $missing" in *" fd"*) fallbacks="${fallbacks:+$fallbacks / }find" ;; esac
   line="TOOLS: not installed: ${missing#, }"
   [[ -n "$fallbacks" ]] && line="$line — use $fallbacks instead"
-  if [[ "$format" == text ]]; then
-    printf '%s\n' "$line"
-  fi
+  notes+="$line"$'\n'
 fi
 if ! sed --version >/dev/null 2>&1; then
-  if [[ "$format" == text ]]; then
-    echo "TOOLS: sed/grep are BSD flavor — sed -i requires ''"
-  fi
+  notes+="TOOLS: sed/grep are BSD flavor — sed -i requires ''"$'\n'
 fi
+
+# Everything below is text output only: findings-only TSV is complete.
+[[ "$format" == tsv ]] && exit 0
+
+bytes_of() { printf '%s' "$1" | wc -c | tr -d '[:space:]'; }
+file_bytes() { wc -c <"$1" | tr -d '[:space:]'; }
 
 load_total=0
 load_detail=""
@@ -529,61 +554,154 @@ load_add learned "$learned"
 load_add purpose "$purpose"
 load_add memory "$memory"
 load_add routing "$arch"
-if [[ "$format" == text && "$load_total" -gt 0 ]]; then
-  tailwords=0
-  [[ -n "${recent:-}" ]] && tailwords=$(printf '%s' "$recent" | wc -w | tr -d '[:space:]')
-  echo "LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$tailwords"
-fi
 
-payload_total=0
-payload_detail=""
-payload_add() { # $1: label  $2: file path
-  [[ -s "$2" ]] || return 0
-  local marker fbytes
-  marker=$(printf '\n==== %s ====\n' "${2#"$root"/}" | wc -c | tr -d '[:space:]')
-  fbytes=$((marker + $(wc -c <"$2" | tr -d '[:space:]')))
-  payload_total=$((payload_total + fbytes))
-  payload_detail="$payload_detail, $1 $fbytes"
-}
 if [[ "$load_mode" == generated ]]; then
-  payload_add purpose "$purpose"
-  payload_add memory "$memory"
+  load_files=("$purpose" "$memory")
+  load_labels=(purpose memory)
 else
-  payload_add learned "$learned"
-  payload_add contract "$contract"
-  payload_add purpose "$purpose"
-  payload_add memory "$memory"
+  load_files=("$learned" "$contract" "$purpose" "$memory")
+  load_labels=(learned contract purpose memory)
 fi
-if [[ "$format" == text && "$payload_total" -gt 0 ]]; then
-  echo "PAYLOAD: --load would write $payload_total bytes of a $PAYLOAD_MAX_BYTES byte budget (${payload_detail#, })"
-fi
+files_bytes=0
+files_detail=""
+for load_i in "${!load_files[@]}"; do
+  f=${load_files[$load_i]}
+  [[ -s "$f" ]] || continue
+  fbytes=$(( $(bytes_of $'\n'"==== ${f#"$root"/} ===="$'\n') + $(file_bytes "$f") ))
+  files_bytes=$((files_bytes + fbytes))
+  files_detail="$files_detail, ${load_labels[$load_i]} $fbytes"
+done
 
-if [[ "$load" -eq 1 ]]; then
-  if [[ "$load_mode" == generated ]]; then
-    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
-      finding block LOAD_PAYLOAD_OVERSIZE purpose.md "--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}" "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
-    else
-      echo "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md."
-      for f in "$purpose" "$memory"; do
-        [[ -s "$f" ]] || continue
-        printf '\n==== %s ====\n' "${f#"$root"/}"
-        cat "$f"
-      done
-    fi
+# What --load prints ahead of the files. In generated mode it is the index
+# pages to open when index.sh check reads the cache as FRESH, and the
+# canonical paths otherwise. check writes nothing, so neither does --load.
+notice=""
+notice_label=""
+if [[ "$load_mode" == generated ]]; then
+  pages=""
+  if [[ "$(bash "$indexer" check --root "$root" 2>/dev/null)" == FRESH ]]; then
+    pages=$(sed -n '/^READ: /p' "$agent/indexes/current.md" 2>/dev/null)
+  fi
+  if [[ -n "$pages" ]]; then
+    notice="Index pages: open every page listed here before the work. They carry the rule bodies and the routes catalog, which this output does not print. Paths are relative to the folder that holds .agent/."$'\n'"$pages"$'\n'
   else
-    if [[ "$indexes" == generated ]]; then
-      echo "Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."
+    notice="Index cache is stale or missing, so no page is listed: read .agent/rules/ and .agent/docs/architecture.md directly this session. index.sh ensure rebuilds the cache and writes, so it is the orchestrator's to run, never a subagent's."$'\n'
+  fi
+  notice_label=", index $(bytes_of "$notice")"
+elif [[ "$indexes" == generated ]]; then
+  notice="Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."$'\n'
+fi
+notice_bytes=$(bytes_of "$notice")
+
+tail_for() { # $1: entry count — sets tail_text and tail_words
+  local entries="" count
+  tail_text=""
+  tail_words=0
+  if [[ -s "$log" && "$1" -gt 0 ]]; then
+    entries=$(grep '^- \[' "$log" | tail -n "$1")
+  fi
+  [[ -n "$entries" ]] || return 0
+  count=$(printf '%s\n' "$entries" | wc -l | tr -d '[:space:]')
+  tail_words=$(printf '%s' "$entries" | wc -w | tr -d '[:space:]')
+  tail_text=$'\n'"==== ${log#"$root"/}, newest $count entries ===="$'\n'"$entries"$'\n'
+}
+
+load_line_for() { # $1: tail words — sets REPLY
+  REPLY=""
+  [[ "$load_total" -gt 0 ]] || return 0
+  REPLY="LOAD: always-loaded set ~$load_total words (${load_detail#, }) + log tail ~$1"$'\n'
+}
+
+payload_line_for() { # $1: total bytes  $2: tail bytes — sets REPLY
+  REPLY=""
+  [[ "$files_bytes" -gt 0 ]] || return 0
+  REPLY="PAYLOAD: --load would write $1 bytes of a $PAYLOAD_MAX_BYTES byte budget (notes $(($1 - notice_bytes - files_bytes - $2))$notice_label$files_detail, tail $2)"$'\n'
+}
+
+# settle FIXED TAIL_BYTES [HOOK_TEXT_FN] — the PAYLOAD: line counts itself
+# and the HOOK: line, whose digits change their own length, so the total is
+# recomputed until it stops moving. Each pass can only grow it.
+settle() {
+  local fixed=$1 tb=$2 fn=${3:-} total pass next
+  total=$fixed
+  for pass in 1 2 3 4 5 6 7 8; do
+    payload_line_for "$total" "$tb"; settled_payload=$REPLY
+    settled_hook=""
+    if [[ -n "$fn" ]]; then "$fn" "$total"; settled_hook=$REPLY; fi
+    next=$((fixed + $(bytes_of "$settled_payload$settled_hook")))
+    [[ "$next" -eq "$total" ]] && break
+    total=$next
+  done
+  settled_total=$total
+}
+
+# The session-start hook prints its own header line ahead of this output and
+# cuts to a pointer line past HOOK_MAX_BYTES, retrying once with --tail 0.
+hooks_line=$(grep -m1 '^  hooks:' "$purpose" 2>/dev/null)
+hook_on=0
+if [[ -f "$agent/scripts/session-start.sh" && "$hooks_line" != *"hooks: none"* && "$files_bytes" -gt 0 ]]; then
+  hook_on=1
+fi
+hook_header_bytes() { # $1: full | tail0
+  local h
+  h=$(bash "$agent/scripts/session-start.sh" --header "$1" 2>/dev/null) || h=""
+  [[ -n "$h" ]] || { echo 0; return; }
+  echo $(( $(bytes_of "$h") + 1 ))
+}
+
+tail_for "$TAIL_LINES"
+main_tail=$tail_text
+main_tail_bytes=$(bytes_of "$main_tail")
+load_line_for "$tail_words"
+main_load_line=$REPLY
+main_fixed=$(( $(bytes_of "$notes$main_load_line") + notice_bytes + files_bytes + main_tail_bytes ))
+settle "$main_fixed" "$main_tail_bytes"
+
+hook_line=""
+if [[ "$hook_on" -eq 1 ]]; then
+  header_full=$(hook_header_bytes full)
+  if [[ "$header_full" -gt 0 && $((settled_total + header_full)) -gt "$HOOK_MAX_BYTES" ]]; then
+    hook_fallback="prints a pointer line in place of this output"
+    if [[ "$TAIL_LINES" -gt 0 && "$main_tail_bytes" -gt 0 ]]; then
+      header_tail0=$(hook_header_bytes tail0)
+      tail_for 0
+      load_line_for 0
+      t0_fixed=$(( $(bytes_of "$notes$REPLY") + notice_bytes + files_bytes ))
+      settle "$t0_fixed" 0
+      if [[ "$header_tail0" -gt 0 && $((settled_total + header_tail0)) -le "$HOOK_MAX_BYTES" ]]; then
+        hook_fallback="delivers it without the session-log tail (--tail 0, $settled_total bytes)"
+      fi
     fi
-    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
-      finding block LOAD_PAYLOAD_OVERSIZE rules/learned.md "--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}" "REPAIR: --load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
-    else
-      for f in "$learned" "$contract" "$purpose" "$memory"; do
-        [[ -s "$f" ]] || continue
-        printf '\n==== %s ====\n' "${f#"$root"/}"
-        cat "$f"
-      done
-    fi
+    hook_mem_bytes=0
+    [[ -s "$memory" ]] && hook_mem_bytes=$(file_bytes "$memory")
+    hook_text_for() { # $1: total bytes — sets REPLY
+      REPLY="HOOK: the session-start hook adds a $header_full-byte header to these $1 bytes, $(($1 + header_full - HOOK_MAX_BYTES)) over its HOOK_MAX_BYTES limit of $HOOK_MAX_BYTES, so it $hook_fallback. Two levers shrink it: TAIL_LINES in status.conf (the tail is $main_tail_bytes bytes here) and the memory index (memory.md is $hook_mem_bytes bytes, MEMORY_INDEX_BYTES $MEMORY_INDEX_BYTES)."$'\n'
+    }
+    settle "$main_fixed" "$main_tail_bytes" hook_text_for
+    hook_line=$settled_hook
   fi
 fi
+payload_line=$settled_payload
+payload_total=$settled_total
+
+printf '%s' "$notes$main_load_line$payload_line$hook_line"
+if [[ "$load" -eq 1 ]]; then
+  if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+    if [[ "$load_mode" == generated ]]; then
+      repair="--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
+    else
+      repair="--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+    fi
+    printf 'REPAIR: %s\n' "$repair"
+  else
+    printf '%s' "$notice"
+    for f in "${load_files[@]}"; do
+      [[ -s "$f" ]] || continue
+      printf '\n==== %s ====\n' "${f#"$root"/}"
+      cat "$f"
+    done
+  fi
+fi
+printf '%s' "$main_tail"
 
 exit 0

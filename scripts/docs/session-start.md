@@ -8,7 +8,9 @@ session-start.sh [--max-bytes N]
 
 - It finds its node from its own location, `<node>/.agent/scripts/`, and runs `status.sh --load` there. The output is byte-identical to the entry point's own call.
 - The header names the call and the node: `dot-agent session-start hook: the output of `…` for the node at .agent/ follows` (`~/.agent/` for a root node). It never names an absolute path, because the `--load` output itself carries only relative ones. Both entry-point templates tell the agent to skip the load step when this block holds the output.
-- `--max-bytes` is the most the harness will take. Over it, the script prints one line instead, naming the call and telling the agent to make it first. The default, 30000, is the tool-result cap `PAYLOAD_MAX_BYTES` defaults to.
+- `--max-bytes` is the most the harness will take. Over it, the script runs `status.sh --load --tail 0` and prints that output under a header naming the shorter call and saying the session-log tail was left out. Over the limit again, it prints one line instead, naming the full call and telling the agent to make it first. The default, 30000, is the tool-result cap `PAYLOAD_MAX_BYTES` defaults to.
+- The size checked is the size printed: the header line, its newline, and the output with its own trailing newlines kept.
+- `--header full` and `--header tail0` print only the header line each attempt uses and run nothing. `status.sh` calls them to count the header in its `HOOK:` line (`scripts/docs/status.md`).
 - Any problem (no `status.sh`, a failed run, a bad limit) prints nothing and exits 0. The entry point's load step then runs as it always did, so the hook can only save a call, never cost a session.
 
 The script is vendor-neutral and ships in every node. The per-harness wiring lives in [`tools/hooks/install.sh`](../../tools/hooks/install.sh), which `node.sh` runs.
@@ -17,7 +19,7 @@ The script is vendor-neutral and ships in every node. The per-harness wiring liv
 
 A harness cuts hook output that passes its own limit. Claude Code replaces anything over 10,000 characters with a file path and a 2,000-character preview (code.claude.com/docs/en/hooks). A cut payload is the failure `status.sh` already refuses at its own budget, so the Claude Code hook passes `--max-bytes 10000`. Codex sets the limit per hook (`additionalContextLimit`, in tokens). Its hook sets 0, which passes everything, and the script's default applies.
 
-Most nodes pass 10,000 bytes. A filled `contract.md` alone runs near 9,000. On Claude Code those nodes get the pointer line. That still moves the load to the first call: a measured run on a question-shaped prompt, the kind that skipped the load in the 2026-10-26 bench, made `status.sh --load` its first call.
+Most nodes pass 10,000 bytes. A filled `contract.md` alone runs near 9,000. On Claude Code those nodes get the shorter output when dropping the session-log tail is enough, and the pointer line otherwise. The pointer still moves the load to the first call: a measured run on a question-shaped prompt, the kind that skipped the load in the 2026-10-26 bench, made `status.sh --load` its first call. Nothing in the session said so before v6.3's `HOOK:` line, which `status.sh` prints whenever the hook cannot deliver the whole output.
 
 ## Which files the hook goes in
 
@@ -55,7 +57,7 @@ Both harnesses match on how the session started. The hook matches `startup|clear
 ## Limits
 
 - **Working directory.** The Codex command is relative to the session's working directory, like the entry point's own call. A session started in a subdirectory gets no hook, and the entry point loads the node.
-- **Generated indexes.** The hook covers the `status.sh --load` step only. The `index.sh ensure` step stays with the agent.
+- **Generated indexes.** `status.sh --load` lists the index pages itself when the cache is fresh, so the hook's output covers the whole bootstrap. The hook never runs `index.sh ensure`.
 - **What was checked live.** The hook was checked live on Claude Code 2.1.310 and Codex 0.159.0, both headless:
   - The payload arrived and was used without a tool call (2026-10-27).
   - On Claude Code, the over-limit pointer made `status.sh --load` the first call (2026-10-27).
