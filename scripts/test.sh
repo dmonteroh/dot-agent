@@ -4733,7 +4733,7 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
   scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
-  scripts/learn.sh scripts/session-start.sh \
+  scripts/learn.sh scripts/session-start.sh scripts/docs/worker-contract.md \
   scripts/comments.conf scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
@@ -8817,7 +8817,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1391
+EXPECTED_CHECKS=1392
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

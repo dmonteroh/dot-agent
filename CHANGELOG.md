@@ -18,6 +18,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 - `docs.sh sync` reconciles routing metadata. `docs.sh catalog` validates and updates reusable-block entries.
 - Updates refresh managed scripts atomically, including same-version refreshes. Existing check drivers, configuration, rules, docs, and memory are preserved.
 - Workers write experience records (session-log entries, memory facts, learned rules) through the node's writers and never run checkpoint. `absorb.sh` merges a worker checkout's node back: `mark` at dispatch, `records` when each attempt ends, `docs` at integration. `memory.sh` takes a writer lock like the other writers.
+- `scripts/docs/worker-contract.md` states what an orchestrator may rely on when a worker loads the node: the call, its output shape, the commands a worker may run, and what stays stable. `node.sh describe` prints a node's manifest fields and those commands as `KEY=value`.
 - The software-development quality bar adds that an assertion whose expected value comes from the same source as its actual value proves nothing, and that a fix for a blocking review finding tests the code path the finding names.
 - `learn.sh retire` requires `--enforced-by <path>`, and the presets retire a learned rule only against a named enforcer.
 - The retro skill adds a cheapest-fix ladder, an attribution discipline, and a project-versus-root scope test. It drafts its account from the session's evidence before reading learned records, so existing records do not anchor it.

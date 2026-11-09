@@ -12,6 +12,11 @@ srcroot=$(cd "$selfdir/.." && pwd)
 SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh absorb.sh session-start.sh)
 SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf review.conf)
 
+# The worker-load contract's two lists, as scripts/docs/worker-contract.md
+# states them. test.sh holds the page and these to the same text.
+WORKER_MAY_RUN=("status.sh" "links.sh" "comments.sh" "review.sh" "index.sh check" "verify.sh" "log.sh" "memory.sh" "learn.sh" "docs.sh")
+ORCHESTRATOR_ONLY=("checkpoint.sh" "index.sh ensure" "absorb.sh")
+
 install_node_scripts() {
   local target script conf temp
   target="$1/scripts"
@@ -40,6 +45,10 @@ Usage:
   node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh update [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh finalize [root]
+  node.sh describe [root]
+
+describe prints the node's manifest fields and the worker-load contract's
+commands as KEY=value lines (scripts/docs/worker-contract.md).
 
 init defaults --indexes to manual and --hooks to session-start.
 update preserves the manifest value when either flag is omitted, and
@@ -1155,6 +1164,54 @@ EOF
     || { echo "node.sh: version is now $migration_target but failed to remove the pending migration_target marker from $purpose — re-run finalize to retry" >&2; exit 1; }
 
   echo "node.sh: finalized $agent — version is now $migration_target"
+  exit 0
+  ;;
+
+describe)
+  root="${1:-.}"
+  if [ ! -d "$root/.agent" ]; then
+    echo "node.sh: no .agent directory at $root/.agent — run from the node's project root, or pass that root as an argument" >&2
+    exit 1
+  fi
+  root=$(cd "$root" && pwd -P)
+  agent="$root/.agent"
+  purpose="$agent/purpose.md"
+  if [ ! -f "$purpose" ] || ! head -n 10 "$purpose" | grep -qF "dot-agent:"; then
+    echo "node.sh: no dot-agent manifest found at $purpose" >&2
+    exit 1
+  fi
+  manifest_field() { sed -nE "s/^  $1:[[:space:]]*\"?([^\"[:space:]#]*)\"?.*/\1/p" "$purpose" | head -n 1; }
+  printf 'ROOT=%s\n' "$root"
+  printf 'VERSION=%s\n' "$(manifest_field version)"
+  printf 'PRESET=%s\n' "$(manifest_field preset)"
+  printf 'MODE=%s\n' "$(manifest_field mode)"
+  describe_indexes=$(manifest_field indexes)
+  printf 'INDEXES=%s\n' "${describe_indexes:-manual}"
+  printf 'HOOKS=%s\n' "$(manifest_field hooks)"
+  describe_target=$(manifest_field migration_target)
+  [ -z "$describe_target" ] || printf 'MIGRATION_TARGET=%s\n' "$describe_target"
+  # The contract revision is read from the node's own status.sh, never from
+  # this repository, so it describes the scripts the node actually runs.
+  describe_contract=$(sed -n 's/^WORKER_CONTRACT=//p' "$agent/scripts/status.sh" 2>/dev/null | head -n 1)
+  printf 'WORKER_CONTRACT=%s\n' "${describe_contract:-0}"
+  if grep -qF -- '--load' "$agent/scripts/status.sh" 2>/dev/null; then
+    home=$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)
+    if [ -n "$home" ] && [ "$root" = "$home" ]; then
+      printf 'BOOTSTRAP=bash ~/.agent/scripts/status.sh --load ~\n'
+    else
+      printf 'BOOTSTRAP=bash .agent/scripts/status.sh --load\n'
+    fi
+  fi
+  describe_list() { # $@: commands — prints those whose script the node holds
+    local out="" c
+    for c in "$@"; do
+      [ -f "$agent/scripts/${c%% *}" ] || continue
+      out="${out:+$out, }$c"
+    done
+    printf '%s' "$out"
+  }
+  printf 'WORKER_MAY_RUN=%s\n' "$(describe_list "${WORKER_MAY_RUN[@]}")"
+  printf 'ORCHESTRATOR_ONLY=%s\n' "$(describe_list "${ORCHESTRATOR_ONLY[@]}")"
   exit 0
   ;;
 

@@ -16,6 +16,9 @@ PROBE_TOOLS="rg fd jq gh python3 curl tree"
 PAYLOAD_MAX_BYTES=30000
 HOOK_MAX_BYTES=10000
 MEMORY_INDEX_BYTES=5000
+# Not a tunable: the worker-load contract revision this script implements
+# (scripts/docs/worker-contract.md). node.sh describe reads it from here.
+WORKER_CONTRACT=1
 
 root="."
 load=0
