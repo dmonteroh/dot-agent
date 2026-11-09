@@ -18,6 +18,7 @@ HOOK_MAX_BYTES=10000
 MEMORY_INDEX_BYTES=5000
 # Not a tunable: the worker-load contract revision this script implements
 # (scripts/docs/worker-contract.md). node.sh describe reads it from here.
+# shellcheck disable=SC2034 # read by node.sh describe, not by this script
 WORKER_CONTRACT=1
 
 root="."
@@ -625,9 +626,9 @@ payload_line_for() { # $1: total bytes  $2: tail bytes — sets REPLY
 # and the HOOK: line, whose digits change their own length, so the total is
 # recomputed until it stops moving. Each pass can only grow it.
 settle() {
-  local fixed=$1 tb=$2 fn=${3:-} total pass next
+  local fixed=$1 tb=$2 fn=${3:-} total next
   total=$fixed
-  for pass in 1 2 3 4 5 6 7 8; do
+  for _ in 1 2 3 4 5 6 7 8; do
     payload_line_for "$total" "$tb"; settled_payload=$REPLY
     settled_hook=""
     if [[ -n "$fn" ]]; then "$fn" "$total"; settled_hook=$REPLY; fi

@@ -1,6 +1,6 @@
 # The worker-load contract
 
-What an orchestrator may rely on when it hands a task to a worker in a project that holds a dot-agent node: the call a worker makes to load the node, the shape of what that call prints, and which helpers a worker may run. An orchestrator reads this page, or `node.sh describe` for one node, instead of branching on the manifest's `version`.
+This page states what an orchestrator may rely on when it hands a task to a worker in a project that holds a dot-agent node. It covers the call a worker makes to load the node, the shape of what that call prints, and which helpers a worker may run. An orchestrator reads this page, or `node.sh describe` for one node, instead of branching on the manifest's `version`.
 
 A worker is any session another session dispatched: a subagent in the same checkout, or a session in its own checkout with a copy of the node. The orchestrator is the session or program that dispatched it. The operating model's [subagents section](../../operating-model.md#subagents-and-parallel-sessions) is the policy. This page is the interface that policy runs on.
 
@@ -59,8 +59,8 @@ These are not promised: the wording after a prefix, the order of finding lines a
 node.sh describe [root]
 ```
 
-Prints one `KEY=value` line per fact, parsed as data and never sourced: `ROOT`, then the manifest's `VERSION`, `PRESET`, `MODE`, `INDEXES` (`manual` when the manifest has no line), `HOOKS`, and `MIGRATION_TARGET` while a migration is pending, then `WORKER_CONTRACT`, `BOOTSTRAP` (the call above, written for a root node where the root is the home directory), `WORKER_MAY_RUN`, and `ORCHESTRATOR_ONLY`. The two lists are comma-separated and name only commands whose script the node holds, so a helper missing from an older node is missing from the list too. `node.sh` runs from the source repository, but everything it prints is read from the node.
+Prints one `KEY=value` line per fact, parsed as data and never sourced. First `ROOT`, then the manifest's `VERSION`, `PRESET`, `MODE`, `INDEXES` (`manual` when the manifest has no line), `HOOKS`, and `MIGRATION_TARGET` while a migration is pending. Then `WORKER_CONTRACT`, `BOOTSTRAP` (the call above, written for a root node where the root is the home directory), `WORKER_MAY_RUN`, and `ORCHESTRATOR_ONLY`. The two lists are comma-separated and name only commands whose script the node holds, so a helper missing from an older node is missing from the list too. `node.sh` runs from the source repository, but everything it prints is read from the node.
 
 ## Worker checkouts and versions
 
-`absorb.sh` merges a worker's node only when both manifests carry the same `version`, and refuses otherwise (`scripts/docs/absorb.md`). That is the one place a version comparison stays: two nodes at different versions can hold records in different shapes, and a merge across them could write one shape into a node that reads the other. A worker checkout made from the main checkout's own commit carries the same version by construction. A worker whose `.agent` links to the main node shares it, so `absorb.sh` reports `shared` and merges nothing.
+`absorb.sh` merges a worker's node only when both manifests carry the same `version`, and refuses otherwise (`scripts/docs/absorb.md`). That is the one place a version comparison stays. Two nodes at different versions can hold records in different shapes, and a merge across them could write one shape into a node that reads the other. A worker checkout made from the main checkout's own commit carries the same version by construction. A worker whose `.agent` links to the main node shares it, so `absorb.sh` reports `shared` and merges nothing.

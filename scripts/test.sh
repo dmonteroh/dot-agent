@@ -4829,7 +4829,7 @@ pad_needed=$((budget_default - reported_a))
 # PAYLOAD: counts its own line, whose digits grow with the padding, and a
 # HOOK: line past the hook limit, which this case is not about.
 printf 'HOOK_MAX_BYTES=1000000\n' >>"$pb/.agent/scripts/status.conf"
-for pad_round in 1 2 3 4; do
+for _ in 1 2 3 4; do
   if [ "$pad_needed" -gt 0 ]; then
     printf '%*s' "$pad_needed" '' | tr ' ' 'x' >>"$pb/.agent/memory.md"
   elif [ "$pad_needed" -lt 0 ]; then
