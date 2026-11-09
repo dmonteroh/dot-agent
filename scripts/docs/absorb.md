@@ -50,7 +50,7 @@ When anything under `rules/` or `docs/` was applied on a node with `indexes: gen
 
 ## Safety
 
-- Both nodes must carry a manifest at the same `version`. A worker node from another version is refused.
+- Both nodes must carry a manifest at the same `version`. A worker node from another version is refused. This is the one version comparison the worker-load contract keeps, and [worker-contract.md](worker-contract.md#worker-checkouts-and-versions) says why.
 - `--from` may not name the main node itself, and a worker without a base is refused.
 - The main node is locked for the whole merge with the same locks `log.sh`, `memory.sh`, and `learn.sh` take, so no writer runs against it mid-merge. A merge waits for a held lock as those writers do, and refuses when the wait runs out.
 - A symlinked `.agent` on either side must name the `.agent` of a checkout of the same Git repository, or the action is refused.

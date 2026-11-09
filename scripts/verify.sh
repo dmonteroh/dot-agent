@@ -3,7 +3,7 @@ set -u
 export LC_ALL=C
 unset CDPATH
 
-schema_version=2
+schema_version=3
 self_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=runtime.sh
 . "$self_dir/runtime.sh"
@@ -170,9 +170,14 @@ tap_count() {
 print_record() { printf 'receipt\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
 
 receipt_digest() {
-  printf 'version=%s\ncheck=%s\nstatus=%s\nexit=%s\ncount=%s\nfingerprint=%s\nworktree=%s\ninvocation=%s\nexecuted_at=%s\n' \
-    "$schema_version" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" | git hash-object --stdin
+  printf 'version=%s\ncheck=%s\nstatus=%s\nexit=%s\ncount=%s\nfingerprint=%s\nworktree=%s\ninvocation=%s\nexecuted_at=%s\nfails_without_change=%s\n' \
+    "$schema_version" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" | git hash-object --stdin
 }
+
+# Whether the check was seen failing at the base commit with only the
+# change's test files applied: yes, no, or unknown. Nothing runs that proof
+# yet, so every run records unknown (scripts/docs/verify.md, design note).
+fails_without_change=unknown
 
 hex_value() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
 
@@ -279,14 +284,18 @@ if [ "$op" = check ]; then
   receipt="$receipts/$receipt_arg.receipt"
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || die "receipt is missing or not a regular file: $receipt_arg"
   lines=$(wc -l <"$receipt" | tr -d '[:space:]')
-  [ "$lines" = 10 ] || die "invalid receipt shape"
+  [ "$lines" = 11 ] || die "invalid receipt shape"
   IFS= read -r r1 <"$receipt"
   r2=$(sed -n '2p' "$receipt"); r3=$(sed -n '3p' "$receipt"); r4=$(sed -n '4p' "$receipt")
   r5=$(sed -n '5p' "$receipt"); r6=$(sed -n '6p' "$receipt"); r7=$(sed -n '7p' "$receipt")
   r8=$(sed -n '8p' "$receipt"); r9=$(sed -n '9p' "$receipt"); r10=$(sed -n '10p' "$receipt")
+  r11=$(sed -n '11p' "$receipt")
   [ "$r1" = "version=$schema_version" ] || die "invalid receipt version"
   id=${r2#id=}; rcheck=${r3#check=}; status=${r4#status=}; exit_code=${r5#exit=}; count=${r6#count=}; recorded=${r7#fingerprint=}
   recorded_root=${r8#worktree=}; recorded_invocation=${r9#invocation=}; executed_at=${r10#executed_at=}
+  recorded_fwc=${r11#fails_without_change=}
+  [ "$r11" = "fails_without_change=$recorded_fwc" ] || die "receipt has no fails_without_change field"
+  case "$recorded_fwc" in yes | no | unknown) ;; *) die "invalid receipt fails_without_change" ;; esac
   [ "$r2" = "id=$id" ] && [ "$r3" = "check=$rcheck" ] && [ "$r4" = "status=$status" ] && [ "$r5" = "exit=$exit_code" ] && [ "$r6" = "count=$count" ] && [ "$r7" = "fingerprint=$recorded" ] && [ "$r8" = "worktree=$recorded_root" ] && [ "$r9" = "invocation=$recorded_invocation" ] && [ "$r10" = "executed_at=$executed_at" ] || die "invalid receipt fields"
   case "$id" in '' | *[!A-Za-z0-9_.-]*) die "invalid receipt id" ;; esac
   case "$rcheck" in '' | *[!A-Za-z0-9_.-]*) die "invalid receipt check" ;; esac
@@ -299,7 +308,7 @@ if [ "$op" = check ]; then
   [ "$recorded_invocation" = "$invocation" ] || die "receipt driver invocation does not match configuration"
   printf '%s\n' "$executed_at" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || die "invalid receipt execution timestamp"
   [ "${receipt##*/}" = "$id.receipt" ] || die "receipt name does not match its id"
-  expected_receipt_digest=$(receipt_digest "$rcheck" "$status" "$exit_code" "$count" "$recorded" "$recorded_root" "$recorded_invocation" "$executed_at") || die "could not validate receipt digest"
+  expected_receipt_digest=$(receipt_digest "$rcheck" "$status" "$exit_code" "$count" "$recorded" "$recorded_root" "$recorded_invocation" "$executed_at" "$recorded_fwc") || die "could not validate receipt digest"
   [ "${id##*-}" = "$expected_receipt_digest" ] || die "receipt content digest does not match its id"
   current=$(da_fingerprint "$root") || exit 2
   [ "$current" = "$recorded" ] || die "receipt is stale: project inputs changed"
@@ -369,7 +378,7 @@ fi
 executed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 invocation="bash:$(hex_value "$CHECK_DRIVER"):$(hex_value "$check")"
-content_digest=$(receipt_digest "$check" "$status" "$driver_rc" "$count" "$after" "$root" "$invocation" "$executed_at") || die "could not digest receipt"
+content_digest=$(receipt_digest "$check" "$status" "$driver_rc" "$count" "$after" "$root" "$invocation" "$executed_at" "$fails_without_change") || die "could not digest receipt"
 tries=0
 while :; do
   id="$stamp-$$-$RANDOM-$content_digest"
@@ -378,6 +387,7 @@ while :; do
       printf 'version=%s\n' "$schema_version"
       printf 'id=%s\ncheck=%s\nstatus=%s\nexit=%s\ncount=%s\nfingerprint=%s\n' "$id" "$check" "$status" "$driver_rc" "$count" "$after"
       printf 'worktree=%s\ninvocation=%s\nexecuted_at=%s\n' "$root" "$invocation" "$executed_at"
+      printf 'fails_without_change=%s\n' "$fails_without_change"
     } >"$receipt") 2>/dev/null; then break; fi
   tries=$((tries + 1)); [ "$tries" -lt 100 ] || die "could not allocate receipt id"
 done

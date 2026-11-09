@@ -20,6 +20,7 @@ These docs remain in the source repository. Nodes receive managed helpers, start
 | `absorb.sh` | Merging a worker checkout's node back into the main node | [absorb.md](absorb.md) |
 | `session-start.sh` | The session-start hook body: the load, before the first turn | [session-start.md](session-start.md) |
 | `checks.sh` | Project-owned check driver | [v6.3-trial.md](v6.3-trial.md) |
+| — | What an orchestrator may rely on when a worker loads the node | [worker-contract.md](worker-contract.md) |
 | `node.sh` | Source-repository installer and updater | [node.md](node.md) |
 | `test.sh` | Source-repository regression suite | [test.md](test.md) |
 

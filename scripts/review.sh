@@ -175,11 +175,18 @@ for path in "${changed[@]-}"; do
   is_test_path "$path" && tests+=("$path")
 done
 
+# Test files feed only CATALOG_CANDIDATE, for exported helpers and fixtures:
+# a duplicated test helper is a catalog miss like any other.
 for path in "${changed[@]-}"; do
   [ -n "$path" ] || continue
-  is_source_path "$path" || continue
   supported_source "$path" || continue
-  is_test_path "$path" && continue
+  test_file=0
+  if is_test_path "$path"; then
+    test_file=1
+    case "$path" in *.sh | *.bash) continue ;; esac
+  else
+    is_source_path "$path" || continue
+  fi
 
   added="$tmpdir/added"
   : >"$added"
@@ -206,6 +213,11 @@ for path in "${changed[@]-}"; do
   *.sh | *.bash)
     sed -nE 's/^[[:space:]]*(function[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(\(\))?[[:space:]]*\{[[:space:]]*$/\2/p' "$added" >"$symbols" ;;
   esac
+  if [ "$test_file" -eq 1 ]; then
+    # The test cases themselves are not helpers.
+    grep -Ev '^(test|Test|Benchmark|Example|Fuzz|setup$|teardown$|setUp$|tearDown$)' "$symbols" >"$symbols.helpers" || true
+    mv "$symbols.helpers" "$symbols"
+  fi
 
   while IFS= read -r symbol; do
     [ -n "$symbol" ] || continue
@@ -214,7 +226,9 @@ for path in "${changed[@]-}"; do
       [ -n "$catalog" ] || continue
       grep -Fq -- "$symbol" "$catalog" && { cataloged=1; break; }
     done
-    if [ "$cataloged" -eq 0 ]; then
+    if [ "$cataloged" -eq 0 ] && [ "$test_file" -eq 1 ]; then
+      emit_review CATALOG_CANDIDATE "$path" "new test helper '$symbol' was not found textually in the configured catalogs; review whether a shared helper or fixture already does this, or a catalog entry belongs"
+    elif [ "$cataloged" -eq 0 ]; then
       if [ "${#catalogs[@]}" -eq 0 ]; then
         emit_review CATALOG_CANDIDATE "$path" "new helper '$symbol'; no configured catalog is available to compare"
       else
@@ -222,6 +236,7 @@ for path in "${changed[@]-}"; do
       fi
     fi
   done <"$symbols"
+  [ "$test_file" -eq 0 ] || continue
 
   source_name=${path##*/}
   source_stem=${source_name%.*}

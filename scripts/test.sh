@@ -3679,13 +3679,13 @@ rc=$?
 [ "$rc" -eq 0 ] && pass "log.sh: a ticket id and a version number are not read as a file or a SHA" || fail "log.sh: a ticket id and a version number are not read as a file or a SHA"
 
 load8=$("$logroot/.agent/scripts/status.sh" --load "$logroot" 2>&1)
-order8=$(printf '%s\n' "$load8" | grep -n '^==== ' | cut -d: -f2 | tr '\n' ' ')
+order8=$(printf '%s\n' "$load8" | grep -n '^==== ' | grep -v 'session-log.md, newest' | cut -d: -f2 | tr '\n' ' ')
 [ "$order8" = "==== .agent/rules/learned.md ==== ==== .agent/rules/contract.md ==== ==== .agent/purpose.md ==== ==== .agent/memory.md ==== " ] \
   && pass "status.sh --load: the four files print under markers, learned, contract, purpose, memory" \
   || fail "status.sh --load: the four files print under markers, learned, contract, purpose, memory ($order8)"
 printf '%s\n' "$load8" | grep -q '^## Kernel' && pass "status.sh --load: the contract body is in the output" || fail "status.sh --load: the contract body is in the output"
 plain8=$("$logroot/.agent/scripts/status.sh" "$logroot" 2>&1)
-! printf '%s\n' "$plain8" | grep -q '^==== ' && pass "status.sh: without --load no file is printed" || fail "status.sh: without --load no file is printed"
+! printf '%s\n' "$plain8" | grep '^==== ' | grep -vq 'session-log.md, newest' && pass "status.sh: without --load no file is printed" || fail "status.sh: without --load no file is printed"
 
 groomroot="$WORK/groom-tokens"
 mkdir -p "$groomroot"
@@ -4733,7 +4733,7 @@ hits30=$(cd "$reporoot" && grep -inE "$lint_re" \
   templates/entry-point-generated.md \
   scripts/status.sh scripts/log.sh scripts/memory.sh scripts/docs.sh \
   scripts/links.sh scripts/comments.sh scripts/checkpoint.sh scripts/index.sh \
-  scripts/learn.sh scripts/session-start.sh \
+  scripts/learn.sh scripts/session-start.sh scripts/docs/worker-contract.md \
   scripts/comments.conf scripts/status.conf scripts/log.conf scripts/node.sh 2>/dev/null | grep -vF -f "$lint_allow")
 [ -z "$hits30" ] && pass "portability: node-landing corpus is vendor-neutral" || fail "portability: node-landing corpus is vendor-neutral ($(printf '%s' "$hits30" | tr '\n' ';' | cut -c1-160))"
 
@@ -4818,9 +4818,7 @@ grep -q '^REPAIR:.*payload' "$WORK/pb-load.out" && fail "status.sh: an under-bud
 [ -z "$(status_flags "$pb")" ] && pass "status.sh: PAYLOAD is informational — a quiet under-budget node stays quiet" || fail "status.sh: PAYLOAD is informational — a quiet under-budget node stays quiet ($(status_flags "$pb"))"
 
 reported_a=$(printf '%s\n' "$payloadline_a" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
-bytes_noload_a=$(wc -c <"$WORK/pb-noload.out" | tr -d '[:space:]')
-bytes_load_a=$(wc -c <"$WORK/pb-load.out" | tr -d '[:space:]')
-actual_a=$((bytes_load_a - bytes_noload_a))
+actual_a=$(wc -c <"$WORK/pb-load.out" | tr -d '[:space:]')
 [ -n "$reported_a" ] && [ "$reported_a" = "$actual_a" ] \
   && pass "status.sh: PAYLOAD total equals the exact bytes --load writes" \
   || fail "status.sh: PAYLOAD total equals the exact bytes --load writes (reported $reported_a, actual $actual_a)"
@@ -4828,11 +4826,22 @@ actual_a=$((bytes_load_a - bytes_noload_a))
 budget_default=$(sed -n 's/^PAYLOAD_MAX_BYTES=//p' "$reporoot/scripts/status.sh" | head -n 1)
 pad_needed=$((budget_default - reported_a))
 [ "$pad_needed" -gt 0 ] || fail "status.sh: fixture's natural payload already exceeds PAYLOAD_MAX_BYTES — cannot build the boundary case"
-printf '%*s' "$pad_needed" '' | tr ' ' 'x' >>"$pb/.agent/memory.md"
-
-"$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-exact.out" 2>&1
-payloadline_exact=$(grep '^PAYLOAD:' "$WORK/pb-exact.out")
-reported_exact=$(printf '%s\n' "$payloadline_exact" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
+# PAYLOAD: counts its own line, whose digits grow with the padding, and a
+# HOOK: line past the hook limit, which this case is not about.
+printf 'HOOK_MAX_BYTES=1000000\n' >>"$pb/.agent/scripts/status.conf"
+for pad_round in 1 2 3 4; do
+  if [ "$pad_needed" -gt 0 ]; then
+    printf '%*s' "$pad_needed" '' | tr ' ' 'x' >>"$pb/.agent/memory.md"
+  elif [ "$pad_needed" -lt 0 ]; then
+    pad_size=$(wc -c <"$pb/.agent/memory.md" | tr -d '[:space:]')
+    head -c "$((pad_size + pad_needed))" "$pb/.agent/memory.md" >"$pb/.agent/memory.md.pad" && mv "$pb/.agent/memory.md.pad" "$pb/.agent/memory.md"
+  fi
+  "$pb/.agent/scripts/status.sh" --load "$pb" >"$WORK/pb-exact.out" 2>&1
+  payloadline_exact=$(grep '^PAYLOAD:' "$WORK/pb-exact.out")
+  reported_exact=$(printf '%s\n' "$payloadline_exact" | sed -E 's/^PAYLOAD: [^0-9]*([0-9]+) bytes.*/\1/')
+  pad_needed=$((budget_default - reported_exact))
+  [ "$pad_needed" -eq 0 ] && break
+done
 [ "$reported_exact" = "$budget_default" ] \
   && pass "status.sh: boundary fixture lands exactly on PAYLOAD_MAX_BYTES" \
   || fail "status.sh: boundary fixture lands exactly on PAYLOAD_MAX_BYTES (reported $reported_exact, budget $budget_default)"
@@ -5419,7 +5428,8 @@ printf '%s\n' "$out35b" | grep -q 'TOOLS: not installed' && fail "status.conf: a
 mismatch36=""
 for k in LOG_MAX_ENTRIES LOG_MAX_WORDS LOG_ENTRY_MAX_WORDS MEMORY_MAX_WORDS \
          MEMORY_MAX_ENTRIES LEARNED_MAX_RULES LEARNED_MAX_WORDS \
-         DOCS_MAX_WORDS ENTRYPOINT_MAX_WORDS TAIL_LINES PAYLOAD_MAX_BYTES; do
+         DOCS_MAX_WORDS ENTRYPOINT_MAX_WORDS TAIL_LINES PAYLOAD_MAX_BYTES \
+         HOOK_MAX_BYTES MEMORY_INDEX_BYTES; do
   sdef=$(sed -n "s/^$k=//p" "$reporoot/scripts/status.sh" | head -n 1 | tr -d '"')
   cdef=$(sed -n "s/^# $k=//p" "$reporoot/scripts/status.conf" | head -n 1)
   [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36="$mismatch36 $k"
@@ -6582,10 +6592,12 @@ printf '%s\n' "$m60migflags" | grep -qF 'REPAIR: rules/learned.md missing/empty'
 [ "$m60ctlflags" = "$m60migflags" ] \
   && pass "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration" \
   || fail "migration: status.sh reaches the same REPAIR/GROOM verdict pre- and post-migration ($m60migflags)"
-[ -n "$m60ctlpayload" ] && [ -n "$m60migpayload" ] \
-  && [ "$m60ctlpayload" -eq "$m60migpayload" ] \
-  && pass "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load" \
-  || fail "migration: status.sh bills the identical payload pre- and post-migration, since rule bodies no longer ride --load (ctl=$m60ctlpayload mig=$m60migpayload)"
+m60ctlfiles=$(printf '%s\n' "$m60ctlplain" | grep '^PAYLOAD:' | grep -oE '(purpose|memory) [0-9]+' | tr '\n' ' ')
+m60migfiles=$(printf '%s\n' "$m60migplain" | grep '^PAYLOAD:' | grep -oE '(purpose|memory) [0-9]+' | tr '\n' ' ')
+[ -n "$m60ctlpayload" ] && [ -n "$m60migpayload" ] && [ -n "$m60ctlfiles" ] \
+  && [ "$m60ctlfiles" = "$m60migfiles" ] \
+  && pass "migration: status.sh bills the identical files pre- and post-migration, since rule bodies no longer ride --load" \
+  || fail "migration: status.sh bills the identical files pre- and post-migration, since rule bodies no longer ride --load (ctl=$m60ctlfiles mig=$m60migfiles)"
 
 m60ctllearnedbytes=$(wc -c <"$m60ctl/.agent/rules/learned.md" | tr -d '[:space:]')
 m60miglearnedbytes=$(wc -c <"$m60mig/.agent/rules/learned.md" | tr -d '[:space:]')
@@ -7471,9 +7483,10 @@ grep -q '^BUILT$' "$WORK/rs67.cold.err" \
   || fail "read set: index.sh ensure prints the entry path"
 
 "$rs67/.agent/scripts/status.sh" --load "$rs67" >"$WORK/rs67.load.out" 2>&1
-grep -qF "Rule bodies are not printed here — read every page listed in .agent/indexes/current.md." "$WORK/rs67.load.out" \
-  && pass "read set: --load names the index entry path in generated mode" \
-  || fail "read set: --load names the index entry path in generated mode"
+grep -qF "Index pages: open every page listed here before the work." "$WORK/rs67.load.out" \
+  && [ "$(grep '^READ: ' "$WORK/rs67.load.out")" = "$(grep '^READ: ' "$rs67/.agent/indexes/current.md")" ] \
+  && pass "read set: --load lists the index entry file's pages in generated mode" \
+  || fail "read set: --load lists the index entry file's pages in generated mode"
 grep -qF '==== .agent/purpose.md ====' "$WORK/rs67.load.out" \
   && pass "read set: --load prints purpose.md under a marker in generated mode" \
   || fail "read set: --load prints purpose.md under a marker in generated mode"
@@ -7542,7 +7555,7 @@ mp67_order=$(grep -n '^==== ' "$WORK/mp67.cur.out" | cut -d: -f2 | tr '\n' ' ')
   && pass "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order" \
   || fail "manual mode: --load prints the four canonical markers, learned, contract, purpose, memory, in order ($mp67_order)"
 
-grep -qE '^PAYLOAD: --load would write [0-9]+ bytes of a [0-9]+ byte budget \(learned [0-9]+, contract [0-9]+, purpose [0-9]+, memory [0-9]+\)$' "$WORK/mp67.cur.out" \
+grep -qE '^PAYLOAD: --load would write [0-9]+ bytes of a [0-9]+ byte budget \(notes [0-9]+, learned [0-9]+, contract [0-9]+, purpose [0-9]+, memory [0-9]+, tail [0-9]+\)$' "$WORK/mp67.cur.out" \
   && pass "manual mode: PAYLOAD: line frames all four files, learned first" \
   || fail "manual mode: PAYLOAD: line frames all four files, learned first"
 
@@ -8804,7 +8817,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1390
+EXPECTED_CHECKS=1393
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

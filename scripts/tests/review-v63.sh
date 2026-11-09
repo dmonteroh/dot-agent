@@ -67,6 +67,32 @@ check "related changed test filename suppresses coverage candidate" \
 check "source without a related changed test gets an advisory" \
   'printf "%s" "$review_out" | grep -q "TEST_COVERAGE src/path with space.ts"'
 
+helpers="$tmp/helpers"
+mkdir -p "$helpers/src" "$helpers/tests" "$helpers/.agent/docs"
+git -C "$helpers" init -q
+git -C "$helpers" config user.email test@example.invalid
+git -C "$helpers" config user.name test
+printf 'export const one = 1;\n' >"$helpers/src/one.ts"
+git -C "$helpers" add . && git -C "$helpers" commit -qm base
+helpers_base=$(git -C "$helpers" rev-parse HEAD)
+printf 'export function buildOrderFixture() { return {}; }\nexport function sharedListed() { return 1; }\ntest("one", () => {});\n' >"$helpers/tests/order.test.ts"
+printf 'def make_user():\n    return {}\n\ndef test_user():\n    assert make_user() == {}\n' >"$helpers/tests/test_users.py"
+printf 'package x\n\nfunc NewServer() {}\n\nfunc TestServer(t *testing.T) {}\n' >"$helpers/tests/server_test.go"
+printf 'fail() { echo no; }\n' >"$helpers/tests/run-test.sh"
+printf '| helper | path |\n|---|---|\n| sharedListed | tests/order.test.ts |\n' >"$helpers/.agent/docs/test-catalog.md"
+set +e
+helpers_out=$("$bin/review.sh" --base "$helpers_base" --root "$helpers" 2>&1)
+helpers_rc=$?
+set -e
+check "an exported test helper outside the source roots is a catalog candidate" \
+  '[ "$helpers_rc" -eq 0 ] && printf "%s" "$helpers_out" | grep -q "^REVIEW: CATALOG_CANDIDATE tests/order.test.ts new test helper .buildOrderFixture."'
+check "a cataloged test helper draws no candidate" \
+  '! printf "%s" "$helpers_out" | grep -q "sharedListed"'
+check "Python and Go test helpers are candidates and their test cases are not" \
+  'printf "%s" "$helpers_out" | grep -q "CATALOG_CANDIDATE tests/test_users.py new test helper .make_user." && printf "%s" "$helpers_out" | grep -q "CATALOG_CANDIDATE tests/server_test.go new test helper .NewServer." && ! printf "%s" "$helpers_out" | grep -q "helper .test_user.\|helper .TestServer."'
+check "shell test files and test files draw no TEST_COVERAGE" \
+  '! printf "%s" "$helpers_out" | grep -q "run-test.sh" && ! printf "%s" "$helpers_out" | grep -q "TEST_COVERAGE tests/"'
+
 sed 's/^MAX_FINDINGS=.*/MAX_FINDINGS=1/' "$bin/review.conf" >"$bin/review.conf.tmp"
 mv "$bin/review.conf.tmp" "$bin/review.conf"
 set +e

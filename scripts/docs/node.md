@@ -9,6 +9,7 @@ Usage:
   node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh update [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh finalize [root]
+  node.sh describe [root]
 ```
 
 - `<name>` matches a file in `presets/` (currently `software-development`, `academic-research`, `domain-knowledge`).
@@ -16,6 +17,7 @@ Usage:
 - `--indexes` is `manual` or `generated`. `init` defaults it to `manual`. `update` preserves the manifest value when the flag is omitted, adopts generated mode when requested, and refuses generated-to-manual conversion outside the procedure below.
 - `--hooks` is `session-start` or `none`. `init` defaults it to `session-start`. `update` preserves the manifest value when the flag is omitted, and records `session-start` for a manifest with no `hooks` line.
 - `root` defaults to `.` and the script reads and writes `<root>/.agent`.
+- `describe` writes nothing. It prints the node's manifest fields and the worker-load contract's commands as `KEY=value` lines, so an orchestrator reads what a node supports instead of comparing versions ([worker-contract.md](worker-contract.md#nodesh-describe)).
 
 Header contracts in `operating-model.md` remain the format authority: this script writes files that carry their own header contracts, and produces nothing a header contract does not already describe.
 

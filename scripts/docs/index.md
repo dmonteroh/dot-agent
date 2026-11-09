@@ -1,6 +1,6 @@
 # index.sh — the generated-mode index cache
 
-Refreshes bounded Markdown indexes under `<root>/.agent/indexes/` before an agent reads them, and reuses a verified prior build when nothing that feeds it has changed. On a node running generated indexes, the generated entry point's bootstrap step 1 runs `ensure` directly, and `checkpoint.sh` runs it again after a clean status check so the cache reflects the session's own writes before hand-back (`scripts/docs/checkpoint.md`). This is the mechanism alone: two operations, a fingerprint, and an atomic publish.
+Refreshes bounded Markdown indexes under `<root>/.agent/indexes/` before an agent reads them, and reuses a verified prior build when nothing that feeds it has changed. On a node running generated indexes, the bootstrap reads the cache and never builds it: `status.sh --load` runs `check` and lists the entry file's pages on `FRESH`, or names `.agent/rules/` and `.agent/docs/architecture.md` otherwise (`scripts/docs/status.md`). `ensure` writes, so it belongs to the orchestrator and to the record writers. `checkpoint.sh` runs it after a clean status check so the cache reflects the session's own writes before hand-back (`scripts/docs/checkpoint.md`), and `learn.sh` and `absorb.sh` run it after a rule changes. This is the mechanism alone: two operations, a fingerprint, and an atomic publish.
 
 ```
 Usage: index.sh ensure [--root <path>] [--budget <bytes>]
@@ -69,7 +69,7 @@ A hit is not "the fingerprint on line one matches." It is: the fingerprint match
 
 ## Concurrent refreshes and interrupted publication
 
-No writer takes a lock. Each build's generation directory is unique by construction (`mktemp -d`), so concurrent writers never collide, and each publishes by the same atomic rename, so the last one to finish simply becomes current — no writer can see, let alone publish, a mix of another writer's pages. A writer killed mid-build (any signal, any point before its `mv -f`) leaves nothing published: the trap on exit removes its own unpublished generation directory, and the existing entry (if any) is exactly what it was before that writer started. The next `ensure`, from any process, rebuilds cleanly with no lock file to recover or break.
+No writer takes a lock. Each build's generation directory is unique by construction (`mktemp -d`), so concurrent writers never collide, and each publishes by the same atomic rename, so the last one to finish simply becomes current — no writer can see, let alone publish, a mix of another writer's pages. A writer killed mid-build (any signal, any point before its `mv -f`) leaves nothing published: the trap on exit removes its own unpublished generation directory, and the existing entry (if any) is exactly what it was before that writer started. The next `ensure`, from any process, rebuilds cleanly with no lock file to recover or break. Two `ensure` calls on the same stale cache therefore both render a generation and both publish. The work is duplicated and nothing is corrupted: one entry file is left, it names one complete generation, `check` reads `FRESH` afterwards, and the losing generation waits for a later sweep (below). `scripts/tests/index-v63.sh` runs that race.
 
 ## Bounded retries on a moving target
 
