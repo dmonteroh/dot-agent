@@ -11,14 +11,52 @@ da_root() {
   }
 }
 
-da_state_dir() {
-  [ "$#" -eq 1 ] || { echo "runtime.sh: da_state_dir needs one argument" >&2; return 2; }
-  da_sd_root=$(da_root "$1") || return
-  if [ -L "$da_sd_root/.agent" ]; then
-    echo "runtime.sh: refusing symlink .agent directory: $da_sd_root/.agent" >&2
+da__git_common_dir() {
+  (CDPATH='' cd -- "$1" 2>/dev/null && da_gc=$(git rev-parse --git-common-dir 2>/dev/null) \
+    && CDPATH='' cd -- "$da_gc" 2>/dev/null && pwd -P)
+}
+
+# The physical node directory of a project root. A checkout may hold .agent as
+# a symlink to the node of another checkout of the same Git repository, as an
+# orchestrator links it into worker worktrees: that is a shared node, and its
+# writers write the target under the target's own locks. Any other symlink is
+# refused, so a stray link cannot send node writes or private state into
+# another project or into a directory that is not a node.
+da_node_dir() {
+  [ "$#" -eq 1 ] || { echo "runtime.sh: da_node_dir needs one argument" >&2; return 2; }
+  da_nd_root=$(da_root "$1") || return
+  if [ ! -L "$da_nd_root/.agent" ]; then
+    printf '%s\n' "$da_nd_root/.agent"
+    return 0
+  fi
+  da_nd_target=$(CDPATH='' cd -- "$da_nd_root/.agent" 2>/dev/null && pwd -P) || {
+    echo "runtime.sh: refusing symlink .agent directory that does not resolve to a directory: $da_nd_root/.agent" >&2
+    return 2
+  }
+  if [ "${da_nd_target##*/}" != .agent ] || [ ! -f "$da_nd_target/purpose.md" ]; then
+    echo "runtime.sh: refusing symlink .agent directory whose target is not a node: $da_nd_root/.agent -> $da_nd_target" >&2
     return 2
   fi
-  da_sd_path="$da_sd_root/.agent/.state"
+  da_nd_here=$(da__git_common_dir "$da_nd_root") || da_nd_here=
+  da_nd_there=$(da__git_common_dir "${da_nd_target%/*}") || da_nd_there=
+  if [ -z "$da_nd_here" ] || [ "$da_nd_here" != "$da_nd_there" ]; then
+    echo "runtime.sh: refusing symlink .agent directory that names a node outside this Git repository: $da_nd_root/.agent -> $da_nd_target" >&2
+    return 2
+  fi
+  printf '%s\n' "$da_nd_target"
+}
+
+# Succeeds when root's .agent is an accepted link to another checkout's node.
+da_node_shared() {
+  [ "$#" -eq 1 ] || { echo "runtime.sh: da_node_shared needs one argument" >&2; return 2; }
+  da_ns_root=$(da_root "$1") || return
+  [ -L "$da_ns_root/.agent" ] && da_node_dir "$da_ns_root" >/dev/null 2>&1
+}
+
+da_state_dir() {
+  [ "$#" -eq 1 ] || { echo "runtime.sh: da_state_dir needs one argument" >&2; return 2; }
+  da_sd_node=$(da_node_dir "$1") || return
+  da_sd_path="$da_sd_node/.state"
   if [ -L "$da_sd_path" ]; then
     echo "runtime.sh: refusing symlink state directory: $da_sd_path" >&2
     return 2
@@ -260,12 +298,23 @@ da_lock() {
     printf '%s\n' "$$" >"$da_lk_path/owner" || { rmdir "$da_lk_path" 2>/dev/null; return 2; }
     return 0
   fi
-  [ -d "$da_lk_path" ] || { echo "runtime.sh: lock path is not a directory: $da_lk_path" >&2; return 2; }
-  if [ ! -f "$da_lk_path/owner" ]; then
-    echo "runtime.sh: lock has no demonstrable owner: $da_lk_path" >&2; return 2
+  # Gone again: its holder released it between the mkdir and this check.
+  if [ ! -e "$da_lk_path" ] && [ ! -L "$da_lk_path" ]; then
+    echo "runtime.sh: lock was released while being taken: $da_lk_path" >&2; return 1
   fi
-  da_lk_owner=$(cat "$da_lk_path/owner" 2>/dev/null) || return 2
-  case "$da_lk_owner" in '' | *[!0-9]*) echo "runtime.sh: lock has an invalid owner: $da_lk_path" >&2; return 2 ;; esac
+  [ -d "$da_lk_path" ] || { echo "runtime.sh: lock path is not a directory: $da_lk_path" >&2; return 2; }
+  # A writer that has made the lock directory but not yet recorded its pid
+  # looks like this too, so it counts as held (1), which da_lock_wait retries.
+  if [ ! -f "$da_lk_path/owner" ]; then
+    echo "runtime.sh: lock has no demonstrable owner: $da_lk_path" >&2; return 1
+  fi
+  da_lk_owner=$(cat "$da_lk_path/owner" 2>/dev/null) || {
+    echo "runtime.sh: lock was released while being read: $da_lk_path" >&2; return 1
+  }
+  case "$da_lk_owner" in
+    '') echo "runtime.sh: lock has no demonstrable owner: $da_lk_path" >&2; return 1 ;;
+    *[!0-9]*) echo "runtime.sh: lock has an invalid owner: $da_lk_path" >&2; return 2 ;;
+  esac
   if kill -0 "$da_lk_owner" 2>/dev/null; then
     echo "runtime.sh: lock is held by live pid $da_lk_owner: $da_lk_path" >&2; return 1
   fi
@@ -277,6 +326,12 @@ da_lock() {
   if [ "$da_lk_ps" -ne 1 ]; then
     echo "runtime.sh: cannot demonstrate that lock owner pid $da_lk_owner is dead: $da_lk_path" >&2; return 2
   fi
+  # A holder that released the lock and exited also reads as dead, and another
+  # writer may hold the lock by now: recover only a lock that still names the
+  # dead pid.
+  if [ "$(cat "$da_lk_path/owner" 2>/dev/null)" != "$da_lk_owner" ]; then
+    echo "runtime.sh: lock changed hands while being checked: $da_lk_path" >&2; return 1
+  fi
   rm -f -- "$da_lk_path/owner" 2>/dev/null && rmdir -- "$da_lk_path" 2>/dev/null || {
     echo "runtime.sh: could not recover dead lock: $da_lk_path" >&2; return 2;
   }
@@ -286,6 +341,28 @@ da_lock() {
   fi
   echo "runtime.sh: lock was acquired concurrently: $da_lk_path" >&2
   return 1
+}
+
+# da_lock, retried while a live writer holds the lock, for at most
+# DA_LOCK_WAIT_SECONDS (default 10, a chosen default: a record writer holds its
+# lock for one append or one file write, so parallel workers clear in well
+# under a second, and a checkpoint that holds the log lock through its checks
+# still ends in a refusal the caller sees). Other failures return at once.
+da_lock_wait() {
+  [ "$#" -eq 1 ] || { echo "runtime.sh: da_lock_wait needs one argument" >&2; return 2; }
+  da_lw_wait=${DA_LOCK_WAIT_SECONDS:-10}
+  case "$da_lw_wait" in '' | *[!0-9]*) da_lw_wait=10 ;; esac
+  # SECONDS is bash's own clock, so the wait needs no external command and a
+  # project that puts its own date on PATH cannot disturb it.
+  da_lw_end=$((SECONDS + da_lw_wait))
+  while :; do
+    da_lw_err=$({ da_lock "$1" 2>&1 >&3; } 3>&1)
+    da_lw_rc=$?
+    [ "$da_lw_rc" -eq 1 ] && [ "$SECONDS" -lt "$da_lw_end" ] || break
+    sleep 0.2
+  done
+  [ -z "$da_lw_err" ] || printf '%s\n' "$da_lw_err" >&2
+  return "$da_lw_rc"
 }
 
 da_unlock() {

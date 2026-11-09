@@ -83,7 +83,7 @@ mkdir -p "$state/memory.lock"
 sleep 60 &
 holder=$!
 printf '%s\n' "$holder" >"$state/memory.lock/owner"
-if bash "$main/.agent/scripts/memory.sh" new --slug locked --title Locked --hook 'lock test' --fact 'Held.' "$main" >/dev/null 2>&1; then
+if DA_LOCK_WAIT_SECONDS=0 bash "$main/.agent/scripts/memory.sh" new --slug locked --title Locked --hook 'lock test' --fact 'Held.' "$main" >/dev/null 2>&1; then
   kill "$holder" 2>/dev/null; fail 'memory.sh wrote while another writer held the lock'
 fi
 kill "$holder" 2>/dev/null

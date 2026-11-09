@@ -35,6 +35,10 @@ Where the installer creates `.claude/settings.json` or `.claude/settings.local.j
 
 The merge needs `python3`. Without it, nothing is written and the snippets print.
 
+## Worktrees an orchestrator makes
+
+Under `ignore-all` the hook files travel with no clone and no worktree: git ignores `.claude/settings.local.json` and `.codex/hooks.json`, so a `git worktree add` holds neither, and the hook never runs there. That holds even when the orchestrator links or copies `.agent/` and the entry points into the worktree. An orchestrator that wants the hook in its workers links or copies those two files beside the node. `.claude/settings.local.json` is a developer's personal file and may carry their own permissions and settings, so linking it hands those to every worker. An orchestrator that puts its own bootstrap instruction in each worker's prompt can leave the hook out, and its workers load the node through the entry point or that instruction.
+
 ## What a team sees
 
 - **Claude Code.** In a tracked mode the hook arrives with `git pull`. It does nothing until that developer's checkout has the node's scripts: `track-shared` keeps `scripts/` out of git, so each developer runs `node.sh update` once, as before. Project hooks run after the developer trusts the folder, the same trust project settings already need.

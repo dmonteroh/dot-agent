@@ -8,7 +8,7 @@ Usage: absorb.sh mark [root]
        absorb.sh docs --from <worker-root> [root]
 ```
 
-`root` defaults to `.`, the project root holding `.agent/`. A worker in the same checkout as its orchestrator needs none of this: it writes the shared files through the node's writers, which serialize on the node's locks.
+`root` defaults to `.`, the project root holding `.agent/`. A worker in the same checkout as its orchestrator needs none of this: it writes the shared files through the node's writers, which serialize on the node's locks. Neither does a worker whose `.agent` is a symlink to the main checkout's node: it shares that node, so every action prints `shared` and the node's path, writes nothing, and exits 0. An orchestrator can therefore run the same three steps whether it copies or links the node.
 
 ## The three steps
 
@@ -52,17 +52,18 @@ When anything under `rules/` or `docs/` was applied on a node with `indexes: gen
 
 - Both nodes must carry a manifest at the same `version`. A worker node from another version is refused.
 - `--from` may not name the main node itself, and a worker without a base is refused.
-- The main node is locked for the whole merge with the same locks `log.sh`, `memory.sh`, and `learn.sh` take, so no writer runs against it mid-merge, and a merge refuses while one does.
+- The main node is locked for the whole merge with the same locks `log.sh`, `memory.sh`, and `learn.sh` take, so no writer runs against it mid-merge. A merge waits for a held lock as those writers do, and refuses when the wait runs out.
+- A symlinked `.agent` on either side must name the `.agent` of a checkout of the same Git repository, or the action is refused.
 - Nothing is ever deleted from the main node.
 
 ## Output and exit status
 
-One tab-separated line per decision: `applied`, `duplicate`, `conflict`, or `not-applied`, then the path, then a reason for the last two and for an `applied` doc whose stamp was dropped. Unchanged files print nothing, so a repeated run prints nothing.
+One tab-separated line per decision: `applied`, `duplicate`, `conflict`, or `not-applied`, then the path, then a reason for the last two and for an `applied` doc whose stamp was dropped. Unchanged files print nothing, so a repeated run prints nothing. A shared node prints one `shared` line with the node's physical path.
 
 | Code | Meaning |
 | --- | --- |
-| 0 | merged, no conflict |
+| 0 | merged, no conflict, or a shared node with nothing to merge |
 | 3 | merged around one or more reported conflicts |
 | 2 | refused: no manifest, no base, a version mismatch, `--from` naming the main node, or a lock held by a live writer |
 
-`scripts/tests/absorb-v63.sh` covers every row above.
+`scripts/tests/absorb-v63.sh` covers every row above. `scripts/tests/shared-node-v63.sh` covers a linked worker.

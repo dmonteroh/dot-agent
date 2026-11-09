@@ -185,7 +185,7 @@ if [ -f "$selfdir/runtime.sh" ]; then
   . "$selfdir/runtime.sh"
   state=$(da_state_dir "$root") || exit 1
   log_lock="$state/checkpoint.lock"
-  da_lock "$log_lock" || exit 1
+  da_lock_wait "$log_lock" || exit 1
   trap 'da_unlock "$log_lock"' EXIT
 fi
 printf '%s\n' "$entry" >>"$log" || { echo 'log.sh: could not append the entry' >&2; exit 1; }

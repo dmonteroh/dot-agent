@@ -60,6 +60,15 @@ digest_file() {
   git hash-object --no-filters -- "$1"
 }
 
+lookup_shared_node() {
+  local selfdir
+  selfdir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || return 1
+  [ -f "$selfdir/runtime.sh" ] || { echo "memory.sh: runtime.sh is missing, so a linked .agent cannot be checked" >&2; return 1; }
+  # shellcheck source=runtime.sh
+  . "$selfdir/runtime.sh"
+  da_node_dir "$1"
+}
+
 lookup_add() {
   la_rel="$1"
   la_file="$2"
@@ -80,6 +89,7 @@ lookup_add() {
   }
   case "$la_parent" in
   "$lookup_root_phys"|"$lookup_root_phys"/*) ;;
+  "$lookup_node_phys"|"$lookup_node_phys"/*) [ -n "$lookup_node_phys" ] || return 1 ;;
   *) echo "memory.sh: canonical lookup path resolves outside the project: $la_rel" >&2; return 1 ;;
   esac
   printf '%s\n' "$lookup_root_phys/$la_rel" >>"$lookup_list" || return 1
@@ -140,6 +150,12 @@ run_lookup() {
   if printf '%s' "$lookup_root_phys" | grep -q '[[:cntrl:]]'; then
     echo "memory.sh: physical project root contains a control character and cannot be searched safely" >&2
     return 1
+  fi
+  # A shared node (.agent linked to another checkout's node) lies outside the
+  # root by design; runtime.sh decides which links count as one.
+  lookup_node_phys=""
+  if [ -L "$rl_root/.agent" ]; then
+    lookup_node_phys=$(lookup_shared_node "$rl_root") || return 1
   fi
   lookup_list=$(mktemp "${TMPDIR:-/tmp}/memory-lookup-list.XXXXXX") || exit 1
   lookup_hits=$(mktemp "${TMPDIR:-/tmp}/memory-lookup-hits.XXXXXX") || exit 1
@@ -253,7 +269,7 @@ memory_lock() {
   . "$selfdir/runtime.sh"
   state=$(da_state_dir "$1") || exit 1
   memory_lock_path="$state/memory.lock"
-  da_lock "$memory_lock_path" || exit 1
+  da_lock_wait "$memory_lock_path" || exit 1
   trap 'da_unlock "$memory_lock_path"; cleanup' EXIT
 }
 

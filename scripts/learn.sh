@@ -166,9 +166,20 @@ lrn_current_version() {
   fi
 }
 
+# Waits for a held lock as runtime.sh's da_lock_wait does, so parallel workers
+# writing one shared node take turns instead of refusing.
 lrn_lock_writers() {
   lw_lock="$1/.learn-writer.lock"
-  if mkdir "$lw_lock" 2>/dev/null; then
+  lw_wait=${DA_LOCK_WAIT_SECONDS:-10}
+  case "$lw_wait" in '' | *[!0-9]*) lw_wait=10 ;; esac
+  lw_end=$((SECONDS + lw_wait))
+  lw_got=0
+  while :; do
+    if mkdir "$lw_lock" 2>/dev/null; then lw_got=1; break; fi
+    [ -d "$lw_lock" ] && [ "$SECONDS" -lt "$lw_end" ] || break
+    sleep 0.2
+  done
+  if [ "$lw_got" -eq 1 ]; then
     if printf '%s\n' "$$" >"$lw_lock/owner"; then
       writer_lock="$lw_lock"
       return 0

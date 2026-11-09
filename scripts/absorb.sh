@@ -30,6 +30,9 @@ A doc's Checked stamp is dropped unless the main checkout's HEAD contains the
 stamped commit, so a doc integrated by cherry-pick arrives unchecked.
 Removals are reported, never applied. Output is one TSV line per decision:
 applied, duplicate, conflict, or not-applied, then the path.
+A worker whose .agent is a symlink to the main node shares it: its writes
+are already in the main node, so every action prints one shared line naming
+the node and changes nothing.
 Exit 0 when nothing conflicted, 3 when something did, 2 on refusal.
 EOF
 }
@@ -66,7 +69,13 @@ node_files() {
     -o -type f -name '*.md' -print) | sed 's|^\./||' | LC_ALL=C sort
 }
 
+# A worker whose .agent links to the main checkout's node writes that node
+# directly, under its locks, so there is no copy to mark or merge.
 if [ "$action" = mark ]; then
+  if da_node_shared "$root"; then
+    printf 'shared\t%s\n' "$(da_node_dir "$root")"
+    exit 0
+  fi
   state=$(da_state_dir "$root") || exit 2
   base_tmp=$(mktemp "$state/.absorb-base.XXXXXX") || exit 2
   node_files "$root" | while IFS= read -r rel; do
@@ -80,6 +89,12 @@ fi
 from=$(da_root "$from") || exit 2
 [ "$from" != "$root" ] || { echo "absorb.sh: --from names the main node itself" >&2; exit 2; }
 [ -f "$from/.agent/purpose.md" ] || { echo "absorb.sh: no node manifest at $from/.agent/purpose.md" >&2; exit 2; }
+main_node_dir=$(da_node_dir "$root") || exit 2
+from_node_dir=$(da_node_dir "$from") || exit 2
+if [ "$from_node_dir" = "$main_node_dir" ]; then
+  printf 'shared\t%s\n' "$main_node_dir"
+  exit 0
+fi
 base="$from/.agent/.state/absorb-base.tsv"
 [ -f "$base" ] || { echo "absorb.sh: $from has no absorb base — run absorb.sh mark in the worker checkout when it is dispatched" >&2; exit 2; }
 main_version=$(manifest_field "$root" version)
@@ -98,7 +113,7 @@ cleanup() {
   for held in "${locks[@]+"${locks[@]}"}"; do da_unlock "$held"; done
 }
 trap cleanup EXIT
-take_lock() { da_lock "$1" || exit 2; locks+=("$1"); }
+take_lock() { da_lock_wait "$1" || exit 2; locks+=("$1"); }
 take_lock "$state/checkpoint.lock"
 take_lock "$state/memory.lock"
 [ ! -d "$root/.agent/rules/learned" ] || take_lock "$root/.agent/rules/learned/.learn-writer.lock"
