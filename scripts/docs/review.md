@@ -23,7 +23,7 @@ Each advisory is one line:
 REVIEW: CODE PATH MESSAGE
 ```
 
-- `CATALOG_CANDIDATE` means a newly added supported helper declaration was not found as fixed text in the configured catalogs, or no catalog was available.
+- `CATALOG_CANDIDATE` means a newly added supported helper declaration was not found as fixed text in the configured catalogs, or no catalog was available. Test files are scanned too, wherever `TEST_PATH_RE` matches them, inside a source root or not: an exported helper or fixture added there draws the same candidate, worded as a test helper. The test cases themselves are skipped by name (`test…`, Go's `Test`, `Benchmark`, `Example`, and `Fuzz` functions, and `setup`/`teardown`), and shell test files are skipped because shell has no export to tell a helper from a script's own function.
 - `TEST_COVERAGE` means no changed test filename contains the changed source file's basename. A related filename suppresses the candidate but does not prove that the test exercises the change.
 
 `MAX_FINDINGS` bounds the ordinary candidate lines. When more candidates exist, one additional `FINDINGS_TRUNCATED` line reports exactly how many were omitted, so bounded output cannot look like a complete clean review. The comment gate's own output and blocking decision are unchanged and remain authoritative.
@@ -33,7 +33,7 @@ REVIEW: CODE PATH MESSAGE
 `review.conf` is plain, non-executed `KEY=value`. The first value wins.
 
 - `SOURCE_ROOTS=src` is a space-separated list of project-relative roots.
-- `TEST_PATH_RE=...` is an extended regular expression for test paths.
+- `TEST_PATH_RE=...` is an extended regular expression for test paths. It decides which changed files count as tests for `TEST_COVERAGE` and which files are scanned for test helpers.
 - `CATALOGS=auto` discovers `.agent/docs/*catalog*.md`. Otherwise it is a space-separated list of project-relative catalog paths.
 - `MAX_FINDINGS=20` caps ordinary candidate lines and must be a positive whole number. `0` is invalid rather than meaning “hide every finding.”
 

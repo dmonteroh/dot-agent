@@ -19,9 +19,9 @@
 
 ## Implementation
 
-- Before creating an endpoint, component, service, module, migration, or worker, read the area's catalog, however small the task.
+- Before creating an endpoint, component, service, module, migration, worker, test helper, or fixture, read the area's catalog, however small the task.
 - Search the code when the catalog has no answer. Extend existing building blocks where appropriate.
-- Add a new reusable block's catalog entry in the same change, including helpers inside existing modules.
+- Add a new reusable block's catalog entry in the same change, including helpers inside existing modules and shared test helpers and fixtures.
 - Add focused tests for new or changed observable behavior. Existing coverage can suffice for a pure refactor.
 - Update docs when behavior, architecture, operations, dependencies, or practices change.
 - State provenance for numbers, defaults, and thresholds: measurement, source, or chosen default.
@@ -86,7 +86,8 @@
 
 Read this rubric for substantial work or a review that needs it.
 
-- Changed observable behavior is covered by a test that fails without the change. Pure refactors rely on existing coverage.
+- Changed observable behavior is covered by a test that fails without the change, and a fix for a blocking review finding adds a test for the code path the finding names. Pure refactors rely on existing coverage.
+- An assertion whose expected value is computed from the same source as its actual value proves nothing. The expected value is a literal, a fixture, or an independent computation.
 - No unrelated diffs: every changed file traces to the task.
 - Docs are updated wherever behavior, flows, dependencies, architecture, or practices changed, citing the code or test path rather than paraphrasing it.
 - If a doc was tightened or split, the pass changed shape only: every name, value, command, path, and gotcha in the pre-edit version is still present. The word count is backed by that check rather than standing in for it.
