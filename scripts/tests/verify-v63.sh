@@ -78,7 +78,7 @@ verify="$root/.agent/scripts/verify.sh"
 
 version=$(bash "$verify" --version)
 printf '%s\n' "$version" | grep -qF 'dot-agent v6.3' \
-  && printf '%s\n' "$version" | grep -qF 'receipt schema 2' \
+  && printf '%s\n' "$version" | grep -qF 'receipt schema 3' \
   && ok "version identifies dot-agent and receipt schema" || bad "incomplete version output: $version"
 
 expect_rc 0 "genuine TAP success and paths with spaces" bash "$verify" run test --root "$root"
@@ -162,6 +162,23 @@ tamper="$root/.agent/.state/receipts/$tamper_id.receipt"
 chmod 644 "$tamper"
 sed 's/^status=pass$/status=fail/' "$tamper" >"$tamper.tmp" && mv "$tamper.tmp" "$tamper"
 expect_rc 2 "valid-shape receipt tampering is rejected" bash "$verify" check "$tamper_id" --root "$root"
+
+expect_rc 0 "fresh receipt for the fails_without_change field" bash "$verify" run test --root "$root"
+fwc_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
+fwc="$root/.agent/.state/receipts/$fwc_id.receipt"
+[ "$(tail -n 1 "$fwc")" = 'fails_without_change=unknown' ] \
+  && ok "a run records fails_without_change=unknown" || bad "receipt fails_without_change line: $(tail -n 1 "$fwc")"
+expect_rc 0 "a receipt carrying fails_without_change validates" bash "$verify" check "$fwc_id" --root "$root"
+cp "$fwc" "$tmp/fwc.saved"
+chmod 644 "$fwc"
+sed '$d' "$tmp/fwc.saved" >"$fwc"
+expect_rc 2 "a receipt missing fails_without_change is refused" bash "$verify" check "$fwc_id" --root "$root"
+{ sed '$d' "$tmp/fwc.saved"; printf 'shipped=unknown\n'; } >"$fwc"
+expect_rc 2 "a receipt with another key in its place is refused" bash "$verify" check "$fwc_id" --root "$root"
+{ sed '$d' "$tmp/fwc.saved"; printf 'fails_without_change=maybe\n'; } >"$fwc"
+expect_rc 2 "a fails_without_change outside yes, no, unknown is refused" bash "$verify" check "$fwc_id" --root "$root"
+{ sed '$d' "$tmp/fwc.saved"; printf 'fails_without_change=yes\n'; } >"$fwc"
+expect_rc 2 "an edited fails_without_change breaks the receipt digest" bash "$verify" check "$fwc_id" --root "$root"
 
 expect_rc 124 "timeout returns 124" bash "$verify" run timeout --root "$root" --timeout 1
 timeout_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
