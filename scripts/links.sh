@@ -40,12 +40,26 @@ while IFS= read -r f; do
   [ -n "$f" ] && nodefiles+=("$f")
 done < <(find "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
 
+# Linked worktrees under the root are other checkouts of the same project.
+# Their files are not this checkout's, and an orchestrator can hold dozens of
+# them, so the walk below leaves them out.
+worktree_prune=()
+root_phys=$(cd "$root" 2>/dev/null && pwd -P) || root_phys=""
+if [ -n "$root_phys" ]; then
+  while IFS= read -r wt; do
+    case "$wt" in
+    "$root_phys"/*) worktree_prune+=(-o -path "${root%/}/${wt#"$root_phys"/}") ;;
+    esac
+  done < <(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+fi
+
 projbasenames=$'\n'
 while IFS= read -r f; do
-  [ -n "$f" ] && projbasenames="$projbasenames${f##*/}"$'\n'
+  [ -n "$f" ] && projbasenames="$projbasenames$f"$'\n'
 done < <(find "$root" \( -name .git -o -name node_modules -o -name vendor \
-  -o -name .venv -o -name dist -o -name build -o -name target \) -prune -o \
-  -type f -name '*.md' -print 2>/dev/null)
+  -o -name .venv -o -name dist -o -name build -o -name target \
+  ${worktree_prune[@]+"${worktree_prune[@]}"} \) -prune -o \
+  -type f -name '*.md' -print 2>/dev/null | sed 's|.*/||' | LC_ALL=C sort -u)
 
 strip_comments() {
   awk '

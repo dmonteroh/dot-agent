@@ -89,5 +89,6 @@ Three sources are excluded from the `BROKEN:` walk because they name files in a 
 ## Implementation notes
 
 - Matching is loose on purpose: a citation resolves against a file's node-relative path *or* its bare basename, because docs cite each other both ways — `docs/backend.md` from the routing table, `references/error-codes.md` from the doc beside it. A false "cited" is quieter than a false orphan.
+- The walk for project files skips `.git`, the common dependency and build directories, and every linked worktree under the root that `git worktree list` names. A worktree is another checkout of the project, so a file that exists only there does not resolve a citation. An orchestrator can keep dozens of worktrees under the root, and walking them made one run take minutes.
 - One `grep -l` over the whole corpus per candidate, never one per (candidate, file) pair. The pairwise form is quadratic in processes and becomes unusable on a large node while returning the same answer.
 - `<!-- -->` comments are stripped before a file is read for citations. Header contracts live in comments and state formats by example — `memory.md`'s says `- [Title](memory/slug.md) — hook` — so a comment is a spec, not a citation, and reading one as a link invents a broken path on every node.

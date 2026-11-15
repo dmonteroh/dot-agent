@@ -182,5 +182,26 @@ out=$(bash "$repo_root/scripts/links.sh" "$bare" 2>&1)
 check "a node with no stamp prints nothing from the drift pass" \
   '! printf "%s\n" "$out" | grep -qE "drift|Checked|STALE"'
 
+# A linked worktree under the root is another checkout of the project: the
+# walk for project files leaves it out, so a file that exists only there does
+# not resolve a citation.
+wtp="$tmp/wtp"
+mkdir -p "$wtp/.agent/docs" "$wtp/notes"
+printf '%s\n' '<!-- Read when: x -->' '# X' 'See [main](present-in-main.md) and [worktree](only-in-worktree.md).' >"$wtp/.agent/docs/x.md"
+printf '# Main\n' >"$wtp/notes/present-in-main.md"
+git -C "$wtp" init -q
+git -C "$wtp" -c user.email=test@example.invalid -c user.name=test add -A
+git -C "$wtp" -c user.email=test@example.invalid -c user.name=test commit -qm base
+git -C "$wtp" worktree add -q "$wtp/.wt/w1" -b w1
+printf '# Worktree\n' >"$wtp/.wt/w1/only-in-worktree.md"
+out=$(bash "$repo_root/scripts/links.sh" "$wtp" 2>&1)
+check "a file that exists only in a linked worktree does not resolve a citation" \
+  'printf "%s\n" "$out" | grep -qF "cites only-in-worktree.md"'
+check "a project file outside the node still resolves a bare citation" \
+  '! printf "%s\n" "$out" | grep -qF "cites present-in-main.md"'
+out=$(cd "$wtp" && bash "$repo_root/scripts/links.sh" 2>&1)
+check "the worktree is left out when the root is given as ." \
+  'printf "%s\n" "$out" | grep -qF "cites only-in-worktree.md"'
+
 printf '1..%d\n' "$((passes + failures))"
 [ "$failures" -eq 0 ]
