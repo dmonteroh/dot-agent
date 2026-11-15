@@ -83,7 +83,7 @@ printf '%s\n' "$version" | grep -qF 'dot-agent v6.3' \
 
 expect_rc 0 "genuine TAP success and paths with spaces" bash "$verify" run test --root "$root"
 record=$(cat "$tmp/stdout"); receipt_id=$(printf '%s\n' "$record" | awk -F '\t' '{print $2}')
-if printf '%s\n' "$record" | grep -Eq '^receipt\t[^[:space:]]+\tpass\ttest\t0\t2$'; then ok "success result record"; else bad "success result record: $record"; fi
+if printf '%s\n' "$record" | grep -Eq $'^receipt\t[^[:space:]]+\tpass\ttest\t0\t2$'; then ok "success result record"; else bad "success result record: $record"; fi
 expect_rc 0 "current receipt validates" bash "$verify" check "$receipt_id" --root "$root"
 receipt_file="$root/.agent/.state/receipts/$receipt_id.receipt"
 has '^worktree=' "$receipt_file" && has '^invocation=' "$receipt_file" && has '^executed_at=[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$receipt_file" \
@@ -97,7 +97,7 @@ sed 's#CHECK_DRIVER=.agent/scripts/checks-alt.sh#CHECK_DRIVER=.agent/scripts/che
 rm -f "$root/.agent/scripts/checks-alt.sh"
 
 expect_rc 1 "nonzero check fails" bash "$verify" run fail --root "$root"
-has '^receipt\t.*\tfail\tfail\t7\t1$' "$tmp/stdout" && ok "nonzero result preserves exit" || bad "nonzero result preserves exit"
+has $'^receipt\t.*\tfail\tfail\t7\t1$' "$tmp/stdout" && ok "nonzero result preserves exit" || bad "nonzero result preserves exit"
 fail_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
 expect_rc 0 "current failed receipt validates" bash "$verify" check "$fail_id" --root "$root"
 expect_rc 1 "zero-count positive check is inconclusive" bash "$verify" run zero --root "$root"
