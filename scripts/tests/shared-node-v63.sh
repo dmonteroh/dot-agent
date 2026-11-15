@@ -124,4 +124,43 @@ kill "$holder" 2>/dev/null
 wait "$holder" 2>/dev/null || true
 rm -f "$lock/owner"; rmdir "$lock"
 
+# A lock directory left with no owner file: a zero wait refuses and leaves it,
+# and a whole wait ends by taking it
+mem_lock="$main_node/.state/memory.lock"
+mkdir "$mem_lock"
+if DA_LOCK_WAIT_SECONDS=0 bash "$scripts/memory.sh" new --slug ownerless-zero --title 'Ownerless zero' --hook 'lock test' --fact 'Refused.' "$main" >/dev/null 2>&1; then
+  fail 'a zero wait took a lock with no owner'
+fi
+[ -d "$mem_lock" ] || fail 'a zero wait removed a lock with no owner'
+DA_LOCK_WAIT_SECONDS=1 bash "$scripts/memory.sh" new --slug ownerless-wait --title 'Ownerless wait' --hook 'lock test' --fact 'Written.' "$main" >/dev/null 2>"$scratch/ownerless.err" \
+  || fail 'memory.sh did not take a lock left with no owner'
+grep -qF 'took a lock left with no owner' "$scratch/ownerless.err" || fail 'taking a lock left with no owner was not reported'
+[ -f "$main_node/memory/ownerless-wait.md" ] || fail 'the fact written after the recovery did not land'
+[ ! -e "$mem_lock" ] || fail 'the lock taken from an ownerless directory was not released'
+
+# A lock that names a live owner through the whole wait is not removed
+mkdir "$mem_lock"
+sleep 60 &
+holder=$!
+printf '%s\n' "$holder" >"$mem_lock/owner"
+if DA_LOCK_WAIT_SECONDS=1 bash "$scripts/memory.sh" new --slug owned-wait --title 'Owned wait' --hook 'lock test' --fact 'Refused.' "$main" >/dev/null 2>&1; then
+  kill "$holder" 2>/dev/null; fail 'memory.sh wrote while a live writer held the lock'
+fi
+[ "$(cat "$mem_lock/owner" 2>/dev/null)" = "$holder" ] || { kill "$holder" 2>/dev/null; fail 'a live writer lost its lock'; }
+kill "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null || true
+rm -f "$mem_lock/owner"; rmdir "$mem_lock"
+
+# learn.sh recovers a lock whose writer is dead, as the other record writers do
+learn_lock="$main_node/rules/learned/.learn-writer.lock"
+mkdir -p "$learn_lock"
+sh -c 'exit 0' &
+dead=$!
+wait "$dead" 2>/dev/null || true
+printf '%s\n' "$dead" >"$learn_lock/owner"
+printf '%s\n' '- [2026-09-27] Recover a writer lock whose owner is dead. Trigger: lock test.' \
+  | bash "$scripts/learn.sh" new --distinct --file - "$main" >"$scratch/learn.out" 2>&1 \
+  || fail "learn.sh did not recover a dead writer's lock: $(cat "$scratch/learn.out")"
+[ ! -e "$learn_lock" ] || fail 'learn.sh left its writer lock behind'
+
 echo 'shared-node-v63: ok'

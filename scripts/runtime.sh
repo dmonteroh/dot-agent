@@ -348,6 +348,13 @@ da_lock() {
 # lock for one append or one file write, so parallel workers clear in well
 # under a second, and a checkpoint that holds the log lock through its checks
 # still ends in a refusal the caller sees). Other failures return at once.
+#
+# A writer records its pid right after it makes the lock directory, so a
+# directory with no owner file at every attempt of a whole wait was left by a
+# writer killed while releasing it, and no dead-owner check can clear it. The
+# wait ends by removing it and taking the lock. rmdir removes only an empty
+# directory, so a lock that gained an owner in the meantime stays held. A wait
+# of 0 makes one attempt and never removes anything.
 da_lock_wait() {
   [ "$#" -eq 1 ] || { echo "runtime.sh: da_lock_wait needs one argument" >&2; return 2; }
   da_lw_wait=${DA_LOCK_WAIT_SECONDS:-10}
@@ -355,12 +362,20 @@ da_lock_wait() {
   # SECONDS is bash's own clock, so the wait needs no external command and a
   # project that puts its own date on PATH cannot disturb it.
   da_lw_end=$((SECONDS + da_lw_wait))
+  da_lw_ownerless=1
   while :; do
     da_lw_err=$({ da_lock "$1" 2>&1 >&3; } 3>&1)
     da_lw_rc=$?
+    if [ "$da_lw_rc" -ne 1 ] || [ ! -d "$1" ] || [ -e "$1/owner" ]; then da_lw_ownerless=0; fi
     [ "$da_lw_rc" -eq 1 ] && [ "$SECONDS" -lt "$da_lw_end" ] || break
     sleep 0.2
   done
+  if [ "$da_lw_rc" -eq 1 ] && [ "$da_lw_ownerless" -eq 1 ] && [ "$da_lw_wait" -gt 0 ] \
+    && rmdir -- "$1" 2>/dev/null; then
+    da_lw_err=$({ da_lock "$1" 2>&1 >&3; } 3>&1)
+    da_lw_rc=$?
+    [ "$da_lw_rc" -ne 0 ] || echo "runtime.sh: took a lock left with no owner: $1" >&2
+  fi
   [ -z "$da_lw_err" ] || printf '%s\n' "$da_lw_err" >&2
   return "$da_lw_rc"
 }

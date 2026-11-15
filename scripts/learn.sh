@@ -166,10 +166,23 @@ lrn_current_version() {
   fi
 }
 
-# Waits for a held lock as runtime.sh's da_lock_wait does, so parallel workers
-# writing one shared node take turns instead of refusing.
+# Takes the lock through runtime.sh's da_lock_wait, so parallel workers writing
+# one shared node take turns, and a lock whose writer was killed is recovered
+# as it is for the other record writers. Without runtime.sh beside this script
+# the lock is a plain directory with no recovery.
 lrn_lock_writers() {
   lw_lock="$1/.learn-writer.lock"
+  lw_self=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || return 1
+  if [ -f "$lw_self/runtime.sh" ]; then
+    # shellcheck source=runtime.sh
+    . "$lw_self/runtime.sh"
+    if da_lock_wait "$lw_lock"; then
+      writer_lock="$lw_lock"
+      return 0
+    fi
+    echo "learn.sh: another record writer holds $lw_lock" >&2
+    return 1
+  fi
   lw_wait=${DA_LOCK_WAIT_SECONDS:-10}
   case "$lw_wait" in '' | *[!0-9]*) lw_wait=10 ;; esac
   lw_end=$((SECONDS + lw_wait))
