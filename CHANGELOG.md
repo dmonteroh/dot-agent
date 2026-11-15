@@ -4,7 +4,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 
 ---
 
-## V6.3 (2026-09-27): Compact contracts and verified checkpoints
+## V6.3 (2026-11-15): Compact contracts and verified checkpoints
 
 ### What changed
 
