@@ -19,7 +19,7 @@ A worker whose session-start hook already printed a `dot-agent session-start hoo
 In order:
 
 1. Finding lines, one per line, each opening with a prefix: `GROOM:`, `REPAIR:`, `INDEX:`. Then the informational lines: `TOOLS:`, `LOAD:`, `PAYLOAD:`, `HOOK:`.
-2. In generated mode only, either the line `Index pages: …` followed by one `READ: <path>` line per page to open, or one line beginning `Index cache is stale or missing` that names `.agent/rules/` and `.agent/docs/architecture.md` to read directly. `READ:` paths are relative to the folder that holds `.agent/`.
+2. In generated mode only, either the line `Index pages: …` followed by one `READ: <path>` line per page to open, or one line beginning `Index cache is stale or missing`. That line names `.agent/rules/` and `.agent/docs/architecture.md` for a worker to read directly, and tells the orchestrator's own session to run `index.sh ensure`. `READ:` paths are relative to the folder that holds `.agent/`.
 3. Each always-loaded file under a line `==== <path> ====`, the path relative to the folder that holds `.agent/`. Manual mode prints `rules/learned.md`, `rules/contract.md`, `purpose.md`, `memory.md`. Generated mode prints `purpose.md` and `memory.md`.
 4. The newest session-log entries under `==== .agent/session-log.md, newest <n> entries ====`. `--tail <n>` sets the count for one call and `--tail 0` leaves the section out.
 

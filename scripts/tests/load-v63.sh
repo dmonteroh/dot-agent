@@ -152,5 +152,11 @@ snapshot | cmp -s - "$scratch/before" || fail 'a stale-cache --load wrote under 
 grep -qF 'read .agent/rules/ and .agent/docs/architecture.md directly' "$scratch/stale.out" || fail 'a stale cache does not name the canonical paths'
 ! grep -q '^READ: ' "$scratch/stale.out" || fail 'a stale cache still listed pages'
 [ "$(bash "$g/.agent/scripts/index.sh" check --root "$g" 2>/dev/null || true)" = STALE ] || fail '--load rebuilt the stale cache'
+# The stale line tells the session how to get the pages back, and what it
+# names works: ensure prints a file whose READ: lines are the pages
+grep -qF 'bash .agent/scripts/index.sh ensure' "$scratch/stale.out" || fail 'a stale cache does not tell the session to rebuild it'
+grep -qF 'A subagent never runs it' "$scratch/stale.out" || fail 'the stale line does not keep ensure from a subagent'
+entry=$(cd "$g" && bash .agent/scripts/index.sh ensure 2>/dev/null) || fail 'ensure failed on the stale fixture'
+grep -q '^READ: ' "$entry" || fail 'the file ensure prints lists no page'
 
 echo "ok load-v63"

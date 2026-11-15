@@ -56,7 +56,7 @@ Direct writers do not refuse writes for size. Strict checkpoint policy blocks co
 In manual mode (`indexes: manual`, the default) the set is `rules/learned.md`, `rules/contract.md`, `purpose.md`, `memory.md`. In generated mode (`indexes: generated`) it is `purpose.md` and `memory.md` only, and the rule bodies and routing arrive as index pages. `--load` runs `index.sh check` and decides what precedes the two files:
 
 - On `FRESH`, it prints the entry file's `READ:` lines under one line telling the session to open every page listed. The session then needs no separate `index.sh` call.
-- Otherwise (`STALE`, no cache, no `git`), it prints one line naming `.agent/rules/` and `.agent/docs/architecture.md` as the paths to read directly this session, and says that `index.sh ensure` is the orchestrator's to run.
+- Otherwise (`STALE`, no cache, no `git`), it prints one line and still writes nothing. The line tells the session to run `index.sh ensure` and open the file that prints, whose `READ:` lines name the pages. It tells a subagent to leave `ensure` alone and read `.agent/rules/` and `.agent/docs/architecture.md` directly this session. A cache goes stale whenever a rule or a routed doc changes after the last checkpoint, so a top-level session that only read around it would work without the index pages until its own checkpoint.
 
 The entry point's bootstrap is then one tool call instead of several, and the session reads the mode's files from that output rather than opening them again. The printed set must fit the harness's tool-result cap (about 30 KB on Claude Code, measured).
 

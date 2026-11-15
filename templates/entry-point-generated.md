@@ -8,7 +8,7 @@
 Execute with tools, in order:
 
 1. Run `bash .agent/scripts/status.sh --load` — one call, unless a `dot-agent session-start hook` block holds its output. It prints GROOM:/REPAIR:/INDEX: flags and TOOLS: notes, the index pages to open, `.agent/purpose.md` (scope and boundaries), `.agent/memory.md` (the fact index), then recent session-log entries. Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
-2. Open every index page step 1 lists. Listed paths are relative to the folder that holds `.agent/`. A rule page is the rule read. A rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty. When step 1 lists no page, read `.agent/rules/` and `.agent/docs/architecture.md` directly and carry on.
+2. Open every index page step 1 lists. Listed paths are relative to the folder that holds `.agent/`. A rule page is the rule read. A rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty. When step 1 lists no page, do what its line says: rebuild the cache and open its pages, or as a subagent read `.agent/rules/` and `.agent/docs/architecture.md` directly and carry on.
 3. Open the `memory/` fact files whose hooks match the task.
 4. Routing: the routes pages step 2 opened are the catalog, read whole. `.agent/docs/architecture.md` is the routing table behind them and the fallback when no cache exists.
 

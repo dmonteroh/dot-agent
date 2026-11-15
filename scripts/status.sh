@@ -589,7 +589,7 @@ if [[ "$load_mode" == generated ]]; then
   if [[ -n "$pages" ]]; then
     notice="Index pages: open every page listed here before the work. They carry the rule bodies and the routes catalog, which this output does not print. Paths are relative to the folder that holds .agent/."$'\n'"$pages"$'\n'
   else
-    notice="Index cache is stale or missing, so no page is listed: read .agent/rules/ and .agent/docs/architecture.md directly this session. index.sh ensure rebuilds the cache and writes, so it is the orchestrator's to run, never a subagent's."$'\n'
+    notice="Index cache is stale or missing, so no page is listed. Run \`bash .agent/scripts/index.sh ensure\` and open the file it prints: its READ: lines name the pages. A subagent never runs it, because it writes: as a subagent, read .agent/rules/ and .agent/docs/architecture.md directly this session."$'\n'
   fi
   notice_label=", index $(bytes_of "$notice")"
 elif [[ "$indexes" == generated ]]; then
