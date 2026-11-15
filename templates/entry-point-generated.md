@@ -8,13 +8,13 @@
 Execute with tools, in order:
 
 1. Run `bash .agent/scripts/status.sh --load` — one call, unless a `dot-agent session-start hook` block holds its output. It prints GROOM:/REPAIR:/INDEX: flags and TOOLS: notes, the index pages to open, `.agent/purpose.md` (scope and boundaries), `.agent/memory.md` (the fact index), then recent session-log entries. Read them from that output; do not open them again with a tool. Resolve REPAIR:/INDEX: findings before relying on affected context. GROOM: handling follows checkpoint policy.
-2. Open every index page step 1 lists. Listed paths are relative to the folder that holds `.agent/`. A rule page is the rule read. a rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty. When step 1 lists no page, read `.agent/rules/` and `.agent/docs/architecture.md` directly and carry on.
+2. Open every index page step 1 lists. Listed paths are relative to the folder that holds `.agent/`. A rule page is the rule read. A rule's source is opened only to edit it, to check its provenance, or to resolve a concrete uncertainty. When step 1 lists no page, read `.agent/rules/` and `.agent/docs/architecture.md` directly and carry on.
 3. Open the `memory/` fact files whose hooks match the task.
 4. Routing: the routes pages step 2 opened are the catalog, read whole. `.agent/docs/architecture.md` is the routing table behind them and the fallback when no cache exists.
 
 The one re-run. After a context compaction, a handoff, or a branch switch, run steps 1 and 2 again. A summary is lossy by construction, so a compacted session is a session operating without it, and it is not in a position to judge what it kept. Re-route step 4 only if the work moved.
 
-Before handing back changed work, run `bash .agent/scripts/checkpoint.sh --tool <tool> --area <area> --checks <configured-check> --summary "<task and outcome, at most 25 words>"`. It runs verification, review, status, and logging. Reuse a current receipt with `--verification <id>`. For failed or manual-only work, use `--verify fail` or `--verify n/a`. Use `--base <ref>` for committed work, or `--node-only` for an explicit ignored-node write. Fix blocking findings and retry. Unchanged completed content logs once. Read-only turns need no entry.
+Before handing back changed work, run `bash .agent/scripts/checkpoint.sh --tool <tool> --area <area> --checks <configured-check> --summary "<task and outcome, at most 25 words>"`. It runs review, status, verification, and logging. Reuse a current receipt with `--verification <id>`. For failed or manual-only work, use `--verify fail` or `--verify n/a`. Use `--base <ref>` for committed work, or `--node-only` for an explicit ignored-node write. Fix blocking findings and retry. Unchanged completed content logs once. Read-only turns need no entry.
 
 Check names live in `.agent/scripts/checks.sh`. Helper `--help` explains details. `checkpoint.conf` controls maintenance policy.
 

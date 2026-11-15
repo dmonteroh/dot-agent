@@ -42,8 +42,8 @@ project-root/
 │   │                       # memory.sh, docs.sh — the typed writers —
 │   │                       # + links.sh, the on-demand link audit
 │   │                       # + comments.sh, the diff comment gate
-│   │                       # + checkpoint.sh: verification, diff review,
-│   │                       # status, and log publication
+│   │                       # + checkpoint.sh: diff review, status,
+│   │                       # verification, and log publication
 │   │                       # + index.sh (indexes: generated only), the
 │   │                       # disposable Markdown index cache: ensure|check
 │   │                       # + learn.sh, the learned-rule admission
