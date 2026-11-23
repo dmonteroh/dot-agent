@@ -70,6 +70,8 @@ cp "$project/.agent/scripts/status.conf" "$scratch/status.conf"
 printf 'LOG_MAX_ENTRIES=0\n' >"$project/.agent/scripts/status.conf"
 if checkpoint --checks test; then fail 'a blocking status finding let checkpoint complete'; fi
 grep -q 'status findings block completion' "$scratch/err" || fail 'the status block was not the reason checkpoint stopped'
+grep -q 'the advisory lines above block too: do what each says now, without asking first, then run this call again' "$scratch/err" \
+  || fail 'a strict block on an advisory finding did not name the next step'
 [ "$(check_runs)" -eq "$runs_before" ] || fail 'verification ran before the status check that blocked'
 cp "$scratch/status.conf" "$project/.agent/scripts/status.conf"
 if checkpoint; then fail 'checkpoint ran with no verification flag'; fi

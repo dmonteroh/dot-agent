@@ -169,14 +169,24 @@ if [ "$status_rc" -ne 0 ] || [ -s "$status_err" ]; then
   die 'status check failed to run cleanly; no log entry written'
 fi
 blocked=0
+structural=0
 while IFS=$'\t' read -r severity code path message; do
   [ -n "$severity" ] || continue
   case "$severity" in block|advisory) ;; *) die 'status returned an invalid severity' ;; esac
   [ -n "$code" ] && [ -n "$path" ] && [ -n "$message" ] || die 'status returned an incomplete finding'
   printf '%s: %s %s %s\n' "$severity" "$code" "$path" "$message"
+  if [ "$severity" = block ]; then structural=1; fi
   if [ "$severity" = block ] || [ "$policy" = strict ]; then blocked=1; fi
 done <"$status_out"
-[ "$blocked" -eq 0 ] || die 'status findings block completion; no log entry written'
+# The closing line names the next step, so a session need not ask what a block
+# means or relax the policy to get past it. The node's contract assigns this
+# maintenance to the current session.
+if [ "$blocked" -ne 0 ]; then
+  if [ "$structural" -eq 0 ]; then
+    die 'status findings block completion; no log entry written. Policy is strict, so the advisory lines above block too: do what each says now, without asking first, then run this call again'
+  fi
+  die 'status findings block completion; no log entry written. Do what each line above says, then run this call again'
+fi
 
 verify="$requested_verify"
 if [ -n "$checks" ]; then

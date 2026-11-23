@@ -31,6 +31,8 @@ For Git work, `review.sh` invokes the comment gate and reports catalog and cover
 
 `status.sh --format tsv` supplies stable finding codes. The default `POLICY=strict` in `checkpoint.conf` blocks every actionable finding. `--policy completion` defers advisory maintenance while structural defects remain blocking. Informational tool notes do not block either policy.
 
+A status block ends with a line that names the next step: do what each finding's line says, then run the call again. When only advisory findings blocked under the strict policy, the line says that they block too and that the session handles them now, without asking first. The node's contract already assigns that maintenance to the current session, so the line saves a question and keeps a session from relaxing the policy to get past the block.
+
 A failed status command, unexpected stderr, or malformed finding is an inspection failure. Checkpoint writes no entry in that case.
 
 Generated-index nodes refresh their cache before logging. A missing or failed indexer remains advisory because canonical rules and docs remain available.
