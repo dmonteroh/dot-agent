@@ -100,6 +100,13 @@ mkdir -p "$scratch/nogit"
 ln -s "$main_node" "$scratch/nogit/.agent"
 refused 'a link from a root that is not a Git checkout' "$scratch/nogit"
 
+# A reader sees the linked node as the node: links.sh audits the same files
+# from the worktree as from the main checkout
+links_main=$(bash "$scripts/links.sh" "$main" 2>&1)
+links_wt=$(bash "$scripts/links.sh" "$wt" 2>&1)
+case "$links_wt" in *'no markdown files to audit'*) fail 'links.sh found no files through the linked node' ;; esac
+[ "$links_wt" = "$links_main" ] || fail 'links.sh reported differently from the linked worktree'
+
 # A writer waits for a held lock, and a zero wait refuses at once
 lock="$main_node/.state/checkpoint.lock"
 mkdir "$lock"

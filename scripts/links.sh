@@ -35,10 +35,12 @@ is_exempt() {
   return 1
 }
 
+# -H follows a link given on the command line: a worktree may hold .agent as a
+# link to the node of another checkout, and find would otherwise stop at it.
 nodefiles=()
 while IFS= read -r f; do
   [ -n "$f" ] && nodefiles+=("$f")
-done < <(find "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
+done < <(find -H "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
 
 # Linked worktrees under the root are other checkouts of the same project.
 # Their files are not this checkout's, and an orchestrator can hold dozens of
