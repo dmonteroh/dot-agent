@@ -48,6 +48,10 @@ get() { printf '%s\n' "$out" | sed -n "s/^$1=//p"; }
 for helper in status.sh links.sh comments.sh review.sh verify.sh index.sh log.sh memory.sh learn.sh docs.sh checkpoint.sh absorb.sh; do
   awk '/^## Exit codes$/ { on = 1; next } /^## / { on = 0 } on && /^\|/' "$page" | grep -qF "\`$helper" || fail "the exit-code table leaves out $helper"
 done
+for template in "$repo"/templates/entry-point*.md; do
+  grep -qF 'Write `.agent/` only through its scripts, lessons only.' "$template" || fail "${template##*/} does not limit a subagent's writes to lessons"
+  grep -qF -- '--summary "<task and outcome, ≤25 words, no paths or ids>"' "$template" || fail "${template##*/} does not state both summary limits"
+done
 grep -qF 'and so are `checkpoint.sh` and `index.sh ensure`' "$repo/templates/entry-point-generated.md" \
   || fail "the generated entry point does not name index.sh ensure as the orchestrator's"
 [ -z "$(get MIGRATION_TARGET)" ] || fail 'a finalized node reports a migration target'

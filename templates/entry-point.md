@@ -13,10 +13,10 @@ Execute with tools, in order:
 
 The one re-run. After a context compaction or handoff, run step 1 again. A summary is lossy by construction, so a compacted session is a session operating without it, and it is not in a position to judge what it kept. Re-route step 3 only if the work moved.
 
-Before handing back changed work, run `bash .agent/scripts/checkpoint.sh --tool <tool> --area <area> --checks <configured-check> --summary "<task and outcome, at most 25 words>"`. It runs review, status, verification, and logging. Reuse a current receipt with `--verification <id>`. For failed or manual-only work, use `--verify fail` or `--verify n/a`. Use `--base <ref>` for committed work, or `--node-only` for an explicit ignored-node write. Fix blocking findings and retry. Unchanged completed content logs once. Read-only turns need no entry.
+Before handing back changed work, run `bash .agent/scripts/checkpoint.sh --tool <tool> --area <area> --checks <configured-check> --summary "<task and outcome, ≤25 words, no paths or ids>"`. It runs review, status, verification, and logging. Reuse a current receipt with `--verification <id>`. For failed or manual-only work, use `--verify fail` or `--verify n/a`. Use `--node-only` for an explicit ignored-node write. Fix blocking findings and retry. Unchanged completed content logs once. Read-only turns need no entry.
 
 Check names live in `.agent/scripts/checks.sh`. Helper `--help` explains details. `checkpoint.conf` controls maintenance policy.
 
-Exception — subagents: flags are the orchestrator's to handle, and so is `checkpoint.sh`. Read everything else. Write `.agent/` only through its scripts, and log with `log.sh`.
+Exception — subagents: flags are the orchestrator's to handle, and so is `checkpoint.sh`. Read everything else. Write `.agent/` only through its scripts, lessons only.
 
 Keep every entry-point mirror identical.
