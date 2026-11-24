@@ -131,6 +131,8 @@ git -C "$root" checkout -q -- src/input.txt
 
 expect_rc 1 "source edit during check is inconclusive" bash "$verify" run mutate --root "$root"
 has $'\tinconclusive\tmutate\t0\t1$' "$tmp/stdout" && ok "mutation result record" || bad "mutation result record"
+has 'project files changed while mutate ran, so the result is inconclusive\. Run the check again' "$tmp/stderr" \
+  && ok "a changed-input run says why it is inconclusive" || bad "changed-input run gave no reason"
 mutate_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
 expect_rc 0 "changed-input run leaves an honestly inconclusive current receipt" bash "$verify" check "$mutate_id" --root "$root"
 git -C "$root" checkout -q -- src/input.txt
@@ -469,6 +471,70 @@ has 'selection failed' "$tmp/stderr" && has '^progress line 3000 of a long run$'
   && ok "a failed selection falls back to the plain tail" || bad "fallback tail missing"
 printf 'OUTPUT_MAX_BYTES=many\n' >>"$out_root/.agent/scripts/verify.conf"
 expect_rc 2 "a non-numeric OUTPUT_MAX_BYTES is refused" bash "$out_verify" run long --root "$out_root"
+
+# TEST_COUNT_FORMAT=auto reads a runner's own closing summary when the output
+# is not TAP. Each driver line is the shape that runner prints.
+auto_root="$tmp/auto"
+new_git "$auto_root"
+cat >"$auto_root/.agent/scripts/verify.conf" <<'EOF'
+CHECK_DRIVER=.agent/scripts/checks.sh
+POSITIVE_TEST_CHECKS=node,nodezero,bun,unittest,jest,vitest,cargo,cargofiltered,gov,goplain,minitest,pytest,pytestq,pytestnone,cuttap,prose
+TEST_COUNT_FORMAT=auto
+TIMEOUT_SECONDS=60
+EOF
+cat >"$auto_root/.agent/scripts/checks.sh" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  node) printf '\342\204\271 tests 3\n\342\204\271 suites 0\n\342\204\271 pass 2\n\342\204\271 fail 0\n\342\204\271 skipped 1\n' ;;
+  nodezero) printf '\342\204\271 tests 0\n\342\204\271 pass 0\n\342\204\271 fail 0\n' ;;
+  bun) printf ' 2 pass\n 0 fail\nRan 2 tests across 1 file. [32.00ms]\n' ;;
+  unittest) printf '..\n-----\nRan 2 tests in 0.000s\n\nOK\n' ;;
+  jest) printf 'Test Suites: 1 passed, 1 total\nTests:       1 skipped, 2 passed, 3 total\nSnapshots:   0 total\n' ;;
+  vitest) printf ' Test Files  1 passed (1)\n      Tests  1 failed | 2 passed (3)\n' ;;
+  cargo) printf 'test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Doc-tests x\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' ;;
+  cargofiltered) printf 'running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n' ;;
+  gov) printf '=== RUN   TestA\n--- PASS: TestA (0.00s)\n--- PASS: TestB (0.00s)\n    --- PASS: TestB/sub (0.00s)\nPASS\nok  \tx\t0.244s\n' ;;
+  goplain) printf 'ok  \tx\t0.382s\n' ;;
+  minitest) printf '1 runs, 1 assertions, 0 failures, 0 errors, 0 skips\n' ;;
+  pytest) printf '========================= 1 failed, 2 passed in 0.02s ==========================\n' ;;
+  pytestq) printf '..    [100%%]\n2 passed in 0.00s\n' ;;
+  pytestnone) printf '============================ 2 deselected in 0.00s =============================\n' ;;
+  cuttap) printf 'TAP version 13\n1..3\nok 1 - one\nRan 3 tests in 0.100s\n' ;;
+  prose) printf 'all good\n' ;;
+  *) exit 9 ;;
+esac
+EOF
+git -C "$auto_root" add .
+git -C "$auto_root" commit -qm initial
+auto_verify="$auto_root/.agent/scripts/verify.sh"
+auto_case() {
+  bash "$auto_verify" run "$1" --root "$auto_root" >"$tmp/stdout" 2>"$tmp/stderr"
+  if has "$(printf '\t%s\t%s\t0\t%s$' "$2" "$1" "$3")" "$tmp/stdout"; then ok "auto: $1 is $2 with count $3"; else bad "auto: $1 is not $2 with count $3: $(cat "$tmp/stdout")"; fi
+}
+auto_case node pass 2
+auto_case nodezero inconclusive 0
+auto_case bun pass 2
+auto_case unittest pass 2
+auto_case jest pass 2
+auto_case vitest pass 3
+auto_case cargo pass 2
+auto_case cargofiltered inconclusive 0
+auto_case gov pass 2
+auto_case minitest pass 1
+auto_case pytest pass 3
+auto_case pytestq pass 2
+auto_case pytestnone inconclusive 0
+auto_case pytestnone inconclusive 0
+has 'pytestnone exited 0 and ran 0 tests, so the result is inconclusive\. Run it over at least one test$' "$tmp/stderr" \
+  && ok "a zero-test run says why" || bad "zero-test run gave no reason: $(tail -1 "$tmp/stderr")"
+auto_case cuttap inconclusive unknown
+auto_case prose inconclusive unknown
+auto_case goplain inconclusive unknown
+has "goplain exited 0, but its output carries no test count this script reads.*make \.agent/scripts/checks\.sh print TAP or a summary this script counts.*leave the project's own test command as it is$" "$tmp/stderr" \
+  && ok "an uncounted run says why and names the driver" || bad "uncounted run gave no reason: $(tail -1 "$tmp/stderr")"
+sed 's/^TEST_COUNT_FORMAT=auto$/TEST_COUNT_FORMAT=tap/' "$auto_root/.agent/scripts/verify.conf" >"$tmp/verify.conf" && cp "$tmp/verify.conf" "$auto_root/.agent/scripts/verify.conf"
+auto_case unittest inconclusive unknown
+bash "$auto_verify" --help | grep -q 'TEST_COUNT_FORMAT=auto counts TAP' && ok "--help names the counted formats" || bad "--help does not name the counted formats"
 
 printf '1..%s\n' "$((pass + fail))"
 printf '# passed %s; failed %s\n' "$pass" "$fail"

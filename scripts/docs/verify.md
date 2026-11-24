@@ -7,7 +7,7 @@ verify.sh run CHECK [--root ROOT] [--timeout SECONDS] [--output-share N]
 verify.sh check RECEIPT [--root ROOT]
 ```
 
-The project-owned `.agent/scripts/checks.sh` receives `CHECK` as its sole argument. Configuration is non-executable `KEY=value` data in `.agent/scripts/verify.conf`: `CHECK_DRIVER`, `POSITIVE_TEST_CHECKS`, `TEST_COUNT_FORMAT` (`tap` or `none`), `TIMEOUT_SECONDS`, and optionally `NON_GIT_INPUT_ROOTS`, `OUTPUT_MAX_BYTES`, and `OUTPUT_FAILURE_PATTERN`. Command strings are not supported.
+The project-owned `.agent/scripts/checks.sh` receives `CHECK` as its sole argument. Configuration is non-executable `KEY=value` data in `.agent/scripts/verify.conf`: `CHECK_DRIVER`, `POSITIVE_TEST_CHECKS`, `TEST_COUNT_FORMAT` (`auto`, `tap`, or `none`), `TIMEOUT_SECONDS`, and optionally `NON_GIT_INPUT_ROOTS`, `OUTPUT_MAX_BYTES`, and `OUTPUT_FAILURE_PATTERN`. Command strings are not supported.
 
 Every invocation prints one tab-separated result record on stdout. `run` returns 0 only for a pass, 1 for a failed or inconclusive run, 2 for usage/infrastructure errors, and 124 for timeout. A check whose captured output is gone when it ends is inconclusive, whatever it exited with. `check` returns 0 for a current, structurally valid receipt even when that receipt records failure. Missing, malformed, or stale receipts return 2.
 
@@ -15,7 +15,7 @@ The check's output prints on stderr. Output within `OUTPUT_MAX_BYTES` (default 2
 
 - A header states the output's size and where the full output is kept: `.agent/.state/output/<receipt-id>.log`.
 - Every line matching `OUTPUT_FAILURE_PATTERN` prints first, with the five lines after it, up to half the limit.
-- With `TEST_COUNT_FORMAT=tap`, every failing TAP result line (`not ok`, indented subtests included) is chosen before any other line in that half, so one failure's context cannot crowd out another failure's name. A `not ok` marked `# TODO` is an expected failure and is not chosen.
+- With TAP output, every failing TAP result line (`not ok`, indented subtests included) is chosen before any other line in that half, so one failure's context cannot crowd out another failure's name. A `not ok` marked `# TODO` is an expected failure and is not chosen.
 - As many of the last lines as fit fill the rest.
 - Every printed line carries its line number in the full output.
 
@@ -23,7 +23,25 @@ If the selection itself fails, for example on an invalid pattern, the plain last
 
 `--output-share N` divides the limit by N for one run, so N runs printed into one tool result stay within one limit together. `checkpoint.sh --checks` passes the number of checks it runs. The limit never drops below 1 byte. A share smaller than the trimming header prints only the header and the section markers, and the full output is still kept.
 
-TAP counts require one unindented `1..N` plan and exactly N sequentially numbered top-level results. Nested plans are ignored. Missing, malformed, or duplicate top-level plans produce an unknown count. Incomplete result sets also produce an unknown count. A zero or unknown count makes a check named by `POSITIVE_TEST_CHECKS` inconclusive. A source change during the check also makes the result inconclusive.
+TAP counts require one unindented `1..N` plan and exactly N sequentially numbered top-level results. Nested plans are ignored. Missing, malformed, or duplicate top-level plans produce an unknown count. Incomplete result sets also produce an unknown count. A zero or unknown count makes a check named by `POSITIVE_TEST_CHECKS` inconclusive. A source change during the check also makes the result inconclusive. For both, `run` prints one more line on stderr that says why and names the next step.
+
+`TEST_COUNT_FORMAT=auto`, the default, counts TAP by those rules. Output is TAP when it has a `TAP version` line or a top-level plan, and a summary line never stands in for a TAP stream that was cut short. For any other output, `auto` reads the runner's own closing summary and counts the tests that passed or failed:
+
+| Runner | Line read | Count | Source |
+|---|---|---|---|
+| `node --test`, spec reporter | `ℹ pass 2`, `ℹ fail 0` | pass + fail | Node.js 24.16.0, observed |
+| pytest | `==== 1 failed, 2 passed in 0.02s ====`, bare under `-q` | passed + failed + xfailed + xpassed | pytest 9.1.1, observed |
+| Python unittest | `Ran 2 tests in 0.000s` | tests run | Python 3.14.7, observed |
+| Jest | `Tests:       1 failed, 2 passed, 3 total` | passed + failed | Jest 30.5.1, the template in its `SummaryReporter` source |
+| Vitest | `Tests  1 failed \| 2 passed (3)` | passed + failed | Vitest 4.1.7, observed |
+| `cargo test` | `test result: ok. 2 passed; 0 failed; …`, one per test binary | passed + failed, added up | cargo 1.99.1, observed |
+| `go test -v` | `--- PASS: TestA (0.00s)`, unindented | top-level tests | Go 1.27.1, observed |
+| minitest | `1 runs, 1 assertions, 0 failures, 0 errors, 0 skips` | runs | minitest 5.11.3, observed |
+| `bun test` | `Ran 2 tests across 1 file.` | tests run | Bun 1.3.9, observed |
+
+Skipped and filtered tests are left out, so a run whose every test was filtered away counts 0 and is inconclusive. `go test` without `-v` prints no count, so its driver line needs `-v`. A runner outside the table needs its TAP reporter, or its own row here once its summary line has been observed. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
+
+Counting TAP alone cost the closing bench of 2026-11-24 a measurable share of its calls. The fixtures run `node --test`, which prints the spec reporter when piped on Node.js 24. Of 114 sessions per agent at the candidate revision, tests ran and passed yet the run was inconclusive in 22 Claude sessions and 17 Codex sessions. All 39 then changed the project's test command to print TAP. Those sessions spent 213 and 76 calls from the first refusal to the recorded checkpoint, where one call would do.
 
 Receipts are read as data, never sourced, and live in the private worktree state directory under `receipts/`. `check` accepts only the opaque ID printed by `run`, not a path. Each receipt binds its physical worktree, fingerprint, configured driver invocation, and UTC execution timestamp. A nonzero run can therefore leave a valid receipt that honestly records `fail` or `inconclusive`.
 

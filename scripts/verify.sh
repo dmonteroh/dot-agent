@@ -15,6 +15,12 @@ Usage:
   verify.sh check RECEIPT [--root ROOT]
   verify.sh --help
   verify.sh --version
+
+A check named in POSITIVE_TEST_CHECKS passes only when its output shows a test
+ran. TEST_COUNT_FORMAT=auto counts TAP, and otherwise the closing summary of
+node --test, pytest, unittest, Jest, Vitest, cargo test, go test -v, minitest,
+and bun test. tap counts TAP alone. A runner outside that list needs its TAP
+reporter, or a line of one of those shapes, from .agent/scripts/checks.sh.
 EOF
 }
 
@@ -25,7 +31,7 @@ load_config() {
   cfg=$1
   CHECK_DRIVER=.agent/scripts/checks.sh
   POSITIVE_TEST_CHECKS='test'
-  TEST_COUNT_FORMAT=tap
+  TEST_COUNT_FORMAT=auto
   TIMEOUT_SECONDS=300
   NON_GIT_INPUT_ROOTS=
   # The harness tool-result cap PAYLOAD_MAX_BYTES defaults to (30000), less a
@@ -48,7 +54,7 @@ load_config() {
   done <"$cfg"
   safe_value "$CHECK_DRIVER" && safe_value "$POSITIVE_TEST_CHECKS" && safe_value "$NON_GIT_INPUT_ROOTS" || die "control character in configuration"
   case "$CHECK_DRIVER" in '' | /* | *'..'* ) die "CHECK_DRIVER must be a project-relative path without .." ;; esac
-  case "$TEST_COUNT_FORMAT" in tap | none) ;; *) die "unsupported TEST_COUNT_FORMAT: $TEST_COUNT_FORMAT" ;; esac
+  case "$TEST_COUNT_FORMAT" in auto | tap | none) ;; *) die "unsupported TEST_COUNT_FORMAT: $TEST_COUNT_FORMAT" ;; esac
   case "$TIMEOUT_SECONDS" in '' | *[!0-9]*) die "TIMEOUT_SECONDS must be a positive integer" ;; esac
   [ "$TIMEOUT_SECONDS" -gt 0 ] || die "TIMEOUT_SECONDS must be a positive integer"
   case "$OUTPUT_MAX_BYTES" in '' | *[!0-9]*) die "OUTPUT_MAX_BYTES must be a positive integer" ;; esac
@@ -82,7 +88,10 @@ emit_output() {
   # Five lines after a match: an assertion message and the first frames of
   # its stack (chosen default).
   eo_tap=0
-  [ "$TEST_COUNT_FORMAT" != tap ] || eo_tap=1
+  case "$TEST_COUNT_FORMAT" in
+    tap) eo_tap=1 ;;
+    auto) ! is_tap "$eo_file" || eo_tap=1 ;;
+  esac
   if [ -n "$eo_pick" ] && awk -v max="$OUTPUT_MAX_BYTES" -v pat="$OUTPUT_FAILURE_PATTERN" \
       -v size="$eo_size" -v where="$eo_where" -v ctx=5 -v tap="$eo_tap" '
     { line[NR] = $0 }
@@ -164,6 +173,54 @@ tap_count() {
       if (!bad && plans == 1 && n ~ /^[0-9]+$/ && results == n) print n
       else print "unknown"
     }
+  ' "$1"
+}
+
+# TAP output opens with a version line or carries a top-level plan. With
+# TEST_COUNT_FORMAT=auto such output is counted by tap_count alone, so a
+# summary line never stands in for a TAP stream that was cut short.
+is_tap() { grep -Eq '^(TAP version [0-9]+|1\.\.[0-9]+)' "$1"; }
+
+# The number of tests a runner's own closing summary says passed or failed, or
+# "unknown" when no line has one of these shapes. Each shape was read from the
+# runner named beside it: observed output, except Jest, whose line is the
+# template in its SummaryReporter source (scripts/docs/verify.md lists the
+# versions). Skipped and filtered tests are left out, so a run whose every
+# test was filtered away counts 0. Several summaries add up, as cargo prints
+# one per test binary.
+summary_count() {
+  awk '
+    function before(s, word,   n) {
+      if (!match(s, "[0-9]+ " word)) return 0
+      n = substr(s, RSTART, RLENGTH); sub(/ .*/, "", n)
+      return n + 0
+    }
+    function add(n) { total += n; seen = 1 }
+    # node --test, spec reporter: "<U+2139> pass 2", "<U+2139> fail 0"
+    $0 ~ "^\342\204\271 (pass|fail) [0-9]+$" { add($3); next }
+    # bun test: "Ran 2 tests across 1 file. [32.00ms]"
+    /^Ran [0-9]+ tests? across [0-9]+ files?\./ { add($2); next }
+    # Python unittest: "Ran 2 tests in 0.000s"
+    /^Ran [0-9]+ tests? in [0-9.]+s$/ { add($2); next }
+    # Jest: "Tests:       1 failed, 2 passed, 3 total"
+    /^Tests: +([0-9]+ [a-z]+, )*[0-9]+ total$/ { add(before($0, "passed") + before($0, "failed")); next }
+    # Vitest: "      Tests  1 failed | 2 passed (3)"
+    /^ +Tests  [0-9]+ [a-z]+( \| [0-9]+ [a-z]+)* \([0-9]+\)$/ { add(before($0, "passed") + before($0, "failed")); next }
+    # cargo test: "test result: ok. 2 passed; 0 failed; 0 ignored; ..."
+    /^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { add($4 + $6); next }
+    # go test -v, top-level tests: "--- PASS: TestA (0.00s)"
+    /^--- (PASS|FAIL): / { add(1); next }
+    # minitest: "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips"
+    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1); next }
+    # pytest: "==== 1 failed, 2 passed in 0.02s ====", or bare under -q
+    {
+      line = $0
+      gsub(/^=+ | =+$/, "", line)
+      if (line ~ /^no tests ran in [0-9.]+s/) { add(0); next }
+      if (line ~ /^[0-9]+ [a-z]+(, [0-9]+ [a-z]+)* in [0-9.]+s( \([0-9:]+\))?$/)
+        add(before(line, "passed") + before(line, "failed") + before(line, "xfailed") + before(line, "xpassed"))
+    }
+    END { if (seen) print total + 0; else print "unknown" }
   ' "$1"
 }
 
@@ -373,17 +430,29 @@ after=$(da_fingerprint "$root") || exit 2
 count=unknown
 output_lost=0
 [ -f "$out_tmp" ] || output_lost=1
-if [ "$output_lost" -eq 0 ] && [ "$TEST_COUNT_FORMAT" = tap ]; then count=$(tap_count "$out_tmp"); fi
+if [ "$output_lost" -eq 0 ]; then
+  case "$TEST_COUNT_FORMAT" in
+    tap) count=$(tap_count "$out_tmp") ;;
+    auto) if is_tap "$out_tmp"; then count=$(tap_count "$out_tmp"); else count=$(summary_count "$out_tmp"); fi ;;
+  esac
+fi
+why=
 if [ "$timed_out" -eq 1 ]; then
   status=fail
 elif [ "$before" != "$after" ]; then
   status=inconclusive
+  why="project files changed while $check ran, so the result is inconclusive. Run the check again. If it repeats, make the check write only where Git ignores"
 elif [ "$driver_rc" -ne 0 ]; then
   status=fail
 elif [ "$output_lost" -eq 1 ]; then
   status=inconclusive
 elif is_positive_check "$check" && { [ "$count" = unknown ] || [ "$count" -eq 0 ]; }; then
   status=inconclusive
+  if [ "$count" = unknown ]; then
+    why="$check exited 0, but its output carries no test count this script reads, so the result is inconclusive. If tests ran, make $CHECK_DRIVER print TAP or a summary this script counts (verify.sh --help lists them), and leave the project's own test command as it is"
+  else
+    why="$check exited 0 and ran 0 tests, so the result is inconclusive. Run it over at least one test"
+  fi
 else
   status=pass
 fi
@@ -414,5 +483,6 @@ elif [ "$(wc -c <"$out_tmp" | tr -d '[:space:]')" -gt "$OUTPUT_MAX_BYTES" ] \
 fi
 [ "$output_lost" -eq 1 ] || emit_output "$out_tmp" "$saved"
 output_emitted=1
+[ -z "$why" ] || echo "verify.sh: $why" >&2
 print_record "$id" "$status" "$check" "$driver_rc" "$count"
 case "$driver_rc:$status" in 124:*) exit 124 ;; *:pass) exit 0 ;; *) exit 1 ;; esac
