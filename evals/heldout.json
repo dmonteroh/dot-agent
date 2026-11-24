@@ -966,7 +966,7 @@
           "text": "The planted defect is gone: the line giving the yen two minor-unit digits no longer exists in src/client.ts. A fix that keeps that line and special-cases around it fails this.",
           "class": "artifact",
           "grade": "auto",
-          "check": "product_line_removed 'src/client.ts' 'JPY: 2'"
+          "check": "product_line_removed 'src/client.ts' 'JPY: 2' && diff_contains 'JPY: 0'"
         },
         {
           "id": "verify-scratch-proof/failure-seen-without-change",
@@ -974,7 +974,7 @@
           "text": "verify.sh prove ran this session. It is the one call that runs a check against the tree without the change.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_contains 'verify.sh prove'"
+          "check": "trace_matches 'verify\\.sh prove [A-Za-z0-9_.-]+ --(test|break|base) '"
         },
         {
           "id": "verify-scratch-proof/scratch-folder-empty",
