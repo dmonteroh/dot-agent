@@ -599,6 +599,7 @@ pv_digest=$(printf 'tmp/scratch/sum.test.sh\t%s\n' "$(git hash-object "$pv/tmp/s
   && ok "the receipt names the base and the content of a Git-ignored test" || bad "proof line: $(pv_line 11)"
 pv_id=$(cut -f2 "$tmp/stdout")
 expect_rc 0 "a proved receipt validates" bash "$pv_verify" check "$pv_id" --root "$pv"
+[ "$(bash "$pv_verify" why "$pv_id" --root "$pv")" = proved ] && ok "why names a proof that held" || bad "why after yes: $(bash "$pv_verify" why "$pv_id" --root "$pv" 2>&1)"
 [ "$(pv_tree)" = "$pv_before" ] && [ -z "$(ls "$tmp/prove-tmp")" ] \
   && ok "prove leaves the session's tree and the temporary folder as they were" || bad "prove left something behind: $(ls "$tmp/prove-tmp")"
 pv_receipt="$pv/.agent/.state/receipts/$pv_id.receipt"
@@ -613,6 +614,7 @@ pv_run test --test tmp/scratch/sum.test.sh --test tmp/scratch/weak.test.sh; pv_r
 [ "$pv_rc" -eq 1 ] && [ "$(pv_line 12)" = 'fails_without_change=no' ] \
   && has "passes at ${pv_base:0:12} with tmp/scratch/weak\.test\.sh copied in, so that does not prove the change" "$tmp/stderr" \
   && ok "each test file is proved on its own run, and one that passes at the base is named" || bad "prove no: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+[ "$(bash "$pv_verify" why "$(cut -f2 "$tmp/stdout")" --root "$pv")" = unproved ] && ok "why names a proof that did not hold" || bad "why after no: $(bash "$pv_verify" why "$(cut -f2 "$tmp/stdout")" --root "$pv" 2>&1)"
 rm "$pv/tmp/scratch/sum.test.sh" "$pv/tmp/scratch/weak.test.sh"
 git -C "$pv" add src
 git -C "$pv" commit -qm fix

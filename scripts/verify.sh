@@ -37,7 +37,8 @@ a checkout of the current files. prove exits 0 only when the check passes now
 and fails without the change. The driver runs in the checkout with DA_PROVE=1
 and DA_PROVE_MAIN set to the project, for what the checkout lacks.
 
-why prints one word for a current receipt: pass, failed, uncounted (a
+why prints one word for a current receipt: pass, proved or unproved (a pass
+whose proof ran and held or did not), failed, uncounted (a
 positive check with no test count in its output), format (the same, when
 TEST_COUNT_FORMAT is tap or none), empty (a positive check that ran 0 tests),
 or changed (any other inconclusive run: project files changed, or its output
@@ -495,14 +496,16 @@ interrupt_run() {
 drive() {
   rm -f "$watchdog_marker"
   set -m
-  # The forked shell sets its process group before it applies the redirection.
-  # When that call loses a race it prints "child setpgid" on this script's
-  # stderr, where a caller reads the check's output.
+  # Each forked shell sets its process group before it applies its
+  # redirection. When that call loses a race it prints "child setpgid" on this
+  # script's stderr, where a caller reads the check's output. Both forks below
+  # start with that stream closed.
   { (cd "$1" && exec bash "$driver" "$check") >"$2" 2>&1 & } 2>/dev/null
   child=$!
   # With monitor mode, Bash assigns an asynchronous job a new process group whose
   # id is the job leader's pid.  This avoids depending on ps permissions.
   pgid=$child
+  {
   (
       trap - EXIT HUP INT TERM
       set +m
@@ -513,6 +516,7 @@ drive() {
       sleep 2
       kill -KILL -- "-$pgid" 2>/dev/null || kill -KILL "$child" 2>/dev/null || :
   ) </dev/null >/dev/null 2>&1 &
+  } 2>/dev/null
   watchdog=$!
   set +m
   wait "$child" 2>/dev/null
@@ -582,7 +586,7 @@ if [ "$op" = prove ]; then
   if [ "${#prove_breaks[@]}" -gt 0 ]; then
     for pb in "${prove_breaks[@]}"; do
       case "$pb" in ?*=?*) ;; *) die "--break takes PATH=FILE, the file to replace and its broken copy: $pb" ;; esac
-      prove_path_ok "${pb%%=*}" && prove_path_ok "${pb#*=}" || die "--break takes paths inside the project, without a leading slash, .., or .git: $pb"
+      prove_path_ok "${pb%%=*}" && prove_path_ok "${pb#*=}" || die "--break takes paths inside the project, without a leading slash, .., or .git: $pb. Keep the broken copy in the project's scratch folder"
       [ -f "$root/${pb%%=*}" ] && [ ! -L "$root/${pb%%=*}" ] || die "--break names no regular file to replace: ${pb%%=*}"
       [ -f "$root/${pb#*=}" ] && [ ! -L "$root/${pb#*=}" ] || die "--break names no regular broken copy: ${pb#*=}. Copy the file, break the behavior in the copy, and pass the copy"
     done
@@ -653,7 +657,12 @@ if [ "$op" = check ] || [ "$op" = why ]; then
   [ "$current" = "$recorded" ] || die "receipt is stale: project inputs changed"
   if [ "$op" = why ]; then
     case "$status:$exit_code" in
-      pass:*) echo pass ;;
+      pass:*)
+        case "$recorded_proof:$recorded_fwc" in
+          none:*) echo pass ;;
+          *:yes) echo proved ;;
+          *) echo unproved ;;
+        esac ;;
       inconclusive:0) inconclusive_code "$rcheck" "$count" ;;
       *) echo failed ;;
     esac
