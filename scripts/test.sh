@@ -3724,7 +3724,7 @@ git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c us
 out8e=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
-[ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'nothing changed' && [ "$n8f" -eq 0 ] && pass "checkpoint.sh: an unchanged tree writes no entry" || fail "checkpoint.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
+[ "$rc" -ne 0 ] && printf '%s' "$out8e" | grep -q 'no earlier checkpoint marks where this work began' && [ "$n8f" -eq 0 ] && pass "checkpoint.sh: an unchanged tree writes no entry" || fail "checkpoint.sh: an unchanged tree writes no entry (rc=$rc entries=$n8f)"
 printf '// const old = fetch(url)\nexport const b = 2\n' >>"$finroot/src/a.ts"
 out8f=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added b" "$finroot" 2>&1)
 rc=$?
@@ -3741,6 +3741,7 @@ rc=$?
 n8f3b=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
 [ "$rc" -eq 0 ] && [ "$n8f3b" -eq 2 ] && pass "checkpoint.sh: committed work still logs, against --base" || fail "checkpoint.sh: committed work still logs, against --base (rc=$rc entries=$n8f3b)"
 i8f=1; while [ "$i8f" -le 3 ]; do printf -- '- [2026-08-0%s] (tool) %s verify: pass.\n' "$i8f" "$(words_n 70)" >>"$finroot/.agent/session-log.md"; i8f=$((i8f + 1)); done
+printf 'export const c = 3\n' >>"$finroot/src/a.ts"
 out8g=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --checks test --summary "added c" "$finroot" 2>&1)
 rc=$?
 n8f4=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
@@ -3813,9 +3814,9 @@ n_a3=$(grep -c '^- \[' "$seqA/.agent/session-log.md")
 [ "$rc_a1" -eq 0 ] && [ "$rc_a2" -eq 0 ] && [ "$n_a2" -eq 2 ] \
   && pass "sequence: edit-commit-edit-commit writes exactly two entries" \
   || fail "sequence: edit-commit-edit-commit writes exactly two entries (rc1=$rc_a1 rc2=$rc_a2 entries=$n_a2)"
-[ "$rc_a3" -ne 0 ] && [ "$n_a3" -eq 2 ] && printf '%s' "$out_a3" | grep -q 'nothing changed' \
-  && pass "sequence: the trailing no-edit turn exits nonzero and writes nothing" \
-  || fail "sequence: the trailing no-edit turn exits nonzero and writes nothing (rc=$rc_a3 entries=$n_a3)"
+[ "$rc_a3" -eq 0 ] && [ "$n_a3" -eq 2 ] && printf '%s' "$out_a3" | grep -q 'nothing to record since the last checkpoint' \
+  && pass "sequence: the trailing no-edit turn exits 0 and writes nothing" \
+  || fail "sequence: the trailing no-edit turn exits 0 and writes nothing (rc=$rc_a3 entries=$n_a3)"
 
 seqB="$WORK/seq-noedit-then-edit"
 mkdir -p "$seqB/src"
@@ -3827,7 +3828,7 @@ git -C "$seqB" init -q && git -C "$seqB" add -A && git -C "$seqB" -c user.name=t
 out_b1=$("$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
 rc_b1=$?
 n_b1=$(grep -c '^- \[' "$seqB/.agent/session-log.md")
-[ "$rc_b1" -ne 0 ] && [ "$n_b1" -eq 0 ] && printf '%s' "$out_b1" | grep -q 'nothing changed' \
+[ "$rc_b1" -ne 0 ] && [ "$n_b1" -eq 0 ] && printf '%s' "$out_b1" | grep -q 'no earlier checkpoint marks where this work began' \
   && pass "sequence: no-edit before any edit exits nonzero and writes nothing" \
   || fail "sequence: no-edit before any edit exits nonzero and writes nothing (rc=$rc_b1 entries=$n_b1)"
 

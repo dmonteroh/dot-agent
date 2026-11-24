@@ -2,11 +2,20 @@
 
 # Shared runtime primitives.  Sourcing this file deliberately installs no traps.
 
+# da_refuse WHAT NEXT_STEP [STATUS]: the message a script ends on when it
+# declines. One line with the next step last, because callers pipe helpers
+# through tail, head, and grep, and a second line can be cut from its first.
+da_refuse() {
+  [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "runtime.sh: da_refuse needs what was refused and the next step" >&2; return 2; }
+  printf '%s: %s. %s\n' "${0##*/}" "$1" "$2" >&2
+  return "${3:-1}"
+}
+
 da_root() {
   [ "$#" -eq 1 ] || { echo "runtime.sh: da_root needs one argument" >&2; return 2; }
-  [ -d "$1" ] || { echo "runtime.sh: not a directory: $1" >&2; return 2; }
+  [ -d "$1" ] || { echo "runtime.sh: not a directory: $1. Pass the folder that holds .agent/ as the last argument" >&2; return 2; }
   (CDPATH='' cd -- "$1" 2>/dev/null && pwd -P) || {
-    echo "runtime.sh: cannot resolve root: $1" >&2
+    echo "runtime.sh: cannot resolve root: $1. Pass a folder this user can read as the last argument" >&2
     return 2
   }
 }
@@ -30,17 +39,17 @@ da_node_dir() {
     return 0
   fi
   da_nd_target=$(CDPATH='' cd -- "$da_nd_root/.agent" 2>/dev/null && pwd -P) || {
-    echo "runtime.sh: refusing symlink .agent directory that does not resolve to a directory: $da_nd_root/.agent" >&2
+    echo "runtime.sh: refusing symlink .agent directory that does not resolve to a directory: $da_nd_root/.agent. Replace the link with a node, or with a link to the .agent of another checkout of this repository" >&2
     return 2
   }
   if [ "${da_nd_target##*/}" != .agent ] || [ ! -f "$da_nd_target/purpose.md" ]; then
-    echo "runtime.sh: refusing symlink .agent directory whose target is not a node: $da_nd_root/.agent -> $da_nd_target" >&2
+    echo "runtime.sh: refusing symlink .agent directory whose target is not a node: $da_nd_root/.agent -> $da_nd_target. Replace the link with a node, or with a link to the .agent of another checkout of this repository" >&2
     return 2
   fi
   da_nd_here=$(da__git_common_dir "$da_nd_root") || da_nd_here=
   da_nd_there=$(da__git_common_dir "${da_nd_target%/*}") || da_nd_there=
   if [ -z "$da_nd_here" ] || [ "$da_nd_here" != "$da_nd_there" ]; then
-    echo "runtime.sh: refusing symlink .agent directory that names a node outside this Git repository: $da_nd_root/.agent -> $da_nd_target" >&2
+    echo "runtime.sh: refusing symlink .agent directory that names a node outside this Git repository: $da_nd_root/.agent -> $da_nd_target. Replace the link with a node, or with a link to the .agent of another checkout of this repository" >&2
     return 2
   fi
   printf '%s\n' "$da_nd_target"
@@ -58,31 +67,31 @@ da_state_dir() {
   da_sd_node=$(da_node_dir "$1") || return
   da_sd_path="$da_sd_node/.state"
   if [ -L "$da_sd_path" ]; then
-    echo "runtime.sh: refusing symlink state directory: $da_sd_path" >&2
+    echo "runtime.sh: refusing symlink state directory: $da_sd_path. Inspect that path, then run this call again" >&2
     return 2
   fi
   (umask 077 && mkdir -p -- "$da_sd_path") || {
-    echo "runtime.sh: cannot create state directory: $da_sd_path" >&2
+    echo "runtime.sh: cannot create state directory: $da_sd_path. Inspect that path, then run this call again" >&2
     return 2
   }
   [ -d "$da_sd_path" ] && [ ! -L "$da_sd_path" ] || {
-    echo "runtime.sh: state path is not a physical directory: $da_sd_path" >&2
+    echo "runtime.sh: state path is not a physical directory: $da_sd_path. Inspect that path, then run this call again" >&2
     return 2
   }
   chmod 700 "$da_sd_path" 2>/dev/null || :
   da_sd_ignore="$da_sd_path/.gitignore"
   if [ -L "$da_sd_ignore" ]; then
-    echo "runtime.sh: refusing symlink self-ignore file: $da_sd_ignore" >&2
+    echo "runtime.sh: refusing symlink self-ignore file: $da_sd_ignore. Inspect that path, then run this call again" >&2
     return 2
   fi
   if [ -e "$da_sd_ignore" ]; then
     [ "$(cat -- "$da_sd_ignore" 2>/dev/null)" = '*' ] || {
-      echo "runtime.sh: unsafe self-ignore file: $da_sd_ignore" >&2
+      echo "runtime.sh: unsafe self-ignore file: $da_sd_ignore. Inspect that path, then run this call again" >&2
       return 2
     }
   else
     (umask 077; set -C; printf '*\n' >"$da_sd_ignore") 2>/dev/null || {
-      echo "runtime.sh: cannot write self-ignore file: $da_sd_ignore" >&2
+      echo "runtime.sh: cannot write self-ignore file: $da_sd_ignore. Inspect that path, then run this call again" >&2
       return 2
     }
   fi
@@ -103,8 +112,23 @@ da__excluded_path() {
   return 1
 }
 
+# Sets REPLY to its arguments as one line of tab-separated fields. printf %q
+# would spell a non-ASCII name differently in another locale.
+da__line() {
+  REPLY=
+  for da_ln_field in "$@"; do
+    da_ln_field=${da_ln_field//\\/\\\\}
+    da_ln_field=${da_ln_field//$'\n'/\\n}
+    da_ln_field=${da_ln_field//$'\t'/\\t}
+    REPLY="$REPLY$da_ln_field"$'\t'
+  done
+}
+
+# Appends one path's record to a file, and leaves in da_hp_content what a file
+# or a link holds, empty for anything else.
 da__hash_path() {
   da_hp_root=$1 da_hp_rel=$2 da_hp_out=$3
+  da_hp_content=
   da_hp_rest=$da_hp_rel
   da_hp_prefix=
   while [ "${da_hp_rest#*/}" != "$da_hp_rest" ]; do
@@ -120,10 +144,12 @@ da__hash_path() {
   if [ -L "$da_hp_root/$da_hp_rel" ]; then
     da_hp_target=$(readlink "$da_hp_root/$da_hp_rel") || return 1
     printf 'L\0%s\0%s\0' "$da_hp_rel" "$da_hp_target" >>"$da_hp_out"
+    da_hp_content="link $da_hp_target"
   elif [ -f "$da_hp_root/$da_hp_rel" ]; then
     da_hp_hash=$(git hash-object --no-filters -- "$da_hp_root/$da_hp_rel") || return 1
     if [ -x "$da_hp_root/$da_hp_rel" ]; then da_hp_exec=1; else da_hp_exec=0; fi
     printf 'F\0%s\0%s\0%s\0' "$da_hp_rel" "$da_hp_exec" "$da_hp_hash" >>"$da_hp_out"
+    da_hp_content="file $da_hp_exec $da_hp_hash"
   elif [ -e "$da_hp_root/$da_hp_rel" ]; then
     printf 'O\0%s\0' "$da_hp_rel" >>"$da_hp_out"
   else
@@ -131,8 +157,15 @@ da__hash_path() {
   fi
 }
 
+# da_fingerprint ROOT [FILE]: a digest of the current inputs. In a Git root, FILE
+# receives a second digest from the same pass: the content of the tracked and
+# unignored files alone, with no commit and no index in it, so the same work
+# reads alike before and after it is committed. A missing file and a path behind
+# a link are left out, because the commit that records them drops their index
+# entries.
 da_fingerprint() {
-  [ "$#" -eq 1 ] || { echo "runtime.sh: da_fingerprint needs one argument" >&2; return 2; }
+  [ "$#" -eq 1 ] || [ "$#" -eq 2 ] || { echo "runtime.sh: da_fingerprint needs one or two arguments" >&2; return 2; }
+  da_fp_content_out=${2-}
   da_fp_root=$(da_root "$1") || return
   da_fp_tmp=$(mktemp "${TMPDIR:-/tmp}/da-fingerprint.XXXXXX") || {
     echo "runtime.sh: cannot create fingerprint temporary file" >&2
@@ -143,6 +176,12 @@ da_fingerprint() {
   }
   : >"$da_fp_tmp"
   da_fp_rc=0
+  da_fp_lines=
+  if [ -n "$da_fp_content_out" ]; then
+    da_fp_lines=$(mktemp "${TMPDIR:-/tmp}/da-content.XXXXXX") || {
+      rm -f "$da_fp_tmp" "$da_fp_list"; echo "runtime.sh: cannot create content temporary file. Check that the temporary folder is writable, then run this call again" >&2; return 2
+    }
+  fi
   printf 'root\0%s\0' "$da_fp_root" >>"$da_fp_tmp"
   da_fp_config=${DA_VERIFY_CONFIG:-.agent/scripts/verify.conf}
   da_fp_driver=${DA_CHECK_DRIVER:-.agent/scripts/checks.sh}
@@ -192,9 +231,13 @@ da_fingerprint() {
               if [ "$da_fp_sub_top" = "$da_fp_sub_root" ]; then
                 da_fp_sub_digest=$(
                   trap - EXIT HUP INT TERM
-                  da_fingerprint "$da_fp_sub_root"
+                  da_fingerprint "$da_fp_sub_root" ${da_fp_lines:+"$da_fp_lines.sub"}
                 ) || { da_fp_rc=1; break; }
                 printf 'SR\0%s\0%s\0' "$da_fp_path" "$da_fp_sub_digest" >>"$da_fp_tmp"
+                if [ -n "$da_fp_lines" ]; then
+                  da__line "$da_fp_path" submodule "$(cat "$da_fp_lines.sub")"
+                  printf '%s\n' "$REPLY" >>"$da_fp_lines" || { da_fp_rc=1; break; }
+                fi
               elif [ ! -e "$da_fp_sub_root/.git" ]; then
                 # Do not mistake the parent repository reported by Git for an
                 # uninitialized submodule checkout.
@@ -225,6 +268,19 @@ da_fingerprint() {
       git -C "$da_fp_root" ls-files -co --exclude-standard -z >"$da_fp_list" || da_fp_rc=1
     fi
     if [ "$da_fp_rc" -eq 0 ]; then
+      while IFS= read -r -d '' da_fp_path; do
+        da__excluded_path "$da_fp_root" "$da_fp_path" && continue
+        da__hash_path "$da_fp_root" "$da_fp_path" "$da_fp_tmp" || { da_fp_rc=1; break; }
+        [ -n "$da_fp_lines" ] && [ -n "$da_hp_content" ] || continue
+        da__line "$da_fp_path" "$da_hp_content"
+        printf '%s\n' "$REPLY" >>"$da_fp_lines" || { da_fp_rc=1; break; }
+      done <"$da_fp_list"
+    fi
+    if [ "$da_fp_rc" -eq 0 ] && [ -n "$da_fp_lines" ]; then
+      LC_ALL=C sort -u "$da_fp_lines" -o "$da_fp_lines" && git hash-object --no-filters -- "$da_fp_lines" >"$da_fp_content_out" || da_fp_rc=1
+    fi
+    if [ "$da_fp_rc" -eq 0 ]; then
+      : >"$da_fp_list"
       git -C "$da_fp_root" ls-files --others --ignored --exclude-standard -z -- .agent \
         >>"$da_fp_list" || da_fp_rc=1
       printf '%s\0%s\0' "$da_fp_config" "$da_fp_driver" >>"$da_fp_list"
@@ -287,7 +343,8 @@ da_fingerprint() {
     da_fp_digest=$(git hash-object --no-filters -- "$da_fp_tmp") || da_fp_rc=1
   fi
   rm -f "$da_fp_tmp" "$da_fp_list"
-  [ "$da_fp_rc" -eq 0 ] || { echo "runtime.sh: could not fingerprint project inputs" >&2; return 2; }
+  [ -z "$da_fp_lines" ] || rm -f "$da_fp_lines" "$da_fp_lines.sub"
+  [ "$da_fp_rc" -eq 0 ] || { echo "runtime.sh: could not fingerprint project inputs. Fix what the lines above name, or check that .agent/scripts/verify.conf and checks.sh exist, then run this call again" >&2; return 2; }
   printf '%s\n' "$da_fp_digest"
 }
 
@@ -300,46 +357,46 @@ da_lock() {
   fi
   # Gone again: its holder released it between the mkdir and this check.
   if [ ! -e "$da_lk_path" ] && [ ! -L "$da_lk_path" ]; then
-    echo "runtime.sh: lock was released while being taken: $da_lk_path" >&2; return 1
+    echo "runtime.sh: lock was released while being taken: $da_lk_path. Run this call again" >&2; return 1
   fi
-  [ -d "$da_lk_path" ] || { echo "runtime.sh: lock path is not a directory: $da_lk_path" >&2; return 2; }
+  [ -d "$da_lk_path" ] || { echo "runtime.sh: lock path is not a directory: $da_lk_path. If no node script is running, remove that path and run this call again" >&2; return 2; }
   # A writer that has made the lock directory but not yet recorded its pid
   # looks like this too, so it counts as held (1), which da_lock_wait retries.
   if [ ! -f "$da_lk_path/owner" ]; then
-    echo "runtime.sh: lock has no demonstrable owner: $da_lk_path" >&2; return 1
+    echo "runtime.sh: lock has no demonstrable owner: $da_lk_path. A lock left with no owner for a whole wait is taken over. Run this call again" >&2; return 1
   fi
   da_lk_owner=$(cat "$da_lk_path/owner" 2>/dev/null) || {
-    echo "runtime.sh: lock was released while being read: $da_lk_path" >&2; return 1
+    echo "runtime.sh: lock was released while being read: $da_lk_path. Run this call again" >&2; return 1
   }
   case "$da_lk_owner" in
-    '') echo "runtime.sh: lock has no demonstrable owner: $da_lk_path" >&2; return 1 ;;
-    *[!0-9]*) echo "runtime.sh: lock has an invalid owner: $da_lk_path" >&2; return 2 ;;
+    '') echo "runtime.sh: lock has no demonstrable owner: $da_lk_path. A lock left with no owner for a whole wait is taken over. Run this call again" >&2; return 1 ;;
+    *[!0-9]*) echo "runtime.sh: lock has an invalid owner: $da_lk_path. If no node script is running, remove that directory and run this call again" >&2; return 2 ;;
   esac
   if kill -0 "$da_lk_owner" 2>/dev/null; then
-    echo "runtime.sh: lock is held by live pid $da_lk_owner: $da_lk_path" >&2; return 1
+    echo "runtime.sh: lock is held by live pid $da_lk_owner: $da_lk_path. Another writer is running. Wait for it and run this call again" >&2; return 1
   fi
   ps -p "$da_lk_owner" -o pid= >/dev/null 2>&1
   da_lk_ps=$?
   if [ "$da_lk_ps" -eq 0 ]; then
-    echo "runtime.sh: lock owner pid $da_lk_owner exists but cannot be signalled: $da_lk_path" >&2; return 1
+    echo "runtime.sh: lock owner pid $da_lk_owner exists but cannot be signalled: $da_lk_path. Another writer is running. Wait for it and run this call again" >&2; return 1
   fi
   if [ "$da_lk_ps" -ne 1 ]; then
-    echo "runtime.sh: cannot demonstrate that lock owner pid $da_lk_owner is dead: $da_lk_path" >&2; return 2
+    echo "runtime.sh: cannot demonstrate that lock owner pid $da_lk_owner is dead: $da_lk_path. If no node script is running, remove that directory and run this call again" >&2; return 2
   fi
   # A holder that released the lock and exited also reads as dead, and another
   # writer may hold the lock by now: recover only a lock that still names the
   # dead pid.
   if [ "$(cat "$da_lk_path/owner" 2>/dev/null)" != "$da_lk_owner" ]; then
-    echo "runtime.sh: lock changed hands while being checked: $da_lk_path" >&2; return 1
+    echo "runtime.sh: lock changed hands while being checked: $da_lk_path. Run this call again" >&2; return 1
   fi
   rm -f -- "$da_lk_path/owner" 2>/dev/null && rmdir -- "$da_lk_path" 2>/dev/null || {
-    echo "runtime.sh: could not recover dead lock: $da_lk_path" >&2; return 2;
+    echo "runtime.sh: could not recover dead lock: $da_lk_path. If no node script is running, remove that directory and run this call again" >&2; return 2;
   }
   if (umask 077 && mkdir -- "$da_lk_path") 2>/dev/null; then
     printf '%s\n' "$$" >"$da_lk_path/owner" || { rmdir "$da_lk_path" 2>/dev/null; return 2; }
     return 0
   fi
-  echo "runtime.sh: lock was acquired concurrently: $da_lk_path" >&2
+  echo "runtime.sh: lock was acquired concurrently: $da_lk_path. Another writer is running. Wait for it and run this call again" >&2
   return 1
 }
 
