@@ -47,6 +47,7 @@ write_driver() {
 case "$1" in
   test) printf 'TAP version 13\n1..2\nok 1 - one\nok 2 - two\n' ;;
   zero) printf 'TAP version 13\n1..0\n' ;;
+  lost) printf 'TAP version 13\n1..1\nok 1 - one\n'; rm -f "$TMPDIR"/verify-output.* ;;
   unknown) printf 'ok 1 - no plan\n' ;;
   nested) printf '    1..4\n    ok 1 - nested\n' ;;
   node) printf 'TAP version 13\n# Subtest: child\n    1..1\n    ok 1 - child result\nok 1 - child\n1..1\n' ;;
@@ -100,6 +101,9 @@ expect_rc 1 "nonzero check fails" bash "$verify" run fail --root "$root"
 has $'^receipt\t.*\tfail\tfail\t7\t1$' "$tmp/stdout" && ok "nonzero result preserves exit" || bad "nonzero result preserves exit"
 fail_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
 expect_rc 0 "current failed receipt validates" bash "$verify" check "$fail_id" --root "$root"
+mkdir "$tmp/lost"
+expect_rc 1 "a check whose output was removed is inconclusive" env TMPDIR="$tmp/lost" bash "$verify" run lost --root "$root"
+has $'\tinconclusive\tlost\t0\tunknown$' "$tmp/stdout" && has 'output was removed while it ran' "$tmp/stderr" && ok "lost output is never a pass" || bad "lost output is never a pass"
 expect_rc 1 "zero-count positive check is inconclusive" bash "$verify" run zero --root "$root"
 has $'\tinconclusive\tzero\t0\t0$' "$tmp/stdout" && ok "zero-count record" || bad "zero-count record"
 expect_rc 1 "unknown-count positive check is inconclusive" bash "$verify" run unknown --root "$root"

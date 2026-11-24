@@ -187,12 +187,19 @@ cancel_watchdog() {
     *)
       kill -TERM -- "-$watchdog" 2>/dev/null || kill -TERM "$watchdog" 2>/dev/null || :
       wait "$watchdog" 2>/dev/null || :
+      # A sleep forked as the signal arrived can outlive the shell that ran it.
+      kill -KILL -- "-$watchdog" 2>/dev/null || :
       watchdog=
       ;;
   esac
 }
 
+# A child signalled before it resets its traps runs the handlers below, and the
+# output, the lock, and the check are its parent's. $$ is the parent's in both.
+owns_run() { [ "$(exec sh -c 'echo "$PPID"')" = "$$" ]; }
+
 cleanup_run() {
+  owns_run || return 0
   # A run that exits before printing its output (a failed fingerprint, no
   # receipt) still shows the session what the check said.
   if [ -n "${out_tmp:-}" ] && [ "${output_emitted:-0}" -eq 0 ] && [ -s "$out_tmp" ]; then
@@ -209,6 +216,7 @@ cleanup_run() {
 
 interrupt_run() {
   ir_code=$1
+  owns_run || { trap - EXIT; exit "$ir_code"; }
   case "${child:-}" in
     '' | *[!0-9]*) ;;
     *)
@@ -363,13 +371,17 @@ watchdog=
 if [ -f "$watchdog_marker" ]; then timed_out=1; driver_rc=124; else timed_out=0; fi
 after=$(da_fingerprint "$root") || exit 2
 count=unknown
-[ "$TEST_COUNT_FORMAT" != tap ] || count=$(tap_count "$out_tmp")
+output_lost=0
+[ -f "$out_tmp" ] || output_lost=1
+if [ "$output_lost" -eq 0 ] && [ "$TEST_COUNT_FORMAT" = tap ]; then count=$(tap_count "$out_tmp"); fi
 if [ "$timed_out" -eq 1 ]; then
   status=fail
 elif [ "$before" != "$after" ]; then
   status=inconclusive
 elif [ "$driver_rc" -ne 0 ]; then
   status=fail
+elif [ "$output_lost" -eq 1 ]; then
+  status=inconclusive
 elif is_positive_check "$check" && { [ "$count" = unknown ] || [ "$count" -eq 0 ]; }; then
   status=inconclusive
 else
@@ -393,12 +405,14 @@ while :; do
 done
 chmod 444 "$receipt" 2>/dev/null || :
 saved=
-if [ "$(wc -c <"$out_tmp" | tr -d '[:space:]')" -gt "$OUTPUT_MAX_BYTES" ] \
+if [ "$output_lost" -eq 1 ]; then
+  echo "verify.sh: the check's output was removed while it ran, so the result is inconclusive. Run the check again" >&2
+elif [ "$(wc -c <"$out_tmp" | tr -d '[:space:]')" -gt "$OUTPUT_MAX_BYTES" ] \
   && mkdir -p "$state/output" 2>/dev/null && cp "$out_tmp" "$state/output/$id.log" 2>/dev/null; then
   saved="$state/output/$id.log"
   case "$saved" in "$root"/*) saved=${saved#"$root"/} ;; esac
 fi
-emit_output "$out_tmp" "$saved"
+[ "$output_lost" -eq 1 ] || emit_output "$out_tmp" "$saved"
 output_emitted=1
 print_record "$id" "$status" "$check" "$driver_rc" "$count"
 case "$driver_rc:$status" in 124:*) exit 124 ;; *:pass) exit 0 ;; *) exit 1 ;; esac
