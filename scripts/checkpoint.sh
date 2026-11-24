@@ -37,7 +37,7 @@ EOF
 
 root=.; base=""; policy=""; tool=""; area=""; summary=""
 checks=""; receipts=""; requested_verify=""; node_only=0
-failed_checks=""; uncounted=""; unread=""; empty=""; moved=""; prove=""
+failed_checks=""; uncounted=""; unread=""; empty=""; moved=""; prove=""; prove_given=0
 lock=""; content_out=""; node=""; status_out=""; status_err=""; publish=""; prepare=""
 cleanup() {
   [ -z "$publish" ] || rm -f -- "$publish"
@@ -63,7 +63,7 @@ while [ "$#" -gt 0 ]; do
         --tool) tool=$2 ;; --area) area=$2 ;; --summary) summary=$2 ;;
         --checks) checks=$2 ;; --verification) receipts=$2 ;;
         --verify) requested_verify=$2 ;; --base) base=$2 ;; --policy) policy=$2 ;;
-        --prove) prove=$2 ;;
+        --prove) prove=$2; prove_given=1 ;;
       esac
       shift 2 ;;
     --help|-h) usage; exit 0 ;;
@@ -81,8 +81,8 @@ if [ "$checks" = n/a ]; then
   [ -n "$requested_verify" ] || requested_verify=n/a
   echo 'checkpoint.sh: --checks n/a read as --verify n/a'
 fi
-if [ -n "$prove" ]; then
-  case "$prove" in ,*|*,|*,,*) refuse '--prove holds an empty path' 'Pass test files separated by single commas' ;; esac
+if [ "$prove_given" -eq 1 ]; then
+  case "$prove" in ''|,*|*,|*,,*) refuse '--prove holds an empty path' 'Pass test files separated by single commas' ;; esac
   case "$checks" in ''|n/a|*,*) refuse '--prove needs --checks with one check name' 'Name the one check that runs the test files, as in --checks test --prove <test file>' ;; esac
   [ -z "$receipts" ] || refuse '--prove and --verification were both given' 'Pass --prove with --checks alone. A receipt from verify.sh prove needs no --prove'
   [ -z "$requested_verify" ] || refuse '--prove and --verify were both given' 'Drop --verify. A proof that holds is logged as a pass'
@@ -456,6 +456,8 @@ printf 'checkpoint.sh: recorded verify=%s\n' "$verify"
 # receipt, so it goes now and nothing is left for the session to clean up.
 if [ -n "$prove" ]; then
   for prove_file in "${prove_files[@]}"; do
+    # A file of the node is never a scratch test, ignored or not.
+    case "$prove_file" in .agent/*) continue ;; esac
     if git -C "$root" check-ignore -q -- "$prove_file" 2>/dev/null && rm -f -- "$root/$prove_file"; then
       echo "checkpoint.sh: removed the scratch test $prove_file, whose proof is on the receipt"
     fi

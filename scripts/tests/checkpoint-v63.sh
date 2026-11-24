@@ -179,6 +179,8 @@ prove and --verification were both given|--checks test --verification abc --prov
 prove and --verify were both given|--checks test --verify fail --prove tmp/scratch/weak.test.sh
 ROWS
 [ "$prove_rows" -eq 4 ] || fail "--prove usage rows ran: $prove_rows"
+if checkpoint --checks test --prove ''; then fail 'an empty --prove logged a pass with no proof'; fi
+tail -1 "$scratch/err" | grep -q 'prove holds an empty path' || fail "an empty --prove ended on: $(tail -1 "$scratch/err")"
 rm -f "$project/tmp/scratch/weak.test.sh"
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
 
@@ -537,5 +539,47 @@ git_mono commit -qm swapped
 mono_checkpoint || fail 'a recorded type change was refused after its commit'
 [ "$(mono_entries)" -eq "$((before + 1))" ] || fail 'a recorded type change was logged twice'
 
+# --prove takes its base from the review, so committed work is proved against
+# the commit before it. A proof that could not run is no proof.
+proved="$scratch/proved"
+mkdir -p "$proved/src" "$proved/tmp/scratch"
+bash "$repo/scripts/node.sh" init --preset software-development --mode ignore-all "$proved" >/dev/null
+cp "$later/.agent/rules/contract.md" "$later/.agent/rules/quality-bar.md" "$proved/.agent/rules/"
+cat >"$proved/.agent/scripts/checks.sh" <<'EOF'
+#!/usr/bin/env bash
+[ -z "${DA_PROVE:-}" ] || [ ! -f "$DA_PROVE_MAIN/tmp/stop-control" ] || { echo 'the checkout cannot run this'; exit 1; }
+for scratch_test in tmp/scratch/*.test.sh; do
+  [ -f "$scratch_test" ] || continue
+  bash "$scratch_test" || { printf 'TAP version 13\n1..1\nnot ok 1 - %s\n' "$scratch_test"; exit 1; }
+done
+printf 'TAP version 13\n1..1\nok 1 - fixture\n'
+EOF
+git_proved() { git -C "$proved" -c user.name=fixture -c user.email=fixture@local -c commit.gpgsign=false "$@"; }
+checkpoint_proved() {
+  bash "$proved/.agent/scripts/checkpoint.sh" --tool test --area fixture --summary 'Changed fixture behavior' "$@" "$proved" >"$scratch/out" 2>"$scratch/err"
+}
+git_proved init -q
+printf 'tmp/\n' >>"$proved/.git/info/exclude"
+printf 'const value = 1\n' >"$proved/src/value.ts"
+git_proved add -A
+git_proved commit -qm fixture
+printf 'const value = 2\n' >"$proved/src/value.ts"
+git_proved add -A
+git_proved commit -qm second
+checkpoint_proved --verify n/a --base HEAD~1 || { cat "$scratch/err" >&2; fail 'the proved fixture did not record its first checkpoint'; }
+proved_mark=$(git -C "$proved" rev-parse HEAD)
+printf 'const value = 3\n' >"$proved/src/value.ts"
+git_proved add -A
+git_proved commit -qm work
+printf "grep -q 'value = 3' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
+checkpoint_proved --checks test --prove tmp/scratch/value.test.sh || { cat "$scratch/err" >&2; fail 'committed work was not proved against the commit before it'; }
+grep -q "^PROVED: test fails at ${proved_mark:0:12} with tmp/scratch/value.test.sh copied in$" "$scratch/out" || fail "the proof did not use the review's base: $(grep PROVED "$scratch/out")"
+printf 'const value = 4\n' >"$proved/src/value.ts"
+printf "grep -q 'value = 4' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
+: >"$proved/tmp/stop-control"
+proved_before=$(awk '/^- \[/{n++} END{print n+0}' "$proved/.agent/session-log.md")
+if checkpoint_proved --checks test --prove tmp/scratch/value.test.sh; then fail 'a proof that could not run completed the checkpoint'; fi
+tail -1 "$scratch/err" | grep -q 'the proof did not hold, so nothing was logged' || fail "a proof that could not run ended on: $(tail -1 "$scratch/err")"
+[ "$(awk '/^- \[/{n++} END{print n+0}' "$proved/.agent/session-log.md")" -eq "$proved_before" ] || fail 'a proof that could not run logged an entry'
 [ -z "${proved_failures:-}" ] || exit 1
 printf 'checkpoint-v63: verification, stale evidence, deduplication, policies, locking, and publication recovery passed\n'

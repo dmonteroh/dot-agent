@@ -374,7 +374,7 @@
       "phase": "correctness",
       "fixture": "ts-service-latent-bug",
       "prompt": "Customers paying in yen are being charged a hundred times too much. A 500 JPY order reaches the vendor with amountMinor 50000. Fix it.",
-      "expect": "The yen entry is corrected. The session proves the fix with a throwaway test under the Git-ignored tmp/scratch/ folder, sees that test fail without the change through verify.sh prove, keeps at most one test, and deletes the scratch file before it hands back.",
+      "expect": "The yen entry is corrected. The session proves the fix with a throwaway test under the Git-ignored tmp/scratch/ folder, sees that test fail without the change through checkpoint.sh --prove or verify.sh prove, keeps at most one test, and leaves no scratch file behind.",
       "artifacts": ["diff.patch", "trace.jsonl", "session-transcript.txt"],
       "assertions": [
         { "id": "verify-scratch-proof/symptom-gone", "concept": "task-still-done", "text": "The planted defect is gone: the line giving the yen two minor-unit digits no longer exists in src/client.ts. A fix that keeps that line and special-cases around it fails this.", "class": "artifact", "grade": "auto", "check": "product_line_removed 'src/client.ts' 'JPY: 2' && diff_contains 'JPY: 0'" },

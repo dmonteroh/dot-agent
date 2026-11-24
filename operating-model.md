@@ -270,7 +270,7 @@ Use `--base <ref>` for committed work. Explicit ignored-node writes use `--node-
 
 ### Proof and kept tests
 
-The software-development preset separates proving a change from keeping a test. A session proves its change with a scratch test in a Git-ignored folder, or with anything cheaper, and deletes it when the task ends. A test enters the suite only when it protects a rule that no kept test protects, because every later change pays for each kept test again.
+The software-development preset separates proving a change from keeping a test. A session proves its change with a scratch test in a Git-ignored folder, or with anything cheaper, and the scratch test does not outlive the task. A test enters the suite only when it protects a rule that no kept test protects, because every later change pays for each kept test again.
 
 `checkpoint.sh --checks <check> --prove <test file>` proves the change in the closing call, so a proof costs no extra step. It runs `verify.sh prove`, which runs the check on the current tree, then in a throwaway clone at the base commit with the test copied in. It records on the receipt whether the check fails without the change, and that record outlives a deleted scratch file. `verify.sh prove <check> --break <path>=<broken copy>` does the same for a test that guards a rule the old code already met. The session's tree is never written, apart from the proved scratch test, which the checkpoint removes.
 

@@ -570,7 +570,8 @@ case "$1" in
   shared) [ -f "${DA_PROVE_MAIN:-.}/config.local" ] || { echo 'config.local is missing'; exit 1; }; all ;;
   linked) [ -z "${DA_PROVE:-}" ] || [ -e gen ] || ln -s "$DA_PROVE_MAIN/gen" gen; all ;;
   built) if [ ! -e out/calc.sh ] || [ src/calc.sh -nt out/calc.sh ]; then mkdir -p out && cp src/calc.sh out/calc.sh; fi; [ "$(bash out/calc.sh 2 3)" = 5 ] ;;
-  readonly) [ -z "${DA_PROVE:-}" ] || { mkdir -p ro/sub && chmod 555 ro; }; all ;;
+  readonly) [ -z "${DA_PROVE:-}" ] || { mkdir -p ro/sub locked && chmod 555 ro && chmod 000 locked && ln "$DA_PROVE_MAIN/gen/double.sh" hardlink; }; all ;;
+  flagged) [ -f src/flag ] || { echo 'no flag'; exit 1; }; all ;;
   plain) [ -z "${DA_PROVE:-}" ] || { echo 'DA_PROVE reached a run'; exit 1; } ;;
   slow) if [ -n "${DA_PROVE:-}" ] && [ "$(bash src/calc.sh 2 3)" != 5 ]; then sleep 20; fi; all ;;
   *) exit 9 ;;
@@ -649,9 +650,17 @@ pv_run linked --break gen/double.sh=tmp/scratch/double.broken; pv_rc=$?
   && ok "prove never writes through a link that leads out of its checkout" || bad "link: rc $pv_rc, gen holds $(cat "$pv/gen/double.sh"), $(tail -1 "$tmp/stderr")"
 touch "$pv/src/calc.sh"
 pv_index=$(git hash-object "$pv/.git/index")
+chmod 444 "$pv/gen/double.sh"
 pv_run readonly --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && [ -z "$(ls "$tmp/prove-tmp")" ] \
-  && ok "a read-only folder the driver leaves does not block the proof or its cleanup" || bad "read-only: rc $pv_rc, left $(ls "$tmp/prove-tmp"), $(tail -1 "$tmp/stderr")"
+  && ok "a folder the driver leaves read-only or closed does not block the proof or its cleanup" || bad "read-only: rc $pv_rc, left $(ls "$tmp/prove-tmp"), $(tail -1 "$tmp/stderr")"
+[ ! -w "$pv/gen/double.sh" ] && ok "a project file the driver hard-linked into the checkout keeps its mode" || bad "prove changed the mode of a hard-linked project file"
+chmod 644 "$pv/gen/double.sh"
+: >"$pv/src/flag"
+pv_run flagged --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'flagged already fails at [0-9a-f]* without the test files, so a failure there proves nothing' "$tmp/stderr" \
+  && ok "a check that already fails at the base proves nothing" || bad "red base: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
+rm "$pv/src/flag"
 [ "$(git hash-object "$pv/.git/index")" = "$pv_index" ] \
   && ok "prove does not refresh the session's index" || bad "prove rewrote the index"
 pv_orphan=$(git -C "$pv" commit-tree -m unrelated "$(git -C "$pv" hash-object -t tree /dev/null)")
@@ -664,7 +673,7 @@ pv_run built --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
 DA_PROVE=1 DA_PROVE_MAIN=/nonexistent bash "$pv_verify" run plain --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && ok "a caller's DA_PROVE does not reach a run of the current tree" || bad "DA_PROVE leak: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 pv_run slow --base "$pv_base" --test test/sum.test.sh --timeout 3; pv_rc=$?
-[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] && has 'timed out without the change, so nothing was proved' "$tmp/stderr" \
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] && has 'timed out at [0-9a-f]*, so nothing was proved' "$tmp/stderr" \
   && ok "a run that times out without the change proves nothing" || bad "timeout: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
 TMPDIR="$tmp/prove-tmp" bash "$pv_verify" prove slow --base "$pv_base" --test test/sum.test.sh --timeout 60 --root "$pv" >/dev/null 2>&1 &
 pv_pid=$!

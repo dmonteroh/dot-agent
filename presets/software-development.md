@@ -40,7 +40,7 @@
 
 ## Testing
 
-- Proof of work is not a kept test. Prove a change with a scratch test in the scratch folder Project guardrails names, or with anything cheaper. The checkpoint removes a scratch test once its proof is logged.
+- Proof of work is not a kept test. Prove a change with a scratch test in the scratch folder Project guardrails names, or with anything cheaper. The checkpoint removes a Git-ignored test passed to `--prove` once its proof is logged.
 - Keep a test only when it protects a rule that no kept test protects. Name that rule where the project records the change.
 - Merge or delete the kept tests your change makes redundant, and name the test that keeps each check.
 - See each proof fail without the change: add `--prove <test file>` to the checkpoint call. For a rule the old code already met, run `.agent/scripts/verify.sh prove <check> --break <path>=<broken copy>` and pass its receipt with `--verification`.

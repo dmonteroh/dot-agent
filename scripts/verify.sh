@@ -315,6 +315,11 @@ prove_copy() {
   fi
 }
 
+# A driver can leave a folder it cannot be removed from, as a module cache
+# does. Only folders change: a file there can be a hard link to one of the
+# project's own, and removing a file needs its folder's permission alone.
+prove_unlock() { find "$1" -type d ! -perm -700 -exec chmod u+rwx {} \; 2>/dev/null || :; }
+
 prove_tests_in() {
   [ "${#prove_tests[@]}" -gt 0 ] || return 0
   for pt in "${prove_tests[@]}"; do prove_copy "$prove_dir/in/$pt" "$prove_prefix$pt" || return 1; done
@@ -410,12 +415,25 @@ prove_change() {
     pc_without="with ${#prove_breaks[@]} broken file(s) in place"
   else
     pc_mode=base
+    # The base without the test files is a second control. A check that
+    # already fails there would fail with any test copied in.
+    prove_unlock "$prove_tree"
+    if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
+      pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
+    fi
+    drive "$prove_tree/$prove_prefix" "$prove_dir/basecontrol"
+    if [ "$timed_out" -eq 1 ]; then
+      pc_stop "$check timed out at ${pc_base:0:12}, so nothing was proved. Raise --timeout or prove a narrower check"; return 0
+    fi
+    if [ "$driver_rc" -ne 0 ]; then
+      prove_show="$prove_dir/basecontrol"
+      pc_stop "$check already fails at ${pc_base:0:12} without the test files, so a failure there proves nothing. Prove a narrower check that passes at the base"; return 0
+    fi
     # One run for each test file, with that file alone copied onto the base.
     # A runner that stops at its first failure would otherwise let one
     # failing test stand for the others.
     for pt in "${prove_tests[@]}"; do
-      # A driver can leave a read-only folder, as a module cache does.
-      chmod -R u+w "$prove_tree" 2>/dev/null || :
+      prove_unlock "$prove_tree"
       if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
         pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
       fi
@@ -479,7 +497,7 @@ cleanup_run() {
   [ -z "${out_tmp:-}" ] || rm -f "$out_tmp"
   [ -z "${watchdog_marker:-}" ] || rm -f "$watchdog_marker"
   cancel_watchdog
-  case "${prove_dir:-}" in */verify-prove.*) chmod -R u+w "$prove_dir" 2>/dev/null; rm -rf -- "$prove_dir" ;; esac
+  case "${prove_dir:-}" in */verify-prove.*) prove_unlock "$prove_dir"; rm -rf -- "$prove_dir" ;; esac
   if [ "${lock_owned:-0}" -eq 1 ]; then
     da_unlock "$lock" >/dev/null 2>&1 || :
     lock_owned=0
@@ -511,13 +529,14 @@ drive() {
   # Each forked shell sets its process group before it applies its
   # redirection. When that call loses a race it prints "child setpgid" on this
   # script's stderr, where a caller reads the check's output. Both forks below
-  # start with that stream closed.
-  { (cd "$1" && exec bash "$driver" "$check") >"$2" 2>&1 & } 2>/dev/null
+  # start with that stream on descriptor 9 and close their copy, so a
+  # watchdog that outlives a killed run holds no pipe of the caller's open.
+  exec 9>&2 2>/dev/null
+  (cd "$1" && exec bash "$driver" "$check") >"$2" 2>&1 9>&- &
   child=$!
   # With monitor mode, Bash assigns an asynchronous job a new process group whose
   # id is the job leader's pid.  This avoids depending on ps permissions.
   pgid=$child
-  {
   (
       trap - EXIT HUP INT TERM
       set +m
@@ -527,9 +546,9 @@ drive() {
       kill -TERM -- "-$pgid" 2>/dev/null || kill -TERM "$child" 2>/dev/null || :
       sleep 2
       kill -KILL -- "-$pgid" 2>/dev/null || kill -KILL "$child" 2>/dev/null || :
-  ) </dev/null >/dev/null 2>&1 &
-  } 2>/dev/null
+  ) </dev/null >/dev/null 2>&1 9>&- &
   watchdog=$!
+  exec 2>&9 9>&-
   set +m
   wait "$child" 2>/dev/null
   driver_rc=$?

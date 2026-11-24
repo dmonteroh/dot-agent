@@ -44,7 +44,9 @@ TAP counts require one unindented `1..N` plan and exactly N sequentially numbere
 
 Skipped and filtered tests are left out, so a run whose every test was skipped or filtered away counts 0 and is inconclusive. A line of one of these shapes counts wherever it appears in the output. TAP counting does not leave skips out: `ok 1 # SKIP` counts as a result. `go test` without `-v` prints no count, so its driver line needs `-v`. A runner outside the table needs its TAP reporter in the check driver, or its own row here once its summary line has been observed.
 
-`why` prints one word for a current receipt, so a caller need not guess the cause from the record. The words are `pass`, `proved`, `unproved`, `failed`, `uncounted`, `format`, `empty`, and `changed`. `proved` and `unproved` are a pass whose proof ran and held or did not. `uncounted` is a positive check whose output carries no test count, and `format` is the same under `TEST_COUNT_FORMAT=tap` or `none`. `empty` is a positive check that ran 0 tests. `changed` is any other inconclusive run: project files changed, or its output was lost. A positive check that lost its output reads as `uncounted`, because its count is unknown. `checkpoint.sh` picks its refusal from that word. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
+`why` prints one word for a current receipt, so a caller need not guess the cause from the record. The words are `pass`, `proved`, `unproved`, `failed`, `uncounted`, `format`, `empty`, and `changed`. `proved` and `unproved` are a pass whose proof ran and held or did not. `uncounted` is a positive check whose output carries no test count, and `format` is the same under `TEST_COUNT_FORMAT=tap` or `none`. `empty` is a positive check that ran 0 tests. `changed` is any other inconclusive run: project files changed, or its output was lost.
+
+A positive check that lost its output reads as `uncounted`, because its count is unknown. `checkpoint.sh` picks its refusal from that word. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
 
 The default counts summaries because counting TAP alone was measured to cost calls. The measurement ran on 2026-11-24 over the 19 corpus evals of `evals/spec.json`, 3 repeats, 57 sessions per agent. The fixtures run `node --test`, which prints the spec reporter when piped on Node.js 24. At `0056c13`, which counted TAP alone, 11 Claude sessions and 15 Codex sessions changed the project's test command to print TAP. At `530e0e9`, none did. Tool calls per session fell from 11.2 to 9.3 on Claude and from 9.8 to 8.7 on Codex, and the share of checks passed stayed within the noise of 3 repeats.
 
@@ -73,7 +75,7 @@ verify.sh prove test --break src/client.ts=tmp/scratch/client.broken.ts
 1. It runs the check on the current tree, as `run` does. A check that does not pass now is recorded as a failed run, and nothing is proved.
 2. It copies the `--test` and `--break` files aside, then runs and digests those copies, so an edit during the runs cannot change what the receipt names. It makes a throwaway clone of the repository in the temporary folder and copies the current changes into it. Those are every file that differs from `HEAD`, every untracked file Git does not ignore, and each `--test` file, ignored or not.
 3. It runs the check there once as a control. A check that fails there cannot run in the checkout, so the verdict is `unknown` and the output of that run prints.
-4. It runs the check without the change. With `--test`, the checkout goes to `--base` (default `HEAD`, and always an ancestor of it), and each test file is copied onto it and run on its own. With `--break PATH=FILE`, the current files stay and `PATH` is replaced by `FILE`, a copy the session broke on purpose.
+4. It runs the check without the change. With `--test`, the checkout goes to `--base` (default `HEAD`, and always an ancestor of it). The check runs there once with no test file copied in, as a second control: a check that already fails at the base would fail with any test, so the verdict is `unknown`. Then each test file is copied onto the base and run on its own. With `--break PATH=FILE`, the current files stay and `PATH` is replaced by `FILE`, a copy the session broke on purpose.
 5. The verdict is `yes` when every one of those runs fails, and `no` when one passes. The message names a test file that passes at the base.
 
 `prove` exits 0 only for `yes`. It prints the output of the runs without the change, so the session can confirm each failure is the one it means. `yes` says the check fails there, and a missing file or a syntax error fails too.
@@ -90,8 +92,9 @@ Limits:
 - A node outside Git cannot prove.
 - A `--test` or `--break` path that is a symbolic link, or that passes through one in the checkout, is refused, because a write through it could reach the project.
 - The caller's Git environment variables are dropped for the checkout, and `DA_PROVE` from the caller never reaches a run of the current tree.
-- The base commit can need other dependencies than the current tree. A run that fails for that reason still reads `yes`, which is why the output prints.
-- `prove` runs the check at least three times, so prove a focused check and leave the whole suite to `run`.
+- A check that already fails at the base gives `unknown`, whether a test was red there or the base needs other dependencies than the current tree.
+- `prove` runs the check at least four times with `--test` and three with `--break`, so prove a focused check and leave the whole suite to `run`.
+- Only folders are made writable before the checkout is cleaned or removed. A file there can be a hard link to one of the project's own.
 - `checkpoint.sh --prove` runs a `--test` proof in the closing call and refuses to log one that did not hold. A `--break` proof runs here, and its receipt goes to `checkpoint.sh --verification` like any other.
 
 The clone uses `git clone --shared`, which copies no objects and registers nothing in the session's repository. A stash was rejected because an interrupt would leave the session's work in the stash stack, which every worktree shares. A linked worktree was rejected because it stays registered in the repository after an interrupt.

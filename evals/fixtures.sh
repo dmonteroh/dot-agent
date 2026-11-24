@@ -91,7 +91,7 @@ Fixtures:
                             endpoints, a generated webhook schema, a
                             diagnostic script, and a rename checklist
   ts-service-latent-bug     a defect in the payment client that its passing
-                            suite does not catch, with tmp/ Git-ignored
+                            suite does not catch
 EOF
 }
 

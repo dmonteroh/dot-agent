@@ -953,7 +953,7 @@
       "fixture": "ts-service-latent-bug",
       "prompt": "Support escalation: Japanese customers are overcharged by a factor of 100. An order for JPY 500 goes out to the payments vendor as 50000 minor units. Please sort that out.",
       "prompt_canonical": "Customers paying in yen are being charged a hundred times too much. A 500 JPY order reaches the vendor with amountMinor 50000. Fix it.",
-      "expect": "The yen entry is corrected. The session proves the fix with a throwaway test under the Git-ignored tmp/scratch/ folder, sees that test fail without the change through verify.sh prove, keeps at most one test, and deletes the scratch file before it hands back.",
+      "expect": "The yen entry is corrected. The session proves the fix with a throwaway test under the Git-ignored tmp/scratch/ folder, sees that test fail without the change through checkpoint.sh --prove or verify.sh prove, keeps at most one test, and leaves no scratch file behind.",
       "artifacts": [
         "diff.patch",
         "trace.jsonl",
