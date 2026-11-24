@@ -495,7 +495,10 @@ interrupt_run() {
 drive() {
   rm -f "$watchdog_marker"
   set -m
-  (cd "$1" && exec bash "$driver" "$check") >"$2" 2>&1 &
+  # The forked shell sets its process group before it applies the redirection.
+  # When that call loses a race it prints "child setpgid" on this script's
+  # stderr, where a caller reads the check's output.
+  { (cd "$1" && exec bash "$driver" "$check") >"$2" 2>&1 & } 2>/dev/null
   child=$!
   # With monitor mode, Bash assigns an asynchronous job a new process group whose
   # id is the job leader's pid.  This avoids depending on ps permissions.
