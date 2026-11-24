@@ -320,6 +320,40 @@ interrupt_run() {
   exit "$ir_code"
 }
 
+# drive DIR OUT: runs the driver for $check in DIR with its output in OUT, and
+# sets driver_rc and timed_out. Job control gives the driver an
+# invocation-owned process group on Bash 3.2.
+drive() {
+  rm -f "$watchdog_marker"
+  set -m
+  (cd "$1" && exec bash "$driver" "$check") >"$2" 2>&1 &
+  child=$!
+  # With monitor mode, Bash assigns an asynchronous job a new process group whose
+  # id is the job leader's pid.  This avoids depending on ps permissions.
+  pgid=$child
+  (
+      trap - EXIT HUP INT TERM
+      set +m
+      exec </dev/null >/dev/null 2>&1
+      sleep "$timeout" || exit 0
+      (umask 077; printf 'timeout\n' >"$watchdog_marker") || exit 0
+      kill -TERM -- "-$pgid" 2>/dev/null || kill -TERM "$child" 2>/dev/null || :
+      sleep 2
+      kill -KILL -- "-$pgid" 2>/dev/null || kill -KILL "$child" 2>/dev/null || :
+  ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  set +m
+  wait "$child" 2>/dev/null
+  driver_rc=$?
+  if [ -f "$watchdog_marker" ]; then
+    wait "$watchdog" 2>/dev/null || :
+  else
+    cancel_watchdog
+  fi
+  watchdog=
+  if [ -f "$watchdog_marker" ]; then timed_out=1; driver_rc=124; else timed_out=0; fi
+}
+
 case "${1:-}" in
   --help | -h) usage; exit 0 ;;
   --version) printf 'dot-agent v6.3; verify.sh receipt schema %s\n' "$schema_version"; exit 0 ;;
@@ -439,34 +473,7 @@ out_tmp=$(mktemp "${TMPDIR:-/tmp}/verify-output.XXXXXX") || die "cannot create o
 watchdog_marker=$(mktemp "${TMPDIR:-/tmp}/verify-watchdog.XXXXXX") || die "cannot create watchdog marker"
 rm -f "$watchdog_marker"
 
-# Job control gives the driver an invocation-owned process group on Bash 3.2.
-set -m
-(cd "$root" && exec bash "$driver" "$check") >"$out_tmp" 2>&1 &
-child=$!
-# With monitor mode, Bash assigns an asynchronous job a new process group whose
-# id is the job leader's pid.  This avoids depending on ps permissions.
-pgid=$child
-(
-    trap - EXIT HUP INT TERM
-    set +m
-    exec </dev/null >/dev/null 2>&1
-    sleep "$timeout" || exit 0
-    (umask 077; printf 'timeout\n' >"$watchdog_marker") || exit 0
-    kill -TERM -- "-$pgid" 2>/dev/null || kill -TERM "$child" 2>/dev/null || :
-    sleep 2
-    kill -KILL -- "-$pgid" 2>/dev/null || kill -KILL "$child" 2>/dev/null || :
-) </dev/null >/dev/null 2>&1 &
-watchdog=$!
-set +m
-wait "$child" 2>/dev/null
-driver_rc=$?
-if [ -f "$watchdog_marker" ]; then
-  wait "$watchdog" 2>/dev/null || :
-else
-  cancel_watchdog
-fi
-watchdog=
-if [ -f "$watchdog_marker" ]; then timed_out=1; driver_rc=124; else timed_out=0; fi
+drive "$root" "$out_tmp"
 after=$(da_fingerprint "$root") || exit 2
 count=unknown
 output_lost=0
