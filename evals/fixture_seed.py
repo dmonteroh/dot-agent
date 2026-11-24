@@ -64,7 +64,7 @@ CONTRACT_ANSWERS = {
     "Catalogs": "none yet",
     "Build": "none — `package.json` has no build script",
     "Test": "`npm test`",
-    "Scratch tests": "`tmp/scratch/`, which Git ignores. `npm test` also runs a `*.test.ts` file placed there",
+    "Scratch tests": "`tmp/scratch/`, which Git ignores",
     "Lint / typecheck": "none configured — `package.json` has no lint or typecheck script",
     "Generated files": "none",
     "Doc comments": "no surface requires them; the Comments rule applies with no exemption",

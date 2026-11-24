@@ -288,6 +288,8 @@ awk '/^## Quality bar/ { q = 1 } q && /^## / && !/^## Quality bar/ { q = 0 } q' 
 mv "$contract.body" "$contract"
 
 "$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
+# The contract names tmp/scratch/ as the scratch folder Git ignores.
+printf 'tmp/\n' >>"$dest/.gitignore"
 
 if [ -f "$dest/.agent/scripts/verify.sh" ]; then
   cat >"$dest/.agent/scripts/checks.sh" <<'CHECKS'
@@ -521,7 +523,6 @@ test("an unsupported currency is refused", () => {
   assert.throws(() => toMinorUnits(10, "XXX"), RangeError)
 })
 EOF
-  printf 'tmp/\n' >>"$dest/.gitignore"
   ;;
 ts-service-stale-rule)
   cat >>"$dest/.agent/rules/learned.md" <<'EOF'
