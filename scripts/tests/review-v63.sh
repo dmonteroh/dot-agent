@@ -91,7 +91,7 @@ check "a cataloged test helper draws no candidate" \
 check "Python and Go test helpers are candidates and their test cases are not" \
   'printf "%s" "$helpers_out" | grep -q "CATALOG_CANDIDATE tests/test_users.py new test helper .make_user." && printf "%s" "$helpers_out" | grep -q "CATALOG_CANDIDATE tests/server_test.go new test helper .NewServer." && ! printf "%s" "$helpers_out" | grep -q "helper .test_user.\|helper .TestServer."'
 check "shell test files and test files draw no TEST_COVERAGE" \
-  '! printf "%s" "$helpers_out" | grep -q "run-test.sh" && ! printf "%s" "$helpers_out" | grep -q "TEST_COVERAGE tests/"'
+  '! printf "%s\n" "$helpers_out" | grep "run-test.sh" | grep -qv "^REVIEW: TEST_KEPT " && ! printf "%s" "$helpers_out" | grep -q "TEST_COVERAGE tests/"'
 
 sed 's/^MAX_FINDINGS=.*/MAX_FINDINGS=1/' "$bin/review.conf" >"$bin/review.conf.tmp"
 mv "$bin/review.conf.tmp" "$bin/review.conf"
@@ -127,6 +127,78 @@ blocked_rc=$?
 set -e
 check "comment gate retains ownership of blocking status" \
   '[ "$blocked_rc" -eq 1 ] && printf "%s" "$blocked_out" | grep -q "^BLOCK:" && printf "%s" "$blocked_out" | grep -q "REVIEW: TEST_COVERAGE"'
+
+review_conf_set() { sed "s|^$1=.*|$1=$2|" "$repo_root/scripts/review.conf" >"$bin/review.conf"; }
+
+scratch="$tmp/scratch"
+mkdir -p "$scratch/src" "$scratch/tests"
+git -C "$scratch" init -q
+git -C "$scratch" config user.email test@example.invalid
+git -C "$scratch" config user.name test
+printf 'export const pay = 1;\n' >"$scratch/src/pay.ts"
+printf 'pay;\n' >"$scratch/tests/kept.test.ts"
+printf 'pay;\n' >"$scratch/tests/gone.test.ts"
+printf 'tmp/scratch/ignored/\n' >"$scratch/.gitignore"
+git -C "$scratch" add . && git -C "$scratch" commit -qm base
+scratch_base=$(git -C "$scratch" rev-parse HEAD)
+printf 'pay + 1;\n' >>"$scratch/src/pay.ts"
+mkdir -p "$scratch/tmp/scratch/ignored" "$scratch/tmp/scratch/deep dir"
+printf 'export function scratchHelper() { return 1; }\n' >"$scratch/tmp/scratch/pay.test.ts"
+printf 'pay;\n' >"$scratch/tmp/scratch/ignored/a.test.ts"
+printf 'notes\n' >"$scratch/tmp/scratch/deep dir/notes.txt"
+
+set +e
+scratch_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
+scratch_rc=$?
+set -e
+check "leftover scratch files draw one advisory line, ignored by Git or not" \
+  '[ "$scratch_rc" -eq 0 ] && [ "$(printf "%s\n" "$scratch_out" | grep -c "^REVIEW: SCRATCH_LEFT ")" -eq 1 ] && printf "%s\n" "$scratch_out" | grep -qx "REVIEW: SCRATCH_LEFT tmp/scratch 3 scratch file(s) remain; delete yours when the task ends"'
+check "an unignored scratch file is no candidate of its own" \
+  '! printf "%s\n" "$scratch_out" | grep -q "tmp/scratch/pay.test.ts"'
+check "a scratch test is not a changed kept test, and the source is told how to prove the change" \
+  'printf "%s\n" "$scratch_out" | grep -qx "REVIEW: TEST_COVERAGE src/pay.ts no changed test file was detected; prove the change with a scratch test, or name the kept test that covers it"'
+
+printf 'pay + 1;\n' >>"$scratch/tests/kept.test.ts"
+printf 'pay;\n' >"$scratch/tests/new one.test.ts"
+git -C "$scratch" rm -q tests/gone.test.ts
+set +e
+kept_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
+kept_rc=$?
+set -e
+check "a modified and an added kept test each draw TEST_KEPT, a deleted one and a scratch one do not" \
+  '[ "$kept_rc" -eq 0 ] && [ "$(printf "%s\n" "$kept_out" | grep -c "^REVIEW: TEST_KEPT ")" -eq 2 ] && printf "%s\n" "$kept_out" | grep -qx "REVIEW: TEST_KEPT tests/kept.test.ts a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test and delete it" && printf "%s\n" "$kept_out" | grep -qx "REVIEW: TEST_KEPT tests/new one.test.ts a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test and delete it"'
+
+review_conf_set MAX_FINDINGS 1
+set +e
+kept_bounded_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
+set -e
+check "TEST_KEPT counts toward MAX_FINDINGS and SCRATCH_LEFT does not" \
+  'printf "%s\n" "$kept_bounded_out" | grep -qx "REVIEW: FINDINGS_TRUNCATED review.conf 2 additional candidate(s) omitted by MAX_FINDINGS=1" && printf "%s\n" "$kept_bounded_out" | grep -q "^REVIEW: SCRATCH_LEFT tmp/scratch 3 "'
+
+review_conf_set SCRATCH_DIR ''
+set +e
+scratch_off_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
+scratch_off_rc=$?
+set -e
+check "an empty SCRATCH_DIR names no scratch folder, so its files read as kept tests" \
+  '[ "$scratch_off_rc" -eq 0 ] && ! printf "%s\n" "$scratch_off_out" | grep -q "SCRATCH_LEFT" && printf "%s\n" "$scratch_off_out" | grep -q "^REVIEW: TEST_KEPT tmp/scratch/pay.test.ts "'
+
+review_conf_set SCRATCH_DIR tmp/scratch/
+set +e
+scratch_slash_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
+set -e
+check "a trailing slash on SCRATCH_DIR names the same folder" \
+  'printf "%s\n" "$scratch_slash_out" | grep -qx "REVIEW: SCRATCH_LEFT tmp/scratch 3 scratch file(s) remain; delete yours when the task ends" && ! printf "%s\n" "$scratch_slash_out" | grep -q "tmp/scratch/pay.test.ts"'
+
+for bad_scratch in /abs/scratch tmp/../scratch; do
+  review_conf_set SCRATCH_DIR "$bad_scratch"
+  set +e
+  bad_scratch_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
+  bad_scratch_rc=$?
+  set -e
+  check "SCRATCH_DIR=$bad_scratch is refused in one line that says what to fix" \
+    '[ "$bad_scratch_rc" -eq 2 ] && [ "$bad_scratch_out" = "review.sh: SCRATCH_DIR must be a folder inside the project, not an absolute path or one with a .. part: $bad_scratch. Set a project-relative folder in review.conf, or leave the value empty to turn scratch prompts off" ]'
+done
 
 node="$tmp/node"
 mkdir -p "$node/.agent/scripts" "$node/.agent/rules" "$node/.agent/docs" "$node/.agent/memory"

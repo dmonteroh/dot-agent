@@ -8,6 +8,7 @@ SOURCE_ROOTS=src
 TEST_PATH_RE='(^|/)(test|tests|spec|specs)/|(^|/)[^/]*(test|spec)\.[^/]+$'
 CATALOGS=auto
 MAX_FINDINGS=20
+SCRATCH_DIR=tmp/scratch
 
 usage() {
   cat <<'EOF'
@@ -15,8 +16,9 @@ Usage: review.sh [--base REF] [--root ROOT]
        review.sh --help | --version
 
 Runs comments.sh once, then lists bounded, advisory candidates for new helper
-catalog entries and test coverage. It does not stage files or claim that a
-catalog match proves reuse or that a test name proves coverage.
+catalog entries, test coverage, and changed kept tests. It also reports scratch
+files left in SCRATCH_DIR. It does not stage files or claim that a catalog
+match proves reuse or that a test name proves coverage.
 
 Exit 0 means the review completed, 1 means comments.sh found blocking
 comments, and 2 means the change could not be inspected.
@@ -48,6 +50,8 @@ if [ -f "$conf" ]; then
   v=$(conf_get TEST_PATH_RE); [ -n "$v" ] && TEST_PATH_RE=$v
   v=$(conf_get CATALOGS);     [ -n "$v" ] && CATALOGS=$v
   v=$(conf_get MAX_FINDINGS); [ -n "$v" ] && MAX_FINDINGS=$v
+  # An empty SCRATCH_DIR is a value: it turns the scratch prompts off.
+  grep -q '^SCRATCH_DIR=' "$conf" && SCRATCH_DIR=$(conf_get SCRATCH_DIR)
 fi
 
 case "$MAX_FINDINGS" in
@@ -59,6 +63,12 @@ if [ "$MAX_FINDINGS" -eq 0 ]; then
   echo "review.sh: MAX_FINDINGS must be greater than zero" >&2
   exit 2
 fi
+case "$SCRATCH_DIR" in
+  /* | .. | ../* | */.. | */../*)
+    echo "review.sh: SCRATCH_DIR must be a folder inside the project, not an absolute path or one with a .. part: $SCRATCH_DIR. Set a project-relative folder in review.conf, or leave the value empty to turn scratch prompts off" >&2
+    exit 2 ;;
+esac
+SCRATCH_DIR=${SCRATCH_DIR%"${SCRATCH_DIR##*[!/]}"}
 printf '' | grep -E "$TEST_PATH_RE" >/dev/null 2>&1
 regex_rc=$?
 if [ "$regex_rc" -gt 1 ]; then
@@ -121,6 +131,9 @@ git -C "$root" ls-files --others --exclude-standard -z >>"$changed_z" || {
 changed=()
 while IFS= read -r -d '' path; do
   [ -f "$root/$path" ] || continue
+  if [ -n "$SCRATCH_DIR" ]; then
+    case "$path" in "$SCRATCH_DIR"/*) continue ;; esac
+  fi
   duplicate=0
   for known in "${changed[@]-}"; do
     [ "$known" = "$path" ] && { duplicate=1; break; }
@@ -247,12 +260,24 @@ for path in "${changed[@]-}"; do
   done
   if [ -z "$related_test" ]; then
     if [ "${#tests[@]}" -eq 0 ]; then
-      emit_review TEST_COVERAGE "$path" "no changed test file was detected; review whether this change needs focused coverage"
+      emit_review TEST_COVERAGE "$path" "no changed test file was detected; prove the change with a scratch test, or name the kept test that covers it"
     else
       emit_review TEST_COVERAGE "$path" "changed tests exist, but none has a filename containing '$source_stem'; review coverage rather than inferring it from names"
     fi
   fi
 done
+
+for path in "${tests[@]-}"; do
+  [ -n "$path" ] || continue
+  emit_review TEST_KEPT "$path" "a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test and delete it"
+done
+
+if [ -n "$SCRATCH_DIR" ] && [ -d "$root/$SCRATCH_DIR" ]; then
+  scratch_left=$(find "$root/$SCRATCH_DIR" -type f -print0 2>/dev/null | tr -dc '\000' | wc -c)
+  scratch_left=$((scratch_left))
+  [ "$scratch_left" -eq 0 ] \
+    || printf 'REVIEW: SCRATCH_LEFT %s %d scratch file(s) remain; delete yours when the task ends\n' "$SCRATCH_DIR" "$scratch_left"
+fi
 
 if [ "$findings" -gt "$findings_shown" ]; then
   printf 'REVIEW: FINDINGS_TRUNCATED review.conf %d additional candidate(s) omitted by MAX_FINDINGS=%d\n' \

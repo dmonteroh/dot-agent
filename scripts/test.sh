@@ -5467,6 +5467,14 @@ cdef=$(sed -n 's/^LOG_INCLUDE_BRANCH=//p' "$reporoot/scripts/log.conf" | head -n
 [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36b="$mismatch36b LOG_INCLUDE_BRANCH"
 [ -z "$mismatch36b" ] && pass "starter log.conf lists the script's own defaults" || fail "starter log.conf lists the script's own defaults ($mismatch36b)"
 
+mismatch36c=""
+for k in SOURCE_ROOTS TEST_PATH_RE CATALOGS MAX_FINDINGS SCRATCH_DIR; do
+  sdef=$(sed -n "s/^$k=//p" "$reporoot/scripts/review.sh" | head -n 1 | tr -d "'")
+  cdef=$(sed -n "s/^$k=//p" "$reporoot/scripts/review.conf" | head -n 1)
+  [ -n "$sdef" ] && [ "$sdef" = "$cdef" ] || mismatch36c="$mismatch36c $k"
+done
+[ -z "$mismatch36c" ] && pass "starter review.conf lists the script's own defaults" || fail "starter review.conf lists the script's own defaults ($mismatch36c)"
+
 lb="$WORK/log-branch"
 mkdir -p "$lb"
 "$NODE" init --preset software-development --mode track-all "$lb" >/dev/null 2>&1
@@ -8821,7 +8829,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1395
+EXPECTED_CHECKS=1396
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
