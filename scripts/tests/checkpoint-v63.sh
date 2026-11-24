@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -eu
+[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/checkpoint-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-fail() { echo "FAIL checkpoint-v63: $*" >&2; exit 1; }
+fail() { echo "FAIL checkpoint-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 project="$scratch/project with spaces"
 mkdir -p "$project/src"
 bash "$repo/scripts/node.sh" init --preset software-development --mode track-all "$project" >/dev/null
@@ -491,4 +492,5 @@ git_mono commit -qm swapped
 mono_checkpoint || fail 'a recorded type change was refused after its commit'
 [ "$(mono_entries)" -eq "$((before + 1))" ] || fail 'a recorded type change was logged twice'
 
+[ -z "${proved_failures:-}" ] || exit 1
 printf 'checkpoint-v63: verification, stale evidence, deduplication, policies, locking, and publication recovery passed\n'

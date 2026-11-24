@@ -8818,6 +8818,16 @@ PASS=$((PASS + $(grep -c '^ok   ' "$eval_checks_out")))
 FAIL=$((FAIL + $(grep -c '^FAIL ' "$eval_checks_out")))
 
 wait "$v63_pid"
+# verify.sh prove takes one failing run as proof for a whole test file. A file
+# whose fail helper exits would show its first failing assertion alone, so
+# each one keeps going when DA_PROVE is set.
+stops_early() { awk '/^fail\(\) / && /exit 1/ && !/DA_PROVE/ { print FILENAME }' "$@"; }
+printf 'fail() { echo "FAIL planted: $*" >&2; exit 1; }\n' >"$WORK/planted-v63.sh"
+early=$(stops_early "$reporoot"/scripts/tests/*-v63.sh)
+[ -z "$early" ] && [ "$(stops_early "$WORK/planted-v63.sh")" = "$WORK/planted-v63.sh" ] \
+  && pass "tests: every v6.3 test file reports each failing assertion under DA_PROVE" \
+  || fail "tests: every v6.3 test file reports each failing assertion under DA_PROVE ($early)"
+
 for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
   [ -f "$v63_test" ] || continue
   if [ "$(cat "$v63_out/${v63_test##*/}.rc" 2>/dev/null)" = 0 ]; then
@@ -8829,7 +8839,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1396
+EXPECTED_CHECKS=1397
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

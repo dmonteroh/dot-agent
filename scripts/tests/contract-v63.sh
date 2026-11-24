@@ -3,12 +3,13 @@
 # vendor-neutral, describe prints KEY=value read from the node, and both
 # name the same commands.
 set -eu
+[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/contract-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-fail() { echo "FAIL contract-v63: $*" >&2; exit 1; }
+fail() { echo "FAIL contract-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 page="$repo/scripts/docs/worker-contract.md"
 
 # The page is cited where a reader looks for it, and its own links resolve.
@@ -78,4 +79,5 @@ HOME="$h" bash "$repo/scripts/node.sh" init --preset domain-knowledge --mode tra
   || fail 'a root node does not get the root call'
 ! bash "$repo/scripts/node.sh" describe "$scratch/nowhere" 2>/dev/null || fail 'describe accepted a root with no node'
 
+[ -z "${proved_failures:-}" ] || exit 1
 echo "ok contract-v63"

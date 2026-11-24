@@ -4,12 +4,13 @@
 # under its locks, absorb.sh reports shared and merges nothing, every other
 # symlinked .agent is refused, and a writer waits for a held lock.
 set -eu
+[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/shared-node-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-fail() { echo "FAIL shared-node-v63: $*" >&2; exit 1; }
+fail() { echo "FAIL shared-node-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 
 # The main checkout: an ignore-all node, so a worktree holds no .agent of its
 # own, which is the layout an orchestrator links the node into.
@@ -170,4 +171,5 @@ printf '%s\n' '- [2026-09-27] Recover a writer lock whose owner is dead. Trigger
   || fail "learn.sh did not recover a dead writer's lock: $(cat "$scratch/learn.out")"
 [ ! -e "$learn_lock" ] || fail 'learn.sh left its writer lock behind'
 
+[ -z "${proved_failures:-}" ] || exit 1
 echo 'shared-node-v63: ok'
