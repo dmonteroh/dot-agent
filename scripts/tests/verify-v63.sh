@@ -172,7 +172,7 @@ expect_rc 2 "valid-shape receipt tampering is rejected" bash "$verify" check "$t
 expect_rc 0 "fresh receipt for the fails_without_change field" bash "$verify" run test --root "$root"
 fwc_id=$(awk -F '\t' '{print $2}' "$tmp/stdout")
 fwc="$root/.agent/.state/receipts/$fwc_id.receipt"
-[ "$(tail -n 1 "$fwc")" = 'fails_without_change=unknown' ] \
+[ "$(tail -n 1 "$fwc")" = 'fails_without_change=unknown' ] && [ "$(sed -n 11p "$fwc")" = 'proof=none' ] \
   && ok "a run records fails_without_change=unknown" || bad "receipt fails_without_change line: $(tail -n 1 "$fwc")"
 expect_rc 0 "a receipt carrying fails_without_change validates" bash "$verify" check "$fwc_id" --root "$root"
 cp "$fwc" "$tmp/fwc.saved"
@@ -548,6 +548,119 @@ sed 's/^TEST_COUNT_FORMAT=auto$/TEST_COUNT_FORMAT=tap/' "$auto_root/.agent/scrip
 auto_case unittest inconclusive unknown
 auto_why format 'TEST_COUNT_FORMAT=tap read no test count from its output.*set TEST_COUNT_FORMAT=auto in \.agent/scripts/verify\.conf'
 bash "$auto_verify" --help | grep -q 'TEST_COUNT_FORMAT=auto counts TAP' && ok "--help names the counted formats" || bad "--help does not name the counted formats"
+
+# prove runs the check without the change in a throwaway checkout. The node,
+# the scratch folder, and config.local are Git-ignored here, as in a project
+# whose node is local.
+pv="$tmp/prove"
+mkdir -p "$pv/.agent/scripts" "$pv/src" "$pv/test" "$pv/tmp/scratch" "$tmp/prove-tmp"
+cp "$here/verify.sh" "$here/runtime.sh" "$pv/.agent/scripts/"
+cat >"$pv/.agent/scripts/verify.conf" <<'EOF'
+CHECK_DRIVER=.agent/scripts/checks.sh
+POSITIVE_TEST_CHECKS=
+TEST_COUNT_FORMAT=auto
+TIMEOUT_SECONDS=60
+EOF
+cat >"$pv/.agent/scripts/checks.sh" <<'EOF'
+#!/usr/bin/env bash
+all() { for f in test/*.test.sh tmp/scratch/*.test.sh; do [ -f "$f" ] || continue; bash "$f" || { echo "not ok - $f"; exit 1; }; done; }
+case "$1" in
+  test) all ;;
+  local) [ -f config.local ] || { echo 'config.local is missing'; exit 1; }; all ;;
+  shared) [ -f "${DA_PROVE_MAIN:-.}/config.local" ] || { echo 'config.local is missing'; exit 1; }; all ;;
+  *) exit 9 ;;
+esac
+EOF
+printf '.agent/\ntmp/\nconfig.local\n' >"$pv/.gitignore"
+printf 'echo $(( $1 - $2 ))\n' >"$pv/src/calc.sh"
+printf '[ "$(bash src/calc.sh 2 0)" = 2 ]\n' >"$pv/test/calc.test.sh"
+git -C "$pv" init -q
+git -C "$pv" config user.email test@example.invalid
+git -C "$pv" config user.name Test
+git -C "$pv" add .
+git -C "$pv" commit -qm base
+pv_base=$(git -C "$pv" rev-parse HEAD)
+pv_verify="$pv/.agent/scripts/verify.sh"
+pv_run() { TMPDIR="$tmp/prove-tmp" bash "$pv_verify" prove "$@" --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; }
+pv_line() { sed -n "$1p" "$pv/.agent/.state/receipts/$(cut -f2 "$tmp/stdout").receipt"; }
+pv_tree() { (cd "$pv" && git status --porcelain --ignored && find src test tmp config.local -type f -exec git hash-object {} + 2>/dev/null) | git hash-object --stdin; }
+printf 'echo $(( $1 + $2 ))\n' >"$pv/src/calc.sh"
+printf '[ "$(bash src/calc.sh 2 3)" = 5 ]\n' >"$pv/tmp/scratch/sum.test.sh"
+pv_before=$(pv_tree)
+pv_run test --test tmp/scratch/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
+  && ok "prove records yes for a test that fails at the base and passes now" || bad "prove yes: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
+pv_digest=$(printf 'tmp/scratch/sum.test.sh\t%s\n' "$(git hash-object "$pv/tmp/scratch/sum.test.sh")" | git hash-object --stdin)
+[ "$(pv_line 11)" = "proof=base:$pv_base:$pv_digest" ] \
+  && ok "the receipt names the base and the content of a Git-ignored test" || bad "proof line: $(pv_line 11)"
+pv_id=$(cut -f2 "$tmp/stdout")
+expect_rc 0 "a proved receipt validates" bash "$pv_verify" check "$pv_id" --root "$pv"
+[ "$(pv_tree)" = "$pv_before" ] && [ -z "$(ls "$tmp/prove-tmp")" ] \
+  && ok "prove leaves the session's tree and the temporary folder as they were" || bad "prove left something behind: $(ls "$tmp/prove-tmp")"
+pv_receipt="$pv/.agent/.state/receipts/$pv_id.receipt"
+chmod u+w "$pv_receipt"
+sed 's/^proof=base:/proof=break:/' "$pv_receipt" >"$tmp/proof.edit" && cp "$tmp/proof.edit" "$pv_receipt"
+expect_rc 2 "an edited proof breaks the receipt digest" bash "$pv_verify" check "$pv_id" --root "$pv"
+printf '[ "$(bash src/calc.sh 2 0)" = 2 ]\n' >"$pv/tmp/scratch/weak.test.sh"
+pv_run test --test tmp/scratch/sum.test.sh --test tmp/scratch/weak.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 12)" = 'fails_without_change=no' ] \
+  && has "passes at ${pv_base:0:12} with tmp/scratch/weak\.test\.sh copied in, so that does not prove the change" "$tmp/stderr" \
+  && ok "each test file is proved on its own run, and one that passes at the base is named" || bad "prove no: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+rm "$pv/tmp/scratch/sum.test.sh" "$pv/tmp/scratch/weak.test.sh"
+git -C "$pv" add src
+git -C "$pv" commit -qm fix
+printf 'echo $(( $1 - $2 ))\n' >"$pv/tmp/scratch/calc.broken"
+pv_run test --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 12)" = 'fails_without_change=no' ] && has 'no test here protects that behavior' "$tmp/stderr" \
+  && ok "a broken copy that no test notices records no" || bad "break no: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+printf '[ "$(bash src/calc.sh 2 3)" = 5 ]\n' >"$pv/test/sum.test.sh"
+pv_run test --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] && printf '%s\n' "$(pv_line 11)" | grep -q '^proof=break:' \
+  && ok "a broken copy proves a test for a rule the old code already met" || bad "break yes: rc $pv_rc, $(pv_line 11), $(tail -1 "$tmp/stderr")"
+: >"$pv/config.local"
+pv_run local --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] \
+  && has 'local fails in the proving checkout with the current files, so nothing was proved\..*\$DA_PROVE_MAIN when DA_PROVE is set$' "$tmp/stderr" \
+  && ok "a check the checkout cannot run proves nothing and says why" || bad "control: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+pv_run shared --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
+  && ok "a driver reads what the checkout lacks through DA_PROVE_MAIN, and --base proves a committed change" || bad "shared: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+printf 'false\n' >"$pv/test/red.test.sh"
+pv_run test --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && has $'\tfail\ttest\t1\t' "$tmp/stdout" && [ "$(pv_line 11)" = 'proof=none' ] \
+  && has 'test does not pass on the current tree, so there is nothing to prove' "$tmp/stderr" \
+  && ok "a check that fails now is recorded as a failed run with no proof" || bad "red: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+rm "$pv/test/red.test.sh"
+pv_rows=0
+while IFS='|' read -r pv_want pv_args; do
+  # shellcheck disable=SC2086
+  TMPDIR="$tmp/prove-tmp" bash "$pv_verify" prove test $pv_args --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
+  [ "$pv_rc" -eq 2 ] && has "$pv_want" "$tmp/stderr" && ok "prove refuses: $pv_want" || bad "prove usage ($pv_args): rc $pv_rc, $(tail -1 "$tmp/stderr")"
+  pv_rows=$((pv_rows + 1))
+done <<'EOF'
+prove needs --test PATH|
+base and --break were both given|--base HEAD --break src/calc.sh=tmp/scratch/calc.broken
+without a leading slash or \.\.|--test ../outside
+test names no file|--test test/none.test.sh
+break takes PATH=FILE|--break src/calc.sh
+EOF
+[ "$pv_rows" -eq 5 ] && ok "every prove usage row ran" || bad "prove usage rows ran: $pv_rows"
+pm="$tmp/prove-mono"
+mkdir -p "$pm/pkg/.agent/scripts" "$pm/pkg/test"
+cp "$here/verify.sh" "$here/runtime.sh" "$pv/.agent/scripts/verify.conf" "$pm/pkg/.agent/scripts/"
+printf '#!/usr/bin/env bash\nbash test/one.test.sh\n' >"$pm/pkg/.agent/scripts/checks.sh"
+printf '.agent/\n' >"$pm/.gitignore"
+printf 'old\n' >"$pm/pkg/value"
+printf 'true\n' >"$pm/pkg/test/one.test.sh"
+git -C "$pm" init -q
+git -C "$pm" config user.email test@example.invalid
+git -C "$pm" config user.name Test
+git -C "$pm" add .
+git -C "$pm" commit -qm base
+printf 'new\n' >"$pm/pkg/value"
+printf '[ "$(cat value)" = new ]\n' >"$pm/pkg/test/one.test.sh"
+TMPDIR="$tmp/prove-tmp" bash "$pm/pkg/.agent/scripts/verify.sh" prove test --test test/one.test.sh --root "$pm/pkg" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && ok "prove works for a node below the Git top level" || bad "prove in a subfolder: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 
 printf '1..%s\n' "$((pass + fail))"
 printf '# passed %s; failed %s\n' "$pass" "$fail"

@@ -4,13 +4,15 @@
 
 ```
 verify.sh run CHECK [--root ROOT] [--timeout SECONDS] [--output-share N]
+verify.sh prove CHECK --test PATH... [--base REF] [--root ROOT] [--timeout SECONDS]
+verify.sh prove CHECK --break PATH=FILE... [--test PATH...] [--root ROOT] [--timeout SECONDS]
 verify.sh check RECEIPT [--root ROOT]
 verify.sh why RECEIPT [--root ROOT]
 ```
 
 The project-owned `.agent/scripts/checks.sh` receives `CHECK` as its sole argument. Configuration is non-executable `KEY=value` data in `.agent/scripts/verify.conf`: `CHECK_DRIVER`, `POSITIVE_TEST_CHECKS`, `TEST_COUNT_FORMAT` (`auto`, `tap`, or `none`), `TIMEOUT_SECONDS`, and optionally `NON_GIT_INPUT_ROOTS`, `OUTPUT_MAX_BYTES`, and `OUTPUT_FAILURE_PATTERN`. Command strings are not supported.
 
-`run` and `check` print one tab-separated result record on stdout. `run` returns 0 only for a pass, 1 for a failed or inconclusive run, 2 for usage/infrastructure errors, and 124 for timeout. A check whose captured output is gone when it ends is inconclusive, whatever it exited with. `check` returns 0 for a current, structurally valid receipt even when that receipt records failure. Missing, malformed, or stale receipts return 2.
+`run`, `prove`, and `check` print one tab-separated result record on stdout. `run` returns 0 only for a pass, 1 for a failed or inconclusive run, 2 for usage/infrastructure errors, and 124 for timeout. A check whose captured output is gone when it ends is inconclusive, whatever it exited with. `check` returns 0 for a current, structurally valid receipt even when that receipt records failure. Missing, malformed, or stale receipts return 2.
 
 The check's output prints on stderr. Output within `OUTPUT_MAX_BYTES` (default 29000) prints whole. A harness cuts a tool result past its own limit, about 30 KB on Claude Code, and that cut can fall on the one failing assertion. So longer output is trimmed here instead:
 
@@ -42,13 +44,15 @@ TAP counts require one unindented `1..N` plan and exactly N sequentially numbere
 
 Skipped and filtered tests are left out, so a run whose every test was skipped or filtered away counts 0 and is inconclusive. A line of one of these shapes counts wherever it appears in the output. TAP counting does not leave skips out: `ok 1 # SKIP` counts as a result. `go test` without `-v` prints no count, so its driver line needs `-v`. A runner outside the table needs its TAP reporter in the check driver, or its own row here once its summary line has been observed.
 
-`why` prints one word for a current receipt, so a caller need not guess the cause from the record: `pass`, `failed`, `uncounted` (a positive check whose output carries no test count), `format` (the same under `TEST_COUNT_FORMAT=tap` or `none`), `empty` (a positive check that ran 0 tests), or `changed` (any other inconclusive run: project files changed, or its output was lost). A positive check that lost its output reads as `uncounted`, because its count is unknown. `checkpoint.sh` picks its refusal from that word. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
+`why` prints one word for a current receipt, so a caller need not guess the cause from the record. The words are `pass`, `failed`, `uncounted` (a positive check whose output carries no test count), `format` (the same under `TEST_COUNT_FORMAT=tap` or `none`), `empty` (a positive check that ran 0 tests), or `changed` (any other inconclusive run: project files changed, or its output was lost). A positive check that lost its output reads as `uncounted`, because its count is unknown. `checkpoint.sh` picks its refusal from that word. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
 
 The default counts summaries because counting TAP alone was measured to cost calls. The measurement ran on 2026-11-24 over the 19 corpus evals of `evals/spec.json`, 3 repeats, 57 sessions per agent. The fixtures run `node --test`, which prints the spec reporter when piped on Node.js 24. At `0056c13`, which counted TAP alone, 11 Claude sessions and 15 Codex sessions changed the project's test command to print TAP. At `530e0e9`, none did. Tool calls per session fell from 11.2 to 9.3 on Claude and from 9.8 to 8.7 on Codex, and the share of checks passed stayed within the noise of 3 repeats.
 
 Receipts are read as data, never sourced, and live in the private worktree state directory under `receipts/`. `check` accepts only the opaque ID printed by `run`, not a path. Each receipt binds its physical worktree, fingerprint, configured driver invocation, and UTC execution timestamp. A nonzero run can therefore leave a valid receipt that honestly records `fail` or `inconclusive`.
 
-Each receipt also records `fails_without_change`: `yes` when the check was seen failing at the base commit with only the change's test files applied, `no` when it passed there, and `unknown` when that was never run. Nothing runs it yet, so every receipt records `unknown`. The field is inside the receipt digest, and `check` refuses a receipt that lacks it or holds another value. It lives in the receipt file only: the stdout record keeps its five fields, so `checkpoint.sh` and an orchestrator parsing that record read it unchanged. Receipt schema 3 added the field. A schema 2 receipt fails `check` as an invalid version, and a fresh `run` replaces it.
+Each receipt also records `proof` and `fails_without_change`. `run` writes `proof=none` and `fails_without_change=unknown`. `prove` writes `yes` when the check fails without the change and passes with it, `no` when it passes without the change, and `unknown` with `proof=none` when nothing could be proved. After a verdict, `proof` names what it rests on: `base:<commit>:<digest>` or `break:<digest>:<digest>`. The last digest covers the content of the `--test` files, and the first digest of `break` covers the broken copies. The fingerprint leaves Git-ignored files out, so this line is what keeps a scratch test's proof on record after the file is deleted.
+
+Both fields are inside the receipt digest, and `check` refuses a receipt that lacks either or holds a pair that cannot occur. They live in the receipt file only: the stdout record keeps its five fields, so `checkpoint.sh` and an orchestrator parsing that record read it unchanged. Receipt schema 3 added both fields. A schema 2 receipt fails `check` as an invalid version, and a fresh `run` replaces it.
 
 In Git worktrees, fingerprints cover the physical worktree identity, HEAD, read-only index entries, tracked working files (including executable-bit changes and missing files), and untracked non-ignored inputs. Canonical `.agent/` content stays covered even when ignored. The configured driver and verification configuration also stay covered. Checked-out submodule inputs are fingerprinted recursively. Unsupported submodule boundaries and unresolved index stages are refused. Runtime state, generated indexes, the session log and its atomic checkpoint files, and generated-mode `rules/learned.md` aggregates are excluded. Manual `rules/learned.md` remains an input.
 
@@ -56,23 +60,36 @@ In a non-Git node the runtime helper defaults to `.agent`. A verification pass i
 
 Timeout handling uses an invocation-owned watchdog while the parent waits directly for the driver. Normal completion cancels that watchdog immediately. Timeout signals only the driver's owned process group, including attached descendants. A descendant can deliberately detach into another process group. A portable Bash wrapper cannot discover or clean it up without broad process enumeration. Such drivers must supervise their own detached work.
 
-## Design: proving a test fails without the change
+## Proving a test fails without the change
 
-The quality bar asks for a test that fails without the change. Today that is prose, so a reviewer asks for the evidence and the session builds it by hand. A `verify.sh prove --base <ref> <check>` would run the check at `<ref>` with the change's test files applied, expect a failure, and record `fails_without_change` on the receipt of the normal run at the current tree. The change's test files are the paths in `git diff --name-only <ref>` that match `review.conf`'s `TEST_PATH_RE`, the same set `review.sh` already reads for `TEST_COVERAGE`. Two ways can produce that base tree.
+A test that passes proves little until it has been seen to fail. `prove` produces that evidence without touching the session's tree.
 
-**In place, by stash.** Stash every change except the test files, run the check, restore the stash.
+```
+verify.sh prove test --test tmp/scratch/retry.test.ts
+verify.sh prove test --base <commit before the work> --test test/retry.test.ts
+verify.sh prove test --break src/client.ts=tmp/scratch/client.broken.ts
+```
 
-- Cost: no second checkout and no cold build, because the build cache already holds the current tree and an incremental build reuses it.
-- It moves the session's own working tree to the base for the whole run. An interrupt, a timeout, or a failed restore leaves the tree at the base with the work in the stash.
-- The stash stack is shared by every worktree of the repository, so a concurrent session can pop the wrong entry.
-- The run changes the tree it fingerprints, which `run` already reads as inconclusive. The proof would need its own exception to that rule.
+1. It runs the check on the current tree, as `run` does. A check that does not pass now is recorded as a failed run, and nothing is proved.
+2. It makes a throwaway clone of the repository in the temporary folder and copies the current changes into it. Those are every file that differs from `HEAD`, every untracked file Git does not ignore, and each `--test` file, ignored or not.
+3. It runs the check there once as a control. A check that fails there cannot run in the checkout, so the verdict is `unknown` and the output of that run prints.
+4. It runs the check without the change. With `--test`, the checkout goes to `--base` (default `HEAD`), and each test file is copied onto it and run on its own. With `--break PATH=FILE`, the current files stay and `PATH` is replaced by `FILE`, a copy the session broke on purpose.
+5. The verdict is `yes` when every one of those runs fails, and `no` when one passes. The message names a test file that passes at the base.
 
-**A temporary checkout.** `git worktree add --detach` at `<ref>` under the node's private state, copy the test files in, run the configured check there, and remove the checkout afterwards.
+`prove` exits 0 only for `yes`. It prints the output of the runs without the change, so the session can confirm each failure is the one it means. `yes` says the check fails there, and a missing file or a syntax error fails too.
 
-- Cost: a checkout's disk and its first build. A project whose build cache is large pays for that once per checkout, and a second copy of the cache when the checkout does not share it.
-- The session's tree is never touched, so an interrupt costs a stray directory that `git worktree prune` and the next run clear, never work.
-- The receipt's fingerprint rules hold unchanged, because the proof runs in a different physical worktree with its own state.
-- Sharing the cache is project knowledge, not something `verify.sh` can know. The driver learns it is proving from an environment variable and points its own cache at the main checkout where the tool allows that: a shared package store, a target directory, a compiler cache.
+`--break` is for a test that guards a rule the old code already met. Such a test passes at every base, so only breaking the behavior can show that it notices. Copy the file into the scratch folder, break the behavior in the copy, and pass the pair.
 
-**Choice: the temporary checkout.** The stash route is cheaper only while nothing goes wrong, and what it risks when something does is the session's uncommitted work, which no receipt can give back. The checkout's cost is disk and build time, which the driver can cut per project and the operator can see. One checkout per node, reused across runs by resetting it to the new base, bounds the disk to one copy. `prove` records `yes` only for a failing base run with a passing current run, `no` for a passing base run, and `unknown` for anything else: a setup failure, a timeout, an inconclusive count, or a change with no test files.
+Each test file gets its own run because a runner that stops at its first failure would let one failing test stand for the others. Inside one file the runner decides. The driver sees `DA_PROVE=1` in the checkout, and a driver that turns off fail-fast there prints every failing test.
 
+The checkout holds tracked and unignored files only. Installed dependencies, build caches, and local configuration are usually ignored, so the driver also gets `DA_PROVE_MAIN`, the path of the project, and reads or links what the checkout lacks from there. The driver must run relative to its working directory, because a driver that changes into the project's own path would run the current files three times and record `no`.
+
+Limits:
+
+- A repository with submodules gets `unknown`, because the clone does not populate them.
+- A node outside Git cannot prove.
+- The base commit can need other dependencies than the current tree. A run that fails for that reason still reads `yes`, which is why the output prints.
+- `prove` runs the check at least three times, so prove a focused check and leave the whole suite to `run`.
+- `checkpoint.sh` accepts a proved receipt through `--verification` like any other, and does not yet read the verdict.
+
+The clone uses `git clone --shared`, which copies no objects and registers nothing in the session's repository. A stash was rejected because an interrupt would leave the session's work in the stash stack, which every worktree shares. A linked worktree was rejected because it stays registered in the repository after an interrupt.
