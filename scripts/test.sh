@@ -8947,9 +8947,13 @@ wait "$v63_pid"
 # whose fail helper exits would show its first failing assertion alone, so
 # each one keeps going when DA_PROVE is set.
 stops_early() { awk '/^fail\(\) / && /exit 1/ && !/DA_PROVE/ { print FILENAME }' "$@"; }
+# Strict mode must hold until the temp folder and its trap exist. Without it
+# a failed mktemp leaves the trap removing the current folder.
+loose_early() { awk 'FNR == 1 { trapped = 0 } /^trap / { trapped = 1 } /\|\| set \+e$/ && !trapped { print FILENAME }' "$@"; }
 printf 'fail() { echo "FAIL planted: $*" >&2; exit 1; }\n' >"$WORK/planted-v63.sh"
-early=$(stops_early "$reporoot"/scripts/tests/*-v63.sh)
-[ -z "$early" ] && [ "$(stops_early "$WORK/planted-v63.sh")" = "$WORK/planted-v63.sh" ] \
+printf '[ -z "${DA_PROVE:-}" ] || set +e\ntrap true EXIT\n' >"$WORK/planted-loose-v63.sh"
+early=$(stops_early "$reporoot"/scripts/tests/*-v63.sh; loose_early "$reporoot"/scripts/tests/*-v63.sh)
+[ -z "$early" ] && [ "$(stops_early "$WORK/planted-v63.sh")" = "$WORK/planted-v63.sh" ] && [ "$(loose_early "$WORK/planted-loose-v63.sh")" = "$WORK/planted-loose-v63.sh" ] \
   && pass "tests: every v6.3 test file reports each failing assertion under DA_PROVE" \
   || fail "tests: every v6.3 test file reports each failing assertion under DA_PROVE ($early)"
 

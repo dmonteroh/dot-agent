@@ -569,7 +569,8 @@ case "$1" in
   local) [ -f config.local ] || { echo 'config.local is missing'; exit 1; }; all ;;
   shared) [ -f "${DA_PROVE_MAIN:-.}/config.local" ] || { echo 'config.local is missing'; exit 1; }; all ;;
   linked) [ -z "${DA_PROVE:-}" ] || [ -e gen ] || ln -s "$DA_PROVE_MAIN/gen" gen; all ;;
-  built) [ out/calc.sh -nt src/calc.sh ] || { mkdir -p out && cp src/calc.sh out/calc.sh; }; [ "$(bash out/calc.sh 2 3)" = 5 ] ;;
+  built) if [ ! -e out/calc.sh ] || [ src/calc.sh -nt out/calc.sh ]; then mkdir -p out && cp src/calc.sh out/calc.sh; fi; [ "$(bash out/calc.sh 2 3)" = 5 ] ;;
+  readonly) [ -z "${DA_PROVE:-}" ] || { mkdir -p ro/sub && chmod 555 ro; }; all ;;
   plain) [ -z "${DA_PROVE:-}" ] || { echo 'DA_PROVE reached a run'; exit 1; } ;;
   slow) if [ -n "${DA_PROVE:-}" ] && [ "$(bash src/calc.sh 2 3)" != 5 ]; then sleep 20; fi; all ;;
   *) exit 9 ;;
@@ -630,6 +631,7 @@ pv_run test --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
 pv_run local --test test/sum.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] \
   && has 'local fails in the proving checkout with the current files, so nothing was proved\..*\$DA_PROVE_MAIN when DA_PROVE is set$' "$tmp/stderr" \
+  && has $'\tpass\tlocal\t0\t' "$tmp/stdout" \
   && ok "a check the checkout cannot run proves nothing and says why" || bad "control: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 pv_run shared --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
@@ -645,13 +647,20 @@ pv_run linked --break gen/double.sh=tmp/scratch/double.broken; pv_rc=$?
 [ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(cat "$pv/gen/double.sh")" = 'echo kept' ] \
   && has 'gen/double\.sh passes through a symbolic link in the proving checkout, so nothing was proved' "$tmp/stderr" \
   && ok "prove never writes through a link that leads out of its checkout" || bad "link: rc $pv_rc, gen holds $(cat "$pv/gen/double.sh"), $(tail -1 "$tmp/stderr")"
+touch "$pv/src/calc.sh"
+pv_index=$(git hash-object "$pv/.git/index")
+pv_run readonly --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ -z "$(ls "$tmp/prove-tmp")" ] \
+  && ok "a read-only folder the driver leaves does not block the proof or its cleanup" || bad "read-only: rc $pv_rc, left $(ls "$tmp/prove-tmp"), $(tail -1 "$tmp/stderr")"
+[ "$(git hash-object "$pv/.git/index")" = "$pv_index" ] \
+  && ok "prove does not refresh the session's index" || bad "prove rewrote the index"
 pv_orphan=$(git -C "$pv" commit-tree -m unrelated "$(git -C "$pv" hash-object -t tree /dev/null)")
 pv_run test --base "$pv_orphan" --test test/sum.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'is no ancestor of HEAD, so nothing was proved' "$tmp/stderr" \
   && ok "a base that is no ancestor of HEAD proves nothing" || bad "orphan base: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 pv_run built --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
-  && ok "a broken copy is newer than what the control run built" || bad "mtime build: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+  && ok "a broken copy is a whole second newer than what the control run built" || bad "mtime build: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 DA_PROVE=1 DA_PROVE_MAIN=/nonexistent bash "$pv_verify" run plain --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && ok "a caller's DA_PROVE does not reach a run of the current tree" || bad "DA_PROVE leak: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 pv_run slow --base "$pv_base" --test test/sum.test.sh --timeout 3; pv_rc=$?
@@ -683,11 +692,12 @@ prove needs --test PATH|
 base and --break were both given|--base HEAD --break src/calc.sh=tmp/scratch/calc.broken
 without a leading slash, \.\., or \.git|--test ../outside
 without a leading slash, \.\., or \.git|--test .git/config
+without a leading slash, \.\., or \.git|--test .GIT
 test names no regular file|--test test/none.test.sh
 test names no regular file|--test test/link.test.sh
 break takes PATH=FILE|--break src/calc.sh
 EOF
-[ "$pv_rows" -eq 7 ] && ok "every prove usage row ran" || bad "prove usage rows ran: $pv_rows"
+[ "$pv_rows" -eq 8 ] && ok "every prove usage row ran" || bad "prove usage rows ran: $pv_rows"
 pm="$tmp/prove-mono"
 mkdir -p "$pm/pkg/.agent/scripts" "$pm/pkg/test"
 cp "$here/verify.sh" "$here/runtime.sh" "$pv/.agent/scripts/verify.conf" "$pm/pkg/.agent/scripts/"

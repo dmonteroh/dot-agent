@@ -288,19 +288,26 @@ fails_without_change=unknown
 proof=none
 
 prove_path_ok() {
-  case "$1" in '' | /* | .. | ../* | */../* | */.. | .git | .git/* | */.git | */.git/*) return 1 ;; esac
+  # A file system that folds case reads .GIT as .git.
+  case "$(printf '%s' "$1" | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')" in
+    '' | /* | .. | ../* | */../* | */.. | .git | .git/* | */.git | */.git/*) return 1 ;;
+  esac
   safe_value "$1"
 }
 
 # prove_copy SRC DST: copies the file SRC over DST, a path of the checkout
 # relative to the Git top level. A missing SRC removes DST, which is how a
 # deleted file reaches the checkout. A parent of DST that is a symbolic link
-# could lead back into the project, so such a path is refused.
+# could lead back into the project, and a part of DST that is the checkout's
+# own .git would turn the next Git command on the project, so both are refused.
 prove_copy() {
   pcp_walk=$prove_tree; pcp_rest=$2
   while :; do
-    case "$pcp_rest" in */*) pcp_walk="$pcp_walk/${pcp_rest%%/*}"; pcp_rest=${pcp_rest#*/} ;; *) break ;; esac
-    [ ! -L "$pcp_walk" ] || return 1
+    case "$pcp_rest" in
+      */*) pcp_walk="$pcp_walk/${pcp_rest%%/*}"; pcp_rest=${pcp_rest#*/} ;;
+      *) [ ! "$pcp_walk/$pcp_rest" -ef "$prove_tree/.git" ] || return 1; break ;;
+    esac
+    [ ! -L "$pcp_walk" ] && [ ! "$pcp_walk" -ef "$prove_tree/.git" ] || return 1
   done
   rm -rf -- "${prove_tree:?}/$2" || return 1
   if [ -e "$1" ] || [ -L "$1" ]; then
@@ -365,7 +372,8 @@ prove_change() {
     || ! git -C "$prove_tree" checkout -q --detach "$pc_head" >/dev/null 2>&1; then
     pc_stop "could not build the proving checkout, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
   fi
-  if ! { GIT_OPTIONAL_LOCKS=0 git -C "$prove_top" diff --no-renames --name-only -z HEAD -- && git -C "$prove_top" ls-files -o --exclude-standard -z; } >"$prove_dir/paths" 2>/dev/null; then
+  # diff-index reads the index as it is. git diff would refresh and rewrite it.
+  if ! { git -C "$prove_top" diff-index --no-renames --name-only -z HEAD -- && git -C "$prove_top" ls-files -o --exclude-standard -z; } >"$prove_dir/paths" 2>/dev/null; then
     pc_stop "git could not list the current changes, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
   fi
   while IFS= read -r -d '' pc_path; do
@@ -386,10 +394,12 @@ prove_change() {
   if [ "${#prove_breaks[@]}" -gt 0 ]; then
     pc_mode='break'
     pc_files=()
+    # Builds that compare modification times read whole seconds, and take an
+    # equal time as up to date. The copies below must be a second newer than
+    # what the control run just built.
+    sleep 1
     for pc_pair in "${prove_breaks[@]}"; do
       pc_files+=("${pc_pair#*=}")
-      # A build that compares modification times must see the copy as newer
-      # than what the control run built.
       prove_copy "$prove_dir/in/${pc_pair#*=}" "$prove_prefix${pc_pair%%=*}" && touch -- "$prove_tree/$prove_prefix${pc_pair%%=*}" \
         || { pc_stop "${pc_pair%%=*} passes through a symbolic link in the proving checkout, so nothing was proved. Break a file in a real folder of the project"; return 0; }
     done
@@ -404,6 +414,8 @@ prove_change() {
     # A runner that stops at its first failure would otherwise let one
     # failing test stand for the others.
     for pt in "${prove_tests[@]}"; do
+      # A driver can leave a read-only folder, as a module cache does.
+      chmod -R u+w "$prove_tree" 2>/dev/null || :
       if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
         pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
       fi
@@ -467,7 +479,7 @@ cleanup_run() {
   [ -z "${out_tmp:-}" ] || rm -f "$out_tmp"
   [ -z "${watchdog_marker:-}" ] || rm -f "$watchdog_marker"
   cancel_watchdog
-  case "${prove_dir:-}" in */verify-prove.*) rm -rf -- "$prove_dir" ;; esac
+  case "${prove_dir:-}" in */verify-prove.*) chmod -R u+w "$prove_dir" 2>/dev/null; rm -rf -- "$prove_dir" ;; esac
   if [ "${lock_owned:-0}" -eq 1 ]; then
     da_unlock "$lock" >/dev/null 2>&1 || :
     lock_owned=0
