@@ -22,7 +22,7 @@
 - Before creating an endpoint, component, service, module, migration, worker, test helper, or fixture, read the area's catalog, however small the task.
 - Search the code when the catalog has no answer. Extend existing building blocks where appropriate.
 - Add a new reusable block's catalog entry in the same change, including helpers inside existing modules and shared test helpers and fixtures.
-- Add focused tests for new or changed observable behavior. Existing coverage can suffice for a pure refactor.
+- Prove new or changed observable behavior. Keep a test only under the Testing rules below. Existing coverage can suffice for a pure refactor.
 - Update docs when behavior, architecture, operations, dependencies, or practices change.
 - State provenance for numbers, defaults, and thresholds: measurement, source, or chosen default.
 - Explain a surprising constraint in a comment only when the code cannot convey it.
@@ -37,6 +37,15 @@
 - Investigate unknown failures before reporting them.
 - A zero-test result does not establish behavior coverage.
 - Use `rules/quality-bar.md` for substantial work or a review that needs its rubric.
+
+## Testing
+
+- Proof of work is not a kept test. Prove a change with a scratch test in the scratch folder Project guardrails names, or with anything cheaper, and delete it when the task ends.
+- Keep a test only when it protects a rule that no kept test protects. Name that rule where the project records the change.
+- Merge or delete the kept tests your change makes redundant, and name the test that keeps each check.
+- See each proof fail without the change: `.agent/scripts/verify.sh prove <check> --test <file>`, or `--break <path>=<broken copy>` for a rule the old code already met.
+- Write expected values as literals taken from the requirement. Never compute them with the code under test.
+- Read a failure before editing anything. Never edit an expectation to match the output, loosen a matcher, or skip a test to make it pass.
 
 ## Continuity contract
 
@@ -86,7 +95,11 @@
 
 Read this rubric for substantial work or a review that needs it.
 
-- Changed observable behavior is covered by a test that fails without the change, and a fix for a blocking review finding adds a test for the code path the finding names. Pure refactors rely on existing coverage.
+- Changed observable behavior, and each fix for a blocking review finding, was proved by a check that fails without the change. Pure refactors rely on existing coverage.
+- Every proof, scratch or kept, was seen failing without the change, and the report quotes the failing line or the `verify.sh prove` verdict.
+- Every kept test added names the rule it protects, and no other kept test protects that rule. A rule is something a user or another program relies on: an output, an exit code, an error, a file format. "This change works" is not a rule.
+- No scratch test is left in the scratch folder, and the kept tests the change made redundant are merged or deleted.
+- No existing test was weakened: no expectation edited to match new output, no assertion removed or loosened, and no skip added, unless the task changes that behavior.
 - An assertion whose expected value is computed from the same source as its actual value proves nothing. The expected value is a literal, a fixture, or an independent computation.
 - No unrelated diffs: every changed file traces to the task.
 - Docs are updated wherever behavior, flows, dependencies, architecture, or practices changed, citing the code or test path rather than paraphrasing it.
@@ -134,6 +147,7 @@ The default is no comment. Write one only where a competent reader of this file 
 - Catalogs: <one per area — e.g. `docs/backend-catalog.md`. Unconditional hook, read before creating anything new. Name the areas that have one. Note any dead code never to reuse.>
 - Build: <exact command(s)>
 - Test: <exact command(s), noting any serial-execution constraints>
+- Scratch tests: <the Git-ignored folder for throwaway tests, e.g. `tmp/scratch/`, matching `SCRATCH_DIR` in `review.conf`, and the check that runs one>
 - Lint / typecheck: <exact command(s)>
 - Generated files: <paths + regeneration command. Never hand-edit>
 - Doc comments: <name any surface whose toolchain requires them, and the generator that consumes them. Everything else is held to the Comments rule with no exemption.>
