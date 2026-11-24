@@ -42,26 +42,47 @@ while IFS= read -r f; do
   [ -n "$f" ] && nodefiles+=("$f")
 done < <(find -H "$agent" -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
 
-# Linked worktrees under the root are other checkouts of the same project.
-# Their files are not this checkout's, and an orchestrator can hold dozens of
-# them, so the walk below leaves them out.
-worktree_prune=()
-root_phys=$(cd "$root" 2>/dev/null && pwd -P) || root_phys=""
-if [ -n "$root_phys" ]; then
-  while IFS= read -r wt; do
-    case "$wt" in
-    "$root_phys"/*) worktree_prune+=(-o -path "${root%/}/${wt#"$root_phys"/}") ;;
+# Other checkouts under the root, linked worktrees above all, hold files that
+# are not this checkout's, and an orchestrator can keep dozens of them there.
+# Git lists no file of another checkout, and the find walk prunes the
+# worktrees git names.
+git_lists_root() { # the root is in a work tree that does not ignore it
+  local top prefix
+  top=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || return 1
+  prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null) || return 1
+  [ -n "$prefix" ] || return 0
+  git -C "$top" check-ignore -q --no-index -- "${prefix%/}" 2>/dev/null
+  [ "$?" -eq 1 ]
+}
+git_markdown() { # the basenames git lists, tracked and untracked; fails when git cannot list them
+  set -o pipefail
+  {
+    git -C "$root" ls-files -z --recurse-submodules -- '*.md' \
+      && git -C "$root" ls-files -z --others --exclude-standard -- '*.md'
+  } 2>/dev/null | while IFS= read -r -d '' f; do
+    case "/$f" in
+    */node_modules/* | */vendor/* | */.venv/* | */dist/* | */build/* | */target/*) continue ;;
     esac
-  done < <(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
-fi
-
-projbasenames=$'\n'
-while IFS= read -r f; do
-  [ -n "$f" ] && projbasenames="$projbasenames$f"$'\n'
-done < <(find "$root" \( -name .git -o -name node_modules -o -name vendor \
-  -o -name .venv -o -name dist -o -name build -o -name target \
-  ${worktree_prune[@]+"${worktree_prune[@]}"} \) -prune -o \
-  -type f -name '*.md' -print 2>/dev/null | sed 's|.*/||' | LC_ALL=C sort -u)
+    if [ -f "$root/$f" ] && [ ! -L "$root/$f" ]; then printf '%s\n' "${f##*/}"; fi
+  done | LC_ALL=C sort -u
+}
+find_markdown() { # the basenames under the root
+  local worktree_prune=() phys wt
+  phys=$(cd "$root" 2>/dev/null && pwd -P) || phys=""
+  if [ -n "$phys" ]; then
+    while IFS= read -r wt; do
+      case "$wt" in
+      "$phys"/*) worktree_prune+=(-o -path "${root%/}/${wt#"$phys"/}") ;;
+      esac
+    done < <(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+  fi
+  find "$root" \( -name .git -o -name node_modules -o -name vendor \
+    -o -name .venv -o -name dist -o -name build -o -name target \
+    ${worktree_prune[@]+"${worktree_prune[@]}"} \) -prune -o \
+    -type f -name '*.md' -print 2>/dev/null | sed 's|.*/||' | LC_ALL=C sort -u
+}
+{ git_lists_root && projbasenames=$(git_markdown); } || projbasenames=$(find_markdown)
+projbasenames=$'\n'"$projbasenames"$'\n'
 
 strip_comments() {
   awk '

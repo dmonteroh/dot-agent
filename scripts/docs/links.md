@@ -24,6 +24,15 @@ Scope is the node's own link graph. A path pointing outside `.agent/` — a sour
 
 Shape alone cannot tell a project file from a node file. A bare `SKILL.md` looks exactly like a bare `learned.md`, and node docs really do cite each other by bare name. So an unresolved name is checked against the project's markdown too, not only the node's. A memory fact naming a real project file that sits in a subdirectory rather than at the project root is not a broken link.
 
+Which project files count depends on the root:
+
+| Root | Project files that resolve a name |
+|---|---|
+| in a git repository | the Markdown git lists under the root: tracked files, the tracked files of initialized submodules, and untracked files that no ignore rule covers |
+| outside git, or ignored by the repository around it | every Markdown file a `find` walk reaches under the root |
+
+In a git repository, an ignored file does not resolve a citation by its bare name or by the end of its path. Such a citation reports `BROKEN:`. A citation whose whole path exists still resolves when git ignores the file. The path is tried from the project root, from the node, and from the citing file's directory. A tracked file deleted from the checkout does not count. The node's own files under `.agent/` keep their own walk, so a node that git ignores is audited in full. A child node that git ignores is an ignored file like any other, so its files no longer resolve a bare name cited by the parent node.
+
 What no script can settle is a path naming a file in a *third* repo — a skill documenting where its consuming project should keep its config. That one stays reported, because the audit is tuned to over-report rather than to miss a real dangling link, and because a finding here is a review trigger and not an error.
 
 The session log, `archive/`, and `rules/` are read as records and instructions rather than as citations.
@@ -90,6 +99,8 @@ Three sources are excluded from the `BROKEN:` walk because they name files in a 
 
 - Matching is loose on purpose: a citation resolves against a file's node-relative path *or* its bare basename, because docs cite each other both ways — `docs/backend.md` from the routing table, `references/error-codes.md` from the doc beside it. A false "cited" is quieter than a false orphan.
 - The node is walked with `find -H`, so a worktree whose `.agent` is a link to another checkout's node is audited like the node itself.
-- The walk for project files skips `.git`, the common dependency and build directories, and every linked worktree under the root that `git worktree list` names. A worktree is another checkout of the project, so a file that exists only there does not resolve a citation. An orchestrator can keep dozens of worktrees under the root, and walking them made one run take minutes.
+- The project list comes from `git ls-files`, one call for the index with `--recurse-submodules` and one for `--others --exclude-standard`. Ignored folders such as run stores and test output can hold tens of thousands of Markdown files, and the `find` walk visits all of them. When either call fails, the `find` walk runs instead.
+- Both lists leave out `.git` and the common dependency and build directories.
+- A linked worktree is another checkout of the project, so a file that exists only there does not resolve a citation. Git does not list its files, and the `find` walk skips every worktree under the root that `git worktree list` names. An orchestrator can keep dozens of worktrees under the root, and walking them made one run take minutes. Git lists no files of any other nested checkout either, unless it is a submodule.
 - One `grep -l` over the whole corpus per candidate, never one per (candidate, file) pair. The pairwise form is quadratic in processes and becomes unusable on a large node while returning the same answer.
 - `<!-- -->` comments are stripped before a file is read for citations. Header contracts live in comments and state formats by example — `memory.md`'s says `- [Title](memory/slug.md) — hook` — so a comment is a spec, not a citation, and reading one as a link invents a broken path on every node.
