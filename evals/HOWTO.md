@@ -9,7 +9,7 @@ This is not a tool for auditing an already-adopted project's `.agent/` install. 
 - `python3` on PATH.
 - `claude` and/or `codex`, logged in with a subscription — Claude through a `claude.ai` account, Codex through a ChatGPT account. Neither adapter accepts an API key: `run.sh` strips provider-credential environment variables from its own process before either subprocess launches.
 - `git`, with the revision you want to validate reachable by name — a branch, a tag, or a commit both `--corpus-ref` values below can resolve.
-- A repeat-count decision and a time budget, made before the first run. The full set is 36 evals. One eval, one arm, one repeat is one full agent session. `README.md`'s "Constraints on what a run may claim" covers the tradeoff — decide before you see a result, not after.
+- A repeat-count decision and a time budget, made before the first run. The full set is 37 evals. One eval, one arm, one repeat is one full agent session. `README.md`'s "Constraints on what a run may claim" covers the tradeoff — decide before you see a result, not after.
 
 ## 1. Configure an arm
 

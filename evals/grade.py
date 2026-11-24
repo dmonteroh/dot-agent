@@ -7,6 +7,10 @@ It reads only the captured outputs, never the repository the run acted on,
 so a grading pass is reproducible from the run directory alone and can be
 re-run months later against artifacts whose source tree has moved.
 
+One primitive, fixture_files_under, also reads the fixture tree the run
+directory keeps beside outputs/. A file Git ignores reaches no captured
+patch, so that tree is the only record of one.
+
 Manual assertions are written out with passed:null for a human to fill in,
 blind. rollup.py refuses a record that still holds one.
 
@@ -33,6 +37,10 @@ Expected under outputs/, all written by run.sh:
   gate.txt                comments.sh output over diff.patch
   node-tree.txt           every path under .agent/ with its content, for
                           tree-wide absence checks
+
+Read beside outputs/, by fixture_files_under alone:
+  fixture/                the tree the session worked in, for counting the
+                          files Git ignores that it left behind
 
 A missing artifact fails every assertion that needs it, with the reason
 named. It never passes one by default: a grader that scores an artifact it
@@ -409,6 +417,52 @@ def p_diff_contains(s):
     txt = added_text(need("diff.patch"))
     hits = [l for l in txt.splitlines() if s in l]
     return bool(hits), (hits[0][:160] if hits else "no added line contains %r" % s)
+
+
+def p_product_line_removed(path, pattern):
+    """A moved or re-indented line is still in the file. A removed line
+    counts only when no added line of that file repeats its text."""
+    if re.search(r"^--- a/%s\n\+\+\+ /dev/null$" % re.escape(path), need("diff.patch"), re.M):
+        return True, "%s was deleted" % path
+    f = product_files().get(path)
+    if f is None:
+        return False, "%s was not edited at all" % path
+    back = set(l.strip() for l in f["added"])
+    gone = [l.strip() for l in f["removed"] if re.search(pattern, l) and l.strip() not in back]
+    return bool(gone), ("%s lost: %s" % (path, gone[0][:140])) if gone else (
+        "%s changed but lost no line matching %r" % (path, pattern))
+
+
+TEST_DECLARATION = re.compile(r"^\s*(?:await\s+)?(?:\w+\.)?(?:test|it)(?:\.\w+)?\s*\(")
+
+
+def p_kept_tests_added(scratch, op, n):
+    # Net of removals, so a renamed or moved test is not a new one. A file
+    # under the scratch folder reaches the patch only when it was force-added.
+    added, removed = [], 0
+    for path, f in sorted(product_files().items()):
+        if path.startswith(scratch):
+            continue
+        added.extend("%s: %s" % (path, l.strip()) for l in f["added"] if TEST_DECLARATION.match(l))
+        removed += sum(1 for l in f["removed"] if TEST_DECLARATION.match(l))
+    net = max(len(added) - removed, 0)
+    return cmp_num(net, op, int(n)), "%d test declaration(s) added and %d removed outside %s: %s" % (
+        len(added), removed, scratch, (added[0][:120] if added else "none"))
+
+
+def p_fixture_files_under(folder, op, n):
+    """diff.patch is staged, so a file Git ignores reaches no captured patch.
+    The fixture tree kept beside outputs/ is the only record of one."""
+    root = os.path.join(os.path.dirname(OUT), "fixture")
+    if not os.path.isdir(root):
+        raise Missing("../fixture/")
+    base = os.path.normpath(os.path.join(root, folder))
+    if not base.startswith(root + os.sep):
+        raise ValueError("%r is not a folder inside the fixture tree" % folder)
+    left = sorted(os.path.relpath(os.path.join(d, name), root)
+                  for d, _, names in os.walk(base) for name in names)
+    return cmp_num(len(left), op, int(n)), "%d file(s) left under %s: %s" % (
+        len(left), folder, ", ".join(left[:5]) if left else "none")
 
 
 def p_entrypoint_words_delta(op, n):

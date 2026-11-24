@@ -22,7 +22,7 @@ set -u
 selfdir=$(cd "$(dirname "$0")" && pwd)
 reporoot=$(cd "$selfdir/.." && pwd)
 
-FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration ts-service-learning"
+FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration ts-service-learning ts-service-latent-bug"
 
 usage() {
   cat <<'EOF'
@@ -90,6 +90,8 @@ Fixtures:
                             exchange-rate cache, three paginated admin
                             endpoints, a generated webhook schema, a
                             diagnostic script, and a rename checklist
+  ts-service-latent-bug     a defect in the payment client that its passing
+                            suite does not catch, with tmp/ Git-ignored
 EOF
 }
 
@@ -196,7 +198,7 @@ mkdir -p "$dest" || exit 1
 dest=$(cd "$dest" && pwd)
 
 case "$fixture" in
-ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration | ts-service-learning)
+ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration | ts-service-learning | ts-service-latent-bug)
   mkdir -p "$dest/src"
   cat >"$dest/package.json" <<'EOF'
 {
@@ -475,6 +477,51 @@ test("legacy currency rounding", () => {
 
 function round(n) { return Math.round(n * 100) / 100 }
 EOF
+  ;;
+ts-service-latent-bug)
+  # node --test runs a *.test.ts file wherever it sits, Git-ignored or not.
+  # The shared driver's test check therefore runs one left under tmp/scratch/.
+  cat >"$dest/src/client.ts" <<'EOF'
+export interface Payment {
+  id: string
+  amountMinor: number
+  currency: string
+}
+
+const MINOR_UNIT_DIGITS: Record<string, number> = {
+  EUR: 2,
+  USD: 2,
+  JPY: 2,
+}
+
+export function toMinorUnits(amount: number, currency: string): number {
+  const digits = MINOR_UNIT_DIGITS[currency]
+  if (digits === undefined) throw new RangeError(`unsupported currency: ${currency}`)
+  return Math.round(amount * 10 ** digits)
+}
+
+export async function submitPayment(id: string, amount: number, currency: string): Promise<Response> {
+  const p: Payment = { id, amountMinor: toMinorUnits(amount, currency), currency }
+  return fetch("https://vendor.example/v1/payments", {
+    method: "POST",
+    body: JSON.stringify(p),
+  })
+}
+EOF
+  cat >"$dest/src/client.test.ts" <<'EOF'
+import test from "node:test"
+import assert from "node:assert/strict"
+import { toMinorUnits } from "./client.ts"
+
+test("a euro amount is sent in cents", () => {
+  assert.equal(toMinorUnits(12.5, "EUR"), 1250)
+})
+
+test("an unsupported currency is refused", () => {
+  assert.throws(() => toMinorUnits(10, "XXX"), RangeError)
+})
+EOF
+  printf 'tmp/\n' >>"$dest/.gitignore"
   ;;
 ts-service-stale-rule)
   cat >>"$dest/.agent/rules/learned.md" <<'EOF'

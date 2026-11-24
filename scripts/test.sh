@@ -299,12 +299,32 @@ sys.stdout.write("; ".join(bad))
 PY
 )
   [ -z "$evidx42" ] && pass "evals: a page-read assertion names the page, never the script that built it" || fail "evals: a page-read assertion names the page, never the script that built it ($evidx42)"
+
+  evproof42=$(python3 - "$evroot/spec.json" "$evroot/heldout.json" <<'PY'
+import json, re, sys
+bad = []
+for path in sys.argv[1:]:
+    spec = json.load(open(path, encoding="utf-8"))
+    ev = [e for e in spec["evals"] if e["id"] == "verify-scratch-proof"]
+    if not ev:
+        bad.append("%s lacks the eval" % path)
+        continue
+    if (ev[0].get("arm_variable") or spec["arms"]["variable"]) != "corpus":
+        bad.append("%s arm_variable=%r" % (path, ev[0].get("arm_variable")))
+    hit = re.search(r"test|scratch|proof|prove|verif", ev[0]["prompt"], re.I)
+    if hit:
+        bad.append("%s prompt names %r" % (path, hit.group(0)))
+sys.stdout.write("; ".join(bad))
+PY
+)
+  [ -z "$evproof42" ] && pass "evals: the scratch-proof eval varies the corpus and its prompts name no test and no proof" || fail "evals: the scratch-proof eval varies the corpus and its prompts name no test and no proof ($evproof42)"
 else
   fail "evals: spec.json is well-formed and every assertion is joinable (python3 absent)"
   fail "evals: heldout.json is well-formed and every assertion is joinable (python3 absent)"
   fail "evals: both prompt sets carry the same eval and assertion ids (python3 absent)"
   fail "evals: every assertion carries a behavior, conformance, or information kind (python3 absent)"
   fail "evals: a page-read assertion names the page, never the script that built it (python3 absent)"
+  fail "evals: the scratch-proof eval varies the corpus and its prompts name no test and no proof (python3 absent)"
 fi
 
 phases42=$(awk '/^\| Phase \| Trust contract/ { f = 1; next } f && /^\| \*\*/ { gsub(/\*/, "", $2); print tolower($2) } f && !/^\|/ { exit }' "$reporoot/operating-model.md")
@@ -384,6 +404,40 @@ evlearnh="$WORK/eval-fixture-learning-heldout"
 EVALS_SPEC="$evroot/heldout.json" "$evroot/fixtures.sh" ts-service-learning "$evlearnh" --corpus-dir "$reporoot" >/dev/null 2>&1 \
   && pass "evals: every heldout.json premise holds on the learning fixture" \
   || fail "evals: every heldout.json premise holds on the learning fixture"
+
+evlatent="$WORK/eval-fixture-latent-bug"
+"$evroot/fixtures.sh" ts-service-latent-bug "$evlatent" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42latent=$?
+EVALS_SPEC="$evroot/heldout.json" "$evroot/fixtures.sh" ts-service-latent-bug "$evlatent-heldout" --corpus-dir "$reporoot" >/dev/null 2>&1
+rc42latenth=$?
+[ "$rc42latent" -eq 0 ] && [ "$rc42latenth" -eq 0 ] \
+  && git -C "$evlatent" check-ignore -q tmp/scratch/yen.test.ts 2>/dev/null \
+  && pass "evals: the latent-bug fixture builds under both prompt sets with tmp/ ignored" \
+  || fail "evals: the latent-bug fixture builds under both prompt sets with tmp/ ignored (rc=$rc42latent heldout=$rc42latenth)"
+if command -v node >/dev/null 2>&1; then
+  (cd "$evlatent" 2>/dev/null && bash .agent/scripts/checks.sh test >/dev/null 2>&1)
+  latent_before=$?
+  mkdir -p "$evlatent/tmp/scratch"
+  cat >"$evlatent/tmp/scratch/yen.test.ts" <<'EOF'
+import test from "node:test"
+import assert from "node:assert/strict"
+import { toMinorUnits } from "../../src/client.ts"
+
+test("a yen amount has no minor unit", () => {
+  assert.equal(toMinorUnits(500, "JPY"), 500)
+})
+EOF
+  (cd "$evlatent" && bash .agent/scripts/checks.sh test >/dev/null 2>&1)
+  latent_proof=$?
+  sed -i.bak 's/JPY: 2,/JPY: 0,/' "$evlatent/src/client.ts" 2>/dev/null && rm -f "$evlatent/src/client.ts.bak"
+  (cd "$evlatent" && bash .agent/scripts/checks.sh test >/dev/null 2>&1)
+  latent_fixed=$?
+  [ "$latent_before" -eq 0 ] && [ "$latent_proof" -eq 1 ] && [ "$latent_fixed" -eq 0 ] \
+    && pass "evals: the latent-bug driver passes with the defect, and runs a scratch test that fails until the fix" \
+    || fail "evals: the latent-bug driver passes with the defect, and runs a scratch test that fails until the fix (before=$latent_before proof=$latent_proof fixed=$latent_fixed)"
+else
+  pass "evals: the latent-bug driver passes with the defect, and runs a scratch test that fails until the fix (node absent, skipped)"
+fi
 
 evbranchsw="$WORK/eval-fixture-branch-switched"
 "$evroot/fixtures.sh" ts-service-branch-switched "$evbranchsw" --corpus-dir "$reporoot" --indexes generated >/dev/null 2>&1
@@ -1993,6 +2047,77 @@ import json,sys
 r = json.load(open(sys.argv[1]))["results"][0]
 print("" if r["passed"] else "test-only-diff-counted-as-module")' "$gd3/grading.json" 2>&1)
 [ -z "$g42testonly" ] && pass "evals: product_modules_added is zero when only a test file is added" || fail "evals: product_modules_added is zero when only a test file is added ($g42testonly)"
+
+gd5="$WORK/eval-grade-line-removed/r0"
+mkdir -p "$gd5/outputs"
+cat >"$gd5/snap.json" <<'EOF'
+{"id":"g5","assertions":[
+ {"id":"g5/changed","concept":"c","class":"artifact","grade":"auto","check":"product_line_removed 'src/a.ts' 'limit: 2'"},
+ {"id":"g5/moved","concept":"c","class":"artifact","grade":"auto","check":"product_line_removed 'src/a.test.ts' 'assert'"},
+ {"id":"g5/deleted","concept":"c","class":"artifact","grade":"auto","check":"product_line_removed 'src/b.test.ts' 'assert'"}]}
+EOF
+cat >"$gd5/outputs/diff.patch" <<'EOF'
+--- a/src/a.test.ts
++++ b/src/a.test.ts
+-assert.equal(f(1), 2)
++  assert.equal(f(1), 2)
+--- a/src/a.ts
++++ b/src/a.ts
+-  limit: 2,
++  limit: 0,
+--- a/src/b.test.ts
++++ /dev/null
+-assert.equal(g(), 1)
+EOF
+"$evroot/grade.py" "$gd5" "$gd5/snap.json" >/dev/null 2>&1
+g42removed=$(python3 -c '
+import json,sys
+r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
+print("%s %s %s" % (r["g5/changed"]["passed"], r["g5/moved"]["passed"], r["g5/deleted"]["passed"]))' "$gd5/grading.json" 2>&1)
+[ "$g42removed" = "True False True" ] && pass "evals: product_line_removed counts a changed line and a deleted file, never a re-indented line" || fail "evals: product_line_removed counts a changed line and a deleted file, never a re-indented line ($g42removed)"
+
+gd6="$WORK/eval-grade-kept-tests/r0"
+mkdir -p "$gd6/outputs"
+cat >"$gd6/snap.json" <<'EOF'
+{"id":"g6","assertions":[
+ {"id":"g6/kept","concept":"c","class":"artifact","grade":"auto","check":"kept_tests_added 'tmp/scratch/' == 1"},
+ {"id":"g6/all","concept":"c","class":"artifact","grade":"auto","check":"kept_tests_added 'build/' == 2"}]}
+EOF
+cat >"$gd6/outputs/diff.patch" <<'EOF'
+--- a/src/a.test.ts
++++ b/src/a.test.ts
+-test("old title", () => {
++test("new title", () => {
++test("one more", () => {
++  assert.equal(f(1), 2)
+--- /dev/null
++++ b/tmp/scratch/proof.test.ts
++test("scratch", () => {
+EOF
+"$evroot/grade.py" "$gd6" "$gd6/snap.json" >/dev/null 2>&1
+g42kept=$(python3 -c '
+import json,sys
+r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
+print("%s %s" % (r["g6/kept"]["passed"], r["g6/all"]["passed"]))' "$gd6/grading.json" 2>&1)
+[ "$g42kept" = "True True" ] && pass "evals: kept_tests_added nets a renamed test to zero and skips the scratch folder" || fail "evals: kept_tests_added nets a renamed test to zero and skips the scratch folder ($g42kept)"
+
+gd7="$WORK/eval-grade-fixture-files/r0"
+mkdir -p "$gd7/outputs" "$gd7/fixture/tmp/scratch/deep" "$gd7/fixture/src" "$WORK/eval-grade-fixture-files/r1/outputs"
+printf 'left\n' >"$gd7/fixture/tmp/scratch/deep/proof.test.ts"
+cat >"$gd7/snap.json" <<'EOF'
+{"id":"g7","assertions":[
+ {"id":"g7/left","concept":"c","class":"artifact","grade":"auto","check":"fixture_files_under 'tmp/scratch' == 1"},
+ {"id":"g7/empty","concept":"c","class":"artifact","grade":"auto","check":"fixture_files_under 'src' == 0"},
+ {"id":"g7/outside","concept":"c","class":"artifact","grade":"auto","check":"fixture_files_under '../outputs' == 0"}]}
+EOF
+"$evroot/grade.py" "$gd7" "$gd7/snap.json" >/dev/null 2>&1
+"$evroot/grade.py" "$WORK/eval-grade-fixture-files/r1" "$gd7/snap.json" >/dev/null 2>&1
+g42fixture=$(python3 -c '
+import json,sys
+r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
+m = {x["id"]: x for x in json.load(open(sys.argv[2]))["results"]}
+print("%s %s %s %s" % (r["g7/left"]["passed"], r["g7/empty"]["passed"], r["g7/outside"]["passed"], m["g7/empty"]["passed"]))' "$gd7/grading.json" "$WORK/eval-grade-fixture-files/r1/grading.json" 2>&1)
+[ "$g42fixture" = "True True False False" ] && pass "evals: fixture_files_under counts files left in the kept tree and fails closed without one" || fail "evals: fixture_files_under counts files left in the kept tree and fails closed without one ($g42fixture)"
 
 gd4="$WORK/eval-grade-claims/r0"
 mkdir -p "$gd4/outputs"
@@ -8839,7 +8964,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1397
+EXPECTED_CHECKS=1403
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))
