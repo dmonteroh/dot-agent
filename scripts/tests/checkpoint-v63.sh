@@ -26,6 +26,7 @@ case "$mode" in
   zero) printf 'TAP version 13\n1..0\n# tests 0\n' ;;
   fail) printf 'TAP version 13\n1..1\nnot ok 1 - fixture\n# tests 1\n'; exit 9 ;;
   silent) printf 'all good\n' ;;
+  mutate) printf 'changed\n' >>src/mutated.ts; printf 'TAP version 13\n1..1\nok 1 - fixture\n' ;;
 esac
 EOF
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
@@ -109,16 +110,31 @@ checkpoint --checks test --verification "$receipt" || { cat "$scratch/err" >&2; 
 [ "$(check_runs)" -eq "$((runs + 1))" ] || fail 'a stale receipt beside --checks ran no check'
 tail -1 "$log" | grep -q 'verify: pass' || fail 'the fallback check was not recorded as a pass'
 
+# A receipt answers only for the check it records. One for another check
+# does not stand in for a named check.
+printf 'const amount = 9\n' >"$project/src/client.ts"
+other=$(bash "$project/.agent/scripts/verify.sh" run lint --root "$project" 2>/dev/null | cut -f2)
+runs=$(check_runs)
+before=$(entries)
+if checkpoint --checks test --verification "$other"; then fail 'a receipt for another check completed the checkpoint'; fi
+[ "$(check_runs)" -eq "$((runs + 1))" ] || fail 'a receipt for another check kept the named check from running'
+tail -1 "$scratch/err" | grep -q 'checks failed (lint)' || fail "the other check's failed receipt was not counted: $(tail -1 "$scratch/err")"
+[ "$(entries)" -eq "$before" ] || fail 'a receipt for another check wrote an entry'
+
 # A check that exits 0 and shows no test is not a failure of the work, and
 # the refusal keeps the session away from the project's own test command.
 printf 'const amount = 8\n' >"$project/src/client.ts"
 printf 'silent\n' >"$project/.agent/scripts/test-mode"
 before=$(entries)
 if checkpoint --checks test; then fail 'a check that showed no test completed the checkpoint'; fi
-tail -1 "$scratch/err" | grep -q "test exited 0 with no test count verify.sh reads, so nothing was logged\. Make .agent/scripts/checks.sh print TAP or a summary verify.sh counts (verify.sh --help lists them), leave the project's own test command as it is, and run this call again$" \
+tail -1 "$scratch/err" | grep -q "test exited 0 with no test count verify.sh reads, so nothing was logged\. Make the check driver run the runner with its TAP reporter or a summary that verify.sh --help lists\. Leave the project's own test command as it is\. Then run this call again$" \
   || fail "an uncounted check did not name the next step: $(tail -1 "$scratch/err")"
-grep -q 'verify.sh: test exited 0, but its output carries no test count this script reads' "$scratch/err" || fail 'verify.sh did not say why the run was inconclusive'
 [ "$(entries)" -eq "$before" ] || fail 'an uncounted check wrote an entry'
+printf 'mutate\n' >"$project/.agent/scripts/test-mode"
+if checkpoint --checks test; then fail 'a check that changed project files completed the checkpoint'; fi
+tail -1 "$scratch/err" | grep -q 'project files changed while test ran, or its output was lost, so nothing was logged\. Run this call again\. If it repeats, make the check write only where Git ignores$' \
+  || fail "a check that changed files did not name the next step: $(tail -1 "$scratch/err")"
+rm -f "$project/src/mutated.ts"
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
 
 printf 'zero\n' >"$project/.agent/scripts/test-mode"
