@@ -73,7 +73,7 @@ Draft the rule clause first. Add the trigger clause only if a future session wou
 
 ## Merge, don't append
 
-On a node running `indexes: generated`, run `.agent/scripts/learn.sh lookup` against the draft rule before adding a new entry. If it names a duplicate or an overlapping record, revise the record it names with `.agent/scripts/learn.sh revise` — broaden the imperative, or fold in the new trigger — rather than leaving both for the grooming threshold to reconcile later. Pass `--distinct` only after reading the records the refusal names and confirming the draft is genuinely a separate rule.
+On a node running `indexes: generated`, run `.agent/scripts/learn.sh lookup` against the draft rule before adding a new entry. If it names a duplicate or an overlapping record, revise the record it names with `.agent/scripts/learn.sh revise` — broaden the imperative, or fold in the new trigger — rather than leaving both for the grooming threshold to reconcile later. When `learn.sh new` refuses the draft, read the records and contract sections it lists. Pass their ids to `--distinct-from` only when the draft says something none of them says.
 
 On a manual-mode node, `rules/learned/` does not exist and `learn.sh` refuses there, so merge near-duplicates by hand in `rules/learned.md` instead: read the file first, and edit the existing entry rather than adding a new one that says the same thing.
 

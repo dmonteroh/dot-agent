@@ -166,7 +166,7 @@ dead=$!
 wait "$dead" 2>/dev/null || true
 printf '%s\n' "$dead" >"$learn_lock/owner"
 printf '%s\n' '- [2026-09-27] Recover a writer lock whose owner is dead. Trigger: lock test.' \
-  | bash "$scripts/learn.sh" new --distinct --file - "$main" >"$scratch/learn.out" 2>&1 \
+  | bash "$scripts/learn.sh" new --file - "$main" >"$scratch/learn.out" 2>&1 \
   || fail "learn.sh did not recover a dead writer's lock: $(cat "$scratch/learn.out")"
 [ ! -e "$learn_lock" ] || fail 'learn.sh left its writer lock behind'
 

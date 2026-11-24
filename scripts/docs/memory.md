@@ -13,6 +13,8 @@ Usage: memory.sh lookup --query <text> [--limit <n>] [root]
 
 `root` defaults to `.` and `scope` defaults to `project`, `type` to `fact`. Writes `<root>/.agent/memory/<slug>.md` and appends its index line to `<root>/.agent/memory.md` — both or neither: every check runs before any write happens.
 
+`new` and `supersede` end their output with `written` or `superseded`, the slug, and the fact file's version, separated by tabs. The version is what `--expected` takes.
+
 No size gate. Writes are never refused for length. `status.sh` flags outliers on the load path for grooming.
 
 `--file -` reads a multi-line body from standard input. `--fact` remains available for compatibility. Exactly one body source is accepted. Writes are staged beside their targets and renamed into place.

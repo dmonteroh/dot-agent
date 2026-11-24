@@ -16,13 +16,13 @@ One line: `- [date] (tool) summary (area). verify: …`
 
 Newlines are refused because they would forge extra entries, and parentheses in the tags are refused because they would corrupt the `(tool)` and `(area)` delimiters.
 
-A summary naming a file or a SHA is refused, with the token named: a token ending in a source extension, carrying a slash and an extension, or a 7–40 character hex run with both letters and digits. The entry records task, area, and outcome; a path or a SHA in it is narrative git already holds, and it was the header rule sessions applied least. Reword without it.
+A summary naming a file or a SHA is refused, with the token named: a token ending in a source extension, carrying a slash and an extension, or a 7–40 character hex run with both letters and digits. The entry records task, area, and outcome; a path or a SHA in it is narrative git already holds, and it was the header rule sessions applied least. The entry point's `--summary` placeholder states this limit and the word ceiling. The placeholder says 25 whatever `log.conf` sets, because every entry point stays identical to its template.
 
 A summary containing `verify:` is refused too. The entry already carries one verify tag, written from `--verify` at the end of the line; a second one in the middle is read as the entry's result by whoever gets there first. The tag records the observed check outcome. Describe a pre-existing failure in the summary without repeating the tag spelling. The match is case-insensitive and requires the colon, so `verified` and `verify pass` are fine.
 
 Words are counted, not punctuation: a free-standing separator — an em dash, a lone hyphen — does not spend the ceiling. Separators are matched as literal bytes rather than by asking the locale what counts as a letter. That is because under a locale whose alphanumeric table covers the em dash's leading byte `0xE2`, such as ISO-8859-1 or UTF-8, `[[:alnum:]]` treats that byte as a letter and the dash spends a word. `LC_ALL=C` is not such a locale, so the bug hides there.
 
-`--print-entry` validates and renders one entry without writing. Checkpoint uses this mode for recoverable publication. Direct writes share the checkpoint lock when the runtime helper is installed.
+`--print-entry` validates and renders one entry without writing. Checkpoint uses this mode for recoverable publication. Direct writes share the checkpoint lock. The script needs `runtime.sh` beside it.
 
 ## Configuration
 

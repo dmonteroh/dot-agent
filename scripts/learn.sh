@@ -4,10 +4,15 @@ set -u
 export LC_ALL=C
 unset CDPATH
 
+selfdir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
+[ -f "$selfdir/runtime.sh" ] || { echo 'learn.sh: runtime.sh is missing. Update this node with node.sh update from the dot-agent repository' >&2; exit 2; }
+# shellcheck source=runtime.sh
+. "$selfdir/runtime.sh"
+
 usage() {
   cat <<'EOF'
 Usage: learn.sh lookup   --file <path|-> [root]
-       learn.sh new      --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
+       learn.sh new      --file <path|-> [--distinct-from <id>[,<id>...]] [--surface learned|memory|docs|gotchas] [root]
        learn.sh revise   <id> --file <path|-> --expected <version> [root]
        learn.sh retire   <id> --expected <version> --enforced-by <path> [root]
        learn.sh pending  [root]
@@ -27,17 +32,16 @@ scripts/docs/learn.md.
 EOF
 }
 
+refuse() { da_refuse "$1" "$2" "${3:-2}"; exit $?; }
+refuse_usage() { usage >&2; refuse "$@"; }
+
 need_value() {
   case "${2-}" in
-  --file | --surface | --expected | --distinct | --id | --disposition | --enforced-by)
-    echo "learn.sh: $1 needs a value, got the flag $2" >&2
-    usage >&2
-    exit 2 ;;
+  --file | --surface | --expected | --distinct-from | --id | --disposition | --enforced-by)
+    refuse_usage "$1 needs a value, got the flag $2" "Pass a value after $1" ;;
   esac
   if [ $# -lt 2 ]; then
-    echo "learn.sh: $1 needs a value" >&2
-    usage >&2
-    exit 2
+    refuse_usage "$1 needs a value" "Pass a value after $1"
   fi
 }
 
@@ -61,15 +65,13 @@ lrn_dir_is_real() {
 
 read_candidate() {
   candidate_tmp=$(mktemp "${TMPDIR:-/tmp}/learn-candidate.XXXXXX") || {
-    echo "learn.sh: could not create a temporary file for the candidate" >&2
-    exit 2
+    refuse "could not create a temporary file for the candidate" "Check that the temporary folder is writable, then run this call again"
   }
   if [ "$1" = "-" ]; then
     cat >"$candidate_tmp"
   else
     if [ ! -f "$1" ]; then
-      echo "learn.sh: --file $1 does not exist" >&2
-      exit 2
+      refuse "--file $1 does not exist" "Pass an existing file, or --file - with the candidate on stdin"
     fi
     cat "$1" >"$candidate_tmp"
   fi
@@ -82,15 +84,6 @@ lrn_grammar_ok() {
   tail -n +2 "$1" | grep -qE '^- ' && return 1
   grep -qE '^#' "$1" && return 1
   return 0
-}
-
-lrn_warn_word_ceiling() {
-  wwc_first=$(head -n 1 "$1")
-  wwc_clause=$(printf '%s\n' "$wwc_first" | sed -E 's/^- \[[^]]*\] //')
-  wwc_words=$(printf '%s\n' "$wwc_clause" | wc -w | tr -d '[:space:]')
-  if [ "$wwc_words" -gt 40 ]; then
-    echo "learn.sh: the rule clause is $wwc_words words, over the preset's 40-word curation ceiling — tighten it when convenient" >&2
-  fi
 }
 
 lrn_scan_records() {
@@ -132,9 +125,51 @@ lrn_find_duplicate() {
   printf '%s\n' "$fd_one"
 }
 
-lrn_overlap_scan() {
-  os_all=$(lrn_scan_records "$1" "$2") || return 2
-  printf '%s\n' "$os_all" | awk -F '\t' '$1=="overlap" {print $2}'
+# The records and contract sections new makes the caller name, one per line:
+# record<TAB>path<TAB>rule, or section<TAB>file:heading<TAB>path. Only the rule
+# counts, not its Trigger clause. A record is listed when the two rules share a
+# quarter of the shorter one's terms and at least two, and a section when it
+# holds half of the candidate's and at least five (chosen defaults). One shared
+# term would list nearly every record and section.
+lrn_gate() {
+  ga_candidate="$1"
+  ga_contract="$3/contract.md"
+  ga_bar="$3/quality-bar.md"
+  set -- "$1" "$2"/*.md
+  [ -e "$2" ] || set -- "$1"
+  for ga_f in "$ga_contract" "$ga_bar"; do
+    [ ! -f "$ga_f" ] || set -- "$@" "$ga_f"
+  done
+  awk -v candidate="$ga_candidate" -v contract="$ga_contract" -v bar="$ga_bar" '
+    function words(s,a, n,i,t) {
+      s=tolower(s); gsub(/[^abcdefghijklmnopqrstuvwxyz0123456789]+/," ",s)
+      n=split(s,t," "); for(i=1;i<=n;i++) if(length(t[i])>2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/) a[t[i]]=1
+    }
+    function finish( k,n,shared,small) {
+      if(name==candidate) { for(k in cur) { cand[k]=1; nc++ } }
+      else if(name!="" && (kind=="record" || heading!="")) {
+        n=shared=0; for(k in cur) { n++; if(k in cand) shared++ }
+        small=(n<nc ? n : nc)
+        if(kind=="record" && shared>=2 && 4*shared>=small) print "record\t" name "\t" rule
+        if(kind=="section" && shared>=5 && 2*shared>=nc) print "section\t" label ":" heading "\t" name
+      }
+      delete cur; heading=""; rule=""; cause=0
+    }
+    FNR==1 { finish(); name=FILENAME; kind=(name==contract || name==bar ? "section" : "record"); label=(name==bar ? "quality-bar" : "contract") }
+    kind=="section" {
+      if($0 ~ /^## /) { finish(); heading=substr($0,4); sub(/[[:space:]]+$/,"",heading) }
+      else if(heading!="") words($0,cur)
+      next
+    }
+    {
+      line=$0
+      if(FNR==1) { sub(/^- \[[-0123456789]*\] /,"",line); rule=line }
+      if(cause) next
+      if(at=index(line,"Trigger:")) { line=substr(line,1,at-1); cause=1 }
+      words(line,cur)
+    }
+    END { finish() }
+  ' "$@"
 }
 
 lrn_manual_lookup() {
@@ -166,44 +201,9 @@ lrn_current_version() {
   fi
 }
 
-# Takes the lock through runtime.sh's da_lock_wait, so parallel workers writing
-# one shared node take turns, and a lock whose writer was killed is recovered
-# as it is for the other record writers. Without runtime.sh beside this script
-# the lock is a plain directory with no recovery.
 lrn_lock_writers() {
-  lw_lock="$1/.learn-writer.lock"
-  lw_self=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || return 1
-  if [ -f "$lw_self/runtime.sh" ]; then
-    # shellcheck source=runtime.sh
-    . "$lw_self/runtime.sh"
-    if da_lock_wait "$lw_lock"; then
-      writer_lock="$lw_lock"
-      return 0
-    fi
-    echo "learn.sh: another record writer holds $lw_lock" >&2
-    return 1
-  fi
-  lw_wait=${DA_LOCK_WAIT_SECONDS:-10}
-  case "$lw_wait" in '' | *[!0-9]*) lw_wait=10 ;; esac
-  lw_end=$((SECONDS + lw_wait))
-  lw_got=0
-  while :; do
-    if mkdir "$lw_lock" 2>/dev/null; then lw_got=1; break; fi
-    [ -d "$lw_lock" ] && [ "$SECONDS" -lt "$lw_end" ] || break
-    sleep 0.2
-  done
-  if [ "$lw_got" -eq 1 ]; then
-    if printf '%s\n' "$$" >"$lw_lock/owner"; then
-      writer_lock="$lw_lock"
-      return 0
-    fi
-    rmdir "$lw_lock" 2>/dev/null || :
-    echo "learn.sh: could not initialize writer lock $lw_lock" >&2
-    return 1
-  fi
-  lw_owner=$(cat "$lw_lock/owner" 2>/dev/null || printf 'unknown')
-  echo "learn.sh: another record writer holds $lw_lock (owner $lw_owner)" >&2
-  return 1
+  da_lock_wait "$1/.learn-writer.lock" || exit 2
+  writer_lock="$1/.learn-writer.lock"
 }
 
 lrn_mint_and_write() {
@@ -234,8 +234,8 @@ lrn_publish_replace() {
   if cat "$1" >"$pr_tmp"; then
     :
   else
-    echo "learn.sh: could not write $pr_tmp — $2 is unchanged" >&2
     rm -f "$pr_tmp"
+    da_refuse "could not write $pr_tmp, and $2 is unchanged" "Check that the folder is writable, then run this call again"
     return 1
   fi
   if [ "$#" -ge 4 ]; then
@@ -244,16 +244,16 @@ lrn_publish_replace() {
       return 2
     }
     if [ "$3" != "$pr_actual" ]; then
-      echo "learn.sh: stale --expected for $4 — current version: $pr_actual" >&2
       rm -f "$pr_tmp"
+      da_refuse "stale --expected for $4, whose current version is $pr_actual" "Read the record again, then run this call with the current version as --expected"
       return 3
     fi
   fi
   if mv "$pr_tmp" "$2"; then
     return 0
   fi
-  echo "learn.sh: could not replace $2 — it is unchanged" >&2
   rm -f "$pr_tmp"
+  da_refuse "could not replace $2, which is unchanged" "Check that the folder is writable, then run this call again"
   return 1
 }
 
@@ -314,24 +314,24 @@ lookup)
     -h | --help)
       usage; exit 0 ;;
     --*)
-      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+      refuse_usage "unknown flag: $1" "Pass only the flags listed above" ;;
     *)
       root="$1"; shift ;;
     esac
   done
-  [ -n "$file" ] || { echo "learn.sh: lookup requires --file <path|->" >&2; usage >&2; exit 2; }
+  [ -n "$file" ] || refuse_usage "lookup requires --file <path|->" "Run this call again with --file"
 
   read_candidate "$file"
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if lrn_dir_is_real "$learned_dir"; then
-    lk_results=$(lrn_scan_records "$candidate_tmp" "$learned_dir") || exit 2
+    lk_results=$(lrn_scan_records "$candidate_tmp" "$learned_dir") || refuse "could not read the records in $learned_dir" "Check that they are readable, then run this call again"
     for lk_kind in duplicate overlap; do
       printf '%s\n' "$lk_results" | while IFS="$(printf '\t')" read -r lk_type lk_f; do
         [ "$lk_type" = "$lk_kind" ] || continue
-        lk_v=$(git hash-object --no-filters -- "$lk_f") || exit 2
+        lk_v=$(git hash-object --no-filters -- "$lk_f") || refuse "could not read the records in $learned_dir" "Check that they are readable, then run this call again"
         printf '%s\t%s\t%s\n' "$lk_type" "$lk_f" "$lk_v"
-      done
+      done || exit 2
     done
   elif [ -f "$agent/rules/learned.md" ]; then
     lrn_manual_lookup "$candidate_tmp" "$agent/rules/learned.md" "$agent/rules/learned.md"
@@ -341,7 +341,7 @@ lookup)
 
 new)
   file=""
-  distinct=0
+  distinct_from=""
   surface="learned"
   root="."
   while [ $# -gt 0 ]; do
@@ -349,77 +349,82 @@ new)
     --file)
       need_value "$@"
       file="$2"; shift 2 ;;
-    --distinct)
-      distinct=1; shift ;;
+    --distinct-from)
+      need_value "$@"
+      distinct_from="$distinct_from,$2"; shift 2 ;;
     --surface)
       need_value "$@"
       surface="$2"; shift 2 ;;
     -h | --help)
       usage; exit 0 ;;
     --*)
-      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+      refuse_usage "unknown flag: $1" "Pass only the flags listed above" ;;
     *)
       root="$1"; shift ;;
     esac
   done
-  [ -n "$file" ] || { echo "learn.sh: new requires --file <path|->" >&2; usage >&2; exit 2; }
+  [ -n "$file" ] || refuse_usage "new requires --file <path|->" "Run this call again with --file"
   case "$surface" in
   learned | memory | docs | gotchas) ;;
   *)
-    echo "learn.sh: --surface must be learned, memory, docs, or gotchas (got '$surface')" >&2
-    exit 2 ;;
+    refuse "--surface must be learned, memory, docs, or gotchas (got '$surface')" "Pass one of those, or drop --surface" ;;
   esac
 
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
     if [ "$(lrn_indexes_mode "$root")" = generated ] && [ ! -e "$learned_dir" ]; then
-      mkdir -p "$learned_dir" || { echo "learn.sh: could not create $learned_dir" >&2; exit 1; }
+      mkdir -p "$learned_dir" || refuse "could not create $learned_dir" "Check that the folder is writable, then run this call again"
     else
-      echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
-      exit 7
+      refuse "$learned_dir does not exist, and learn.sh does not write this node's learned rules in $agent/rules/learned.md" "Edit that file by hand, and merge near-duplicates there" 7
     fi
   fi
-  lrn_lock_writers "$learned_dir" || exit 2
+  lrn_lock_writers "$learned_dir"
 
   read_candidate "$file"
-  lrn_grammar_ok "$candidate_tmp" || {
-    echo "learn.sh: candidate is not a well-formed record — exactly one top-level \"- [YYYY-MM-DD] \" bullet, no second top-level bullet, no frontmatter block, no heading" >&2
-    exit 6
-  }
-  lrn_warn_word_ceiling "$candidate_tmp"
+  lrn_grammar_ok "$candidate_tmp" || refuse "the candidate is not a well-formed record" "Write exactly one top-level \"- [YYYY-MM-DD] \" bullet with no second bullet, frontmatter, or heading" 6
 
   case "$surface" in
   learned) ;;
   memory)
-    echo "learn.sh: --surface memory belongs to memory.sh, not learn.sh — write it with memory.sh new or memory.sh supersede" >&2
-    exit 7 ;;
+    refuse "--surface memory belongs to memory.sh" "Write it with memory.sh new or memory.sh supersede" 7 ;;
   docs)
-    echo "learn.sh: --surface docs belongs to docs.sh, not learn.sh — write it there" >&2
-    exit 7 ;;
+    refuse "--surface docs belongs to the area doc" "Edit that doc, or add one with docs.sh new" 7 ;;
   gotchas)
-    echo "learn.sh: --surface gotchas belongs to the area doc's own ## Gotchas section, not learn.sh — edit that doc directly" >&2
-    exit 7 ;;
+    refuse "--surface gotchas belongs to the area doc's own ## Gotchas section" "Edit that doc directly" 7 ;;
   esac
 
   if new_dup=$(lrn_find_duplicate "$candidate_tmp" "$learned_dir"); then
     new_dup_v=$(git hash-object --no-filters -- "$new_dup")
-    echo "learn.sh: candidate body (ignoring its leading date) duplicates $new_dup (version $new_dup_v) — refusing to write a duplicate" >&2
-    exit 5
+    refuse "the candidate body (ignoring its leading date) duplicates $new_dup (version $new_dup_v)" "Nothing is owed: the rule is already recorded" 5
   fi
 
-  new_overlaps=$(lrn_overlap_scan "$candidate_tmp" "$learned_dir")
-  if [ -n "$new_overlaps" ] && [ "$distinct" -ne 1 ]; then
-    echo "learn.sh: candidate shares nontrivial terms with:" >&2
-    printf '%s\n' "$new_overlaps" | sed 's/^/  /' >&2
-    echo "learn.sh: pass --distinct once you have confirmed this is a separate rule" >&2
-    exit 4
+  new_hits=$(lrn_gate "$candidate_tmp" "$learned_dir" "$agent/rules") || refuse "could not compare the candidate with the node's rules" "Check that the files under .agent/rules/ are readable, then run this call again"
+  new_sections=0
+  new_unnamed=0
+  distinct_from=",$(printf '%s' "$distinct_from" | sed 's/ *, */,/g'),"
+  while IFS="$(printf '\t')" read -r new_kind new_name new_text; do
+    [ -n "$new_kind" ] || continue
+    new_token="$new_name"
+    [ "$new_kind" = section ] || { new_token="${new_name##*/}"; new_token="${new_token%.md}"; }
+    case "$distinct_from" in *",$(printf '%s' "$new_token" | sed 's/ *, */,/g'),"*) continue ;; esac
+    new_unnamed=1
+    if [ "$new_kind" = section ]; then
+      new_sections=1
+      printf '  %s  the section in %s\n' "$new_name" "$new_text" >&2
+    else
+      printf '  %s  %s\n' "$new_name" "$new_text" >&2
+    fi
+  done <<EOF
+$new_hits
+EOF
+  if [ "$new_unnamed" -eq 1 ]; then
+    new_next="If one of the records covers it, revise that record with learn.sh revise. If the candidate says something none of them says, run this call again with --distinct-from and every id above, separated by commas"
+    [ "$new_sections" -eq 0 ] || new_next="A rule the contract already states is not a learned rule: if a section above is wrong or incomplete, change it there. $new_next"
+    refuse "the candidate shares much of its wording with each rule listed above" "$new_next" 4
   fi
 
-  lrn_mint_and_write "$candidate_tmp" "$learned_dir" || {
-    echo "learn.sh: aborting — 100 consecutive identity collisions in $learned_dir" >&2
-    exit 2
-  }
+  lrn_mint_and_write "$candidate_tmp" "$learned_dir" || refuse "could not write a record in $learned_dir after 100 tries" "Check that the folder is writable, then run this call again"
   new_version=$(git hash-object --no-filters -- "$learned_dir/$lrn_new_id.md")
   lrn_refresh_index "$root"
   printf 'written\t%s\t%s\n' "$lrn_new_id" "$new_version"
@@ -442,47 +447,39 @@ revise)
     -h | --help)
       usage; exit 0 ;;
     --*)
-      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+      refuse_usage "unknown flag: $1" "Pass only the flags listed above" ;;
     *)
       if [ -z "$id" ]; then id="$1"; else root="$1"; fi
       shift ;;
     esac
   done
-  [ -n "$id" ] || { echo "learn.sh: revise requires <id>" >&2; usage >&2; exit 2; }
-  lrn_id_ok "$id" || { echo "learn.sh: <id> must be 12 lowercase hex characters (got '$id')" >&2; exit 2; }
-  [ -n "$file" ] || { echo "learn.sh: revise requires --file <path|->" >&2; usage >&2; exit 2; }
-  [ -n "$expected" ] || { echo "learn.sh: revise requires --expected <version>" >&2; usage >&2; exit 2; }
+  [ -n "$id" ] || refuse_usage "revise requires <id>" "Run this call again with the record's id"
+  lrn_id_ok "$id" || refuse "<id> must be 12 lowercase hex characters (got '$id')" "Pass the record's file name without .md"
+  [ -n "$file" ] || refuse_usage "revise requires --file <path|->" "Run this call again with --file"
+  [ -n "$expected" ] || refuse_usage "revise requires --expected <version>" "Pass the version learn.sh lookup prints"
 
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
-    echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
-    exit 7
+    refuse "$learned_dir does not exist, and learn.sh does not write this node's learned rules in $agent/rules/learned.md" "Edit that file by hand, and merge near-duplicates there" 7
   fi
   target="$learned_dir/$id.md"
-  lrn_lock_writers "$learned_dir" || exit 2
+  lrn_lock_writers "$learned_dir"
 
   read_candidate "$file"
-  lrn_grammar_ok "$candidate_tmp" || {
-    echo "learn.sh: candidate is not a well-formed record — exactly one top-level \"- [YYYY-MM-DD] \" bullet, no second top-level bullet, no frontmatter block, no heading" >&2
-    exit 6
-  }
-  lrn_warn_word_ceiling "$candidate_tmp"
+  lrn_grammar_ok "$candidate_tmp" || refuse "the candidate is not a well-formed record" "Write exactly one top-level \"- [YYYY-MM-DD] \" bullet with no second bullet, frontmatter, or heading" 6
 
   if rv_dup=$(lrn_find_duplicate "$candidate_tmp" "$learned_dir"); then
     rv_dup_v=$(git hash-object --no-filters -- "$rv_dup")
-    echo "learn.sh: candidate body (ignoring its leading date) duplicates $rv_dup (version $rv_dup_v) — refusing to write a duplicate" >&2
-    exit 5
+    refuse "the candidate body (ignoring its leading date) duplicates $rv_dup (version $rv_dup_v)" "Nothing is owed if that is the record being revised. Otherwise retire one of the two" 5
   fi
 
   rv_actual=$(lrn_current_version "$target")
   if [ "$expected" != "$rv_actual" ]; then
-    echo "learn.sh: stale --expected for $id — current version: $rv_actual" >&2
-    exit 3
+    refuse "stale --expected for $id, whose current version is $rv_actual" "Read the record again, then run this call with the current version as --expected" 3
   fi
   if [ "$rv_actual" = absent ]; then
-    echo "learn.sh: $target does not exist — nothing to revise" >&2
-    exit 2
+    refuse "$target does not exist, so there is nothing to revise" "Use learn.sh new for a new rule"
   fi
 
   if lrn_publish_replace "$candidate_tmp" "$target" "$expected" "$id"; then
@@ -514,54 +511,49 @@ retire)
     -h | --help)
       usage; exit 0 ;;
     --*)
-      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+      refuse_usage "unknown flag: $1" "Pass only the flags listed above" ;;
     *)
       if [ -z "$id" ]; then id="$1"; else root="$1"; fi
       shift ;;
     esac
   done
-  [ -n "$id" ] || { echo "learn.sh: retire requires <id>" >&2; usage >&2; exit 2; }
-  lrn_id_ok "$id" || { echo "learn.sh: <id> must be 12 lowercase hex characters (got '$id')" >&2; exit 2; }
-  [ -n "$expected" ] || { echo "learn.sh: retire requires --expected <version>" >&2; usage >&2; exit 2; }
+  [ -n "$id" ] || refuse_usage "retire requires <id>" "Run this call again with the record's id"
+  lrn_id_ok "$id" || refuse "<id> must be 12 lowercase hex characters (got '$id')" "Pass the record's file name without .md"
+  [ -n "$expected" ] || refuse_usage "retire requires --expected <version>" "Pass the version learn.sh lookup prints"
   # A rule leaves only when something else now enforces it: a check, script,
   # doc, contract section, or the record it was folded into.
-  [ -n "$enforced_by" ] || { echo "learn.sh: retire requires --enforced-by <path> — the check, script, doc, or record that now enforces this rule; keep the rule if nothing does" >&2; usage >&2; exit 2; }
+  [ -n "$enforced_by" ] || refuse_usage "retire requires --enforced-by <path>" "Name the check, script, doc, or record that now enforces this rule, and keep the rule if nothing does"
   case "$enforced_by" in
   /* | ../* | */../* | .. | */..)
-    echo "learn.sh: --enforced-by must be a path inside the project root, relative to it (got '$enforced_by')" >&2; exit 2 ;;
+    refuse "--enforced-by must be a path inside the project root, relative to it (got '$enforced_by')" "Pass a relative path such as .agent/rules/contract.md" ;;
   esac
   if [ ! -e "$root/$enforced_by" ]; then
-    echo "learn.sh: --enforced-by $enforced_by does not exist under $root — name the check, script, doc, or record that enforces this rule" >&2
-    exit 2
+    refuse "--enforced-by $enforced_by does not exist under $root" "Name the check, script, doc, or record that enforces this rule"
   fi
   case "${enforced_by#./}" in
   ".agent/rules/learned/$id.md")
-    echo "learn.sh: --enforced-by names the record being retired — name what enforces the rule once it is gone" >&2; exit 2 ;;
+    refuse "--enforced-by names the record being retired" "Name what enforces the rule once it is gone" ;;
   esac
 
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   if ! lrn_dir_is_real "$learned_dir"; then
-    echo "learn.sh: $learned_dir does not exist — this node's learned-rules surface is $agent/rules/learned.md, which learn.sh does not write" >&2
-    exit 7
+    refuse "$learned_dir does not exist, and learn.sh does not write this node's learned rules in $agent/rules/learned.md" "Edit that file by hand, and merge near-duplicates there" 7
   fi
   target="$learned_dir/$id.md"
-  lrn_lock_writers "$learned_dir" || exit 2
+  lrn_lock_writers "$learned_dir"
 
   rt_actual=$(lrn_current_version "$target")
   if [ "$expected" != "$rt_actual" ]; then
-    echo "learn.sh: stale --expected for $id — current version: $rt_actual" >&2
-    exit 3
+    refuse "stale --expected for $id, whose current version is $rt_actual" "Read the record again, then run this call with the current version as --expected" 3
   fi
   if [ "$rt_actual" = absent ]; then
-    echo "learn.sh: $target does not exist — nothing to retire" >&2
-    exit 2
+    refuse "$target does not exist, so there is nothing to retire" "Check the id against .agent/rules/learned/"
   fi
 
   rt_publish_actual=$(lrn_current_version "$target")
   if [ "$expected" != "$rt_publish_actual" ]; then
-    echo "learn.sh: stale --expected for $id — current version: $rt_publish_actual" >&2
-    exit 3
+    refuse "stale --expected for $id, whose current version is $rt_publish_actual" "Read the record again, then run this call with the current version as --expected" 3
   fi
 
   if rm -f "$target"; then
@@ -569,8 +561,7 @@ retire)
     printf 'retired\t%s\n' "$id"
     exit 0
   fi
-  echo "learn.sh: could not remove $target" >&2
-  exit 2
+  refuse "could not remove $target" "Check that the folder is writable, then run this call again"
   ;;
 
 pending)
@@ -580,7 +571,7 @@ pending)
     -h | --help)
       usage; exit 0 ;;
     --*)
-      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+      refuse_usage "unknown flag: $1" "Pass only the flags listed above" ;;
     *)
       root="$1"; shift ;;
     esac
@@ -637,19 +628,19 @@ resolve)
     -h | --help)
       usage; exit 0 ;;
     --*)
-      echo "learn.sh: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+      refuse_usage "unknown flag: $1" "Pass only the flags listed above" ;;
     *)
       root="$1"; shift ;;
     esac
   done
-  [ -n "$id" ] || { echo "learn.sh: resolve requires --id <id>" >&2; usage >&2; exit 2; }
-  [ -n "$disp" ] || { echo "learn.sh: resolve requires --disposition <value>" >&2; usage >&2; exit 2; }
+  [ -n "$id" ] || refuse_usage "resolve requires --id <id>" "Pass an id learn.sh pending lists"
+  [ -n "$disp" ] || refuse_usage "resolve requires --disposition <value>" "Pass one of the dispositions listed above"
 
   agent="$root/.agent"
   learned_dir="$agent/rules/learned"
   docs_dir="$agent/docs"
   inventory="$agent/migration-inventory.md"
-  [ -f "$inventory" ] || { echo "learn.sh: $inventory does not exist — nothing to resolve" >&2; exit 2; }
+  [ -f "$inventory" ] || refuse "$inventory does not exist, so there is nothing to resolve" "Nothing is owed on this node"
 
   rsv_matches=0
   rsv_kind=""
@@ -669,19 +660,16 @@ resolve)
   done <"$inventory"
 
   if [ "$rsv_matches" -eq 0 ]; then
-    echo "learn.sh: $inventory carries no item with id=$id" >&2
-    exit 2
+    refuse "$inventory carries no item with id=$id" "Pass an id learn.sh pending lists"
   fi
   if [ "$rsv_matches" -gt 1 ]; then
-    echo "learn.sh: $inventory carries id=$id on more than one line — hand-edit it to a single match first" >&2
-    exit 2
+    refuse "$inventory carries id=$id on more than one line" "Edit it to a single match, then run this call again"
   fi
 
   case "$rsv_disp" in
   semantic-review-pending | hook-missing) ;;
   *)
-    echo "learn.sh: id=$id is not pending — its disposition is already: $rsv_disp" >&2
-    exit 2 ;;
+    refuse "id=$id is not pending, and its disposition is already: $rsv_disp" "Nothing is owed for this item" ;;
   esac
 
   case "$disp" in
@@ -701,23 +689,20 @@ resolve)
     rsv_target="${disp#*merged into }"
     rsv_check_ids="${rsv_target%)}" ;;
   *)
-    echo "learn.sh: --disposition must be migrated, retired, 'migrated (split into <id>[, <id>]...)', or 'migrated (merged into <id>)' (got '$disp')" >&2
-    exit 2 ;;
+    refuse "--disposition must be migrated, retired, 'migrated (split into <id>[, <id>]...)', or 'migrated (merged into <id>)' (got '$disp')" "Pass one of those" ;;
   esac
 
   if [ "$rsv_kind" = doc ]; then
     case "$rsv_form" in
     split | merged | retired)
-      echo "learn.sh: split, merge, and retired are rule-only dispositions — id=$id is a doc item, which accepts migrated only" >&2
-      exit 2 ;;
+      refuse "split, merge, and retired are rule-only dispositions, and id=$id is a doc item" "Pass --disposition migrated" ;;
     esac
   fi
 
   if [ "$rsv_form" = split ] || [ "$rsv_form" = merged ]; then
     for rsv_t in $rsv_check_ids; do
       lrn_id_ok "$rsv_t" || {
-        echo "learn.sh: --disposition names '$rsv_t', not a 12-lowercase-hex identity" >&2
-        exit 2
+        refuse "--disposition names '$rsv_t', not a 12-lowercase-hex identity" "Pass the record's file name without .md"
       }
     done
   fi
@@ -727,27 +712,23 @@ resolve)
     migrated | split | merged)
       for rsv_t in $rsv_check_ids; do
         [ -f "$learned_dir/$rsv_t.md" ] || {
-          echo "learn.sh: --disposition names $rsv_t, which has no $learned_dir/$rsv_t.md" >&2
-          exit 2
+          refuse "--disposition names $rsv_t, which has no $learned_dir/$rsv_t.md" "Write that record first, then run this call again"
         }
       done ;;
     retired)
       if [ -f "$learned_dir/$id.md" ]; then
-        echo "learn.sh: id=$id is given retired but $learned_dir/$id.md still exists — retire the record first" >&2
-        exit 2
+        refuse "id=$id is given retired but $learned_dir/$id.md still exists" "Retire the record with learn.sh retire, then run this call again"
       fi ;;
     esac
   else
     rsv_doc="$docs_dir/$id"
     if ! head -n 5 "$rsv_doc" 2>/dev/null | grep -q '^<!-- Read when: .* -->$'; then
-      echo "learn.sh: $rsv_doc still carries no \"<!-- Read when: ... -->\" header in its first five lines — repair the hook and the architecture.md entry by hand, run docs.sh rehook, then resolve" >&2
-      exit 2
+      refuse "$rsv_doc still carries no \"<!-- Read when: ... -->\" header in its first five lines" "Run docs.sh sync --name $id --read-when with its hook, then run this call again"
     fi
   fi
 
   resolve_tmp=$(mktemp "${TMPDIR:-/tmp}/learn-resolve.XXXXXX") || {
-    echo "learn.sh: could not create a temporary file to rewrite $inventory" >&2
-    exit 2
+    refuse "could not create a temporary file to rewrite $inventory" "Check that the temporary folder is writable, then run this call again"
   }
   : >"$resolve_tmp"
   while IFS= read -r rsv_line2 || [ -n "$rsv_line2" ]; do
@@ -770,11 +751,8 @@ resolve)
   ;;
 
 "")
-  usage >&2
-  exit 2 ;;
+  refuse_usage "no command was given" "Pass one of the commands listed above" ;;
 
 *)
-  echo "learn.sh: unknown command: $cmd" >&2
-  usage >&2
-  exit 2 ;;
+  refuse_usage "unknown command: $cmd" "Pass one of the commands listed above" ;;
 esac

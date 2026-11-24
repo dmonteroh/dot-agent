@@ -8146,16 +8146,18 @@ grep -qF "$lrn73_new_id.md" "$WORK/lrn73-dup.err" \
 
 "$LRN" new --file "$WORK/lrn73-overlap-cand.md" "$lrn73" >"$WORK/lrn73-ov.out" 2>"$WORK/lrn73-ov.err"
 lrn73_ovnew_rc=$?
-[ "$lrn73_ovnew_rc" -eq 4 ] && pass "learn.sh: new refuses a shared-term overlap without --distinct at exit 4" || fail "learn.sh: new refuses a shared-term overlap without --distinct at exit 4 (rc=$lrn73_ovnew_rc)"
-grep -qF "$lrn73_pick" "$WORK/lrn73-ov.err" \
+[ "$lrn73_ovnew_rc" -eq 4 ] && pass "learn.sh: new refuses a near candidate without --distinct-from at exit 4" || fail "learn.sh: new refuses a near candidate without --distinct-from at exit 4 (rc=$lrn73_ovnew_rc)"
+lrn73_first=$(grep -l 'First rule, flat' "$lrn73"/.agent/rules/learned/*.md | head -n 1)
+grep -qF "$lrn73_first" "$WORK/lrn73-ov.err" \
   && pass "learn.sh: the overlap refusal names the overlapping record" \
   || fail "learn.sh: the overlap refusal names the overlapping record"
-lrn73_distinct_out=$("$LRN" new --file "$WORK/lrn73-overlap-cand.md" --distinct "$lrn73" 2>"$WORK/lrn73-distinct.err")
+lrn73_near=$(sed -n 's/^  .*\/\([0-9a-f]*\)\.md  .*/\1/p' "$WORK/lrn73-ov.err" | paste -sd, -)
+lrn73_distinct_out=$("$LRN" new --file "$WORK/lrn73-overlap-cand.md" --distinct-from "$lrn73_near" "$lrn73" 2>"$WORK/lrn73-distinct.err")
 lrn73_distinct_rc=$?
-[ "$lrn73_distinct_rc" -eq 0 ] && pass "learn.sh: --distinct admits an overlapping candidate anyway" || fail "learn.sh: --distinct admits an overlapping candidate anyway (rc=$lrn73_distinct_rc)"
+[ "$lrn73_distinct_rc" -eq 0 ] && pass "learn.sh: --distinct-from naming every listed record admits the candidate" || fail "learn.sh: --distinct-from naming every listed record admits the candidate (rc=$lrn73_distinct_rc)"
 printf '%s\n' "$lrn73_distinct_out" | grep -qE '^written	' \
-  && pass "learn.sh: a --distinct write's result line starts with written" \
-  || fail "learn.sh: a --distinct write's result line starts with written ($lrn73_distinct_out)"
+  && pass "learn.sh: a --distinct-from write's result line starts with written" \
+  || fail "learn.sh: a --distinct-from write's result line starts with written ($lrn73_distinct_out)"
 
 printf -- '- [2026-02-01] Use C for the embedded firmware module because of strict size constraints.\n' >"$WORK/lrn73-c.md"
 printf -- '- [2026-02-02] Use C++ for the embedded firmware module because of strict size constraints.\n' >"$WORK/lrn73-cpp.md"
@@ -8164,9 +8166,9 @@ lrn73_c_id=$(printf '%s\n' "$lrn73_c_out" | awk -F'\t' '{print $2}')
 "$LRN" new --file "$WORK/lrn73-cpp.md" "$lrn73" >/dev/null 2>"$WORK/lrn73-cpp-noflag.err"
 lrn73_cpp_noflag_rc=$?
 [ "$lrn73_cpp_noflag_rc" -eq 4 ] \
-  && pass "learn.sh: C and C++ overlap on every other term, so the second create needs --distinct" \
-  || fail "learn.sh: C and C++ overlap on every other term, so the second create needs --distinct (rc=$lrn73_cpp_noflag_rc)"
-lrn73_cpp_out=$("$LRN" new --file "$WORK/lrn73-cpp.md" --distinct "$lrn73" 2>/dev/null)
+  && pass "learn.sh: C and C++ overlap on every other term, so the second create needs --distinct-from" \
+  || fail "learn.sh: C and C++ overlap on every other term, so the second create needs --distinct-from (rc=$lrn73_cpp_noflag_rc)"
+lrn73_cpp_out=$("$LRN" new --file "$WORK/lrn73-cpp.md" --distinct-from "$lrn73_c_id" "$lrn73" 2>/dev/null)
 lrn73_cpp_id=$(printf '%s\n' "$lrn73_cpp_out" | awk -F'\t' '{print $2}')
 [ -n "$lrn73_c_id" ] && [ -n "$lrn73_cpp_id" ] && [ "$lrn73_c_id" != "$lrn73_cpp_id" ] \
   && pass "learn.sh: C and C++ mint two distinct identities, neither overwriting the other" \
@@ -8254,7 +8256,7 @@ printf -- '- [2026-01-16] %s\n' "$lrn73_long" >"$WORK/lrn73-long.md"
 "$LRN" new --file "$WORK/lrn73-long.md" "$lrn73" >"$WORK/lrn73-long.out" 2>"$WORK/lrn73-long.err"
 lrn73_long_rc=$?
 [ "$lrn73_long_rc" -eq 0 ] && pass "learn.sh: an over-length imperative still writes" || fail "learn.sh: an over-length imperative still writes (rc=$lrn73_long_rc)"
-grep -qi '40-word' "$WORK/lrn73-long.err" && pass "learn.sh: an over-length imperative warns on stderr" || fail "learn.sh: an over-length imperative warns on stderr"
+[ -s "$WORK/lrn73-long.err" ] && fail "learn.sh: an over-length imperative prints no line that asks for a second write" || pass "learn.sh: an over-length imperative prints no line that asks for a second write"
 
 printf -- '- [2026-01-17] Some other-surface candidate.\n' >"$WORK/lrn73-surf.md"
 "$LRN" new --file "$WORK/lrn73-surf.md" --surface memory "$lrn73" >/dev/null 2>"$WORK/lrn73-surf-mem.err"
@@ -8519,7 +8521,8 @@ printf -- '- [2026-01-02] Split-candidate rule, qualifier one only. Trigger: x.\
 rec75_split_rev_rc=$?
 [ "$rec75_split_rev_rc" -eq 0 ] && pass "reconcile split: revising the original to its first qualifier exits 0" || fail "reconcile split: revising the original to its first qualifier exits 0 (rc=$rec75_split_rev_rc)"
 printf -- '- [2026-01-02] Split-candidate rule, qualifier two only. Trigger: x.\n' >"$WORK/rec75-split-new.md"
-rec75_split_new_out=$("$REC" new --file "$WORK/rec75-split-new.md" --distinct "$rec75" 2>"$WORK/rec75-split-new.err")
+rec75_split_near=$("$REC" new --file "$WORK/rec75-split-new.md" "$rec75" 2>&1 | sed -n 's/^  .*\/\([0-9a-f]*\)\.md  .*/\1/p' | paste -sd, -)
+rec75_split_new_out=$("$REC" new --file "$WORK/rec75-split-new.md" --distinct-from "$rec75_split_near" "$rec75" 2>"$WORK/rec75-split-new.err")
 rec75_split_new_rc=$?
 [ "$rec75_split_new_rc" -eq 0 ] && pass "reconcile split: creating the second qualifier's record exits 0" || fail "reconcile split: creating the second qualifier's record exits 0 (rc=$rec75_split_new_rc)"
 rec75_split_new_id=$(printf '%s\n' "$rec75_split_new_out" | awk -F'\t' '{print $2}')
@@ -8818,7 +8821,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1393
+EXPECTED_CHECKS=1394
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

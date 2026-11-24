@@ -49,6 +49,34 @@ revised_version=$(printf '%s\n' "$revised" | awk -F '\t' '$1=="revised" {print $
 [ -n "$revised_version" ] && [ "$revised_version" != "$learn_version" ] && ok 'generated revise preserves expected-version behavior' || bad 'generated revise preserves expected-version behavior'
 if printf '%s\n' '- [2026-09-27] Retune zircon widgets before launch.' | "$here/scripts/learn.sh" revise "$learn_id" --file - --expected stale "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
 [ "$status" -eq 3 ] && ok 'generated revise retains stale exit 3' || bad 'generated revise retains stale exit 3'
+# new makes the caller name the records and contract sections it resembles.
+gate="$tmp/gate"
+mkdir -p "$gate/.agent/rules/learned"
+printf '%s\n' '# Purpose' '  indexes: generated' >"$gate/.agent/purpose.md"
+printf '%s\n' '# Contract' '' '## Self-learning' '' '- A correction starts review and does not require a record.' '- Put area mechanics in the owning doc, never in learned rules.' '' '## Verification contract' '' '- Run the configured checks before reporting.' >"$gate/.agent/rules/contract.md"
+printf '%s\n' '- [2026-01-01] Retry a failed refund call at most three times. Trigger: refund storm.' >"$gate/.agent/rules/learned/111111111111.md"
+printf '%s\n' '- [2026-01-01] Never retry a refund that the gateway already settled. Trigger: double refund.' >"$gate/.agent/rules/learned/222222222222.md"
+printf '%s\n' '- [2026-01-01] Name every fixture after the behavior it shows. Trigger: unclear tests.' >"$gate/.agent/rules/learned/333333333333.md"
+near='- [2026-09-27] Retry a refund call only while the gateway has not settled. Trigger: refund work.'
+learn_new() { printf '%s\n' "$near" | "$here/scripts/learn.sh" new --file - "$@" "$gate" >"$tmp/gate.out" 2>"$tmp/gate.err"; }
+learn_new; status=$?
+[ "$status" -eq 4 ] && grep -q '111111111111.md' "$tmp/gate.err" && grep -q '222222222222.md' "$tmp/gate.err" && ! grep -q '333333333333' "$tmp/gate.err" \
+  && ok 'new refuses a near candidate at exit 4 and lists the near records only' || bad 'new refuses a near candidate at exit 4 and lists the near records only'
+grep -q 'Never retry a refund that the gateway already settled' "$tmp/gate.err" && tail -1 "$tmp/gate.err" | grep -q 'learn.sh revise.*--distinct-from' \
+  && ok 'the refusal prints each rule and offers revise before --distinct-from' || bad 'the refusal prints each rule and offers revise before --distinct-from'
+learn_new --distinct-from 111111111111; status=$?
+[ "$status" -eq 4 ] && grep -q '222222222222' "$tmp/gate.err" && ! grep -q '111111111111' "$tmp/gate.err" && ok 'new refuses a partial --distinct-from and lists what is unnamed' || bad 'new refuses a partial --distinct-from and lists what is unnamed'
+learn_new --distinct; status=$?
+[ "$status" -eq 2 ] && ok '--distinct alone is a usage error' || bad '--distinct alone is a usage error'
+learn_new --distinct-from '111111111111 , 222222222222'; status=$?
+[ "$status" -eq 0 ] && grep -q '^written	' "$tmp/gate.out" && ok 'naming every listed record writes the candidate' || bad 'naming every listed record writes the candidate'
+near='- [2026-09-27] Keep area mechanics in the owning doc and out of learned rules. Trigger: a correction.'
+learn_new; status=$?
+[ "$status" -eq 4 ] && grep -q '^  contract:Self-learning ' "$tmp/gate.err" && ! grep -q 'contract:Verification' "$tmp/gate.err" && tail -1 "$tmp/gate.err" | grep -q 'A rule the contract already states is not a learned rule' \
+  && ok 'new refuses a candidate that restates a contract section and names the heading' || bad 'new refuses a candidate that restates a contract section and names the heading'
+learn_new --distinct-from contract:Self-learning; status=$?
+[ "$status" -eq 0 ] && ok 'naming the section writes the candidate' || bad 'naming the section writes the candidate'
+
 retire_refused() { # expects a refusal at exit 2 that leaves the record in place
   if "$here/scripts/learn.sh" retire "$learn_id" --expected "$revised_version" "$@" "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
   [ "$status" -eq 2 ] && [ -e "$node/.agent/rules/learned/$learn_id.md" ]
@@ -166,7 +194,10 @@ if "$here/scripts/memory.sh" lookup --query missing "$node" >/dev/null 2>&1; the
 awk 'BEGIN{drop=0} $0=="### `missing-routed.md`" {drop=1} drop && /^### `/ && $0!="### `missing-routed.md`" {drop=0} !drop {print}' "$node/.agent/docs/architecture.md" >"$node/.agent/docs/architecture.clean"
 mv "$node/.agent/docs/architecture.clean" "$node/.agent/docs/architecture.md"
 
-printf '%s\n' 'body from stdin' | "$here/scripts/memory.sh" new --slug stdin-fact --title Stdin --hook safe --file - "$node" >/dev/null
+printf '%s\n' 'body from stdin' | "$here/scripts/memory.sh" new --slug stdin-fact --title Stdin --hook safe --file - "$node" >"$tmp/new.out"
+[ "$(tail -1 "$tmp/new.out")" = "written	stdin-fact	$(git hash-object --no-filters -- "$node/.agent/memory/stdin-fact.md")" ] && ok 'memory new ends on its slug and version' || bad 'memory new ends on its slug and version'
+"$here/scripts/memory.sh" supersede --slug stdin-fact --fact 'body from stdin' "$node" >"$tmp/new.out"
+[ "$(tail -1 "$tmp/new.out")" = "superseded	stdin-fact	$(git hash-object --no-filters -- "$node/.agent/memory/stdin-fact.md")" ] && ok 'memory supersede ends on its slug and version' || bad 'memory supersede ends on its slug and version'
 assert_file_has "$node/.agent/memory/stdin-fact.md" 'body from stdin' 'memory new safely reads standard input'
 "$here/scripts/memory.sh" new --slug legacy-fact --title Legacy --hook compatible --fact 'legacy argument body' "$node" >/dev/null
 assert_file_has "$node/.agent/memory/legacy-fact.md" 'legacy argument body' 'legacy memory --fact remains supported'
