@@ -568,10 +568,14 @@ case "$1" in
   test) all ;;
   local) [ -f config.local ] || { echo 'config.local is missing'; exit 1; }; all ;;
   shared) [ -f "${DA_PROVE_MAIN:-.}/config.local" ] || { echo 'config.local is missing'; exit 1; }; all ;;
+  linked) [ -z "${DA_PROVE:-}" ] || [ -e gen ] || ln -s "$DA_PROVE_MAIN/gen" gen; all ;;
+  built) [ out/calc.sh -nt src/calc.sh ] || { mkdir -p out && cp src/calc.sh out/calc.sh; }; [ "$(bash out/calc.sh 2 3)" = 5 ] ;;
+  plain) [ -z "${DA_PROVE:-}" ] || { echo 'DA_PROVE reached a run'; exit 1; } ;;
+  slow) if [ -n "${DA_PROVE:-}" ] && [ "$(bash src/calc.sh 2 3)" != 5 ]; then sleep 20; fi; all ;;
   *) exit 9 ;;
 esac
 EOF
-printf '.agent/\ntmp/\nconfig.local\n' >"$pv/.gitignore"
+printf '.agent/\ntmp/\nconfig.local\ngen/\nout/\n' >"$pv/.gitignore"
 printf 'echo $(( $1 - $2 ))\n' >"$pv/src/calc.sh"
 printf '[ "$(bash src/calc.sh 2 0)" = 2 ]\n' >"$pv/test/calc.test.sh"
 git -C "$pv" init -q
@@ -583,7 +587,7 @@ pv_base=$(git -C "$pv" rev-parse HEAD)
 pv_verify="$pv/.agent/scripts/verify.sh"
 pv_run() { TMPDIR="$tmp/prove-tmp" bash "$pv_verify" prove "$@" --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; }
 pv_line() { sed -n "$1p" "$pv/.agent/.state/receipts/$(cut -f2 "$tmp/stdout").receipt"; }
-pv_tree() { (cd "$pv" && git status --porcelain --ignored && find src test tmp config.local -type f -exec git hash-object {} + 2>/dev/null) | git hash-object --stdin; }
+pv_tree() { (cd "$pv" && git symbolic-ref HEAD && git rev-parse HEAD && git ls-files -s && git status --porcelain --ignored && find src test tmp gen config.local -type f -exec git hash-object {} + 2>/dev/null) | git hash-object --stdin; }
 printf 'echo $(( $1 + $2 ))\n' >"$pv/src/calc.sh"
 printf '[ "$(bash src/calc.sh 2 3)" = 5 ]\n' >"$pv/tmp/scratch/sum.test.sh"
 pv_before=$(pv_tree)
@@ -599,8 +603,11 @@ expect_rc 0 "a proved receipt validates" bash "$pv_verify" check "$pv_id" --root
   && ok "prove leaves the session's tree and the temporary folder as they were" || bad "prove left something behind: $(ls "$tmp/prove-tmp")"
 pv_receipt="$pv/.agent/.state/receipts/$pv_id.receipt"
 chmod u+w "$pv_receipt"
-sed 's/^proof=base:/proof=break:/' "$pv_receipt" >"$tmp/proof.edit" && cp "$tmp/proof.edit" "$pv_receipt"
+cp "$pv_receipt" "$tmp/proof.saved"
+sed 's/^proof=base:/proof=break:/' "$tmp/proof.saved" >"$pv_receipt"
 expect_rc 2 "an edited proof breaks the receipt digest" bash "$pv_verify" check "$pv_id" --root "$pv"
+sed 's/^fails_without_change=yes$/fails_without_change=no/' "$tmp/proof.saved" >"$pv_receipt"
+expect_rc 2 "an edited verdict on a proved receipt breaks its digest" bash "$pv_verify" check "$pv_id" --root "$pv"
 printf '[ "$(bash src/calc.sh 2 0)" = 2 ]\n' >"$pv/tmp/scratch/weak.test.sh"
 pv_run test --test tmp/scratch/sum.test.sh --test tmp/scratch/weak.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 1 ] && [ "$(pv_line 12)" = 'fails_without_change=no' ] \
@@ -625,12 +632,44 @@ pv_run local --test test/sum.test.sh; pv_rc=$?
 pv_run shared --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
   && ok "a driver reads what the checkout lacks through DA_PROVE_MAIN, and --base proves a committed change" || bad "shared: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+pv_before=$(pv_tree)
+GIT_DIR="$pv/.git" GIT_WORK_TREE="$pv" TMPDIR="$tmp/prove-tmp" bash "$pv_verify" prove shared --base "$pv_base" --test test/sum.test.sh --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ "$(pv_tree)" = "$pv_before" ] \
+  && ok "a caller's Git environment cannot aim prove at the session's repository" || bad "GIT_DIR: rc $pv_rc, HEAD $(git -C "$pv" rev-parse --abbrev-ref HEAD), $(tail -1 "$tmp/stderr")"
+mkdir -p "$pv/gen"
+printf 'echo kept\n' >"$pv/gen/double.sh"
+printf 'echo broken\n' >"$pv/tmp/scratch/double.broken"
+pv_run linked --break gen/double.sh=tmp/scratch/double.broken; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(cat "$pv/gen/double.sh")" = 'echo kept' ] \
+  && has 'gen/double\.sh passes through a symbolic link in the proving checkout, so nothing was proved' "$tmp/stderr" \
+  && ok "prove never writes through a link that leads out of its checkout" || bad "link: rc $pv_rc, gen holds $(cat "$pv/gen/double.sh"), $(tail -1 "$tmp/stderr")"
+pv_orphan=$(git -C "$pv" commit-tree -m unrelated "$(git -C "$pv" hash-object -t tree /dev/null)")
+pv_run test --base "$pv_orphan" --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'is no ancestor of HEAD, so nothing was proved' "$tmp/stderr" \
+  && ok "a base that is no ancestor of HEAD proves nothing" || bad "orphan base: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+pv_run built --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
+  && ok "a broken copy is newer than what the control run built" || bad "mtime build: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+DA_PROVE=1 DA_PROVE_MAIN=/nonexistent bash "$pv_verify" run plain --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && ok "a caller's DA_PROVE does not reach a run of the current tree" || bad "DA_PROVE leak: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+pv_run slow --base "$pv_base" --test test/sum.test.sh --timeout 3; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] && has 'timed out without the change, so nothing was proved' "$tmp/stderr" \
+  && ok "a run that times out without the change proves nothing" || bad "timeout: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
+TMPDIR="$tmp/prove-tmp" bash "$pv_verify" prove slow --base "$pv_base" --test test/sum.test.sh --timeout 60 --root "$pv" >/dev/null 2>&1 &
+pv_pid=$!
+pv_wait=0
+until compgen -G "$tmp/prove-tmp/verify-prove.*/one" >/dev/null || [ "$pv_wait" -ge 600 ]; do sleep 0.05; pv_wait=$((pv_wait + 1)); done
+kill -TERM "$pv_pid" 2>/dev/null
+wait "$pv_pid" 2>/dev/null
+[ "$pv_wait" -lt 600 ] && [ -z "$(ls "$tmp/prove-tmp")" ] \
+  && ok "an interrupted prove removes its checkout" || bad "interrupt left: $(ls "$tmp/prove-tmp") after $pv_wait polls"
 printf 'false\n' >"$pv/test/red.test.sh"
 pv_run test --test test/sum.test.sh; pv_rc=$?
 [ "$pv_rc" -eq 1 ] && has $'\tfail\ttest\t1\t' "$tmp/stdout" && [ "$(pv_line 11)" = 'proof=none' ] \
   && has 'test does not pass on the current tree, so there is nothing to prove' "$tmp/stderr" \
   && ok "a check that fails now is recorded as a failed run with no proof" || bad "red: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 rm "$pv/test/red.test.sh"
+ln -s sum.test.sh "$pv/test/link.test.sh"
 pv_rows=0
 while IFS='|' read -r pv_want pv_args; do
   # shellcheck disable=SC2086
@@ -640,11 +679,13 @@ while IFS='|' read -r pv_want pv_args; do
 done <<'EOF'
 prove needs --test PATH|
 base and --break were both given|--base HEAD --break src/calc.sh=tmp/scratch/calc.broken
-without a leading slash or \.\.|--test ../outside
-test names no file|--test test/none.test.sh
+without a leading slash, \.\., or \.git|--test ../outside
+without a leading slash, \.\., or \.git|--test .git/config
+test names no regular file|--test test/none.test.sh
+test names no regular file|--test test/link.test.sh
 break takes PATH=FILE|--break src/calc.sh
 EOF
-[ "$pv_rows" -eq 5 ] && ok "every prove usage row ran" || bad "prove usage rows ran: $pv_rows"
+[ "$pv_rows" -eq 7 ] && ok "every prove usage row ran" || bad "prove usage rows ran: $pv_rows"
 pm="$tmp/prove-mono"
 mkdir -p "$pm/pkg/.agent/scripts" "$pm/pkg/test"
 cp "$here/verify.sh" "$here/runtime.sh" "$pv/.agent/scripts/verify.conf" "$pm/pkg/.agent/scripts/"
@@ -661,6 +702,16 @@ printf 'new\n' >"$pm/pkg/value"
 printf '[ "$(cat value)" = new ]\n' >"$pm/pkg/test/one.test.sh"
 TMPDIR="$tmp/prove-tmp" bash "$pm/pkg/.agent/scripts/verify.sh" prove test --test test/one.test.sh --root "$pm/pkg" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && ok "prove works for a node below the Git top level" || bad "prove in a subfolder: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+# Enough shared lines for Git to read the move below as a rename.
+printf ': one\n: two\n: three\n: four\n: five\n[ "$(cat value)" = new ]\n' >"$pm/pkg/test/one.test.sh"
+git -C "$pm" add -A
+git -C "$pm" commit -qm change
+git -C "$pm" mv pkg/test/one.test.sh pkg/test/two.test.sh
+printf '#!/usr/bin/env bash\nfor f in test/*.test.sh; do bash "$f" || exit 1; done\n' >"$pm/pkg/.agent/scripts/checks.sh"
+printf 'newer\n' >"$pm/pkg/value"
+printf ': one\n: two\n: three\n: four\n: five\n[ "$(cat value)" = newer ]\n' >"$pm/pkg/test/two.test.sh"
+TMPDIR="$tmp/prove-tmp" bash "$pm/pkg/.agent/scripts/verify.sh" prove test --test test/two.test.sh --root "$pm/pkg" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && ok "a renamed file leaves no old copy in the proving checkout" || bad "rename: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 
 printf '1..%s\n' "$((pass + fail))"
 printf '# passed %s; failed %s\n' "$pass" "$fail"

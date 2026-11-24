@@ -4,6 +4,9 @@ export LC_ALL=C
 unset CDPATH
 
 schema_version=3
+# Only prove sets these, for the driver in its checkout. A caller's copies
+# must not reach a run of the current tree.
+unset DA_PROVE DA_PROVE_MAIN
 self_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=runtime.sh
 . "$self_dir/runtime.sh"
@@ -284,76 +287,99 @@ fails_without_change=unknown
 proof=none
 
 prove_path_ok() {
-  case "$1" in '' | /* | .. | ../* | */../* | */..) return 1 ;; esac
+  case "$1" in '' | /* | .. | ../* | */../* | */.. | .git | .git/* | */.git | */.git/*) return 1 ;; esac
   safe_value "$1"
 }
 
-# prove_copy SRC DST: copies a file of the project over a path of the
-# checkout, both relative to the Git top level. A missing source removes the
-# destination, which is how a deleted file reaches the checkout.
+# prove_copy SRC DST: copies the file SRC over DST, a path of the checkout
+# relative to the Git top level. A missing SRC removes DST, which is how a
+# deleted file reaches the checkout. A parent of DST that is a symbolic link
+# could lead back into the project, so such a path is refused.
 prove_copy() {
+  pcp_walk=$prove_tree; pcp_rest=$2
+  while :; do
+    case "$pcp_rest" in */*) pcp_walk="$pcp_walk/${pcp_rest%%/*}"; pcp_rest=${pcp_rest#*/} ;; *) break ;; esac
+    [ ! -L "$pcp_walk" ] || return 1
+  done
   rm -rf -- "${prove_tree:?}/$2" || return 1
-  if [ -e "$prove_top/$1" ] || [ -L "$prove_top/$1" ]; then
-    mkdir -p -- "$(dirname -- "$prove_tree/$2")" && cp -pPR -- "$prove_top/$1" "$prove_tree/$2"
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    mkdir -p -- "$(dirname -- "$prove_tree/$2")" && cp -pPR -- "$1" "$prove_tree/$2"
   fi
 }
 
 prove_tests_in() {
   [ "${#prove_tests[@]}" -gt 0 ] || return 0
-  for pt in "${prove_tests[@]}"; do prove_copy "$prove_prefix$pt" "$prove_prefix$pt" || return 1; done
+  for pt in "${prove_tests[@]}"; do prove_copy "$prove_dir/in/$pt" "$prove_prefix$pt" || return 1; done
 }
 
-# Digest of the named files as "path<TAB>blob" lines, so a proof names the
-# exact test content it ran.
+# Digest of the named snapshot files as "path<TAB>blob" lines, so a proof
+# names the exact content that ran.
 prove_digest() {
   for pd in "$@"; do
-    printf '%s\t%s\n' "$pd" "$(git hash-object --no-filters -- "$root/$pd")" || return 1
-  done | LC_ALL=C sort | git hash-object --stdin
+    pd_blob=$(git hash-object --no-filters -- "$prove_dir/in/$pd") || return 1
+    printf '%s\t%s\n' "$pd" "$pd_blob"
+  done >"$prove_dir/digest" || return 1
+  LC_ALL=C sort "$prove_dir/digest" | git hash-object --stdin
 }
 
 # Runs the check without the change in a throwaway clone, after a control run
 # of the current files there. The control separates a checkout that cannot
 # run the check from a test that fails for the change. Sets
-# fails_without_change, proof, prove_said, and prove_show. The session's own
-# tree is never written.
+# fails_without_change, proof, prove_said, and prove_show. The session's
+# tree, index, and repository are never written.
 prove_change() {
   pc_rc=$driver_rc; pc_timed_out=$timed_out
+  pc_restore() { driver_rc=$pc_rc; timed_out=$pc_timed_out; }
+  pc_stop() { prove_said=$1; pc_restore; return 0; }
   prove_said=; prove_show=
-  prove_top=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || { prove_said="prove needs a Git worktree, so nothing was proved"; return 0; }
+  prove_top=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || { pc_stop "prove needs a Git worktree, so nothing was proved"; return 0; }
   prove_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null)
-  pc_head=$(git -C "$root" rev-parse -q --verify 'HEAD^{commit}') || { prove_said="the repository has no commit, so nothing was proved. Commit once, then run this call again"; return 0; }
+  pc_head=$(git -C "$root" rev-parse -q --verify 'HEAD^{commit}') || { pc_stop "the repository has no commit, so nothing was proved. Commit once, then run this call again"; return 0; }
   pc_base=$pc_head
   if [ -n "$prove_base" ]; then
-    pc_base=$(git -C "$root" rev-parse -q --verify "$prove_base^{commit}") || { prove_said="--base $prove_base names no commit, so nothing was proved. Pass the commit before the change"; return 0; }
+    pc_base=$(git -C "$root" rev-parse -q --verify "$prove_base^{commit}") || { pc_stop "--base $prove_base names no commit, so nothing was proved. Pass the commit before the change"; return 0; }
+    git -C "$root" merge-base --is-ancestor "$pc_base" "$pc_head" 2>/dev/null || { pc_stop "--base $prove_base is no ancestor of HEAD, so nothing was proved. Pass the commit before the change"; return 0; }
   fi
   if [ -n "$(git -C "$prove_top" submodule status 2>/dev/null)" ]; then
-    prove_said="the checkout would lack this repository's submodules, so nothing was proved. See the failure by hand in a copy, and say so in the report"
-    return 0
+    pc_stop "the checkout would lack this repository's submodules, so nothing was proved. See the failure by hand in a copy, and say so in the report"; return 0
   fi
-  prove_dir=$(mktemp -d "${TMPDIR:-/tmp}/verify-prove.XXXXXX") || { prove_said="could not create the proving folder, so nothing was proved. Check the temporary folder and run this call again"; return 0; }
+  prove_dir=$(mktemp -d "${TMPDIR:-/tmp}/verify-prove.XXXXXX") || { pc_stop "could not create the proving folder, so nothing was proved. Check the temporary folder and run this call again"; return 0; }
   prove_tree="$prove_dir/tree"
+  # The proof runs and is digested from this snapshot, so a file edited or
+  # deleted while the runs go on cannot change what the receipt names.
+  pc_inputs=()
+  [ "${#prove_tests[@]}" -eq 0 ] || pc_inputs+=("${prove_tests[@]}")
+  if [ "${#prove_breaks[@]}" -gt 0 ]; then
+    for pc_pair in "${prove_breaks[@]}"; do pc_inputs+=("${pc_pair#*=}"); done
+  fi
+  for pc_in in "${pc_inputs[@]}"; do
+    mkdir -p -- "$(dirname -- "$prove_dir/in/$pc_in")" && cp -p -- "$root/$pc_in" "$prove_dir/in/$pc_in" \
+      || { pc_stop "could not read $pc_in, so nothing was proved. Check that the file is readable and run this call again"; return 0; }
+  done
+  # A caller's GIT_DIR or GIT_WORK_TREE would aim the commands below, and the
+  # driver in the checkout, at the session's repository.
+  # shellcheck disable=SC2046
+  unset $(git rev-parse --local-env-vars 2>/dev/null)
   if ! git clone -q --shared --no-checkout "$prove_top" "$prove_tree" >/dev/null 2>&1 \
     || ! git -C "$prove_tree" checkout -q --detach "$pc_head" >/dev/null 2>&1; then
-    prove_said="could not build the proving checkout, so nothing was proved. Run git status, fix what it reports, then run this call again"
-    return 0
+    pc_stop "could not build the proving checkout, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
   fi
-  if ! { git -C "$prove_top" diff --name-only -z HEAD -- && git -C "$prove_top" ls-files -o --exclude-standard -z; } >"$prove_dir/paths" 2>/dev/null; then
-    prove_said="git could not list the current changes, so nothing was proved. Run git status, fix what it reports, then run this call again"
-    return 0
+  if ! { GIT_OPTIONAL_LOCKS=0 git -C "$prove_top" diff --no-renames --name-only -z HEAD -- && git -C "$prove_top" ls-files -o --exclude-standard -z; } >"$prove_dir/paths" 2>/dev/null; then
+    pc_stop "git could not list the current changes, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
   fi
   while IFS= read -r -d '' pc_path; do
-    prove_copy "$pc_path" "$pc_path" || { prove_said="could not copy $pc_path into the proving checkout, so nothing was proved. Check that the file is readable and run this call again"; return 0; }
+    prove_copy "$prove_top/$pc_path" "$pc_path" || { pc_stop "could not copy $pc_path into the proving checkout, so nothing was proved. Check that the file is readable and run this call again"; return 0; }
   done <"$prove_dir/paths"
-  prove_tests_in || { prove_said="could not copy a --test file into the proving checkout, so nothing was proved. Check that each is readable and run this call again"; return 0; }
+  prove_tests_in || { pc_stop "a --test path passes through a symbolic link in the proving checkout, so nothing was proved. Name a test file in a real folder"; return 0; }
   export DA_PROVE=1 DA_PROVE_MAIN="$root"
   drive "$prove_tree/$prove_prefix" "$prove_dir/control"
+  if [ "$timed_out" -eq 1 ]; then
+    pc_stop "$check timed out in the proving checkout with the current files, so nothing was proved. Raise --timeout or prove a narrower check"; return 0
+  fi
   if [ "$driver_rc" -ne 0 ]; then
     prove_show="$prove_dir/control"
-    prove_said="$check fails in the proving checkout with the current files, so nothing was proved. The checkout holds tracked and unignored files only. Make $CHECK_DRIVER read what it lacks from \$DA_PROVE_MAIN when DA_PROVE is set"
-    driver_rc=$pc_rc; timed_out=$pc_timed_out
-    return 0
+    pc_stop "$check fails in the proving checkout with the current files, so nothing was proved. The checkout holds tracked and unignored files only. Make $CHECK_DRIVER read what it lacks from \$DA_PROVE_MAIN when DA_PROVE is set"; return 0
   fi
-  pc_restore() { driver_rc=$pc_rc; timed_out=$pc_timed_out; }
   pc_timeout=0; pc_passing=
   : >"$prove_dir/target"
   if [ "${#prove_breaks[@]}" -gt 0 ]; then
@@ -361,7 +387,10 @@ prove_change() {
     pc_files=()
     for pc_pair in "${prove_breaks[@]}"; do
       pc_files+=("${pc_pair#*=}")
-      prove_copy "$prove_prefix${pc_pair#*=}" "$prove_prefix${pc_pair%%=*}" || { prove_said="could not place ${pc_pair#*=} in the proving checkout, so nothing was proved. Check that the file is readable and run this call again"; pc_restore; return 0; }
+      # A build that compares modification times must see the copy as newer
+      # than what the control run built.
+      prove_copy "$prove_dir/in/${pc_pair#*=}" "$prove_prefix${pc_pair%%=*}" && touch -- "$prove_tree/$prove_prefix${pc_pair%%=*}" \
+        || { pc_stop "${pc_pair%%=*} passes through a symbolic link in the proving checkout, so nothing was proved. Break a file in a real folder of the project"; return 0; }
     done
     drive "$prove_tree/$prove_prefix" "$prove_dir/target"
     pc_timeout=$timed_out
@@ -374,12 +403,10 @@ prove_change() {
     # A runner that stops at its first failure would otherwise let one
     # failing test stand for the others.
     for pt in "${prove_tests[@]}"; do
-      if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -fdx >/dev/null 2>&1 \
-        || ! prove_copy "$prove_prefix$pt" "$prove_prefix$pt"; then
-        prove_said="could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"
-        pc_restore
-        return 0
+      if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
+        pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
       fi
+      prove_copy "$prove_dir/in/$pt" "$prove_prefix$pt" || { pc_stop "$pt passes through a symbolic link at ${pc_base:0:12}, so nothing was proved. Name a test file in a real folder"; return 0; }
       drive "$prove_tree/$prove_prefix" "$prove_dir/one"
       [ "$timed_out" -eq 0 ] || { pc_timeout=1; break; }
       { printf '== %s copied onto %s: exit %s ==\n' "$pt" "${pc_base:0:12}" "$driver_rc"; cat "$prove_dir/one"; } >>"$prove_dir/target"
@@ -404,7 +431,7 @@ prove_change() {
     if [ "$pc_mode" = break ]; then
       prove_said="$check still passes $pc_without, so no test here protects that behavior. Add or fix the test, then run this call again"
     else
-      prove_said="$check passes at ${pc_base:0:12} with $pc_passing copied in, so that does not prove the change. Make it fail without the change, or prove a rule the old code already met with --break PATH=FILE"
+      prove_said="$check passes at ${pc_base:0:12} with $pc_passing copied in, so that does not prove the change. Make it fail without the change, pass --base <commit before the change> when the change is committed, or prove a rule the old code already met with --break PATH=FILE"
     fi
   fi
   pc_restore
@@ -487,6 +514,7 @@ drive() {
   set +m
   wait "$child" 2>/dev/null
   driver_rc=$?
+  child=
   if [ -f "$watchdog_marker" ]; then
     wait "$watchdog" 2>/dev/null || :
   else
@@ -544,16 +572,16 @@ if [ "$op" = prove ]; then
   [ "${#prove_tests[@]}" -gt 0 ] || [ "${#prove_breaks[@]}" -gt 0 ] || die "prove needs --test PATH for the test that proves the change, or --break PATH=FILE for a rule the old code already met"
   if [ "${#prove_tests[@]}" -gt 0 ]; then
     for pt in "${prove_tests[@]}"; do
-      prove_path_ok "$pt" || die "--test takes a path inside the project, without a leading slash or ..: $pt"
-      [ -f "$root/$pt" ] || die "--test names no file: $pt. Pass the test file's path from the project folder"
+      prove_path_ok "$pt" || die "--test takes a path inside the project, without a leading slash, .., or .git: $pt"
+      [ -f "$root/$pt" ] && [ ! -L "$root/$pt" ] || die "--test names no regular file: $pt. Pass the test file's path from the project folder"
     done
   fi
   if [ "${#prove_breaks[@]}" -gt 0 ]; then
     for pb in "${prove_breaks[@]}"; do
       case "$pb" in ?*=?*) ;; *) die "--break takes PATH=FILE, the file to replace and its broken copy: $pb" ;; esac
-      prove_path_ok "${pb%%=*}" && prove_path_ok "${pb#*=}" || die "--break takes paths inside the project, without a leading slash or ..: $pb"
-      [ -f "$root/${pb%%=*}" ] || die "--break names no file to replace: ${pb%%=*}"
-      [ -f "$root/${pb#*=}" ] || die "--break names no broken copy: ${pb#*=}. Copy the file, break the behavior in the copy, and pass the copy"
+      prove_path_ok "${pb%%=*}" && prove_path_ok "${pb#*=}" || die "--break takes paths inside the project, without a leading slash, .., or .git: $pb"
+      [ -f "$root/${pb%%=*}" ] && [ ! -L "$root/${pb%%=*}" ] || die "--break names no regular file to replace: ${pb%%=*}"
+      [ -f "$root/${pb#*=}" ] && [ ! -L "$root/${pb#*=}" ] || die "--break names no regular broken copy: ${pb#*=}. Copy the file, break the behavior in the copy, and pass the copy"
     done
   fi
 fi
