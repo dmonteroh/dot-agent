@@ -7,10 +7,10 @@ A worker is any session another session dispatched: a subagent in the same check
 ## The bootstrap call
 
 ```
-bash .agent/scripts/status.sh --load
+bash .agent/scripts/status.sh --load --tail 0
 ```
 
-A root node at the home directory takes `bash ~/.agent/scripts/status.sh --load ~`. The call writes nothing under the node or anywhere else, in both index modes, so it runs in a read-only copy, a sandbox, or a checkout that is not the node's own (`scripts/docs/status.md`). It exits 0 for every node it can read, whatever it finds, and 1 only for a root that holds no `.agent/`.
+A root node at the home directory takes `bash ~/.agent/scripts/status.sh --load --tail 0 ~`. `--tail 0` leaves the session-log tail out. The tail is the main session's recent history, and the task packet carries what a worker needs of it. The same call without `--tail 0` prints it, and it is the call for a node whose `status.sh` has no `--tail`. The call writes nothing under the node or anywhere else, in both index modes, so it runs in a read-only copy, a sandbox, or a checkout that is not the node's own (`scripts/docs/status.md`). It exits 0 for every node it can read, whatever it finds, and 1 only for a root that holds no `.agent/`.
 
 A worker whose session-start hook already printed a `dot-agent session-start hook` block has the output and makes no call.
 
@@ -33,9 +33,28 @@ ORCHESTRATOR_ONLY=checkpoint.sh, index.sh ensure, absorb.sh
 ```
 
 - **Readers:** `status.sh`, `links.sh`, `comments.sh`, `review.sh`, and `index.sh check` read and print. `verify.sh` runs a configured check and writes its receipt under the node's private state, which no other writer reads.
-- **Experience records:** `log.sh`, `memory.sh`, and `learn.sh`. Each takes the node's lock, waiting up to `DA_LOCK_WAIT_SECONDS` for a held one, so workers in one checkout, or in checkouts whose `.agent` links to the main node, write the shared files directly.
+- **Experience records:** `memory.sh` and `learn.sh` for a lesson, and `log.sh`. Each takes the node's lock, waiting up to `DA_LOCK_WAIT_SECONDS` for a held one, so workers in one checkout, or in checkouts whose `.agent` links to the main node, write the shared files directly.
 - **Code-coupled docs:** `docs.sh`. A doc a worker writes in its own checkout reaches the main node only through `absorb.sh docs`, when the worker's code is integrated.
 - **The orchestrator's:** `checkpoint.sh` (verification, review, and completion), `index.sh ensure` (it writes the generated cache), `absorb.sh` (it merges a worker's node into the main one), and handling the `GROOM:`, `REPAIR:`, and `INDEX:` flags the bootstrap prints. A helper this page does not list is the orchestrator's.
+
+Permission to run the record writers does not produce records. An orchestrator that wants lessons asks for them in the report it validates, and either lets the worker run `learn.sh` or `memory.sh` or runs them itself from the report. The session-log entry is the orchestrator's: one per integrated task, through its own checkpoint. `log.sh` stays in the worker's list, so an orchestrator may still ask for an entry.
+
+## Exit codes
+
+| Helper | 0 | 1 | Other |
+| --- | --- | --- | --- |
+| `status.sh`, `links.sh` | Inspection ran, whatever it found | Usage error, or the root holds no `.agent/` | |
+| `comments.sh`, `review.sh` | Nothing blocks | A finding blocks | 2 inspection failed |
+| `verify.sh run` | The check passed | The check failed or was inconclusive | 2 invocation error, 124 timed out (`scripts/docs/verify.md`) |
+| `index.sh` | Fresh or rebuilt | Stale or fell back | 2 invocation error |
+| `log.sh` | Entry written | Refused | |
+| `memory.sh` | Written or found | Refused | 3 stale `--expected` |
+| `learn.sh` | Written or found | | 2 usage or failed operation, 3 stale `--expected`, 4 near a record or a contract section, 5 exact duplicate, 6 malformed candidate, 7 wrong surface |
+| `docs.sh` | Written | Refused | |
+| `checkpoint.sh` | Recorded, or nothing to record | Refused or blocked | |
+| `absorb.sh` | Merged | | 2 refused, 3 merged around conflicts |
+
+The last line a refusing `checkpoint.sh`, `log.sh`, `memory.sh`, or `learn.sh` prints on stderr says what was refused and the next step. `memory.sh` and `learn.sh` end a successful write on stdout with `<action><TAB><id><TAB><version>`, where the version is what `--expected` takes. A `learn.sh retire` line has no version.
 
 `node.sh` runs from the dot-agent source repository and is never installed in a node, so neither side runs it inside a task.
 

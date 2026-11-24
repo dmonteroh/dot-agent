@@ -42,9 +42,12 @@ get() { printf '%s\n' "$out" | sed -n "s/^$1=//p"; }
 [ "$(get PRESET)" = software-development ] && [ "$(get MODE)" = track-all ] && [ "$(get INDEXES)" = generated ] && [ "$(get HOOKS)" = session-start ] \
   || fail 'describe misread the manifest'
 [ "$(get WORKER_CONTRACT)" = "$(sed -n 's/^WORKER_CONTRACT=//p' "$repo/scripts/status.sh")" ] || fail "WORKER_CONTRACT is $(get WORKER_CONTRACT)"
-[ "$(get BOOTSTRAP)" = 'bash .agent/scripts/status.sh --load' ] || fail "BOOTSTRAP is $(get BOOTSTRAP)"
+[ "$(get BOOTSTRAP)" = 'bash .agent/scripts/status.sh --load --tail 0' ] || fail "BOOTSTRAP is $(get BOOTSTRAP)"
 [ "$(get WORKER_MAY_RUN)" = "$page_run" ] || fail "WORKER_MAY_RUN differs from the page: $(get WORKER_MAY_RUN)"
 [ "$(get ORCHESTRATOR_ONLY)" = "$page_orch" ] || fail "ORCHESTRATOR_ONLY differs from the page: $(get ORCHESTRATOR_ONLY)"
+for helper in status.sh links.sh comments.sh review.sh verify.sh index.sh log.sh memory.sh learn.sh docs.sh checkpoint.sh absorb.sh; do
+  awk '/^## Exit codes$/ { on = 1; next } /^## / { on = 0 } on && /^\|/' "$page" | grep -qF "\`$helper" || fail "the exit-code table leaves out $helper"
+done
 grep -qF 'and so are `checkpoint.sh` and `index.sh ensure`' "$repo/templates/entry-point-generated.md" \
   || fail "the generated entry point does not name index.sh ensure as the orchestrator's"
 [ -z "$(get MIGRATION_TARGET)" ] || fail 'a finalized node reports a migration target'
@@ -59,13 +62,15 @@ awk -v f="$scratch/target" 'NR == 2 { while ((getline l < f) > 0) print l } { pr
 out=$(bash "$repo/scripts/node.sh" describe "$n")
 [ "$(get ORCHESTRATOR_ONLY)" = 'checkpoint.sh, index.sh ensure' ] || fail "a missing absorb.sh is still listed: $(get ORCHESTRATOR_ONLY)"
 [ "$(get WORKER_CONTRACT)" = 0 ] || fail 'a status.sh without WORKER_CONTRACT does not report 0'
+printf 'case "$1" in --load) ;; esac\n' >"$n/.agent/scripts/status.sh"
+[ "$(bash "$repo/scripts/node.sh" describe "$n" | sed -n 's/^BOOTSTRAP=//p')" = 'bash .agent/scripts/status.sh --load' ] || fail 'a status.sh with no --tail is given the flag'
 [ "$(get MIGRATION_TARGET)" = 9.9 ] || fail "a pending migration is not named: $(get MIGRATION_TARGET)"
 
 # A root node at the home directory names the absolute call.
 h="$scratch/home"
 mkdir -p "$h"
 HOME="$h" bash "$repo/scripts/node.sh" init --preset domain-knowledge --mode track-all --hooks none "$h" >/dev/null 2>&1
-[ "$(HOME="$h" bash "$repo/scripts/node.sh" describe "$h" | sed -n 's/^BOOTSTRAP=//p')" = 'bash ~/.agent/scripts/status.sh --load ~' ] \
+[ "$(HOME="$h" bash "$repo/scripts/node.sh" describe "$h" | sed -n 's/^BOOTSTRAP=//p')" = 'bash ~/.agent/scripts/status.sh --load --tail 0 ~' ] \
   || fail 'a root node does not get the root call'
 ! bash "$repo/scripts/node.sh" describe "$scratch/nowhere" 2>/dev/null || fail 'describe accepted a root with no node'
 

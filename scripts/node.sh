@@ -1196,10 +1196,12 @@ describe)
   printf 'WORKER_CONTRACT=%s\n' "${describe_contract:-0}"
   if grep -qF -- '--load' "$agent/scripts/status.sh" 2>/dev/null; then
     home=$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)
+    load='--load'
+    ! grep -qF -- '--tail' "$agent/scripts/status.sh" || load='--load --tail 0'
     if [ -n "$home" ] && [ "$root" = "$home" ]; then
-      printf 'BOOTSTRAP=bash ~/.agent/scripts/status.sh --load ~\n'
+      printf 'BOOTSTRAP=bash ~/.agent/scripts/status.sh %s ~\n' "$load"
     else
-      printf 'BOOTSTRAP=bash .agent/scripts/status.sh --load\n'
+      printf 'BOOTSTRAP=bash .agent/scripts/status.sh %s\n' "$load"
     fi
   fi
   describe_list() { # $@: commands — prints those whose script the node holds
