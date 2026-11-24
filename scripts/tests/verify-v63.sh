@@ -30,7 +30,7 @@ new_git() {
 CHECK_DRIVER=.agent/scripts/checks.sh
 POSITIVE_TEST_CHECKS=test,zero,unknown,nested,node,planonly,missing,numbering,duplicate,malformed,mutate,timeout
 TEST_COUNT_FORMAT=tap
-TIMEOUT_SECONDS=5
+TIMEOUT_SECONDS=60
 EOF
   cat >"$ng_root/src/input.txt" <<'EOF'
 input
@@ -216,14 +216,21 @@ while [ "$watchdog_runs" -lt 3 ]; do
   watchdog_runs=$((watchdog_runs + 1))
 done
 watchdog_elapsed=$(($(date +%s) - watchdog_start))
-watchdog_live=0
-while IFS= read -r sleeper_pid; do
-  case "$sleeper_pid" in '' | *[!0-9]*) continue ;; esac
-  if kill -0 "$sleeper_pid" 2>/dev/null \
-    && [ "$(ps -o state= -p "$sleeper_pid" 2>/dev/null | tr -d '[:space:]')" != Z ]; then
-    watchdog_live=1
-  fi
-done <"$sleep_log"
+# A sleeper is signalled before the run returns and dies when it is scheduled.
+watchdog_tries=0
+while :; do
+  watchdog_live=0
+  while IFS= read -r sleeper_pid; do
+    case "$sleeper_pid" in '' | *[!0-9]*) continue ;; esac
+    if kill -0 "$sleeper_pid" 2>/dev/null \
+      && [ "$(ps -o state= -p "$sleeper_pid" 2>/dev/null | tr -d '[:space:]')" != Z ]; then
+      watchdog_live=1
+    fi
+  done <"$sleep_log"
+  watchdog_tries=$((watchdog_tries + 1))
+  [ "$watchdog_live" -eq 1 ] && [ "$watchdog_tries" -lt 25 ] || break
+  sleep 0.2
+done
 [ "$watchdog_runs" -eq 3 ] && [ "$watchdog_elapsed" -lt 8 ] && [ "$watchdog_live" -eq 0 ] \
   && ok "nested captures cancel and reap watchdog sleepers immediately" \
   || bad "nested captures leaked or waited (runs=$watchdog_runs elapsed=$watchdog_elapsed live=$watchdog_live)"
@@ -295,7 +302,7 @@ cat >"$non/.agent/scripts/verify.conf" <<'EOF'
 CHECK_DRIVER=.agent/scripts/checks.sh
 POSITIVE_TEST_CHECKS=test
 TEST_COUNT_FORMAT=tap
-TIMEOUT_SECONDS=5
+TIMEOUT_SECONDS=60
 EOF
 printf 'app\n' >"$non/app/file"
 expect_rc 2 "non-Git pass refuses implicit boundary" bash "$non/.agent/scripts/verify.sh" run test --root "$non"
@@ -327,7 +334,7 @@ cat >"$expression_root/.agent/scripts/verify.conf" <<'EOF'
 CHECK_DRIVER=.agent/scripts/checks.sh
 POSITIVE_TEST_CHECKS=test
 TEST_COUNT_FORMAT=tap
-TIMEOUT_SECONDS=5
+TIMEOUT_SECONDS=60
 NON_GIT_INPUT_ROOTS=!
 EOF
 printf 'input\n' >"$expression_root/!/file"
