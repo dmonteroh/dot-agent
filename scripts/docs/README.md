@@ -10,8 +10,8 @@ These docs remain in the source repository. Nodes receive managed helpers, start
 | `docs.sh` | Doc routing and catalog updates | [docs.md](docs.md) |
 | `links.sh` | On-demand link audit | [links.md](links.md) |
 | `comments.sh` | Diff comment gate | [comments.md](comments.md) |
-| `review.sh` | Comment gate plus catalog and coverage candidates | [review.md](review.md) |
-| `verify.sh` | Project check execution and receipts | [verify.md](verify.md) |
+| `review.sh` | Comment gate plus catalog, coverage, kept-test, and leftover scratch candidates | [review.md](review.md) |
+| `verify.sh` | Project check execution, receipts, and proof that a test fails without the change | [verify.md](verify.md) |
 | `capture.sh` | Optional lifecycle snapshot prototype | [capture.md](capture.md) |
 | `runtime.sh` | Internal state, fingerprint, and lock functions | [runtime.md](runtime.md) |
 | `checkpoint.sh` | Completion orchestration and retry-safe logging | [checkpoint.md](checkpoint.md) |
@@ -39,6 +39,7 @@ Verification emits a receipt record on stdout and bounded check output on stderr
 | `status.sh`, `links.sh` | 0 means inspection ran, even when it found issues |
 | `comments.sh`, `review.sh` | 0 means completed without a blocking comment, 1 blocks, 2 means inspection failed |
 | `verify.sh run` | 0 passes, 1 fails or is inconclusive, 2 is an invocation error, 124 times out |
+| `verify.sh prove` | 0 means the check passes now and fails without the change, 1 means anything else, 2 and 124 as for `run` |
 | `verify.sh check` | 0 means the receipt is valid, even when it records failure |
 | `checkpoint.sh` | 0 means recorded or already recorded, 1 means no entry was written |
 | `index.sh` | 0 succeeds, 1 reports stale/fallback, 2 rejects invocation |
