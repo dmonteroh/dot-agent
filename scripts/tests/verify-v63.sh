@@ -480,7 +480,7 @@ auto_root="$tmp/auto"
 new_git "$auto_root"
 cat >"$auto_root/.agent/scripts/verify.conf" <<'EOF'
 CHECK_DRIVER=.agent/scripts/checks.sh
-POSITIVE_TEST_CHECKS=node,bun,unittest,jest,vitest,cargo,gov,goplain,minitest,pytest,pytestnone,cutversion,cutplan
+POSITIVE_TEST_CHECKS=node,bun,unittest,unittestskip,jest,vitest,cargo,gov,goplain,minitest,pytest,pytestnone,cutversion,cutplan
 TEST_COUNT_FORMAT=auto
 TIMEOUT_SECONDS=60
 EOF
@@ -490,6 +490,7 @@ case "$1" in
   node) printf '\342\204\271 tests 3\n\342\204\271 suites 0\n\342\204\271 pass 2\n\342\204\271 fail 0\n\342\204\271 skipped 1\n' ;;
   bun) printf ' 2 pass\n 1 skip\n 0 fail\nRan 3 tests across 1 file. [32.00ms]\n' ;;
   unittest) printf 's..\n-----\nRan 3 tests in 0.000s\n\nOK (skipped=1)\n' ;;
+  unittestskip) printf 's\n-----\nRan 0 tests in 0.000s\n\nOK (skipped=1)\n' ;;
   jest) printf 'Test Suites: 1 passed, 1 total\nTests:       1 skipped, 2 passed, 3 total\nSnapshots:   0 total\n' ;;
   vitest) printf ' Test Files  1 passed (1)\n      Tests  1 failed | 2 passed (3)\n' ;;
   cargo) printf 'test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Doc-tests x\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' ;;
@@ -525,10 +526,11 @@ cargo pass 2
 gov pass 2
 minitest pass 1
 pytest pass 3
+unittestskip inconclusive 0
 cutversion inconclusive unknown
 cutplan inconclusive unknown
 EOF
-[ "$auto_rows" -eq 11 ] && ok "every auto row ran" || bad "auto rows ran: $auto_rows"
+[ "$auto_rows" -eq 12 ] && ok "every auto row ran" || bad "auto rows ran: $auto_rows"
 # why names the cause of the run just recorded, in the one word checkpoint.sh
 # reads, and the run's last line carries the matching next step.
 auto_why() {

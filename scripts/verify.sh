@@ -23,9 +23,11 @@ node --test, pytest, unittest, Jest, Vitest, cargo test, go test -v, minitest,
 and bun test. tap counts TAP alone. A runner outside that list needs its TAP
 reporter in .agent/scripts/checks.sh. Skipped tests are not counted.
 
-why prints one word for a current receipt: pass, failed, uncounted (no test
-count in the output), format (TEST_COUNT_FORMAT read none), empty (0 tests
-ran), or changed (project files changed during the run, or its output was lost).
+why prints one word for a current receipt: pass, failed, uncounted (a
+positive check with no test count in its output), format (the same, when
+TEST_COUNT_FORMAT is tap or none), empty (a positive check that ran 0 tests),
+or changed (any other inconclusive run: project files changed, or its output
+was lost).
 EOF
 }
 
@@ -226,7 +228,9 @@ summary_count() {
       if (line ~ /^[0-9]+ [a-z]+(, [0-9]+ [a-z]+)* in [0-9.]+s( \([0-9:]+\))?$/)
         add(before(line, "passed") + before(line, "failed") + before(line, "xfailed") + before(line, "xpassed"))
     }
-    END { if (seen) print total + 0; else print "unknown" }
+    # unittest counts class, module, and subtest skips in "skipped" and not
+    # in "Ran", so the difference can fall below 0. No test ran then.
+    END { if (!seen) print "unknown"; else if (total < 0) print 0; else print total + 0 }
   ' "$1"
 }
 
@@ -473,6 +477,8 @@ if [ "$output_lost" -eq 0 ]; then
     auto) if is_tap "$out_tmp"; then count=$(tap_count "$out_tmp"); else count=$(summary_count "$out_tmp"); fi ;;
   esac
 fi
+# A receipt holds a count of digits or "unknown", and check refuses any other.
+case "$count" in unknown) ;; '' | *[!0-9]*) count=unknown ;; esac
 why=
 if [ "$timed_out" -eq 1 ]; then
   status=fail

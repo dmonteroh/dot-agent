@@ -10,7 +10,7 @@ verify.sh why RECEIPT [--root ROOT]
 
 The project-owned `.agent/scripts/checks.sh` receives `CHECK` as its sole argument. Configuration is non-executable `KEY=value` data in `.agent/scripts/verify.conf`: `CHECK_DRIVER`, `POSITIVE_TEST_CHECKS`, `TEST_COUNT_FORMAT` (`auto`, `tap`, or `none`), `TIMEOUT_SECONDS`, and optionally `NON_GIT_INPUT_ROOTS`, `OUTPUT_MAX_BYTES`, and `OUTPUT_FAILURE_PATTERN`. Command strings are not supported.
 
-Every invocation prints one tab-separated result record on stdout. `run` returns 0 only for a pass, 1 for a failed or inconclusive run, 2 for usage/infrastructure errors, and 124 for timeout. A check whose captured output is gone when it ends is inconclusive, whatever it exited with. `check` returns 0 for a current, structurally valid receipt even when that receipt records failure. Missing, malformed, or stale receipts return 2.
+`run` and `check` print one tab-separated result record on stdout. `run` returns 0 only for a pass, 1 for a failed or inconclusive run, 2 for usage/infrastructure errors, and 124 for timeout. A check whose captured output is gone when it ends is inconclusive, whatever it exited with. `check` returns 0 for a current, structurally valid receipt even when that receipt records failure. Missing, malformed, or stale receipts return 2.
 
 The check's output prints on stderr. Output within `OUTPUT_MAX_BYTES` (default 29000) prints whole. A harness cuts a tool result past its own limit, about 30 KB on Claude Code, and that cut can fall on the one failing assertion. So longer output is trimmed here instead:
 
@@ -32,7 +32,7 @@ TAP counts require one unindented `1..N` plan and exactly N sequentially numbere
 |---|---|---|---|
 | `node --test`, spec reporter | `ℹ pass 2`, `ℹ fail 0` | pass + fail | Node.js 24.16.0, observed |
 | pytest | `==== 1 failed, 2 passed in 0.02s ====`, bare under `-q` | passed + failed + xfailed + xpassed | pytest 9.1.1, observed |
-| Python unittest | `Ran 3 tests in 0.000s`, then `OK (skipped=1)` | tests run less skipped | Python 3.14.7, observed |
+| Python unittest | `Ran 3 tests in 0.000s`, then `OK (skipped=1)` | tests run less skipped, never below 0 | Python 3.14.7, observed |
 | Jest | `Tests:       1 failed, 2 passed, 3 total` | passed + failed | Jest 30.5.1, the template in its `SummaryReporter` source |
 | Vitest | `Tests  1 failed \| 2 passed (3)` | passed + failed | Vitest 4.1.7, observed |
 | `cargo test` | `test result: ok. 2 passed; 0 failed; …`, one per test binary | passed + failed, added up | cargo 1.99.1, observed |
@@ -42,7 +42,7 @@ TAP counts require one unindented `1..N` plan and exactly N sequentially numbere
 
 Skipped and filtered tests are left out, so a run whose every test was skipped or filtered away counts 0 and is inconclusive. A line of one of these shapes counts wherever it appears in the output. TAP counting does not leave skips out: `ok 1 # SKIP` counts as a result. `go test` without `-v` prints no count, so its driver line needs `-v`. A runner outside the table needs its TAP reporter in the check driver, or its own row here once its summary line has been observed.
 
-`why` prints one word for a current receipt, so a caller need not guess the cause from the record: `pass`, `failed`, `uncounted` (a positive check whose output carries no test count), `format` (the same under `TEST_COUNT_FORMAT=tap` or `none`), `empty` (a positive check that ran 0 tests), or `changed` (project files changed during the run, or its output was lost). `checkpoint.sh` picks its refusal from that word. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
+`why` prints one word for a current receipt, so a caller need not guess the cause from the record: `pass`, `failed`, `uncounted` (a positive check whose output carries no test count), `format` (the same under `TEST_COUNT_FORMAT=tap` or `none`), `empty` (a positive check that ran 0 tests), or `changed` (any other inconclusive run: project files changed, or its output was lost). A positive check that lost its output reads as `uncounted`, because its count is unknown. `checkpoint.sh` picks its refusal from that word. `TEST_COUNT_FORMAT=tap` counts TAP alone, and `none` counts nothing.
 
 The default counts summaries because counting TAP alone was measured to cost calls. The measurement ran on 2026-11-24 over the 19 corpus evals of `evals/spec.json`, 3 repeats, 57 sessions per agent. The fixtures run `node --test`, which prints the spec reporter when piped on Node.js 24. At `0056c13`, which counted TAP alone, 11 Claude sessions and 15 Codex sessions changed the project's test command to print TAP. At `530e0e9`, none did. Tool calls per session fell from 11.2 to 9.3 on Claude and from 9.8 to 8.7 on Codex, and the share of checks passed stayed within the noise of 3 repeats.
 
