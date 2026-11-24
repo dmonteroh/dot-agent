@@ -13,11 +13,11 @@ checkpoint.sh --tool NAME --area NAME --summary TEXT \
 
 ## Verification
 
-`--checks` runs named checks through `verify.sh`. `--verification` consumes existing receipts for unchanged inputs. The two options are mutually exclusive.
+`--checks` runs named checks through `verify.sh`. `--verification` consumes existing receipts for unchanged inputs. Given both, checkpoint uses the receipts while every one is current, and runs the checks when one is missing or stale. `--checks n/a` is read as `--verify n/a`, because `n/a` is no check name. Each of the two prints a line saying what was done.
 
 Each check's output prints on stderr. The checks share one `OUTPUT_MAX_BYTES` limit equally, so their combined output fits one tool result. See [verify.md](verify.md) for how long output is trimmed.
 
-A valid receipt determines the recorded verification status. Known failures and inconclusive checks stop automatic publication. Fix and retry, or explicitly add `--verify fail` to record a final failed outcome. A bare `--verify pass` is refused. `--verify fail` and `--verify n/a` remain explicit reports for failed or manual-only work.
+A valid receipt determines the recorded verification status. Known failures and inconclusive checks stop automatic publication, and the refusal names which of four things happened. For a failed check, fix and retry, or add `--verification <id> --verify fail` to the same call to record a final failed outcome. For a check that exited 0 with no test count `verify.sh` reads, fix the check driver, and leave the project's own test command as it is. For a check that ran 0 tests, add or select a test, or pass `--verify n/a` without `--checks` when nothing can be tested. For a check that ran while project files changed, run the call again. A bare `--verify pass` is refused. `--verify fail` and `--verify n/a` remain explicit reports for failed or manual-only work.
 
 Logging failed work is allowed. A successful checkpoint means the record was written, not that project tests passed. The output names the recorded verification status.
 

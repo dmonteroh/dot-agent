@@ -25,6 +25,7 @@ case "$mode" in
   pass) printf 'TAP version 13\n1..1\nok 1 - fixture\n# tests 1\n' ;;
   zero) printf 'TAP version 13\n1..0\n# tests 0\n' ;;
   fail) printf 'TAP version 13\n1..1\nnot ok 1 - fixture\n# tests 1\n'; exit 9 ;;
+  silent) printf 'all good\n' ;;
 esac
 EOF
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
@@ -79,9 +80,52 @@ cp "$scratch/status.conf" "$project/.agent/scripts/status.conf"
 if checkpoint; then fail 'checkpoint ran with no verification flag'; fi
 grep -q 'Pass --checks' "$scratch/err" || fail 'a missing verification flag was not refused first'
 
+# A session with nothing to run fills --checks with n/a, and that is --verify n/a.
+before=$(entries)
+checkpoint --checks n/a || { cat "$scratch/err" >&2; fail '--checks n/a was refused'; }
+[ "$(entries)" -eq "$((before + 1))" ] || fail '--checks n/a wrote no entry'
+tail -1 "$log" | grep -q 'verify: n/a' || fail '--checks n/a did not record verify n/a'
+[ "$(check_runs)" -eq "$runs_before" ] || fail '--checks n/a ran a check'
+
+# A session that records a failed check adds the receipt to the call it just
+# made, so the receipt arrives beside --checks. A current receipt answers.
+printf 'const amount = 6\n' >"$project/src/client.ts"
+printf 'fail\n' >"$project/.agent/scripts/test-mode"
+before=$(entries)
+if checkpoint --checks test; then fail 'a failing check completed the checkpoint'; fi
+tail -1 "$scratch/err" | grep -Eq 'checks failed \(test\)\. Fix and run this call again, or record the final failure by adding --verification [^ ]+ --verify fail$' \
+  || fail "a failed check did not name the next step: $(tail -1 "$scratch/err")"
+receipt=$(sed -n 's/.* receipt=//p' "$scratch/out" | tail -1)
+runs=$(check_runs)
+checkpoint --checks test --verification "$receipt" --verify fail || { cat "$scratch/err" >&2; fail 'a current receipt beside --checks was refused'; }
+[ "$(check_runs)" -eq "$runs" ] || fail 'a current receipt beside --checks ran the check again'
+[ "$(entries)" -eq "$((before + 1))" ] || fail 'a current receipt beside --checks wrote no entry'
+tail -1 "$log" | grep -q 'verify: fail' || fail 'a failed receipt beside --checks was not recorded as a failure'
+
+# A stale receipt beside --checks runs the checks.
+printf 'const amount = 7\n' >"$project/src/client.ts"
+printf 'pass\n' >"$project/.agent/scripts/test-mode"
+checkpoint --checks test --verification "$receipt" || { cat "$scratch/err" >&2; fail 'a stale receipt beside --checks did not fall back to the checks'; }
+[ "$(check_runs)" -eq "$((runs + 1))" ] || fail 'a stale receipt beside --checks ran no check'
+tail -1 "$log" | grep -q 'verify: pass' || fail 'the fallback check was not recorded as a pass'
+
+# A check that exits 0 and shows no test is not a failure of the work, and
+# the refusal keeps the session away from the project's own test command.
+printf 'const amount = 8\n' >"$project/src/client.ts"
+printf 'silent\n' >"$project/.agent/scripts/test-mode"
+before=$(entries)
+if checkpoint --checks test; then fail 'a check that showed no test completed the checkpoint'; fi
+tail -1 "$scratch/err" | grep -q "test exited 0 with no test count verify.sh reads, so nothing was logged\. Make .agent/scripts/checks.sh print TAP or a summary verify.sh counts (verify.sh --help lists them), leave the project's own test command as it is, and run this call again$" \
+  || fail "an uncounted check did not name the next step: $(tail -1 "$scratch/err")"
+grep -q 'verify.sh: test exited 0, but its output carries no test count this script reads' "$scratch/err" || fail 'verify.sh did not say why the run was inconclusive'
+[ "$(entries)" -eq "$before" ] || fail 'an uncounted check wrote an entry'
+printf 'pass\n' >"$project/.agent/scripts/test-mode"
+
 printf 'zero\n' >"$project/.agent/scripts/test-mode"
 before=$(entries)
 if checkpoint --checks test; then fail 'zero-test result did not stop automatic completion'; fi
+tail -1 "$scratch/err" | grep -q 'test exited 0 and ran 0 tests, so nothing was logged\. Add or select a test for this change and run this call again\. If nothing here can be tested, pass --verify n/a without --checks$' \
+  || fail "a zero-test run did not name the next step: $(tail -1 "$scratch/err")"
 [ "$(entries)" -eq "$before" ] || fail 'zero tests wrote a premature entry'
 checkpoint --checks test --verify fail || { cat "$scratch/err" >&2; fail 'explicit zero-test failure could not be recorded honestly'; }
 tail -1 "$log" | grep -q 'verify: fail' || fail 'zero tests became a passing claim'

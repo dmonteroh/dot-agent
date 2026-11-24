@@ -22,7 +22,8 @@ A check already ran on these inputs                --verification <receipt id>
 The work failed and that is the outcome            --verification <receipt id> --verify fail
 Nothing can be run for this change                 --verify n/a
 
---checks and --verification are never passed together. --verify pass needs one of them.
+--verify pass needs --checks or --verification. Given both, a current receipt
+is used and the checks run only when it is stale. --checks n/a means --verify n/a.
 Work is reviewed from the last recorded checkpoint. --base overrides that.
 strict blocks every status finding. completion defers advisory maintenance.
 A rerun over recorded content writes no second log entry.
@@ -31,6 +32,7 @@ EOF
 
 root=.; base=""; policy=""; tool=""; area=""; summary=""
 checks=""; receipts=""; requested_verify=""; node_only=0
+failed_checks=""; uncounted=""; empty=""; moved=""
 lock=""; content_out=""; node=""; status_out=""; status_err=""; publish=""; prepare=""
 cleanup() {
   [ -z "$publish" ] || rm -f -- "$publish"
@@ -66,7 +68,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ -n "$tool" ] && [ -n "$area" ] && [ -n "$summary" ] || { usage >&2; refuse '--tool, --area, and --summary are required' 'Run this call again with all three'; }
-[ -z "$checks" ] || [ -z "$receipts" ] || refuse '--checks and --verification were both given' 'Pass one of them, never both'
+# n/a is no check name. A session with nothing to run says so in whichever
+# flag it filled, and refusing the wrong one costs it a second call.
+if [ "$checks" = n/a ]; then
+  checks=""
+  [ -n "$requested_verify" ] || requested_verify=n/a
+  echo 'checkpoint.sh: --checks n/a read as --verify n/a'
+fi
 case "$requested_verify" in ''|pass|fail|n/a) ;; *) refuse '--verify must be pass, fail, or n/a' 'Pass one of those, or drop it when --checks or --verification is given' ;; esac
 root=$(da_root "$root") || exit 1
 scripts="$root/.agent/scripts"
@@ -253,6 +261,24 @@ if [ -z "$base" ] && [ "$is_git" -eq 1 ]; then
   fi
 fi
 
+# A session that records a failed check adds its receipt to the call it just
+# made, so both flags arrive together. The receipt answers for these inputs
+# while it is current, and the checks run when it is not.
+if [ -n "$checks" ] && [ -n "$receipts" ]; then
+  case "$receipts" in ,*|*,|*,,*) refuse '--verification holds an empty receipt id' 'Pass receipt ids separated by single commas' ;; esac
+  IFS=',' read -r -a receipt_ids <<<"$receipts"
+  current=1
+  for receipt in "${receipt_ids[@]}"; do
+    bash "$scripts/verify.sh" check "$receipt" --root "$root" >/dev/null 2>&1 || current=0
+  done
+  if [ "$current" -eq 1 ]; then
+    echo "checkpoint.sh: the receipt is current, so --checks $checks did not run again"
+    checks=""
+  else
+    echo "checkpoint.sh: the receipt is missing or stale, so --checks $checks runs instead"
+    receipts=""
+  fi
+fi
 if [ -z "$checks" ] && [ -z "$receipts" ]; then
   [ "$requested_verify" != pass ] || refuse '--verify pass requires --checks or --verification' 'Run this call again with --checks <name>'
   [ -n "$requested_verify" ] || refuse 'no verification flag was given' 'Pass --checks <name>, --verification <receipt id>, or, when nothing can be run, --verify n/a'
@@ -320,11 +346,29 @@ if [ -n "$receipts" ]; then
     IFS=$'\t' read -r tag returned_id outcome recorded_check command_exit count extra <<<"$result"
     [ "$tag" = receipt ] && [ "$returned_id" = "$receipt" ] && [ -z "${extra:-}" ] || refuse 'verify.sh returned an invalid result record' 'Run the check again with --checks <name>'
     case "$outcome" in pass) ;; fail|inconclusive) verify=fail ;; *) refuse 'verify.sh returned an unknown outcome' 'Run the check again with --checks <name>' ;; esac
+    # An inconclusive run that exited 0 printed no count, ran no test, or
+    # ran while the inputs changed. None of the three is a failed check.
+    if [ "$outcome" = inconclusive ] && [ "$command_exit" = 0 ]; then
+      case "$count" in
+        unknown) uncounted="${uncounted:+$uncounted, }$recorded_check" ;;
+        0) empty="${empty:+$empty, }$recorded_check" ;;
+        *) moved="${moved:+$moved, }$recorded_check" ;;
+      esac
+    elif [ "$outcome" != pass ]; then
+      failed_checks="${failed_checks:+$failed_checks, }$recorded_check"
+    fi
     printf 'VERIFY: %s %s exit=%s tests=%s receipt=%s\n' "$recorded_check" "$outcome" "$command_exit" "$count" "$receipt"
   done
   if [ "$requested_verify" = pass ] && [ "$verify" != pass ]; then refuse 'the receipt does not support --verify pass' 'Fix the failure and run this call again with --checks <name>, or record the failure with --verify fail'; fi
   if [ "$verify" != pass ] && [ "$requested_verify" != fail ]; then
-    refuse "checks failed or were inconclusive" "Fix and run this call again, or record the final failure with --verification $receipts --verify fail"
+    if [ -n "$failed_checks" ]; then
+      refuse "checks failed ($failed_checks)" "Fix and run this call again, or record the final failure by adding --verification $receipts --verify fail"
+    elif [ -n "$uncounted" ]; then
+      refuse "$uncounted exited 0 with no test count verify.sh reads, so nothing was logged" "Make .agent/scripts/checks.sh print TAP or a summary verify.sh counts (verify.sh --help lists them), leave the project's own test command as it is, and run this call again"
+    elif [ -n "$empty" ]; then
+      refuse "$empty exited 0 and ran 0 tests, so nothing was logged" 'Add or select a test for this change and run this call again. If nothing here can be tested, pass --verify n/a without --checks'
+    fi
+    refuse "project files changed while $moved ran, so nothing was logged" 'Run this call again. If it repeats, make the check write only where Git ignores'
   fi
   [ "$requested_verify" != fail ] || verify=fail
 fi
