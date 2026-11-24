@@ -116,11 +116,29 @@ if [ ! -d "$agent" ]; then
 fi
 
 conf="$agent/scripts/status.conf"
-conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
+conf_lines=()
+if [[ -f "$conf" && -r "$conf" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in '' | '#'*) ;; *) conf_lines+=("$line") ;; esac
+  done <"$conf"
+fi
+conf_get() { # $1: key — sets REPLY
+  local line
+  REPLY=""
+  for line in ${conf_lines[@]+"${conf_lines[@]}"}; do
+    case "$line" in
+    "$1="*)
+      REPLY=${line#*=}
+      REPLY=${REPLY%"${REPLY##*[![:space:]]}"}
+      return 0 ;;
+    esac
+  done
+}
 conf_repair_messages=()
 conf_num() { # $1: key name — the current value is its shipped default
   local v
-  v=$(conf_get "$1")
+  conf_get "$1"
+  v=$REPLY
   [[ -n "$v" ]] || return 0
   case "$v" in
   *[!0-9]*)
@@ -144,11 +162,13 @@ if [[ -f "$conf" ]]; then
   conf_num PAYLOAD_MAX_BYTES
   conf_num HOOK_MAX_BYTES
   conf_num MEMORY_INDEX_BYTES
-  v=$(conf_get PROBE_TOOLS);          [[ -n "$v" ]] && PROBE_TOOLS="$v"
+  conf_get PROBE_TOOLS
+  [[ -n "$REPLY" ]] && PROBE_TOOLS=$REPLY
 fi
 # MEMORY_INDEX_BYTES is half of HOOK_MAX_BYTES unless the conf pins it, so a
 # node that lowers its hook limit moves the memory trigger with it.
-[[ -n "$(conf_get MEMORY_INDEX_BYTES)" ]] || MEMORY_INDEX_BYTES=$((HOOK_MAX_BYTES / 2))
+conf_get MEMORY_INDEX_BYTES
+[[ -n "$REPLY" ]] || MEMORY_INDEX_BYTES=$((HOOK_MAX_BYTES / 2))
 [[ -n "$tail_arg" ]] && TAIL_LINES=$tail_arg
 log="$agent/session-log.md"
 memory="$agent/memory.md"
@@ -171,15 +191,34 @@ arch="$docs/architecture.md"
 
 words() { wc -w <"$1" | tr -d '[:space:]'; }
 
-body_words() {
-  awk '
-    NR == 1 && $0 == "---" { infm = 1; next }
-    infm { if ($0 == "---") infm = 0; next }
-    incm { if (/-->/) { incm = 0; sub(/.*-->/, "") } else next }
-    { gsub(/<!--.*-->/, "") }
-    /<!--/ { incm = 1; sub(/<!--.*/, "") }
-    { print }
-  ' "$1" | wc -w | tr -d '[:space:]'
+# shellcheck disable=SC2016 # an awk program
+strip_awk='
+  FNR == 1 { incm = 0; infm = ($0 == "---"); if (infm) next }
+  infm { if ($0 == "---") infm = 0; next }
+  incm { if (/-->/) { incm = 0; sub(/.*-->/, "") } else next }
+  { gsub(/<!--.*-->/, "") }
+  /<!--/ { incm = 1; sub(/<!--.*/, "") }
+'
+body_words() { awk "$strip_awk"'{ print }' "$@" | wc -w | tr -d '[:space:]'; }
+
+# wc -w counts words by the caller's locale, so no awk program repeats its
+# count on every platform. This one counts each run of visible ASCII and each
+# other byte as a word, which is never less than wc -w. One process clears
+# every file whose bound is inside the limit, and body_words counts the rest.
+bound_awk="$strip_awk"'{ bound += gsub(/[^ -~\t]/, " "); bound += NF }'
+may_exceed() { # $1: word limit  $2...: files — prints the files whose body may pass it
+  local limit=$(($1)) f
+  local readable=()
+  shift
+  for f in "$@"; do
+    if [[ -f "$f" && -r "$f" ]]; then readable+=("$f"); else printf '%s\n' "$f"; fi
+  done
+  [[ "${#readable[@]}" -gt 0 ]] || return 0
+  LC_ALL=C awk -v limit="$limit" '
+    FNR == 1 { if (bound > limit) print path; path = FILENAME; bound = 0 }
+    '"$bound_awk"'
+    END { if (bound > limit) print path }
+  ' "${readable[@]}"
 }
 
 learned_dir_active() {
@@ -348,15 +387,20 @@ keep_tokens() {
     }' "$1"
   } | awk 'NF && !seen[$0]++' | head -n 15 | paste -sd '|' - | sed 's/|/, /g'
 }
+memory_files=()
 if [[ -d "$memdir" ]]; then
   for f in "$memdir"/*.md; do
-    [[ -e "$f" ]] || continue
+    [[ -e "$f" ]] && memory_files+=("$f")
+  done
+fi
+if [[ "${#memory_files[@]}" -gt 0 ]]; then
+  while IFS= read -r f; do
     if [[ "$(body_words "$f")" -gt "$MEMORY_MAX_WORDS" ]]; then
       keep=$(keep_tokens "$f")
-      memory_rel="memory/$(basename "$f")"
+      memory_rel="memory/${f##*/}"
       finding advisory MEMORY_RECORD_OVERSIZE "$memory_rel" "> $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}" "GROOM: $memory_rel > $MEMORY_MAX_WORDS body words — likely more than one fact: split current state, or move stable system knowledge to docs/ and remove the duplicate fact. Shape, never content: every name, value, command, and path survives somewhere under .agent/${keep:+ — keep at least: $keep}"
     fi
-  done
+  done < <(may_exceed "$MEMORY_MAX_WORDS" "${memory_files[@]}")
 fi
 if [[ -s "$memory" ]]; then
   mem_entries=$(grep -c '^- \[' "$memory")
@@ -372,15 +416,18 @@ if [[ -e "$memdir/legacy.md" ]]; then
   finding block MEMORY_LEGACY_UNSPLIT memory/legacy.md "exists — split legacy.md into fact files" "GROOM: memory/legacy.md exists — split legacy.md into fact files"
 fi
 if learned_dir_active; then
-  learned_rules=0
-  learned_words=0
+  learned_files=()
   while IFS= read -r learned_rec; do
-    learned_rules=$((learned_rules + $(grep -c '^- ' "$learned_rec")))
-    learned_words=$((learned_words + $(body_words "$learned_rec")))
+    learned_files+=("$learned_rec")
   done < <(find "$learned_dir" -type f -name '*.md')
+  IFS=' ' read -r learned_rules learned_bound < <(LC_ALL=C awk '
+    /^- / { rules++ }
+    '"$bound_awk"'
+    END { printf "%d %d\n", rules, bound }
+  ' "${learned_files[@]}")
   if [[ "$learned_rules" -gt "$LEARNED_MAX_RULES" ]]; then
     finding advisory LEARNED_RULES_OVERSIZE rules/learned/ "> $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)" "GROOM: rules/learned/ > $LEARNED_MAX_RULES rules — merge near-duplicates; route area-specific gotchas to their area doc (see rules)"
-  elif [[ "$learned_words" -gt "$LEARNED_MAX_WORDS" ]]; then
+  elif [[ "$learned_bound" -gt "$LEARNED_MAX_WORDS" && "$(body_words "${learned_files[@]}")" -gt "$LEARNED_MAX_WORDS" ]]; then
     finding advisory LEARNED_WORDS_OVERSIZE rules/learned/ "> $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer" "GROOM: rules/learned/ > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
   fi
 elif [[ -s "$learned" ]]; then
@@ -390,90 +437,132 @@ elif [[ -s "$learned" ]]; then
     finding advisory LEARNED_WORDS_OVERSIZE rules/learned.md "> $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer" "GROOM: learned.md > $LEARNED_MAX_WORDS words under the rule count — entries are over the ~40-word target: compress them, or move domain detail to the matching docs/ file and keep a pointer"
   fi
 fi
+doc_files=()
+doc_rels=()
 if [[ -d "$docs" ]]; then
   for doc in "$docs"/*.md "$docs"/*/*.md; do
     [[ -e "$doc" ]] || continue
     rel=${doc#"$docs"/}
     [[ "$rel" == "architecture.md" ]] && continue
     [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
-    if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
-      finding advisory DOC_OVERSIZE "docs/$rel" "> $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry" "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
-    fi
+    doc_files+=("$doc")
+    doc_rels+=("$rel")
   done
 fi
+if [[ "${#doc_files[@]}" -gt 0 ]]; then
+  while IFS= read -r doc; do
+    if [[ "$(body_words "$doc")" -gt "$DOCS_MAX_WORDS" ]]; then
+      rel=${doc#"$docs"/}
+      finding advisory DOC_OVERSIZE "docs/$rel" "> $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry" "GROOM: docs/$rel > $DOCS_MAX_WORDS body words — restructure without dropping facts: tighten in place (tables, one fact per line), or split into docs/<area>/ sub-docs, each with its own \"Read when:\" header and routing entry"
+    fi
+  done < <(may_exceed "$DOCS_MAX_WORDS" "${doc_files[@]}")
+fi
 
-doc_hook() { # the doc's own routing hook, from its opening lines
-  head -n 5 "$1" | sed -n 's/^<!-- Read when: \(.*\) -->$/\1/p' | head -n 1
-}
-entry_block() { # the doc's routing entry in architecture.md ($1 arch, $2 rel)
-  awk -v want="### \`$2\`" '
-    $0 == want { inb = 1; next }
-    inb && index($0, "### ") == 1 { exit }
-    inb { print }
-  ' "$1"
-}
-doc_headings() { # level-two ATX headings outside Markdown fenced code blocks
-  awk '
-    function fence_run(s, ch,    i) {
-      for (i = 1; i <= length(s) && substr(s, i, 1) == ch; i++) { }
-      return i - 1
+# One pass over the routing table and every routed doc. Stdin lists the docs'
+# table names in argument order, a doc that cannot be read is passed as
+# /dev/null, and each output line is a code, the doc's number, and a detail.
+# shellcheck disable=SC2016 # an awk program
+routing_awk='
+  function fence_run(s, ch,    i) {
+    for (i = 1; i <= length(s) && substr(s, i, 1) == ch; i++) { }
+    return i - 1
+  }
+  function listed(want,    i) {
+    if (want in count) return 1
+    for (i = 1; i <= nentry; i++) if (index(entry[i], want)) return 1
+    return 0
+  }
+  BEGIN {
+    arg = 1
+    entry_hook = "- **Read when:** "
+    entry_sections = "- **Sections:** "
+    doc_hook = "<!-- Read when: "
+  }
+  NR == FNR { rel[++docs] = $0; next }
+  FNR == 1 {
+    for (arg++; arg < ARGC && ARGV[arg] != FILENAME; arg++) { }
+    doc = arg - 2
+    fenced = 0
+  }
+  doc == 0 {
+    if (index($0, "### `")) entry[++nentry] = $0
+    if (index($0, "### ") == 1) { current = $0; count[current]++ }
+    else if (index($0, entry_hook) == 1 && !(current in hook)) hook[current] = substr($0, length(entry_hook) + 1)
+    else if (index($0, entry_sections) == 1 && !(current in sections)) sections[current] = substr($0, length(entry_sections) + 1)
+    next
+  }
+  FNR <= 5 {
+    if (index($0, "Read when:")) hooked[doc] = 1
+    if (!(doc in own) && index($0, doc_hook) == 1 && length($0) >= length(doc_hook) + 4 && substr($0, length($0) - 3) == " -->")
+      own[doc] = substr($0, length(doc_hook) + 1, length($0) - length(doc_hook) - 4)
+  }
+  { # level-two ATX headings outside Markdown fenced code blocks
+    line = $0
+    indent = 0
+    while (indent < 3 && substr(line, 1, 1) == " ") {
+      line = substr(line, 2)
+      indent++
     }
-    {
-      line = $0
-      indent = 0
-      while (indent < 3 && substr(line, 1, 1) == " ") {
-        line = substr(line, 2)
-        indent++
-      }
-      if (fenced) {
-        run = fence_run(line, fence_char)
-        rest = substr(line, run + 1)
-        if (run >= fence_len && rest ~ /^[ \t]*$/) fenced = 0
-        next
-      }
-      fence_char = substr(line, 1, 1)
-      if (fence_char == "`" || fence_char == "~") {
-        fence_len = fence_run(line, fence_char)
-        if (fence_len >= 3) { fenced = 1; next }
-      }
-      if (line ~ /^## /) print substr(line, 4)
+    if (fenced) {
+      run = fence_run(line, fence_char)
+      rest = substr(line, run + 1)
+      if (run >= fence_len && rest ~ /^[ \t]*$/) fenced = 0
+      next
     }
-  ' "$1"
-}
-if [[ -d "$docs" ]]; then
-  for doc in "$docs"/*.md "$docs"/*/*.md; do
-    [[ -e "$doc" ]] || continue
-    rel=${doc#"$docs"/}
-    [[ "$rel" == "architecture.md" ]] && continue
-    [[ "$rel" == references/* || "$rel" == */references/* ]] && continue
-    if ! head -n 5 "$doc" | grep -qF "Read when:"; then
-      finding block DOC_HOOK_MISSING "docs/$rel" "missing its \"Read when:\" header — add a one-line routing hint" "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint"
-    fi
-    if [[ -s "$arch" ]]; then
-      entry_count=$(grep -cxF "### \`$rel\`" "$arch")
-      if ! grep -qF "### \`$rel\`" "$arch"; then
-        finding block DOC_ROUTE_MISSING "docs/$rel" "not in the architecture.md routing table — add an entry from its \"Read when:\" header" "INDEX: docs/$rel not in the architecture.md routing table — add an entry from its \"Read when:\" header"
-      elif [[ "$entry_count" -gt 1 ]]; then
-        finding block DOC_ROUTE_DUPLICATE "docs/$rel" "has $entry_count entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest" "INDEX: docs/$rel has $entry_count entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest"
-      else
-        block=$(entry_block "$arch" "$rel")
-        entry_hook=$(printf '%s\n' "$block" | sed -n 's/^- \*\*Read when:\*\* //p' | head -n 1)
-        own_hook=$(doc_hook "$doc")
-        if [[ -n "$own_hook" && "$entry_hook" != "$own_hook" ]]; then
-          finding block DOC_HOOK_MISMATCH "docs/$rel" "hook disagrees with its architecture.md entry — refresh both to the same text" "INDEX: docs/$rel hook disagrees with its architecture.md entry — refresh both to the same text"
-        fi
-        sections=$(printf '%s\n' "$block" | sed -n 's/^- \*\*Sections:\*\* //p' | head -n 1)
-        missing=""
-        while IFS= read -r heading; do
-          [[ -n "$heading" ]] || continue
-          printf '%s' "$sections" | grep -qF -- "$heading" || missing="$missing · $heading"
-        done < <(doc_headings "$doc")
-        if [[ -n "$missing" ]]; then
-          finding block DOC_SECTIONS_MISSING "docs/$rel" "sections missing from its architecture.md entry:${missing# }" "INDEX: docs/$rel sections missing from its architecture.md entry:${missing# }"
-        fi
-      fi
-    fi
+    fence_char = substr(line, 1, 1)
+    if (fence_char == "`" || fence_char == "~") {
+      fence_len = fence_run(line, fence_char)
+      if (fence_len >= 3) { fenced = 1; next }
+    }
+    if (line ~ /^## ./) heading[doc, ++headings[doc]] = substr(line, 4)
+  }
+  END {
+    for (d = 1; d <= docs; d++) {
+      if (!(d in hooked)) print "DOC_HOOK_MISSING", d
+      if (!routed) continue
+      want = "### `" rel[d] "`"
+      if (!listed(want)) { print "DOC_ROUTE_MISSING", d; continue }
+      if (count[want] > 1) { print "DOC_ROUTE_DUPLICATE", d, count[want]; continue }
+      if (own[d] != "" && hook[want] != own[d]) print "DOC_HOOK_MISMATCH", d
+      missing = ""
+      for (i = 1; i <= headings[d]; i++)
+        if (!index(sections[want], heading[d, i])) missing = missing " · " heading[d, i]
+      if (missing != "") print "DOC_SECTIONS_MISSING", d, missing
+    }
+  }
+'
+doc_routing() {
+  local routed=0 table=/dev/null doc
+  local inputs=()
+  if [[ -s "$arch" ]]; then
+    routed=1
+    [[ -f "$arch" && -r "$arch" ]] && table=$arch
+  fi
+  for doc in "${doc_files[@]}"; do
+    [[ -f "$doc" && -r "$doc" ]] || doc=/dev/null
+    inputs+=("$doc")
   done
+  printf '%s\n' "${doc_rels[@]}" | LC_ALL=C awk -v routed="$routed" "$routing_awk" - "$table" "${inputs[@]}"
+}
+if [[ "${#doc_files[@]}" -gt 0 ]]; then
+  while IFS= read -r line; do
+    code=${line%% *}
+    detail=${line#* }
+    rel=${doc_rels[${detail%% *} - 1]}
+    detail=${detail#* }
+    case "$code" in
+    DOC_HOOK_MISSING)
+      finding block "$code" "docs/$rel" "missing its \"Read when:\" header — add a one-line routing hint" "INDEX: docs/$rel missing its \"Read when:\" header — add a one-line routing hint" ;;
+    DOC_ROUTE_MISSING)
+      finding block "$code" "docs/$rel" "not in the architecture.md routing table — add an entry from its \"Read when:\" header" "INDEX: docs/$rel not in the architecture.md routing table — add an entry from its \"Read when:\" header" ;;
+    DOC_ROUTE_DUPLICATE)
+      finding block "$code" "docs/$rel" "has $detail entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest" "INDEX: docs/$rel has $detail entries in architecture.md — keep exactly one, carrying the doc's own \"Read when:\" hook, and delete the rest" ;;
+    DOC_HOOK_MISMATCH)
+      finding block "$code" "docs/$rel" "hook disagrees with its architecture.md entry — refresh both to the same text" "INDEX: docs/$rel hook disagrees with its architecture.md entry — refresh both to the same text" ;;
+    DOC_SECTIONS_MISSING)
+      finding block "$code" "docs/$rel" "sections missing from its architecture.md entry:${detail# }" "INDEX: docs/$rel sections missing from its architecture.md entry:${detail# }" ;;
+    esac
+  done < <(doc_routing)
 fi
 
 if [[ -d "$docs" && ! -s "$arch" ]]; then
@@ -487,23 +576,26 @@ if [[ -d "$docs" && ! -s "$arch" ]]; then
   done
 fi
 
+memory_targets() { sed -nE 's|^- \[[^]]*\]\((memory/[^)]+)\).*|\1|p' "$memory"; }
 if [[ -s "$memory" ]]; then
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
     if [[ ! -e "$agent/$target" ]]; then
       finding block MEMORY_TARGET_MISSING "$target" "memory.md indexes $target — file missing" "REPAIR: memory.md indexes $target — file missing"
     fi
-  done < <(sed -nE 's|^- \[[^]]*\]\((memory/[^)]+)\).*|\1|p' "$memory")
+  done < <(memory_targets)
 fi
-if [[ -d "$memdir" ]]; then
-  for f in "$memdir"/*.md; do
-    [[ -e "$f" ]] || continue
-    name="memory/$(basename "$f")"
-    if [[ ! -s "$memory" ]] \
-      || ! sed -nE 's|^- \[[^]]*\]\((memory/[^)]+)\).*|\1|p' "$memory" | grep -qxF "$name"; then
-      finding block MEMORY_RECORD_UNINDEXED "$name" "has no index line in memory.md" "REPAIR: $name has no index line in memory.md"
-    fi
-  done
+if [[ "${#memory_files[@]}" -gt 0 ]]; then
+  while IFS= read -r name; do
+    finding block MEMORY_RECORD_UNINDEXED "$name" "has no index line in memory.md" "REPAIR: $name has no index line in memory.md"
+  done < <({
+    [[ -s "$memory" ]] && memory_targets | sed 's/^/indexed /'
+    printf 'file memory/%s\n' "${memory_files[@]##*/}"
+  } | LC_ALL=C awk '
+    { name = substr($0, index($0, " ") + 1) }
+    /^indexed / { indexed[name] = 1; next }
+    !(name in indexed) { print name }
+  ')
 fi
 
 for settings in "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
@@ -541,7 +633,10 @@ fi
 # Everything below is text output only: findings-only TSV is complete.
 [[ "$format" == tsv ]] && exit 0
 
-bytes_of() { printf '%s' "$1" | wc -c | tr -d '[:space:]'; }
+count_bytes() { local LC_ALL=C; nbytes=${#1}; }
+# Restoring an LC_ALL that names no installed locale makes bash warn, so the
+# redirect sits outside the function that sets it.
+bytes_of() { count_bytes "$1" 2>/dev/null; } # sets nbytes
 file_bytes() { wc -c <"$1" | tr -d '[:space:]'; }
 
 load_total=0
@@ -571,7 +666,8 @@ files_detail=""
 for load_i in "${!load_files[@]}"; do
   f=${load_files[$load_i]}
   [[ -s "$f" ]] || continue
-  fbytes=$(( $(bytes_of $'\n'"==== ${f#"$root"/} ===="$'\n') + $(file_bytes "$f") ))
+  bytes_of $'\n'"==== ${f#"$root"/} ===="$'\n'
+  fbytes=$((nbytes + $(file_bytes "$f")))
   files_bytes=$((files_bytes + fbytes))
   files_detail="$files_detail, ${load_labels[$load_i]} $fbytes"
 done
@@ -591,11 +687,13 @@ if [[ "$load_mode" == generated ]]; then
   else
     notice="Index cache is stale or missing, so no page is listed. Run \`bash .agent/scripts/index.sh ensure\` and open the file it prints: its READ: lines name the pages. A subagent never runs it, because it writes: as a subagent, read .agent/rules/ and .agent/docs/architecture.md directly this session."$'\n'
   fi
-  notice_label=", index $(bytes_of "$notice")"
+  bytes_of "$notice"
+  notice_label=", index $nbytes"
 elif [[ "$indexes" == generated ]]; then
   notice="Indexer missing: purpose.md says indexes: generated but scripts/index.sh is not installed, so the cache under .agent/indexes/ cannot be rebuilt or verified — the canonical files print below; run node.sh update to reinstall the indexer."$'\n'
 fi
-notice_bytes=$(bytes_of "$notice")
+bytes_of "$notice"
+notice_bytes=$nbytes
 
 tail_for() { # $1: entry count — sets tail_text and tail_words
   local entries="" count
@@ -632,7 +730,8 @@ settle() {
     payload_line_for "$total" "$tb"; settled_payload=$REPLY
     settled_hook=""
     if [[ -n "$fn" ]]; then "$fn" "$total"; settled_hook=$REPLY; fi
-    next=$((fixed + $(bytes_of "$settled_payload$settled_hook")))
+    bytes_of "$settled_payload$settled_hook"
+    next=$((fixed + nbytes))
     [[ "$next" -eq "$total" ]] && break
     total=$next
   done
@@ -650,15 +749,18 @@ hook_header_bytes() { # $1: full | tail0
   local h
   h=$(bash "$agent/scripts/session-start.sh" --header "$1" 2>/dev/null) || h=""
   [[ -n "$h" ]] || { echo 0; return; }
-  echo $(( $(bytes_of "$h") + 1 ))
+  bytes_of "$h"
+  echo $((nbytes + 1))
 }
 
 tail_for "$TAIL_LINES"
 main_tail=$tail_text
-main_tail_bytes=$(bytes_of "$main_tail")
+bytes_of "$main_tail"
+main_tail_bytes=$nbytes
 load_line_for "$tail_words"
 main_load_line=$REPLY
-main_fixed=$(( $(bytes_of "$notes$main_load_line") + notice_bytes + files_bytes + main_tail_bytes ))
+bytes_of "$notes$main_load_line"
+main_fixed=$((nbytes + notice_bytes + files_bytes + main_tail_bytes))
 settle "$main_fixed" "$main_tail_bytes"
 
 hook_line=""
@@ -670,7 +772,8 @@ if [[ "$hook_on" -eq 1 ]]; then
       header_tail0=$(hook_header_bytes tail0)
       tail_for 0
       load_line_for 0
-      t0_fixed=$(( $(bytes_of "$notes$REPLY") + notice_bytes + files_bytes ))
+      bytes_of "$notes$REPLY"
+      t0_fixed=$((nbytes + notice_bytes + files_bytes))
       settle "$t0_fixed" 0
       if [[ "$header_tail0" -gt 0 && $((settled_total + header_tail0)) -le "$HOOK_MAX_BYTES" ]]; then
         hook_fallback="delivers it without the session-log tail (--tail 0, $settled_total bytes)"
