@@ -262,9 +262,9 @@ if [ -z "$base" ] && [ "$is_git" -eq 1 ]; then
   fi
 fi
 
-# A session that records a failed check adds its receipt to the call it just
-# made, so both flags arrive together. A current receipt answers for the check
-# it records. A named check with no current receipt runs.
+# With both flags, a current receipt answers only for the check it records,
+# and a named check with no current receipt runs. Refusing the pair cost a
+# session one call each time it added a failed check's receipt to its last call.
 if [ -n "$checks" ] && [ -n "$receipts" ]; then
   case "$checks" in ,*|*,|*,,*) refuse '--checks holds an empty name' 'Pass check names separated by single commas' ;; esac
   case "$receipts" in ,*|*,|*,,*) refuse '--verification holds an empty receipt id' 'Pass receipt ids separated by single commas' ;; esac

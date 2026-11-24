@@ -88,8 +88,7 @@ checkpoint --checks n/a || { cat "$scratch/err" >&2; fail '--checks n/a was refu
 tail -1 "$log" | grep -q 'verify: n/a' || fail '--checks n/a did not record verify n/a'
 [ "$(check_runs)" -eq "$runs_before" ] || fail '--checks n/a ran a check'
 
-# A session that records a failed check adds the receipt to the call it just
-# made, so the receipt arrives beside --checks. A current receipt answers.
+# A current receipt beside --checks answers for its check without a second run.
 printf 'const amount = 6\n' >"$project/src/client.ts"
 printf 'fail\n' >"$project/.agent/scripts/test-mode"
 before=$(entries)
