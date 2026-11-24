@@ -2,12 +2,14 @@
 # absorb.sh: a worker's node merged back into the main node, and the memory
 # writer lock that lets workers in one checkout write directly.
 set -eu
-[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/absorb-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
+# Past this line a failed command is recorded by fail and the file goes on,
+# so one run under verify.sh prove shows every failing assertion.
+[ -z "${DA_PROVE:-}" ] || set +e
 fail() { echo "FAIL absorb-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 
 main="$scratch/main node"

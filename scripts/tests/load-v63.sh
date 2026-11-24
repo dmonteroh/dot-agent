@@ -3,12 +3,14 @@
 # written, the HOOK: advisory, --tail, the hook's --tail 0 retry, the
 # MEMORY_INDEX_BYTES advisory, and the generated-mode page list.
 set -eu
-[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/load-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
+# Past this line a failed command is recorded by fail and the file goes on,
+# so one run under verify.sh prove shows every failing assertion.
+[ -z "${DA_PROVE:-}" ] || set +e
 fail() { echo "FAIL load-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 
 mknode() { # $1 dir  $2 indexes  [$3 hooks]

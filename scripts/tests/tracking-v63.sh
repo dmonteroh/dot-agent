@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -eu
-[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/tracking-v63.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
+# Past this line a failed command is recorded by fail and the file goes on,
+# so one run under verify.sh prove shows every failing assertion.
+[ -z "${DA_PROVE:-}" ] || set +e
 fail() { echo "FAIL tracking-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 root="$scratch/ignored node"
 mkdir -p "$root/src"

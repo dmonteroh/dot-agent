@@ -4,12 +4,14 @@
 # under its locks, absorb.sh reports shared and merges nothing, every other
 # symlinked .agent is refused, and a writer waits for a held lock.
 set -eu
-[ -z "${DA_PROVE:-}" ] || set +e
 unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/shared-node-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
+# Past this line a failed command is recorded by fail and the file goes on,
+# so one run under verify.sh prove shows every failing assertion.
+[ -z "${DA_PROVE:-}" ] || set +e
 fail() { echo "FAIL shared-node-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
 
 # The main checkout: an ignore-all node, so a worktree holds no .agent of its
