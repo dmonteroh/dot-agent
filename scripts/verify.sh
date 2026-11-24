@@ -13,6 +13,7 @@ usage() {
 Usage:
   verify.sh run CHECK [--root ROOT] [--timeout SECONDS] [--output-share N]
   verify.sh check RECEIPT [--root ROOT]
+  verify.sh why RECEIPT [--root ROOT]
   verify.sh --help
   verify.sh --version
 
@@ -20,7 +21,11 @@ A check named in POSITIVE_TEST_CHECKS passes only when its output shows a test
 ran. TEST_COUNT_FORMAT=auto counts TAP, and otherwise the closing summary of
 node --test, pytest, unittest, Jest, Vitest, cargo test, go test -v, minitest,
 and bun test. tap counts TAP alone. A runner outside that list needs its TAP
-reporter, or a line of one of those shapes, from .agent/scripts/checks.sh.
+reporter in .agent/scripts/checks.sh. Skipped tests are not counted.
+
+why prints one word for a current receipt: pass, failed, uncounted (no test
+count in the output), format (TEST_COUNT_FORMAT read none), empty (0 tests
+ran), or changed (project files changed during the run, or its output was lost).
 EOF
 }
 
@@ -186,8 +191,8 @@ is_tap() { grep -Eq '^(TAP version [0-9]+|1\.\.[0-9]+)' "$1"; }
 # runner named beside it: observed output, except Jest, whose line is the
 # template in its SummaryReporter source (scripts/docs/verify.md lists the
 # versions). Skipped and filtered tests are left out, so a run whose every
-# test was filtered away counts 0. Several summaries add up, as cargo prints
-# one per test binary.
+# test was skipped or filtered away counts 0. Several summaries add up, as
+# cargo prints one per test binary.
 summary_count() {
   awk '
     function before(s, word,   n) {
@@ -198,10 +203,11 @@ summary_count() {
     function add(n) { total += n; seen = 1 }
     # node --test, spec reporter: "<U+2139> pass 2", "<U+2139> fail 0"
     $0 ~ "^\342\204\271 (pass|fail) [0-9]+$" { add($3); next }
-    # bun test: "Ran 2 tests across 1 file. [32.00ms]"
-    /^Ran [0-9]+ tests? across [0-9]+ files?\./ { add($2); next }
-    # Python unittest: "Ran 2 tests in 0.000s"
+    # bun test: " 2 pass", " 0 fail". Its "Ran 2 tests" line counts skips.
+    /^ [0-9]+ (pass|fail)$/ { add($1); next }
+    # Python unittest: "Ran 3 tests in 0.000s", then "OK (skipped=1)"
     /^Ran [0-9]+ tests? in [0-9.]+s$/ { add($2); next }
+    /^(OK|FAILED) \(.*skipped=[0-9]+/ { n = $0; sub(/.*skipped=/, "", n); sub(/[^0-9].*/, "", n); add(-n); next }
     # Jest: "Tests:       1 failed, 2 passed, 3 total"
     /^Tests: +([0-9]+ [a-z]+, )*[0-9]+ total$/ { add(before($0, "passed") + before($0, "failed")); next }
     # Vitest: "      Tests  1 failed | 2 passed (3)"
@@ -210,8 +216,8 @@ summary_count() {
     /^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { add($4 + $6); next }
     # go test -v, top-level tests: "--- PASS: TestA (0.00s)"
     /^--- (PASS|FAIL): / { add(1); next }
-    # minitest: "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips"
-    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1); next }
+    # minitest: "2 runs, 1 assertions, 0 failures, 0 errors, 1 skips"
+    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1 - $9); next }
     # pytest: "==== 1 failed, 2 passed in 0.02s ====", or bare under -q
     {
       line = $0
@@ -222,6 +228,29 @@ summary_count() {
     }
     END { if (seen) print total + 0; else print "unknown" }
   ' "$1"
+}
+
+# Why a run that exited 0 is inconclusive, as one word, from what its receipt
+# holds: the check and the count. A positive check with no count or a count of
+# 0 is inconclusive for that reason, whatever else happened. Any other
+# inconclusive run changed the project files, or lost its output.
+inconclusive_code() {
+  if is_positive_check "$1"; then
+    case "$2" in
+      unknown) if [ "$TEST_COUNT_FORMAT" = auto ]; then echo uncounted; else echo format; fi; return 0 ;;
+      0) echo empty; return 0 ;;
+    esac
+  fi
+  echo changed
+}
+
+inconclusive_reason() {
+  case "$(inconclusive_code "$1" "$2")" in
+    uncounted) echo "$1 exited 0, but its output carries no test count this script reads, so the result is inconclusive. Make $CHECK_DRIVER run the runner with its TAP reporter or a summary that verify.sh --help lists. Leave the project's own test command as it is" ;;
+    format) echo "$1 exited 0, but TEST_COUNT_FORMAT=$TEST_COUNT_FORMAT read no test count from its output, so the result is inconclusive. If verify.sh --help lists this runner, set TEST_COUNT_FORMAT=auto in .agent/scripts/verify.conf. Otherwise make $CHECK_DRIVER run the runner with its TAP reporter. Leave the project's own test command as it is" ;;
+    empty) echo "$1 exited 0 and ran 0 tests, so the result is inconclusive. Run it over at least one test" ;;
+    *) echo "project files changed while $1 ran, so the result is inconclusive. Run the check again. If it repeats, make the check write only where Git ignores" ;;
+  esac
 }
 
 print_record() { printf 'receipt\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
@@ -290,7 +319,7 @@ interrupt_run() {
 case "${1:-}" in
   --help | -h) usage; exit 0 ;;
   --version) printf 'dot-agent v6.3; verify.sh receipt schema %s\n' "$schema_version"; exit 0 ;;
-  run | check) op=$1; shift ;;
+  run | check | why) op=$1; shift ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -344,7 +373,7 @@ if [ -L "$receipts" ]; then die "refusing symlink receipt directory: $receipts";
 (umask 077 && mkdir -p "$receipts") || die "cannot create receipt directory"
 [ -d "$receipts" ] && [ ! -L "$receipts" ] || die "receipt path is not a physical directory: $receipts"
 
-if [ "$op" = check ]; then
+if [ "$op" != run ]; then
   case "$receipt_arg" in '' | *[!A-Za-z0-9_.-]*) die "RECEIPT must be an opaque id" ;; esac
   receipt="$receipts/$receipt_arg.receipt"
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || die "receipt is missing or not a regular file: $receipt_arg"
@@ -377,6 +406,14 @@ if [ "$op" = check ]; then
   [ "${id##*-}" = "$expected_receipt_digest" ] || die "receipt content digest does not match its id"
   current=$(da_fingerprint "$root") || exit 2
   [ "$current" = "$recorded" ] || die "receipt is stale: project inputs changed"
+  if [ "$op" = why ]; then
+    case "$status:$exit_code" in
+      pass:*) echo pass ;;
+      inconclusive:0) inconclusive_code "$rcheck" "$count" ;;
+      *) echo failed ;;
+    esac
+    exit 0
+  fi
   print_record "$id" "$status" "$rcheck" "$exit_code" "$count"
   exit 0
 fi
@@ -441,18 +478,14 @@ if [ "$timed_out" -eq 1 ]; then
   status=fail
 elif [ "$before" != "$after" ]; then
   status=inconclusive
-  why="project files changed while $check ran, so the result is inconclusive. Run the check again. If it repeats, make the check write only where Git ignores"
+  if [ "$driver_rc" -eq 0 ]; then why=$(inconclusive_reason "$check" "$count"); else why=$(inconclusive_reason "$check" changed); fi
 elif [ "$driver_rc" -ne 0 ]; then
   status=fail
 elif [ "$output_lost" -eq 1 ]; then
   status=inconclusive
 elif is_positive_check "$check" && { [ "$count" = unknown ] || [ "$count" -eq 0 ]; }; then
   status=inconclusive
-  if [ "$count" = unknown ]; then
-    why="$check exited 0, but its output carries no test count this script reads, so the result is inconclusive. If tests ran, make $CHECK_DRIVER print TAP or a summary this script counts (verify.sh --help lists them), and leave the project's own test command as it is"
-  else
-    why="$check exited 0 and ran 0 tests, so the result is inconclusive. Run it over at least one test"
-  fi
+  why=$(inconclusive_reason "$check" "$count")
 else
   status=pass
 fi
