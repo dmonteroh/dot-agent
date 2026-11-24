@@ -40,10 +40,10 @@
 
 ## Testing
 
-- Proof of work is not a kept test. Prove a change with a scratch test in the scratch folder Project guardrails names, or with anything cheaper, and delete it when the task ends.
+- Proof of work is not a kept test. Prove a change with a scratch test in the scratch folder Project guardrails names, or with anything cheaper. The checkpoint removes a scratch test once its proof is logged.
 - Keep a test only when it protects a rule that no kept test protects. Name that rule where the project records the change.
 - Merge or delete the kept tests your change makes redundant, and name the test that keeps each check.
-- See each proof fail without the change: `.agent/scripts/verify.sh prove <check> --test <file>`, or `--break <path>=<broken copy>` for a rule the old code already met.
+- See each proof fail without the change: add `--prove <test file>` to the checkpoint call. For a rule the old code already met, run `.agent/scripts/verify.sh prove <check> --break <path>=<broken copy>` and pass its receipt with `--verification`.
 - Write expected values as literals taken from the requirement. Never compute them with the code under test.
 - Read a failure before editing anything. Never edit an expectation to match the output, loosen a matcher, or skip a test to make it pass.
 
@@ -96,7 +96,7 @@
 Read this rubric for substantial work or a review that needs it.
 
 - Changed observable behavior, and each fix for a blocking review finding, was proved by a check that fails without the change. Pure refactors rely on existing coverage.
-- Every proof, scratch or kept, was seen failing without the change, and the report quotes the failing line or the `verify.sh prove` verdict.
+- Every proof, scratch or kept, was seen failing without the change, and the report quotes the failing line or the checkpoint's `PROVED:` line.
 - Every kept test added names the rule it protects, and no other kept test protects that rule. A rule is something a user or another program relies on: an output, an exit code, an error, a file format. "This change works" is not a rule.
 - No scratch test is left in the scratch folder, and the kept tests the change made redundant are merged or deleted.
 - No existing test was weakened: no expectation edited to match new output, no assertion removed or loosened, and no skip added, unless the task changes that behavior.

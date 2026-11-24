@@ -971,10 +971,10 @@
         {
           "id": "verify-scratch-proof/failure-seen-without-change",
           "concept": "proof-fails-without-change",
-          "text": "verify.sh prove ran this session. It is the one call that runs a check against the tree without the change.",
+          "text": "A proof ran this session: checkpoint.sh with --prove, or verify.sh prove. Those are the calls that run a check against the tree without the change.",
           "class": "trace",
           "grade": "auto",
-          "check": "trace_matches 'verify\\.sh prove [A-Za-z0-9_.-]+ --(test|break|base) '"
+          "check": "trace_matches '(verify\\.sh prove [A-Za-z0-9_.-]+ --(test|break|base) |checkpoint\\.sh .*--prove [^ -])'"
         },
         {
           "id": "verify-scratch-proof/scratch-folder-empty",

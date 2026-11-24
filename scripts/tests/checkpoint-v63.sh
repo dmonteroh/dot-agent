@@ -23,6 +23,10 @@ set -eu
 state="$PWD/.agent/.state"
 mkdir -p "$state"
 printf 'run\n' >>"$state/check-count"
+for scratch_test in src/*.test.sh tmp/scratch/*.test.sh; do
+  [ -f "$scratch_test" ] || continue
+  bash "$scratch_test" || { printf 'TAP version 13\n1..1\nnot ok 1 - %s\n' "$scratch_test"; exit 1; }
+done
 mode=$(cat .agent/scripts/test-mode)
 case "$mode" in
   pass) printf 'TAP version 13\n1..1\nok 1 - fixture\n# tests 1\n' ;;
@@ -137,6 +141,45 @@ if checkpoint --checks test; then fail 'a check that changed project files compl
 tail -1 "$scratch/err" | grep -q 'project files changed while test ran, or its output was lost, so nothing was logged\. Run this call again\. If it repeats, make the check write only where Git ignores$' \
   || fail "a check that changed files did not name the next step: $(tail -1 "$scratch/err")"
 rm -f "$project/src/mutated.ts"
+printf 'pass\n' >"$project/.agent/scripts/test-mode"
+
+# --prove proves, logs, and removes a scratch test in the one closing call.
+printf 'tmp/\n' >>"$project/.git/info/exclude"
+mkdir -p "$project/tmp/scratch"
+printf 'const amount = 9\n' >"$project/src/client.ts"
+printf "grep -q 'amount = 9' src/client.ts\n" >"$project/tmp/scratch/amount.test.sh"
+before=$(entries)
+checkpoint --checks test --prove tmp/scratch/amount.test.sh || { cat "$scratch/err" >&2; fail '--prove did not complete the checkpoint'; }
+[ "$(entries)" -eq "$((before + 1))" ] && tail -1 "$log" | grep -q 'verify: pass' || fail '--prove wrote no passing entry'
+grep -q '^PROVED: test fails at [0-9a-f]* with tmp/scratch/amount.test.sh copied in$' "$scratch/out" || fail "--prove did not report the proof: $(cat "$scratch/out")"
+[ ! -e "$project/tmp/scratch/amount.test.sh" ] || fail 'a proved scratch test was left behind'
+! grep -q 'SCRATCH_LEFT\|TEST_COVERAGE' "$scratch/out" || fail "--prove still drew a prompt to prove or clean up: $(grep 'REVIEW:' "$scratch/out")"
+printf 'const amount = 10\n' >"$project/src/client.ts"
+printf "grep -q 'amount = 10' src/client.ts\n" >"$project/src/amount.test.sh"
+checkpoint --checks test --prove src/amount.test.sh || { cat "$scratch/err" >&2; fail '--prove refused a kept test'; }
+[ -f "$project/src/amount.test.sh" ] || fail 'a proved test that Git does not ignore was removed'
+rm "$project/src/amount.test.sh"
+printf 'const amount = 11\n' >"$project/src/client.ts"
+printf 'true\n' >"$project/tmp/scratch/weak.test.sh"
+before=$(entries)
+if checkpoint --checks test --prove tmp/scratch/weak.test.sh; then fail 'a test that passes at the base completed the checkpoint'; fi
+tail -1 "$scratch/err" | grep -q 'the check passes, but the proof did not hold, so nothing was logged\. Do what the verify.sh prove line above says, then run this call again\. To log without the proof, drop --prove$' \
+  || fail "a proof that did not hold did not name the next step: $(tail -1 "$scratch/err")"
+[ "$(entries)" -eq "$before" ] && [ -f "$project/tmp/scratch/weak.test.sh" ] || fail 'a proof that did not hold logged an entry or removed the test'
+prove_rows=0
+while IFS='|' read -r prove_want prove_args; do
+  # shellcheck disable=SC2086
+  if checkpoint $prove_args; then fail "--prove was accepted with: $prove_args"; fi
+  tail -1 "$scratch/err" | grep -q "$prove_want" || fail "--prove with '$prove_args' ended on: $(tail -1 "$scratch/err")"
+  prove_rows=$((prove_rows + 1))
+done <<'ROWS'
+prove needs --checks with one check name|--prove tmp/scratch/weak.test.sh
+prove needs --checks with one check name|--checks test,test --prove tmp/scratch/weak.test.sh
+prove and --verification were both given|--checks test --verification abc --prove tmp/scratch/weak.test.sh
+prove and --verify were both given|--checks test --verify fail --prove tmp/scratch/weak.test.sh
+ROWS
+[ "$prove_rows" -eq 4 ] || fail "--prove usage rows ran: $prove_rows"
+rm -f "$project/tmp/scratch/weak.test.sh"
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
 
 printf 'zero\n' >"$project/.agent/scripts/test-mode"
