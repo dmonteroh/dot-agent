@@ -5,7 +5,7 @@ Scaffolds an area doc and its `architecture.md` routing-table row as one operati
 ```
 Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh rehook --name <file> --read-when "…" [root]
-       docs.sh sync --name <file> [--read-when "…"] [root]
+       docs.sh sync [--name <file> [--read-when "…"]] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
        docs.sh check --name <file> [root]
 ```
@@ -29,6 +29,8 @@ The stamp is a separate comment line so every existing reader of the `Read when:
 ## Syncing routing metadata
 
 `sync` preserves the document body while reconciling its own `<!-- Read when: … -->` header and exactly one `architecture.md` entry. An existing header supplies the hook when `--read-when` is omitted. A headerless document requires explicit text. The command prepends that text as its hook. Duplicate document headers, duplicate routing entries, duplicate metadata rows, or a symlink at `architecture.md` are ambiguous and refused before the routing table is read or replaced.
+
+Without `--name`, `sync` runs over every doc `architecture.md` routes, in the table's order. A doc that is refused does not stop the rest, and the call exits 1 with a line naming how many were refused. `--read-when` needs `--name`.
 
 The `Sections:` value is derived from exact `## ` headings. A fence-aware scan ignores headings inside backtick or tilde code fences. The document and routing table are staged before either is published, and the original document is restored if the paired publication fails.
 

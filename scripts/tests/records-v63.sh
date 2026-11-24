@@ -227,6 +227,21 @@ if "$here/scripts/docs.sh" sync --name sync-target "$node" >/dev/null 2>&1; then
 [ "$status" -ne 0 ] && ok 'sync refuses ambiguous routing entries' || bad 'sync refuses ambiguous routing entries'
 mv "$node/.agent/docs/architecture.before" "$node/.agent/docs/architecture.md"
 
+# A bare sync reconciles every routed doc and carries on past one it refuses.
+all="$tmp/sync-all"
+mkdir -p "$all/.agent/docs/sub"
+printf '%s\n' '<!-- Read when: one work -->' '# One' '' '## First' >"$all/.agent/docs/one.md"
+printf '%s\n' '<!-- Read when: two work -->' '# Two' '' '## Second' >"$all/.agent/docs/sub/two.md"
+printf '%s\n' '# Unrouted' >"$all/.agent/docs/unrouted.md"
+printf '%s\n' '# Architecture' '<!-- Entries look like:' '### `example.md`' '-->' '' '```md' '### `fenced.md`' '```' '' '### `gone.md`' '- **Read when:** gone' '' '### `one.md`' '- **Read when:** stale' '' '### `sub/two.md`' '- **Read when:** stale' >"$all/.agent/docs/architecture.md"
+"$here/scripts/docs.sh" sync "$all" >"$tmp/sync-all.out" 2>"$tmp/sync-all.err"; status=$?
+[ "$status" -eq 1 ] && tail -1 "$tmp/sync-all.err" | grep -q '1 of the routed docs could not be synced' && grep -q 'gone.md is not a regular document' "$tmp/sync-all.err" && ok 'a bare sync reports the docs it refused' || bad 'a bare sync reports the docs it refused'
+grep -qF -- '- **Read when:** one work' "$all/.agent/docs/architecture.md" && grep -qF -- '- **Sections:** Second' "$all/.agent/docs/architecture.md" && [ "$(grep -c '^synced' "$tmp/sync-all.out")" -eq 2 ] && ok 'a bare sync reconciles every other routed doc' || bad 'a bare sync reconciles every other routed doc'
+if "$here/scripts/docs.sh" sync --name '' "$all" >/dev/null 2>&1; then status=0; else status=$?; fi
+[ "$status" -ne 0 ] && ok 'sync refuses an empty --name' || bad 'sync refuses an empty --name'
+if "$here/scripts/docs.sh" sync --read-when x "$all" >/dev/null 2>&1; then status=0; else status=$?; fi
+[ "$status" -ne 0 ] && ok 'sync refuses --read-when without --name' || bad 'sync refuses --read-when without --name'
+
 sync_body_before=$(git hash-object --no-filters -- "$syncdoc")
 mv "$node/.agent/docs/architecture.md" "$node/.agent/docs/architecture.real"
 ln -s architecture.real "$node/.agent/docs/architecture.md"

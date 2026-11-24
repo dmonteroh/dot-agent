@@ -8,13 +8,15 @@ usage() {
   cat <<'EOF'
 Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh rehook --name <file> --read-when "…" [root]
-       docs.sh sync --name <file> [--read-when "…"] [root]
+       docs.sh sync [--name <file> [--read-when "…"]] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
        docs.sh check --name <file> [root]
 
 root defaults to . — new writes <root>/.agent/docs/<file> and a routing row
 in <root>/.agent/docs/architecture.md; rehook rewrites an existing doc's
 "Read when:" header and its routing row to the new text, both or neither.
+sync reconciles one doc's routing entry with its header and headings, or every
+routed doc's when --name is left out.
 check records HEAD in the doc's "Checked:" stamp, after you have re-read the
 code the doc cites; links.sh reports cited paths changed since that commit.
 EOF
@@ -260,43 +262,66 @@ EOF
 
 sync)
   name=""
+  name_supplied=0
   readwhen=""
   readwhen_supplied=0
   root="."
   while [ $# -gt 0 ]; do
     case "$1" in
-    --name) need_value "$@"; name="$2"; shift 2 ;;
+    --name) need_value "$@"; name="$2"; name_supplied=1; shift 2 ;;
     --read-when) need_value "$@"; readwhen="$2"; readwhen_supplied=1; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --*) echo "docs.sh: unknown flag: $1" >&2; usage >&2; exit 1 ;;
     *) root="$1"; shift ;;
     esac
   done
-  [ -n "$name" ] || { echo "docs.sh: sync requires --name <file>" >&2; exit 1; }
-  filename=$(doc_filename "$name") || { echo "docs.sh: --name must be a safe path under .agent/docs/ (got '$name')" >&2; exit 1; }
+  if [ "$name_supplied" -eq 0 ]; then
+    [ "$readwhen_supplied" -eq 0 ] || { echo "docs.sh: --read-when needs the one doc it is for. Run this call again with --name <file under .agent/docs/>" >&2; exit 1; }
+    arch="$root/.agent/docs/architecture.md"
+    [ -f "$arch" ] || { echo "docs.sh: $arch does not exist, so no doc is routed. Route one with docs.sh sync --name <file> --read-when \"…\"" >&2; exit 1; }
+    routed=$(awk '
+      /^[[:space:]]*(```|~~~)/ { fence=!fence; next }
+      fence { next }
+      /<!--/ && /-->/ { next }
+      /<!--/ { incm=1; next }
+      incm { if ($0 ~ /-->/) incm=0; next }
+      /^### `.*`[[:space:]]*$/ { p=$0; sub(/^### `/,"",p); sub(/`[[:space:]]*$/,"",p); if(!seen[p]++) print p }
+    ' "$arch") || { echo "docs.sh: $arch could not be read. Check its permissions and run this call again" >&2; exit 1; }
+    refused=0
+    while IFS= read -r routed_name; do
+      [ -n "$routed_name" ] || continue
+      bash "${BASH_SOURCE[0]}" sync --name "$routed_name" "$root" </dev/null || refused=$((refused + 1))
+    done <<EOF
+$routed
+EOF
+    [ "$refused" -eq 0 ] || { echo "docs.sh: $refused of the routed docs could not be synced. Do what each line above says and run this call again" >&2; exit 1; }
+    exit 0
+  fi
+  [ -n "$name" ] || { echo "docs.sh: --name is empty. Pass the file's path below .agent/docs/, or leave --name out to sync every routed doc" >&2; exit 1; }
+  filename=$(doc_filename "$name") || { echo "docs.sh: --name must be a safe path under .agent/docs/ (got '$name'). Pass the file's path below .agent/docs/" >&2; exit 1; }
   [ "$readwhen_supplied" -eq 0 ] || validate_cell --read-when "$readwhen"
   docs="$root/.agent/docs"
   doc="$docs/$filename"
   arch="$docs/architecture.md"
-  [ -f "$doc" ] && [ ! -L "$doc" ] || { echo "docs.sh: $doc is not a regular document" >&2; exit 1; }
+  [ -f "$doc" ] && [ ! -L "$doc" ] || { echo "docs.sh: $doc is not a regular document. Pass a file under .agent/docs/, or remove its entry in architecture.md" >&2; exit 1; }
   if [ -L "$arch" ]; then
-    echo "docs.sh: $arch is a symlink; sync refuses an ambiguous routing table" >&2
+    echo "docs.sh: $arch is a symlink, so the routing table is ambiguous. Replace it with a regular file and run this call again" >&2
     exit 1
   fi
   if [ -e "$arch" ] && [ ! -f "$arch" ]; then
-    echo "docs.sh: $arch is not a regular routing table" >&2
+    echo "docs.sh: $arch is not a regular routing table. Replace it with a regular file and run this call again" >&2
     exit 1
   fi
   sync_root_phys=$(cd "$root" 2>/dev/null && pwd -P) || exit 1
   sync_parent_phys=$(cd "$(dirname "$doc")" 2>/dev/null && pwd -P) || exit 1
-  case "$sync_parent_phys" in "$sync_root_phys"|"$sync_root_phys"/*) ;; *) echo "docs.sh: --name resolves outside the project" >&2; exit 1 ;; esac
+  case "$sync_parent_phys" in "$sync_root_phys"|"$sync_root_phys"/*) ;; *) echo "docs.sh: --name resolves outside the project. Pass a file under .agent/docs/" >&2; exit 1 ;; esac
 
   hook_count=$(head -n 5 "$doc" | grep -c '^<!-- Read when: .* -->$')
-  [ "$hook_count" -le 1 ] || { echo "docs.sh: $doc has ambiguous Read when headers" >&2; exit 1; }
+  [ "$hook_count" -le 1 ] || { echo "docs.sh: $doc has ambiguous Read when headers. Keep one and run this call again" >&2; exit 1; }
   existing_hook=""
   [ "$hook_count" -eq 0 ] || existing_hook=$(head -n 5 "$doc" | sed -n 's/^<!-- Read when: \(.*\) -->$/\1/p')
   if [ -z "$readwhen" ]; then
-    [ "$hook_count" -eq 1 ] || { echo "docs.sh: $doc has no hook; supply --read-when" >&2; exit 1; }
+    [ "$hook_count" -eq 1 ] || { echo "docs.sh: $doc has no hook. Run docs.sh sync --name $filename with --read-when \"…\"" >&2; exit 1; }
     readwhen=$(head -n 5 "$doc" | sed -n 's/^<!-- Read when: \(.*\) -->$/\1/p')
   fi
 
@@ -316,7 +341,7 @@ sync)
   else
     entry_count=0
   fi
-  [ "$entry_count" -le 1 ] || { rm -f "$doc_tmp"; echo "docs.sh: $arch has more than one entry for $filename" >&2; exit 1; }
+  [ "$entry_count" -le 1 ] || { rm -f "$doc_tmp"; echo "docs.sh: $arch has more than one entry for $filename. Keep one and run this call again" >&2; exit 1; }
   if [ "$entry_count" -eq 1 ]; then
     row_counts=$(FILE="$filename" awk '
       $0=="### `" ENVIRON["FILE"] "`" {inb=1; next}
@@ -326,7 +351,7 @@ sync)
       END {print r+0, s+0}
     ' "$arch")
     set -- $row_counts
-    [ "$1" -le 1 ] && [ "$2" -le 1 ] || { rm -f "$doc_tmp"; echo "docs.sh: $arch has ambiguous metadata rows for $filename" >&2; exit 1; }
+    [ "$1" -le 1 ] && [ "$2" -le 1 ] || { rm -f "$doc_tmp"; echo "docs.sh: $arch has ambiguous metadata rows for $filename. Keep one of each and run this call again" >&2; exit 1; }
     FILE="$filename" HOOK="$readwhen" SECTIONS="$sections" awk '
       function missing() {
         if(!rw) print "- **Read when:** " ENVIRON["HOOK"]
@@ -353,7 +378,7 @@ sync)
   fi
   mv "$doc_backup" "$doc" 2>/dev/null || :
   rm -f "$doc_tmp" "$arch_tmp"
-  echo "docs.sh: sync could not publish both files; the document was restored" >&2
+  echo "docs.sh: sync could not publish both files, and the document was restored. Check that .agent/docs/ is writable and run this call again" >&2
   exit 1
   ;;
 
