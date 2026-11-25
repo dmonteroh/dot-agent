@@ -452,12 +452,23 @@ record_last "$identity"
 record_mark
 clear_pending
 printf 'checkpoint.sh: recorded verify=%s\n' "$verify"
+# A file of a node, this one or a child, is never a scratch test. Folders are
+# compared by identity, because ./.agent and .AGENT can name the same one.
+in_node() {
+  in_dir=$root; in_rest=$1
+  while case "$in_rest" in */*) ;; *) return 1 ;; esac; do
+    [ ! "$in_dir/${in_rest%%/*}" -ef "$in_dir/.agent" ] || return 0
+    in_dir="$in_dir/${in_rest%%/*}"; in_rest=${in_rest#*/}
+  done
+}
 # A proved test that Git ignores is a scratch test. Its proof is on the
 # receipt, so it goes now and nothing is left for the session to clean up.
+# check-ignore reads case even where the file system folds it, so a tracked
+# test spelled in another case would pass for an ignored one.
 if [ -n "$prove" ]; then
   for prove_file in "${prove_files[@]}"; do
-    # A file of the node is never a scratch test, ignored or not.
-    case "$prove_file" in .agent/*) continue ;; esac
+    ! in_node "$prove_file" || continue
+    [ -z "$(git -C "$root" ls-files -- ":(icase,literal)$prove_file" 2>&1)" ] || continue
     if git -C "$root" check-ignore -q -- "$prove_file" 2>/dev/null && rm -f -- "$root/$prove_file"; then
       echo "checkpoint.sh: removed the scratch test $prove_file, whose proof is on the receipt"
     fi

@@ -549,7 +549,7 @@ cp "$later/.agent/rules/contract.md" "$later/.agent/rules/quality-bar.md" "$prov
 cat >"$proved/.agent/scripts/checks.sh" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${DA_PROVE:-}" ] || [ ! -f "$DA_PROVE_MAIN/tmp/stop-control" ] || { echo 'the checkout cannot run this'; exit 1; }
-for scratch_test in tmp/scratch/*.test.sh; do
+for scratch_test in tmp/scratch/*.test.sh .agent/*.test.sh pkg/.agent/*.test.sh; do
   [ -f "$scratch_test" ] || continue
   bash "$scratch_test" || { printf 'TAP version 13\n1..1\nnot ok 1 - %s\n' "$scratch_test"; exit 1; }
 done
@@ -575,6 +575,32 @@ git_proved commit -qm work
 printf "grep -q 'value = 3' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
 checkpoint_proved --checks test --prove tmp/scratch/value.test.sh || { cat "$scratch/err" >&2; fail 'committed work was not proved against the commit before it'; }
 grep -q "^PROVED: test fails at ${proved_mark:0:12} with tmp/scratch/value.test.sh copied in$" "$scratch/out" || fail "the proof did not use the review's base: $(grep PROVED "$scratch/out")"
+# A proof removes no node file and no tracked file, however its path is
+# spelled. The case rows need a file system that folds case.
+mkdir -p "$proved/pkg/.agent"
+printf 'true\n' >"$proved/tmp/scratch/kept.test.sh"
+printf '.agent/\n' >>"$proved/.git/info/exclude"
+git_proved add -f tmp/scratch/kept.test.sh
+git_proved commit -qm kept
+proved_rows='./.agent/node.test.sh|.agent/node.test.sh
+pkg/.agent/node.test.sh|pkg/.agent/node.test.sh'
+proved_want=2
+if [ -d "$proved/.AGENT" ]; then
+  proved_rows="$proved_rows
+.AGENT/node.test.sh|.agent/node.test.sh
+tmp/scratch/KEPT.test.sh|tmp/scratch/kept.test.sh"
+  proved_want=4
+fi
+proved_ran=0
+while IFS='|' read -r proved_path proved_file; do
+  printf 'const value = row %s\n' "$proved_ran" >"$proved/src/value.ts"
+  printf "grep -q 'row %s$' src/value.ts\n" "$proved_ran" >"$proved/$proved_file"
+  checkpoint_proved --checks test --prove "$proved_path" || { cat "$scratch/err" >&2; fail "a test at $proved_path was not proved"; }
+  [ -f "$proved/$proved_file" ] || fail "a proof given as $proved_path removed $proved_file"
+  printf 'true\n' >"$proved/$proved_file"
+  proved_ran=$((proved_ran + 1))
+done <<<"$proved_rows"
+[ "$proved_ran" -eq "$proved_want" ] || fail "proved removal rows ran: $proved_ran"
 printf 'const value = 4\n' >"$proved/src/value.ts"
 printf "grep -q 'value = 4' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
 : >"$proved/tmp/stop-control"
