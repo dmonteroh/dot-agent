@@ -143,7 +143,8 @@ tail -1 "$scratch/err" | grep -q 'project files changed while test ran, or its o
 rm -f "$project/src/mutated.ts"
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
 
-# --prove proves, logs, and removes a scratch test in the one closing call.
+# One call with --prove holds the proof, the log entry, and the removal of the
+# scratch test.
 printf 'tmp/\n' >>"$project/.git/info/exclude"
 mkdir -p "$project/tmp/scratch"
 printf 'const amount = 9\n' >"$project/src/client.ts"

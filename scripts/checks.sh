@@ -1,18 +1,12 @@
 #!/usr/bin/env bash
 set -u
 
-# verify.sh passes the check name as $1. It runs this file from the project
-# folder, and verify.sh prove also runs it from a throwaway checkout with
-# DA_PROVE=1. That checkout holds no Git-ignored file, so a check links what
-# it needs from the project, which DA_PROVE_MAIN names. A driver for a Node.js
-# project, with one check that runs a single scratch test:
-#
-#   [ -z "${DA_PROVE:-}" ] || [ -e node_modules ] || ln -s "$DA_PROVE_MAIN/node_modules" node_modules
-#   case "${1:-}" in
-#     test) exec npm test ;;
-#     scratch-*) exec node --test "tmp/scratch/${1#scratch-}.test.js" ;;
-#     *) echo "Unknown check: ${1:-}" >&2; exit 2 ;;
-#   esac
+# verify.sh passes the check name as $1 and runs this file from the project
+# folder. verify.sh prove also runs it from a throwaway checkout, with
+# DA_PROVE=1 set. That checkout holds no Git-ignored file, so a check that
+# needs installed dependencies links them from the project first, whose path
+# is in DA_PROVE_MAIN. Give each check one case arm that execs the project's
+# own command, and end with an arm that refuses an unknown name with exit 2.
 
 echo "checks.sh: no project checks are configured; replace this preserved starter driver" >&2
 exit 2

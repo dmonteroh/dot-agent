@@ -377,7 +377,8 @@ prove_change() {
     || ! git -C "$prove_tree" checkout -q --detach "$pc_head" >/dev/null 2>&1; then
     pc_stop "could not build the proving checkout, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
   fi
-  # diff-index reads the index as it is. git diff would refresh and rewrite it.
+  # The plumbing command below reads the index as it is. The porcelain one
+  # would refresh the index and rewrite it.
   if ! { git -C "$prove_top" diff-index --no-renames --name-only -z HEAD -- && git -C "$prove_top" ls-files -o --exclude-standard -z; } >"$prove_dir/paths" 2>/dev/null; then
     pc_stop "git could not list the current changes, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
   fi
