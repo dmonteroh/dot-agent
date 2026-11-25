@@ -84,7 +84,18 @@ verify.sh prove test --break src/client.ts=tmp/scratch/client.broken.ts
 
 Each test file gets its own run because a runner that stops at its first failure would let one failing test stand for the others. Inside one file the runner decides. The driver sees `DA_PROVE=1` in the checkout, and a driver that turns off fail-fast there prints every failing test.
 
-The checkout holds tracked and unignored files only. Installed dependencies and local configuration are usually ignored, so the driver also gets `DA_PROVE_MAIN`, the path of the project, and reads or links what the checkout lacks from there. Link dependencies only. A build of the base commit would write into a build cache linked from the project. The driver must run relative to its working directory, because a driver that changes into the project's own path would run the current files three times and record `no`.
+The checkout holds tracked and unignored files only. Installed dependencies and local configuration are usually ignored, so the driver also gets `DA_PROVE_MAIN`, the path of the project, and reads or links what the checkout lacks from there. Link dependencies only. A build of the base commit would write into a build cache linked from the project. The driver must run relative to its working directory, because a driver that changes into the project's own path would run the current files every time and record `no`.
+
+A check that runs one new test file finds nothing to run at the base, and so does a suite whose first test is the one being proved. The second control reads a nonzero exit there as a base that already fails. Make the driver exit 0 for that case in the checkout alone, so a plain run over a missing file still fails:
+
+```bash
+scratch-*)
+  file="tmp/scratch/${1#scratch-}.sh"
+  [ -z "${DA_PROVE:-}" ] || [ -f "$file" ] || exit 0
+  exec bash "$file" ;;
+```
+
+A `--test` file that such a check does not run then passes at the base, and the verdict is `no`. Such a check has no control at the base, so read its failing line with care: a base that cannot load the test file at all also counts as a failure.
 
 Limits:
 
@@ -92,7 +103,7 @@ Limits:
 - A node outside Git cannot prove.
 - A `--test` or `--break` path that is a symbolic link, or that passes through one in the checkout, is refused, because a write through it could reach the project.
 - The caller's Git environment variables are dropped for the checkout, and `DA_PROVE` from the caller never reaches a run of the current tree.
-- A check that already fails at the base gives `unknown`, whether a test was red there or the base needs other dependencies than the current tree.
+- A check that already fails at the base gives `unknown`, whether a test was red there, the base needs other dependencies than the current tree, or the check found no test to run.
 - `prove` runs the check at least four times with `--test` and three with `--break`, so prove a focused check and leave the whole suite to `run`.
 - Only folders are made writable before the checkout is cleaned or removed. A file there can be a hard link to one of the project's own.
 - `checkpoint.sh --prove` runs a `--test` proof in the closing call and refuses to log one that did not hold. A `--break` proof runs here, and its receipt goes to `checkpoint.sh --verification` like any other.

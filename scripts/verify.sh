@@ -428,7 +428,7 @@ prove_change() {
     fi
     if [ "$driver_rc" -ne 0 ]; then
       prove_show="$prove_dir/basecontrol"
-      pc_stop "$check already fails at ${pc_base:0:12} without the test files, so a failure there proves nothing. Prove a narrower check that passes at the base"; return 0
+      pc_stop "$check already fails at ${pc_base:0:12} without the test files, so a failure there proves nothing. If that is because it found no test to run, make $CHECK_DRIVER exit 0 for that case when DA_PROVE is set. Otherwise prove a narrower check that passes at the base"; return 0
     fi
     # One run for each test file, with that file alone copied onto the base.
     # A runner that stops at its first failure would otherwise let one

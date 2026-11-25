@@ -658,7 +658,7 @@ pv_run readonly --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
 chmod 644 "$pv/gen/double.sh"
 : >"$pv/src/flag"
 pv_run flagged --test test/sum.test.sh; pv_rc=$?
-[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'flagged already fails at [0-9a-f]* without the test files, so a failure there proves nothing' "$tmp/stderr" \
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'flagged already fails at [0-9a-f]* without the test files, so a failure there proves nothing\. If that is because it found no test to run, make .*checks\.sh exit 0 for that case when DA_PROVE is set\. Otherwise prove a narrower check that passes at the base$' "$tmp/stderr" \
   && ok "a check that already fails at the base proves nothing" || bad "red base: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
 rm "$pv/src/flag"
 [ "$(git hash-object "$pv/.git/index")" = "$pv_index" ] \
