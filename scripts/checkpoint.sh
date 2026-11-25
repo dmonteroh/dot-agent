@@ -452,24 +452,36 @@ record_last "$identity"
 record_mark
 clear_pending
 printf 'checkpoint.sh: recorded verify=%s\n' "$verify"
-# A file of a node, this one or a child, is never a scratch test. Folders are
-# compared by identity, because ./.agent and .AGENT can name the same one.
-in_node() {
+# Whether a path runs through a node, this one or a child, or through another
+# repository or worktree. Folders are compared by identity, because ./.agent
+# and .AGENT can name the same one.
+in_other_tree() {
   in_dir=$root; in_rest=$1
   while case "$in_rest" in */*) ;; *) return 1 ;; esac; do
-    [ ! "$in_dir/${in_rest%%/*}" -ef "$in_dir/.agent" ] || return 0
-    in_dir="$in_dir/${in_rest%%/*}"; in_rest=${in_rest#*/}
+    in_next="$in_dir/${in_rest%%/*}"
+    [ ! "$in_next" -ef "$in_dir/.agent" ] || return 0
+    [ ! -e "$in_next/.git" ] || [ "$in_next" -ef "$root" ] || return 0
+    in_dir=$in_next; in_rest=${in_rest#*/}
   done
+}
+# Files are compared by identity, because a file system can fold spellings
+# that Git tells apart. A list that cannot be read counts the file as tracked.
+is_tracked() {
+  while IFS= read -r -d '' it_path; do
+    [ ! "$root/$it_path" -ef "$root/$1" ] || return 0
+  done < <(git -C "$root" ls-files -z 2>/dev/null || printf '%s\0' "$1")
+  return 1
 }
 # A proved test that Git ignores is a scratch test. Its proof is on the
 # receipt, so it goes now and nothing is left for the session to clean up.
-# check-ignore reads case even where the file system folds it, so a tracked
-# test spelled in another case would pass for an ignored one.
 if [ -n "$prove" ]; then
+  # A caller's GIT_INDEX_FILE would hide what the project tracks.
+  # shellcheck disable=SC2046
+  unset $(git rev-parse --local-env-vars 2>/dev/null)
   for prove_file in "${prove_files[@]}"; do
-    ! in_node "$prove_file" || continue
-    [ -z "$(git -C "$root" ls-files -- ":(icase,literal)$prove_file" 2>&1)" ] || continue
-    if git -C "$root" check-ignore -q -- "$prove_file" 2>/dev/null && rm -f -- "$root/$prove_file"; then
+    ! in_other_tree "$prove_file" && ! is_tracked "$prove_file" || continue
+    # Without ./ a leading colon is read as pathspec magic.
+    if git -C "$root" check-ignore -q -- "./$prove_file" 2>/dev/null && rm -f -- "$root/$prove_file"; then
       echo "checkpoint.sh: removed the scratch test $prove_file, whose proof is on the receipt"
     fi
   done

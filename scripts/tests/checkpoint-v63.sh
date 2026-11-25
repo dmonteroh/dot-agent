@@ -549,7 +549,7 @@ cp "$later/.agent/rules/contract.md" "$later/.agent/rules/quality-bar.md" "$prov
 cat >"$proved/.agent/scripts/checks.sh" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${DA_PROVE:-}" ] || [ ! -f "$DA_PROVE_MAIN/tmp/stop-control" ] || { echo 'the checkout cannot run this'; exit 1; }
-for scratch_test in tmp/scratch/*.test.sh .agent/*.test.sh pkg/.agent/*.test.sh; do
+for scratch_test in tmp/scratch/*.test.sh tmp/vendor/*.test.sh .agent/*.test.sh pkg/.agent/*.test.sh; do
   [ -f "$scratch_test" ] || continue
   bash "$scratch_test" || { printf 'TAP version 13\n1..1\nnot ok 1 - %s\n' "$scratch_test"; exit 1; }
 done
@@ -575,21 +575,24 @@ git_proved commit -qm work
 printf "grep -q 'value = 3' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
 checkpoint_proved --checks test --prove tmp/scratch/value.test.sh || { cat "$scratch/err" >&2; fail 'committed work was not proved against the commit before it'; }
 grep -q "^PROVED: test fails at ${proved_mark:0:12} with tmp/scratch/value.test.sh copied in$" "$scratch/out" || fail "the proof did not use the review's base: $(grep PROVED "$scratch/out")"
-# A proof removes no node file and no tracked file, however its path is
-# spelled. The case rows need a file system that folds case.
-mkdir -p "$proved/pkg/.agent"
-printf 'true\n' >"$proved/tmp/scratch/kept.test.sh"
+# A proof removes no file of a node, of another repository, or that Git
+# tracks, however its path is spelled. The case rows need a file system that
+# folds case. Git folds ASCII case alone, so the tracked row is not ASCII.
+mkdir -p "$proved/pkg/.agent" "$proved/tmp/vendor"
+proved_tracked=$'tmp/scratch/caf\303\251.test.sh'
+printf 'true\n' >"$proved/$proved_tracked"
+git -C "$proved/tmp/vendor" init -q
 printf '.agent/\n' >>"$proved/.git/info/exclude"
-git_proved add -f tmp/scratch/kept.test.sh
+git_proved add -f "$proved_tracked"
 git_proved commit -qm kept
 proved_rows='./.agent/node.test.sh|.agent/node.test.sh
-pkg/.agent/node.test.sh|pkg/.agent/node.test.sh'
-proved_want=2
+pkg/.agent/node.test.sh|pkg/.agent/node.test.sh
+tmp/vendor/one.test.sh|tmp/vendor/one.test.sh'
+proved_want=3
 if [ -d "$proved/.AGENT" ]; then
-  proved_rows="$proved_rows
-.AGENT/node.test.sh|.agent/node.test.sh
-tmp/scratch/KEPT.test.sh|tmp/scratch/kept.test.sh"
-  proved_want=4
+  proved_rows+=$'\n.AGENT/node.test.sh|.agent/node.test.sh'
+  proved_rows+=$'\ntmp/scratch/CAF\303\211.test.sh|'"$proved_tracked"
+  proved_want=5
 fi
 proved_ran=0
 while IFS='|' read -r proved_path proved_file; do
