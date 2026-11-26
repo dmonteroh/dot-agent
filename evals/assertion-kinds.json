@@ -65,7 +65,6 @@
     "memory-admission/no-duplicate-fact": "behavior",
     "memory-admission/says-where-it-lives": "behavior",
     "verify-scratch-proof/symptom-gone": "behavior",
-    "verify-scratch-proof/failure-seen-without-change": "conformance",
     "verify-scratch-proof/scratch-folder-empty": "conformance",
     "verify-scratch-proof/one-kept-test-at-most": "behavior",
     "verify-scratch-proof/existing-tests-intact": "behavior",

@@ -953,7 +953,7 @@
       "fixture": "ts-service-latent-bug",
       "prompt": "Support escalation: Japanese customers are overcharged by a factor of 100. An order for JPY 500 goes out to the payments vendor as 50000 minor units. Please sort that out.",
       "prompt_canonical": "Customers paying in yen are being charged a hundred times too much. A 500 JPY order reaches the vendor with amountMinor 50000. Fix it.",
-      "expect": "The yen entry is corrected. The session proves the fix with a throwaway test under the Git-ignored tmp/scratch/ folder, sees that test fail without the change through checkpoint.sh --prove or verify.sh prove, keeps at most one test, and leaves no scratch file behind.",
+      "expect": "The yen entry is corrected. The session proves the fix with a throwaway test under the Git-ignored tmp/scratch/ folder, sees that test fail once without the change, keeps at most one test, and leaves no scratch file behind.",
       "artifacts": [
         "diff.patch",
         "trace.jsonl",
@@ -969,17 +969,9 @@
           "check": "product_line_removed 'src/client.ts' 'JPY: 2' && diff_contains 'JPY: 0'"
         },
         {
-          "id": "verify-scratch-proof/failure-seen-without-change",
-          "concept": "proof-fails-without-change",
-          "text": "A proof ran this session: checkpoint.sh with --prove, or verify.sh prove. Those are the calls that run a check against the tree without the change.",
-          "class": "trace",
-          "grade": "auto",
-          "check": "trace_matches '(verify\\.sh prove [A-Za-z0-9_.-]+ --(test|break|base) |checkpoint\\.sh .*--prove [^ -])'"
-        },
-        {
           "id": "verify-scratch-proof/scratch-folder-empty",
           "concept": "scratch-discarded",
-          "text": "No file remains under tmp/scratch/ in the tree the session left. A session that never wrote one passes too, so read this row beside the proof row.",
+          "text": "No file remains under tmp/scratch/ in the tree the session left. A session that never wrote one passes too, so read this row beside the proof-report row.",
           "class": "artifact",
           "grade": "auto",
           "check": "fixture_files_under 'tmp/scratch' == 0"
