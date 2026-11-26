@@ -34,8 +34,10 @@ the change, and records on the receipt whether it fails there. --base REF
 test file copied onto it, Git-ignored or not. --break PATH=FILE proves a
 rule the old code already met: it replaces PATH with the broken copy FILE in
 a checkout of the current files. prove exits 0 only when the check passes now
-and fails without the change. The driver runs in the checkout with DA_PROVE=1
-and DA_PROVE_MAIN set to the project, for what the checkout lacks.
+and fails without the change. A run without the change fails only when a test
+fails in its output, read from the lines the test count is read from. The
+driver runs in the checkout with DA_PROVE=1 and DA_PROVE_MAIN set to the
+project, for what the checkout lacks.
 
 why prints one word for a current receipt: pass, proved or unproved (a pass
 whose proof ran and held or did not), failed, uncounted (a
@@ -203,50 +205,94 @@ tap_count() {
 # summary line never stands in for a TAP stream that was cut short.
 is_tap() { grep -Eq '^(TAP version [0-9]+|1\.\.[0-9]+)' "$1"; }
 
-# The number of tests a runner's own closing summary says passed or failed, or
+# The number of tests a runner's own closing summary says passed or failed,
+# or with "failed" as the second argument the number that failed, or
 # "unknown" when no line has one of these shapes. Each shape was read from the
 # runner named beside it: observed output, except Jest, whose line is the
 # template in its SummaryReporter source (scripts/docs/verify.md lists the
 # versions). Skipped and filtered tests are left out, so a run whose every
 # test was skipped or filtered away counts 0. Several summaries add up, as
-# cargo prints one per test binary.
+# cargo prints one per test binary. A failed test is one whose own code
+# ran and failed, so a file that could not load is left out where the
+# runner tells it apart: pytest's "error", unittest's _FailedTest, and
+# bun's "error", which bun 1.3 also counts in "fail". unittest and minitest
+# count a test that raised in their "errors".
 summary_count() {
-  awk '
+  awk -v want="${2:-total}" '
     function before(s, word,   n) {
       if (!match(s, "[0-9]+ " word)) return 0
       n = substr(s, RSTART, RLENGTH); sub(/ .*/, "", n)
       return n + 0
     }
-    function add(n) { total += n; seen = 1 }
+    function after(s, word,   n) {
+      if (!match(s, "(\\(|, )" word "=[0-9]+")) return 0
+      n = substr(s, RSTART, RLENGTH); sub(/.*=/, "", n)
+      return n + 0
+    }
+    function add(n, f) { total += n; failed += f; seen = 1 }
     # node --test, spec reporter: "<U+2139> pass 2", "<U+2139> fail 0"
-    $0 ~ "^\342\204\271 (pass|fail) [0-9]+$" { add($3); next }
-    # bun test: " 2 pass", " 0 fail". Its "Ran 2 tests" line counts skips.
-    /^ [0-9]+ (pass|fail)$/ { add($1); next }
-    # Python unittest: "Ran 3 tests in 0.000s", then "OK (skipped=1)"
-    /^Ran [0-9]+ tests? in [0-9.]+s$/ { add($2); next }
-    /^(OK|FAILED) \(.*skipped=[0-9]+/ { n = $0; sub(/.*skipped=/, "", n); sub(/[^0-9].*/, "", n); add(-n); next }
+    $0 ~ "^\342\204\271 (pass|fail) [0-9]+$" { add($3, $2 == "fail" ? $3 : 0); next }
+    # bun test: " 2 pass", " 0 fail", and " 1 error" for a file that could
+    # not load. Its "Ran 2 tests" line counts skips.
+    /^ [0-9]+ (pass|fail)$/ { add($1, 0); if ($2 == "fail") bunfail += $1; next }
+    /^ [0-9]+ errors?$/ { bunerror += $1; next }
+    # Python unittest: "Ran 3 tests in 0.000s", then "OK (skipped=1)" or
+    # "FAILED (failures=1, errors=1)". A module that could not be imported
+    # is an error named "(unittest.loader._FailedTest".
+    /^ERROR: .*\(unittest\.loader\._FailedTest/ { loaderror++; next }
+    /^Ran [0-9]+ tests? in [0-9.]+s$/ { add($2, 0); next }
+    /^(OK|FAILED) \(/ {
+      failed += after($0, "failures") + after($0, "errors")
+      if ($0 ~ /skipped=[0-9]+/) add(-after($0, "skipped"), 0)
+      next
+    }
     # Jest: "Tests:       1 failed, 2 passed, 3 total"
-    /^Tests: +([0-9]+ [a-z]+, )*[0-9]+ total$/ { add(before($0, "passed") + before($0, "failed")); next }
+    /^Tests: +([0-9]+ [a-z]+, )*[0-9]+ total$/ { add(before($0, "passed") + before($0, "failed"), before($0, "failed")); next }
     # Vitest: "      Tests  1 failed | 2 passed (3)"
-    /^ +Tests  [0-9]+ [a-z]+( \| [0-9]+ [a-z]+)* \([0-9]+\)$/ { add(before($0, "passed") + before($0, "failed")); next }
+    /^ +Tests  [0-9]+ [a-z]+( \| [0-9]+ [a-z]+)* \([0-9]+\)$/ { add(before($0, "passed") + before($0, "failed"), before($0, "failed")); next }
     # cargo test: "test result: ok. 2 passed; 0 failed; 0 ignored; ..."
-    /^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { add($4 + $6); next }
+    /^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { add($4 + $6, $6); next }
     # go test -v, top-level tests: "--- PASS: TestA (0.00s)"
-    /^--- (PASS|FAIL): / { add(1); next }
+    /^--- (PASS|FAIL): / { add(1, $2 == "FAIL:"); next }
     # minitest: "2 runs, 1 assertions, 0 failures, 0 errors, 1 skips"
-    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1 - $9); next }
+    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1 - $9, $5 + $7); next }
     # pytest: "==== 1 failed, 2 passed in 0.02s ====", or bare under -q
     {
       line = $0
       gsub(/^=+ | =+$/, "", line)
-      if (line ~ /^no tests ran in [0-9.]+s/) { add(0); next }
+      if (line ~ /^no tests ran in [0-9.]+s/) { add(0, 0); next }
       if (line ~ /^[0-9]+ [a-z]+(, [0-9]+ [a-z]+)* in [0-9.]+s( \([0-9:]+\))?$/)
-        add(before(line, "passed") + before(line, "failed") + before(line, "xfailed") + before(line, "xpassed"))
+        add(before(line, "passed") + before(line, "failed") + before(line, "xfailed") + before(line, "xpassed"), before(line, "failed"))
     }
     # unittest counts class, module, and subtest skips in "skipped" and not
     # in "Ran", so the difference can fall below 0. No test ran then.
-    END { if (!seen) print "unknown"; else if (total < 0) print 0; else print total + 0 }
+    END {
+      if (!seen) print "unknown"
+      else if (want == "failed") {
+        failed += (bunfail > bunerror ? bunfail - bunerror : 0) - loaderror
+        print (failed > 0 ? failed : 0)
+      }
+      else if (total < 0) print 0
+      else print total + 0
+    }
   ' "$1"
+}
+
+# The number of failed tests in a run's output, read from the same lines
+# as the test count, or "unknown". A TAP "not ok" marked "# TODO" or
+# "# SKIP" is not a failure.
+failed_count() {
+  case "$TEST_COUNT_FORMAT" in
+    tap | auto)
+      if is_tap "$1"; then
+        awk '/^not ok([[:space:]]|$)/ && $0 !~ /#[[:space:]]*([Tt][Oo][Dd][Oo]|[Ss][Kk][Ii][Pp])/ { n++ } END { print n + 0 }' "$1"
+      elif [ "$TEST_COUNT_FORMAT" = auto ]; then
+        summary_count "$1" failed
+      else
+        echo unknown
+      fi ;;
+    *) echo unknown ;;
+  esac
 }
 
 # Why a run that exited 0 is inconclusive, as one word, from what its receipt
@@ -335,11 +381,26 @@ prove_digest() {
   LC_ALL=C sort "$prove_dir/digest" | git hash-object --stdin
 }
 
+# How the last run without the change ended, from driver_rc and its output:
+# pass, failed (a test failed in it), empty (it exited nonzero and no test
+# failed, as when a test file cannot load or there is none to run), or
+# uncounted (its output carries no test result this script reads).
+prove_outcome() {
+  [ "$driver_rc" -ne 0 ] || { echo pass; return 0; }
+  case "$(failed_count "$1")" in
+    unknown) echo uncounted ;;
+    0) echo empty ;;
+    *) echo failed ;;
+  esac
+}
+
 # Runs the check without the change in a throwaway clone, after a control run
 # of the current files there. The control separates a checkout that cannot
-# run the check from a test that fails for the change. Sets
-# fails_without_change, proof, prove_said, and prove_show. The session's
-# tree, index, and repository are never written.
+# run the check from a test that fails for the change. A run without the
+# change fails only when a test fails in its output, because a file that
+# cannot load fails a check too. Sets fails_without_change, proof,
+# prove_said, and prove_show. The session's tree, index, and repository are
+# never written.
 prove_change() {
   pc_rc=$driver_rc; pc_timed_out=$timed_out
   pc_restore() { driver_rc=$pc_rc; timed_out=$pc_timed_out; }
@@ -395,7 +456,7 @@ prove_change() {
     prove_show="$prove_dir/control"
     pc_stop "$check fails in the proving checkout with the current files, so nothing was proved. The checkout holds tracked and unignored files only. Make $CHECK_DRIVER read what it lacks from \$DA_PROVE_MAIN when DA_PROVE is set"; return 0
   fi
-  pc_timeout=0; pc_passing=
+  pc_timeout=0; pc_passing=; pc_unrun=; pc_uncounted=0
   : >"$prove_dir/target"
   if [ "${#prove_breaks[@]}" -gt 0 ]; then
     pc_mode='break'
@@ -411,13 +472,19 @@ prove_change() {
     done
     drive "$prove_tree/$prove_prefix" "$prove_dir/target"
     pc_timeout=$timed_out
-    [ "$driver_rc" -ne 0 ] || pc_passing=all
+    case "$(prove_outcome "$prove_dir/target")" in
+      pass) pc_passing=all ;;
+      empty) pc_unrun=all ;;
+      uncounted) pc_unrun=all; pc_uncounted=1 ;;
+    esac
     pc_ref=$(prove_digest "${pc_files[@]}") || pc_ref=
     pc_without="with ${#prove_breaks[@]} broken file(s) in place"
   else
     pc_mode=base
-    # The base without the test files is a second control. A check that
-    # already fails there would fail with any test copied in.
+    # The base without the test files is a second control. A check in which
+    # a test already fails there would fail with any test copied in. One
+    # that finds no test to run there, as a check of one new file does, is
+    # not red.
     prove_unlock "$prove_tree"
     if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
       pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
@@ -426,9 +493,9 @@ prove_change() {
     if [ "$timed_out" -eq 1 ]; then
       pc_stop "$check timed out at ${pc_base:0:12}, so nothing was proved. Raise --timeout or prove a narrower check"; return 0
     fi
-    if [ "$driver_rc" -ne 0 ]; then
+    if [ "$(prove_outcome "$prove_dir/basecontrol")" = failed ]; then
       prove_show="$prove_dir/basecontrol"
-      pc_stop "$check already fails at ${pc_base:0:12} without the test files, so a failure there proves nothing. If that is because it found no test to run, make $CHECK_DRIVER exit 0 for that case when DA_PROVE is set. Otherwise prove a narrower check that passes at the base"; return 0
+      pc_stop "a test of $check already fails at ${pc_base:0:12} without the test files, so a failure there proves nothing. Prove a narrower check that passes at the base"; return 0
     fi
     # One run for each test file, with that file alone copied onto the base.
     # A runner that stops at its first failure would otherwise let one
@@ -442,7 +509,11 @@ prove_change() {
       drive "$prove_tree/$prove_prefix" "$prove_dir/one"
       [ "$timed_out" -eq 0 ] || { pc_timeout=1; break; }
       { printf '== %s copied onto %s: exit %s ==\n' "$pt" "${pc_base:0:12}" "$driver_rc"; cat "$prove_dir/one"; } >>"$prove_dir/target"
-      [ "$driver_rc" -ne 0 ] || pc_passing="${pc_passing:+$pc_passing, }$pt"
+      case "$(prove_outcome "$prove_dir/one")" in
+        pass) pc_passing="${pc_passing:+$pc_passing, }$pt" ;;
+        empty) pc_unrun="${pc_unrun:+$pc_unrun, }$pt" ;;
+        uncounted) pc_unrun="${pc_unrun:+$pc_unrun, }$pt"; pc_uncounted=1 ;;
+      esac
     done
     pc_ref=$pc_base
     pc_without="at ${pc_base:0:12} with each of ${#prove_tests[@]} test file(s) copied in"
@@ -453,6 +524,18 @@ prove_change() {
     prove_said="$check timed out without the change, so nothing was proved. Raise --timeout or prove a narrower check"
   elif [ -z "$pc_tests" ] || [ -z "$pc_ref" ]; then
     prove_said="could not digest the proof's files, so nothing was proved. Run this call again"
+  elif [ -z "$pc_passing" ] && [ -n "$pc_unrun" ]; then
+    if [ "$pc_uncounted" -eq 1 ]; then
+      if [ "$TEST_COUNT_FORMAT" = auto ]; then
+        prove_said="$check exits nonzero $pc_without, but its output carries no test result this script reads, so nothing was proved. Make $CHECK_DRIVER run the runner with its TAP reporter or a summary that verify.sh --help lists"
+      else
+        prove_said="$check exits nonzero $pc_without, but TEST_COUNT_FORMAT=$TEST_COUNT_FORMAT read no test result from its output, so nothing was proved. If verify.sh --help lists this runner, set TEST_COUNT_FORMAT=auto in .agent/scripts/verify.conf. Otherwise make $CHECK_DRIVER run the runner with its TAP reporter"
+      fi
+    elif [ "$pc_mode" = break ]; then
+      prove_said="$check exits nonzero $pc_without, but no test failed in its output, so nothing was proved. A broken copy that cannot load fails every check. Break the behavior, keep the file loadable, and run this call again"
+    else
+      prove_said="$check exits nonzero at ${pc_base:0:12} with $pc_unrun copied in, but no test failed in its output, so nothing was proved. Read the output above for why it exits nonzero: a test file that cannot load there, or a failure outside the tests. When the test needs a file or a name the change adds, prove it with --break PATH=FILE on the current files instead"
+    fi
   elif [ -z "$pc_passing" ]; then
     fails_without_change=yes
     proof="$pc_mode:$pc_ref:$pc_tests"

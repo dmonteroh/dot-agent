@@ -563,15 +563,18 @@ TIMEOUT_SECONDS=60
 EOF
 cat >"$pv/.agent/scripts/checks.sh" <<'EOF'
 #!/usr/bin/env bash
-all() { for f in test/*.test.sh tmp/scratch/*.test.sh; do [ -f "$f" ] || continue; bash "$f" || { echo "not ok - $f"; exit 1; }; done; }
+# A failed test prints as TAP, so prove can tell it from a file that did not run.
+all() { for f in test/*.test.sh tmp/scratch/*.test.sh; do [ -f "$f" ] || continue; bash "$f" || { [ "${1:-}" = quiet ] || printf '1..1\nnot ok 1 - %s\n' "$f"; exit 1; }; done; }
 case "$1" in
   test) all ;;
+  quiet) all quiet ;;
+  one) [ -f tmp/scratch/one.test.sh ] || { echo 'tmp/scratch/one.test.sh does not exist'; exit 2; }; bash tmp/scratch/one.test.sh ;;
   local) [ -f config.local ] || { echo 'config.local is missing'; exit 1; }; all ;;
   shared) [ -f "${DA_PROVE_MAIN:-.}/config.local" ] || { echo 'config.local is missing'; exit 1; }; all ;;
   linked) [ -z "${DA_PROVE:-}" ] || [ -e gen ] || ln -s "$DA_PROVE_MAIN/gen" gen; all ;;
-  built) if [ ! -e out/calc.sh ] || [ src/calc.sh -nt out/calc.sh ]; then mkdir -p out && cp src/calc.sh out/calc.sh; fi; [ "$(bash out/calc.sh 2 3)" = 5 ] ;;
+  built) if [ ! -e out/calc.sh ] || [ src/calc.sh -nt out/calc.sh ]; then mkdir -p out && cp src/calc.sh out/calc.sh; fi; [ "$(bash out/calc.sh 2 3)" = 5 ] || { printf '1..1\nnot ok 1 - built\n'; exit 1; } ;;
   readonly) [ -z "${DA_PROVE:-}" ] || { mkdir -p ro/sub locked && chmod 555 ro && chmod 000 locked && ln "$DA_PROVE_MAIN/gen/double.sh" hardlink; }; all ;;
-  flagged) [ -f src/flag ] || { echo 'no flag'; exit 1; }; all ;;
+  flagged) [ -f src/flag ] || { printf '1..1\nnot ok 1 - no flag\n'; exit 1; }; all ;;
   plain) [ -z "${DA_PROVE:-}" ] || { echo 'DA_PROVE reached a run'; exit 1; } ;;
   slow) if [ -n "${DA_PROVE:-}" ] && [ "$(bash src/calc.sh 2 3)" != 5 ]; then sleep 20; fi; all ;;
   *) exit 9 ;;
@@ -658,7 +661,7 @@ pv_run readonly --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
 chmod 644 "$pv/gen/double.sh"
 : >"$pv/src/flag"
 pv_run flagged --test test/sum.test.sh; pv_rc=$?
-[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'flagged already fails at [0-9a-f]* without the test files, so a failure there proves nothing\. If that is because it found no test to run, make .*checks\.sh exit 0 for that case when DA_PROVE is set\. Otherwise prove a narrower check that passes at the base$' "$tmp/stderr" \
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && has 'a test of flagged already fails at [0-9a-f]* without the test files, so a failure there proves nothing\. Prove a narrower check that passes at the base$' "$tmp/stderr" \
   && ok "a check that already fails at the base proves nothing" || bad "red base: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
 rm "$pv/src/flag"
 [ "$(git hash-object "$pv/.git/index")" = "$pv_index" ] \
@@ -670,6 +673,35 @@ pv_run test --base "$pv_orphan" --test test/sum.test.sh; pv_rc=$?
 pv_run built --break src/calc.sh=tmp/scratch/calc.broken; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
   && ok "a broken copy is a whole second newer than what the control run built" || bad "mtime build: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+# A check that runs one new file finds nothing to run at the base, which is
+# not a red base. A failure counts only when a test fails in the output.
+cat >"$pv/tmp/scratch/one.test.sh" <<'EOF'
+if [ "$(bash src/calc.sh 2 3)" = 5 ]; then printf '1..1\nok 1 - sum\n'; else printf '1..1\nnot ok 1 - sum\n'; exit 1; fi
+EOF
+pv_run one --base "$pv_base" --test tmp/scratch/one.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 0 ] && [ "$(pv_line 12)" = 'fails_without_change=yes' ] \
+  && ok "a check of one new file proves it with no special case in the driver" || bad "one file: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
+printf 'five() { echo 5; }\n' >"$pv/src/five.sh"
+cat >"$pv/tmp/scratch/one.test.sh" <<'EOF'
+. src/five.sh 2>/dev/null || { printf '1..0\n# src/five.sh cannot load\n'; exit 1; }
+if [ "$(five)" = 5 ]; then printf '1..1\nok 1 - five\n'; else printf '1..1\nnot ok 1 - five\n'; exit 1; fi
+EOF
+pv_run one --test tmp/scratch/one.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] \
+  && has 'one exits nonzero at [0-9a-f]* with tmp/scratch/one\.test\.sh copied in, but no test failed in its output, so nothing was proved\..*--break PATH=FILE on the current files instead$' "$tmp/stderr" \
+  && ok "a test file that cannot load at the base proves nothing" || bad "no load: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
+git -C "$pv" add src/five.sh
+git -C "$pv" commit -qm five
+printf 'five() {\n' >"$pv/tmp/scratch/five.broken"
+pv_run one --break src/five.sh=tmp/scratch/five.broken --test tmp/scratch/one.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 11)" = 'proof=none' ] \
+  && has 'but no test failed in its output, so nothing was proved\. A broken copy that cannot load fails every check\.' "$tmp/stderr" \
+  && ok "a broken copy that cannot load proves nothing" || bad "break no load: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
+rm "$pv/tmp/scratch/one.test.sh" "$pv/tmp/scratch/five.broken"
+pv_run quiet --base "$pv_base" --test test/sum.test.sh; pv_rc=$?
+[ "$pv_rc" -eq 1 ] && [ "$(pv_line 12)" = 'fails_without_change=unknown' ] \
+  && has 'but its output carries no test result this script reads, so nothing was proved' "$tmp/stderr" \
+  && ok "a failure without the change that prints no test result proves nothing" || bad "quiet: rc $pv_rc, $(pv_line 12), $(tail -1 "$tmp/stderr")"
 DA_PROVE=1 DA_PROVE_MAIN=/nonexistent bash "$pv_verify" run plain --root "$pv" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && ok "a caller's DA_PROVE does not reach a run of the current tree" || bad "DA_PROVE leak: rc $pv_rc, $(tail -1 "$tmp/stderr")"
 pv_run slow --base "$pv_base" --test test/sum.test.sh --timeout 3; pv_rc=$?
@@ -710,7 +742,7 @@ EOF
 pm="$tmp/prove-mono"
 mkdir -p "$pm/pkg/.agent/scripts" "$pm/pkg/test"
 cp "$here/verify.sh" "$here/runtime.sh" "$pv/.agent/scripts/verify.conf" "$pm/pkg/.agent/scripts/"
-printf '#!/usr/bin/env bash\nbash test/one.test.sh\n' >"$pm/pkg/.agent/scripts/checks.sh"
+printf '#!/usr/bin/env bash\nbash test/one.test.sh || { printf "1..1\\nnot ok 1\\n"; exit 1; }\n' >"$pm/pkg/.agent/scripts/checks.sh"
 printf '.agent/\n' >"$pm/.gitignore"
 printf 'old\n' >"$pm/pkg/value"
 printf 'true\n' >"$pm/pkg/test/one.test.sh"
@@ -728,11 +760,69 @@ printf ': one\n: two\n: three\n: four\n: five\n[ "$(cat value)" = new ]\n' >"$pm
 git -C "$pm" add -A
 git -C "$pm" commit -qm change
 git -C "$pm" mv pkg/test/one.test.sh pkg/test/two.test.sh
-printf '#!/usr/bin/env bash\nfor f in test/*.test.sh; do bash "$f" || exit 1; done\n' >"$pm/pkg/.agent/scripts/checks.sh"
+printf '#!/usr/bin/env bash\nfor f in test/*.test.sh; do bash "$f" || { printf "1..1\\nnot ok 1\\n"; exit 1; }; done\n' >"$pm/pkg/.agent/scripts/checks.sh"
 printf 'newer\n' >"$pm/pkg/value"
 printf ': one\n: two\n: three\n: four\n: five\n[ "$(cat value)" = newer ]\n' >"$pm/pkg/test/two.test.sh"
 TMPDIR="$tmp/prove-tmp" bash "$pm/pkg/.agent/scripts/verify.sh" prove test --test test/two.test.sh --root "$pm/pkg" >"$tmp/stdout" 2>"$tmp/stderr"; pv_rc=$?
 [ "$pv_rc" -eq 0 ] && ok "a renamed file leaves no old copy in the proving checkout" || bad "rename: rc $pv_rc, $(tail -1 "$tmp/stderr")"
+# prove reads failed tests from the summary lines the count table above
+# reads. Each runner prints its failing summary at the base with the test
+# file copied in, and exits 0 everywhere else. A file that could not load,
+# a TAP TODO or SKIP, and an expected failure are no failed test.
+fc="$tmp/prove-failed"
+mkdir -p "$fc/.agent/scripts" "$fc/src" "$fc/test"
+cp "$here/verify.sh" "$here/runtime.sh" "$pv/.agent/scripts/verify.conf" "$fc/.agent/scripts/"
+cat >"$fc/.agent/scripts/checks.sh" <<'EOF'
+#!/usr/bin/env bash
+[ -f test/x.test ] && [ "$(cat src/state)" = old ] || exit 0
+case "$1" in
+  node) printf '\342\204\271 pass 1\n\342\204\271 fail 1\n' ;;
+  bun) printf ' 1 pass\n 1 fail\nRan 2 tests across 1 file. [1.00ms]\n' ;;
+  unittest) printf 'E.\n-----\nRan 2 tests in 0.001s\n\nFAILED (errors=1)\n' ;;
+  jest) printf 'Test Suites: 1 failed, 1 total\nTests:       1 failed, 1 passed, 2 total\n' ;;
+  vitest) printf '      Tests  1 failed | 1 passed (2)\n' ;;
+  cargo) printf 'test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' ;;
+  go) printf -- '--- PASS: TestA (0.00s)\n--- FAIL: TestB (0.00s)\nFAIL\n' ;;
+  minitest) printf '2 runs, 1 assertions, 0 failures, 1 errors, 0 skips\n' ;;
+  pytest) printf '==== 1 failed, 1 passed in 0.02s ====\n' ;;
+  pytesterror) printf '==== 1 error in 0.02s ====\n' ;;
+  unittestload) printf 'E\nERROR: tests.test_x (unittest.loader._FailedTest.tests.test_x)\n-----\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n' ;;
+  unittestexpected) printf 'xu\n-----\nRan 2 tests in 0.000s\n\nFAILED (expected failures=1, unexpected successes=1)\n' ;;
+  bunload) printf ' 0 pass\n 1 fail\n 1 error\nRan 1 test across 1 file. [14.00ms]\n' ;;
+  taptodo) printf 'TAP version 13\nnot ok 1 - later # TODO not built\nnot ok 2 - db # SKIP no database\n1..2\n' ;;
+esac
+exit 1
+EOF
+printf '.agent/\n' >"$fc/.gitignore"
+printf 'old\n' >"$fc/src/state"
+git -C "$fc" init -q
+git -C "$fc" add .
+git -C "$fc" -c user.name=t -c user.email=t@example.invalid commit -qm base
+printf 'new\n' >"$fc/src/state"
+printf 'x\n' >"$fc/test/x.test"
+fc_rows=0
+while read -r fc_check fc_want; do
+  TMPDIR="$tmp/prove-tmp" bash "$fc/.agent/scripts/verify.sh" prove "$fc_check" --test test/x.test --root "$fc" >"$tmp/stdout" 2>"$tmp/stderr"
+  fc_got=$(sed -n 's/^fails_without_change=//p' "$fc/.agent/.state/receipts/$(cut -f2 "$tmp/stdout").receipt")
+  [ "$fc_got" = "$fc_want" ] && ok "prove reads a $fc_check failure as $fc_want" || bad "prove read $fc_check as $fc_got: $(tail -1 "$tmp/stderr")"
+  fc_rows=$((fc_rows + 1))
+done <<'EOF'
+node yes
+bun yes
+unittest yes
+jest yes
+vitest yes
+cargo yes
+go yes
+minitest yes
+pytest yes
+pytesterror unknown
+unittestload unknown
+unittestexpected unknown
+bunload unknown
+taptodo unknown
+EOF
+[ "$fc_rows" -eq 14 ] && ok "every failed-summary row ran" || bad "failed-summary rows ran: $fc_rows"
 
 printf '1..%s\n' "$((pass + fail))"
 printf '# passed %s; failed %s\n' "$pass" "$fail"

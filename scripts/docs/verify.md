@@ -75,27 +75,20 @@ verify.sh prove test --break src/client.ts=tmp/scratch/client.broken.ts
 1. It runs the check on the current tree, as `run` does. A check that does not pass now is recorded as a failed run, and nothing is proved.
 2. It copies the `--test` and `--break` files aside, then runs and digests those copies, so an edit during the runs cannot change what the receipt names. It makes a throwaway clone of the repository in the temporary folder and copies the current changes into it. Those are every file that differs from `HEAD`, every untracked file Git does not ignore, and each `--test` file, ignored or not.
 3. It runs the check there once as a control. A check that fails there cannot run in the checkout, so the verdict is `unknown` and the output of that run prints.
-4. It runs the check without the change. With `--test`, the checkout goes to `--base` (default `HEAD`, and always an ancestor of it). The check runs there once with no test file copied in, as a second control: a check that already fails at the base would fail with any test, so the verdict is `unknown`. Then each test file is copied onto the base and run on its own. With `--break PATH=FILE`, the current files stay and `PATH` is replaced by `FILE`, a copy the session broke on purpose.
-5. The verdict is `yes` when every one of those runs fails, and `no` when one passes. The message names a test file that passes at the base.
+4. It runs the check without the change. With `--test`, the checkout goes to `--base` (default `HEAD`, and always an ancestor of it). The check runs there once with no test file copied in, as a second control: when a test already fails there, it would fail with any test file copied in, so the verdict is `unknown`. A check that finds nothing to run there, as a check of one new test file does, is not red. Then each test file is copied onto the base and run on its own. With `--break PATH=FILE`, the current files stay and `PATH` is replaced by `FILE`, a copy the session broke on purpose.
+5. A run without the change fails when the check exits nonzero and a test fails in its output. The verdict is `yes` when every one of those runs fails, and `no` when one passes. The message names a test file that passes at the base. A run that exits nonzero with no failed test in its output gives `unknown`: the test did not run there.
 
-`prove` exits 0 only for `yes`. It prints the output of the runs without the change, so the session can confirm each failure is the one it means. `yes` says the check fails there, and a missing file or a syntax error fails too.
+`prove` exits 0 only for `yes`. It prints the output of the runs without the change, so the session can confirm each failure is the one it means.
 
-`--break` is for a test that guards a rule the old code already met. Such a test passes at every base, so only breaking the behavior can show that it notices. Copy the file into the scratch folder, break the behavior in the copy, and pass the pair.
+A failed test is read from the same lines as the test count: TAP `not ok` results, except those marked `# TODO` or `# SKIP`, or the failures in a closing summary that `verify.sh --help` lists. unittest and minitest errors count, because those runners report a test that raised as an error. A file that could not load is left out where the runner tells it apart: pytest errors, unittest's `unittest.loader._FailedTest` errors, and bun's `error` count, which bun also adds to `fail`. A run whose output carries neither gives `unknown`, so a check proved this way needs output that `run` can count, as a positive check does.
+
+`--break` is for a test that guards a rule the old code already met. Such a test passes at every base, so only breaking the behavior can show that it notices. Copy the file into the scratch folder, break the behavior in the copy, and pass the pair. A test file that Git ignores reaches the checkout only through `--test`, so name it there too.
 
 Each test file gets its own run because a runner that stops at its first failure would let one failing test stand for the others. Inside one file the runner decides. The driver sees `DA_PROVE=1` in the checkout, and a driver that turns off fail-fast there prints every failing test.
 
 The checkout holds tracked and unignored files only. Installed dependencies and local configuration are usually ignored, so the driver also gets `DA_PROVE_MAIN`, the path of the project, and reads or links what the checkout lacks from there. Link dependencies only. A build of the base commit would write into a build cache linked from the project. The driver must run relative to its working directory, because a driver that changes into the project's own path would run the current files every time and record `no`.
 
-A check that runs one new test file finds nothing to run at the base, and so does a suite whose first test is the one being proved. The second control reads a nonzero exit there as a base that already fails. Make the driver exit 0 for that case in the checkout alone, so a plain run over a missing file still fails:
-
-```bash
-scratch-*)
-  file="tmp/scratch/${1#scratch-}.sh"
-  [ -z "${DA_PROVE:-}" ] || [ -f "$file" ] || exit 0
-  exec bash "$file" ;;
-```
-
-A `--test` file that such a check does not run then passes at the base, and the verdict is `no`. Such a check has no control at the base, so read its failing line with care: a base that cannot load the test file at all also counts as a failure.
+A check that runs one test file needs no special case. At the base the file is absent and the runner finds nothing to run, which is no failed test, so the proof goes on. With the file copied in, a failing assertion gives `yes`. A file that cannot load there, because it imports a function or a file the change adds, gives `unknown`, except under a runner that reports such a file as a failed test (see Limits). Prove such a test with `--break PATH=FILE` on the current files, which keeps what the test needs and breaks the behavior it checks.
 
 Limits:
 
@@ -103,7 +96,8 @@ Limits:
 - A node outside Git cannot prove.
 - A `--test` or `--break` path that is a symbolic link, or that passes through one in the checkout, is refused, because a write through it could reach the project.
 - The caller's Git environment variables are dropped for the checkout, and `DA_PROVE` from the caller never reaches a run of the current tree.
-- A check that already fails at the base gives `unknown`, whether a test was red there, the base needs other dependencies than the current tree, or the check found no test to run.
+- A check in which a test already fails at the base gives `unknown`. A base that needs other dependencies than the current tree runs no test, and gives `unknown` too.
+- A runner that reports a file it could not load as a failed test, as `node --test` does, gives `yes` for that file. Read the failing line.
 - `prove` runs the check at least four times with `--test` and three with `--break`, so prove a focused check and leave the whole suite to `run`.
 - Only folders are made writable before the checkout is cleaned or removed. A file there can be a hard link to one of the project's own.
 - `checkpoint.sh --prove` runs a `--test` proof in the closing call and refuses to log one that did not hold. A `--break` proof runs here, and its receipt goes to `checkpoint.sh --verification` like any other.
