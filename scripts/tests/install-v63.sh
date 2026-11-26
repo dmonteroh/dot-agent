@@ -4,12 +4,9 @@ unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/install-v63.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
 project="$scratch/project"
 mkdir -p "$project"
-fail() { echo "FAIL install-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL install-v63: $*" >&2; exit 1; }
 bash "$repo/scripts/node.sh" init --preset software-development --mode ignore-all "$project" >/dev/null
 for file in runtime.sh verify.sh review.sh checks.sh checkpoint.conf verify.conf review.conf; do
   [ -f "$project/.agent/scripts/$file" ] || fail "missing installed $file"
@@ -51,5 +48,4 @@ cmp "$repo/scripts/verify.sh" "$project/.agent/scripts/verify.sh" || fail 'same-
 grep -q 'old runtime inode' "$scratch/old-runtime" || fail 'refresh modified a live runtime inode'
 cmp "$repo/scripts/status.sh" "$project/.agent/scripts/status.sh" || fail 'runtime refresh failed'
 cmp "$project/.agent/scripts/checks.sh" "$scratch/original/scripts/checks.sh" || fail 'same-version refresh replaced driver'
-[ -z "${proved_failures:-}" ] || exit 1
 printf 'install-v63: fresh install, 6.2 migration, customization preservation, and atomic runtime refresh passed\n'

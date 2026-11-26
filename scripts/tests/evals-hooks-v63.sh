@@ -5,10 +5,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/evals-hooks-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL evals-hooks-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL evals-hooks-v63: $*" >&2; exit 1; }
 lib="$repo/evals/run_lib.py"
 fx="$scratch/fixture"
 mkdir -p "$fx/src"
@@ -108,5 +105,4 @@ cp "$scratch/t2.jsonl" "$w/iteration-1/eval-e/c/outputs/trace.jsonl"
 printf '{"a": "x", "b": "x", "c": "x"}\n' >"$w/iteration-1/arm-map.json"
 out=$(python3 -I "$repo/evals/load_first.py" "$w")
 printf '%s' "$out" | grep -qF 'load-first 2/3 (67%)  by hook 1, by call 1' || fail "load_first.py wrong: $out"
-[ -z "${proved_failures:-}" ] || exit 1
 echo 'ok evals-hooks-v63'

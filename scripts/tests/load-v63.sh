@@ -8,10 +8,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/load-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL load-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL load-v63: $*" >&2; exit 1; }
 
 mknode() { # $1 dir  $2 indexes  [$3 hooks]
   mkdir -p "$1"
@@ -162,5 +159,4 @@ grep -qF 'A subagent never runs it' "$scratch/stale.out" || fail 'the stale line
 entry=$(cd "$g" && bash .agent/scripts/index.sh ensure 2>/dev/null) || fail 'ensure failed on the stale fixture'
 grep -q '^READ: ' "$entry" || fail 'the file ensure prints lists no page'
 
-[ -z "${proved_failures:-}" ] || exit 1
 echo "ok load-v63"

@@ -7,10 +7,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/skills-index-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'chmod -R u+w "$scratch" 2>/dev/null; rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL skills-index-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL skills-index-v63: $*" >&2; exit 1; }
 node_sh="$repo/scripts/node.sh"
 
 for mode in track-shared track-all; do
@@ -111,5 +108,4 @@ rm -rf "$sk/.claude/skills"
 ln -s ../.agents/skills "$sk/.claude/skills"
 out=$(bash "$sk/.agent/scripts/status.sh" "$sk" 2>&1 || true)
 lacks 'separate copy'
-[ -z "${proved_failures:-}" ] || exit 1
 exit 0

@@ -7,10 +7,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/absorb-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL absorb-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL absorb-v63: $*" >&2; exit 1; }
 
 main="$scratch/main node"
 mkdir -p "$main"
@@ -163,5 +160,4 @@ printf 'export const client = 3;\n' >"$proj/src/client.ts"
 g commit -qam 'client change after the check'
 bash "$plinks" "$proj" | grep -q "^STALE: docs/client.md cites src/client.ts, changed in 1 commit since checked at $head_commit" \
   || fail 'the kept stamp does not report a later change to the cited code'
-[ -z "${proved_failures:-}" ] || exit 1
 exit 0

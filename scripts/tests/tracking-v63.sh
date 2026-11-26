@@ -4,10 +4,7 @@ unset CDPATH
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/tracking-v63.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL tracking-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL tracking-v63: $*" >&2; exit 1; }
 root="$scratch/ignored node"
 mkdir -p "$root/src"
 bash "$repo/scripts/node.sh" init --preset software-development --mode ignore-all "$root" >/dev/null
@@ -55,5 +52,4 @@ git -C "$non_git" init -q
 if git -C "$non_git" status --porcelain --untracked-files=all | grep -q '\.agent/\.state/'; then
   fail 'non-Git state became trackable after Git initialization'
 fi
-[ -z "${proved_failures:-}" ] || exit 1
 printf 'tracking-v63: ignored inputs, node-only logging, and private state boundaries passed\n'

@@ -8934,20 +8934,6 @@ PASS=$((PASS + $(grep -c '^ok   ' "$eval_checks_out")))
 FAIL=$((FAIL + $(grep -c '^FAIL ' "$eval_checks_out")))
 
 wait "$v63_pid"
-# verify.sh prove takes one failing run as proof for a whole test file. A file
-# whose fail helper exits would show its first failing assertion alone, so
-# each one keeps going when DA_PROVE is set.
-stops_early() { awk '/^fail\(\) / && /exit 1/ && !/DA_PROVE/ { print FILENAME }' "$@"; }
-# Strict mode must hold until the temp folder and its trap exist. Without it
-# a failed mktemp leaves the trap removing the current folder.
-loose_early() { awk 'FNR == 1 { trapped = 0 } /^trap / { trapped = 1 } /\|\| set \+e$/ && !trapped { print FILENAME }' "$@"; }
-printf 'fail() { echo "FAIL planted: $*" >&2; exit 1; }\n' >"$WORK/planted-v63.sh"
-printf '[ -z "${DA_PROVE:-}" ] || set +e\ntrap true EXIT\n' >"$WORK/planted-loose-v63.sh"
-early=$(stops_early "$reporoot"/scripts/tests/*-v63.sh; loose_early "$reporoot"/scripts/tests/*-v63.sh)
-[ -z "$early" ] && [ "$(stops_early "$WORK/planted-v63.sh")" = "$WORK/planted-v63.sh" ] && [ "$(loose_early "$WORK/planted-loose-v63.sh")" = "$WORK/planted-loose-v63.sh" ] \
-  && pass "tests: every v6.3 test file reports each failing assertion under DA_PROVE" \
-  || fail "tests: every v6.3 test file reports each failing assertion under DA_PROVE ($early)"
-
 for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
   [ -f "$v63_test" ] || continue
   if [ "$(cat "$v63_out/${v63_test##*/}.rc" 2>/dev/null)" = 0 ]; then
@@ -8959,7 +8945,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1400
+EXPECTED_CHECKS=1399
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

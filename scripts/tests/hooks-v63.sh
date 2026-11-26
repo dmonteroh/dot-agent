@@ -5,10 +5,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/hooks-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL hooks-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL hooks-v63: $*" >&2; exit 1; }
 node() { bash "$repo/scripts/node.sh" "$@"; }
 installer="$repo/tools/hooks/install.sh"
 json() { python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$@"; }
@@ -133,5 +130,4 @@ DOT_AGENT_PYTHON=/nonexistent/python bash "$installer" "$o" >"$scratch/nopy.out"
 [ ! -e "$o/.codex/hooks.json" ] || fail 'wrote without python'
 grep -qF 'not added' "$scratch/nopy.out" || fail 'missing python not reported'
 if bash "$installer" "$scratch/no-node" >/dev/null 2>&1; then fail 'installer accepted a root with no manifest'; fi
-[ -z "${proved_failures:-}" ] || exit 1
 echo 'ok hooks-v63'
