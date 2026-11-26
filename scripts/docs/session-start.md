@@ -6,9 +6,9 @@
 session-start.sh [--max-bytes N]
 ```
 
-- It finds its node from its own location, `<node>/.agent/scripts/`, and runs `status.sh --load` there. The output is byte-identical to the entry point's own call.
+- It finds its node from its own location, `<node>/.agent/scripts/`, and scans that node once with `status.sh`. The output is byte-identical to the entry point's own call.
 - The header names the call and the node: `dot-agent session-start hook: the output of `…` for the node at .agent/ follows` (`~/.agent/` for a root node). It never names an absolute path, because the `--load` output itself carries only relative ones. Both entry-point templates tell the agent to skip the load step when this block holds the output.
-- `--max-bytes` is the most the harness will take. Over it, the script runs `status.sh --load --tail 0` and prints that output under a header naming the shorter call and saying the session-log tail was left out. Over the limit again, it prints one line instead, naming the full call and telling the agent to make it first. The default, 30000, is the tool-result cap `PAYLOAD_MAX_BYTES` defaults to.
+- `--max-bytes` is the most the harness will take. When the full output exceeds the limit, the same scan supplies the output of `status.sh --load --tail 0`. Its header names the shorter call and explains the missing log tail. Over the limit again, it prints one line instead, naming the full call and telling the agent to make it first. The default, 30000, is the tool-result cap `PAYLOAD_MAX_BYTES` defaults to.
 - The size checked is the size printed: the header line, its newline, and the output with its own trailing newlines kept.
 - `--header full` and `--header tail0` print only the header line each attempt uses and run nothing. `status.sh` calls them to count the header in its `HOOK:` line (`scripts/docs/status.md`).
 - Any problem (no `status.sh`, a failed run, a bad limit) prints nothing and exits 0. The entry point's load step then runs as it always did, so the hook can only save a call, never cost a session.

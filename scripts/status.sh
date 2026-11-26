@@ -24,6 +24,7 @@ WORKER_CONTRACT=1
 root="."
 load=0
 tail_arg=""
+hook_limit=""
 format=text
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -61,6 +62,14 @@ combined with --load.
 EOF
     exit 0 ;;
   --load) load=1 ;;
+  --hook-load)
+    # The hook supplies both headers so its byte limit includes the chosen one.
+    [[ $# -ge 4 && "$2" =~ ^[0-9]+$ ]] || exit 1
+    load=1
+    hook_limit=$2
+    hook_full_header=$3
+    hook_short_header=$4
+    shift 3 ;;
   --tail)
     case "${2:-}" in
     '' | *[!0-9]*)
@@ -738,13 +747,6 @@ settle() {
   settled_total=$total
 }
 
-# The session-start hook prints its own header line ahead of this output and
-# cuts to a pointer line past HOOK_MAX_BYTES, retrying once with --tail 0.
-hooks_line=$(grep -m1 '^  hooks:' "$purpose" 2>/dev/null)
-hook_on=0
-if [[ -f "$agent/scripts/session-start.sh" && "$hooks_line" != *"hooks: none"* && "$files_bytes" -gt 0 ]]; then
-  hook_on=1
-fi
 hook_header_bytes() { # $1: full | tail0
   local h
   h=$(bash "$agent/scripts/session-start.sh" --header "$1" 2>/dev/null) || h=""
@@ -753,24 +755,32 @@ hook_header_bytes() { # $1: full | tail0
   echo $((nbytes + 1))
 }
 
-tail_for "$TAIL_LINES"
-main_tail=$tail_text
-bytes_of "$main_tail"
-main_tail_bytes=$nbytes
-load_line_for "$tail_words"
-main_load_line=$REPLY
-bytes_of "$notes$main_load_line"
-main_fixed=$((nbytes + notice_bytes + files_bytes + main_tail_bytes))
-settle "$main_fixed" "$main_tail_bytes"
-
-hook_line=""
-if [[ "$hook_on" -eq 1 ]]; then
+hooks_line=$(grep -m1 '^  hooks:' "$purpose" 2>/dev/null)
+header_full=0
+if [[ -f "$agent/scripts/session-start.sh" && "$hooks_line" != *"hooks: none"* && "$files_bytes" -gt 0 ]]; then
   header_full=$(hook_header_bytes full)
+fi
+
+hook_text_for() { # $1: total bytes — sets REPLY
+  REPLY="HOOK: the session-start hook adds a $header_full-byte header to these $1 bytes, $(($1 + header_full - HOOK_MAX_BYTES)) over its HOOK_MAX_BYTES limit of $HOOK_MAX_BYTES, so it $hook_fallback. Two levers shrink it: TAIL_LINES in status.conf (the tail is $main_tail_bytes bytes here) and the memory index (memory.md is $hook_mem_bytes bytes, MEMORY_INDEX_BYTES $MEMORY_INDEX_BYTES)."$'\n'
+}
+
+prepare_load() { # $1: number of log entries
+  tail_for "$1"
+  main_tail=$tail_text
+  bytes_of "$main_tail"
+  main_tail_bytes=$nbytes
+  load_line_for "$tail_words"
+  main_load_line=$REPLY
+  bytes_of "$notes$main_load_line"
+  main_fixed=$((nbytes + notice_bytes + files_bytes + main_tail_bytes))
+  settle "$main_fixed" "$main_tail_bytes"
+
+  hook_line=""
   if [[ "$header_full" -gt 0 && $((settled_total + header_full)) -gt "$HOOK_MAX_BYTES" ]]; then
     hook_fallback="prints a pointer line in place of this output"
-    if [[ "$TAIL_LINES" -gt 0 && "$main_tail_bytes" -gt 0 ]]; then
+    if [[ "$main_tail_bytes" -gt 0 ]]; then
       header_tail0=$(hook_header_bytes tail0)
-      tail_for 0
       load_line_for 0
       bytes_of "$notes$REPLY"
       t0_fixed=$((nbytes + notice_bytes + files_bytes))
@@ -781,34 +791,75 @@ if [[ "$hook_on" -eq 1 ]]; then
     fi
     hook_mem_bytes=0
     [[ -s "$memory" ]] && hook_mem_bytes=$(file_bytes "$memory")
-    hook_text_for() { # $1: total bytes — sets REPLY
-      REPLY="HOOK: the session-start hook adds a $header_full-byte header to these $1 bytes, $(($1 + header_full - HOOK_MAX_BYTES)) over its HOOK_MAX_BYTES limit of $HOOK_MAX_BYTES, so it $hook_fallback. Two levers shrink it: TAIL_LINES in status.conf (the tail is $main_tail_bytes bytes here) and the memory index (memory.md is $hook_mem_bytes bytes, MEMORY_INDEX_BYTES $MEMORY_INDEX_BYTES)."$'\n'
-    }
     settle "$main_fixed" "$main_tail_bytes" hook_text_for
     hook_line=$settled_hook
   fi
-fi
-payload_line=$settled_payload
-payload_total=$settled_total
+  payload_line=$settled_payload
+  payload_total=$settled_total
 
-printf '%s' "$notes$main_load_line$payload_line$hook_line"
-if [[ "$load" -eq 1 ]]; then
-  if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
-    if [[ "$load_mode" == generated ]]; then
-      repair="--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
+  prefix="$notes$main_load_line$payload_line$hook_line"
+  include_files=0
+  if [[ "$load" -eq 1 ]]; then
+    if [[ "$payload_total" -gt "$PAYLOAD_MAX_BYTES" ]]; then
+      if [[ "$load_mode" == generated ]]; then
+        repair="--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these two files directly this session: ${purpose#"$root"/}, ${memory#"$root"/}"
+      else
+        repair="--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+      fi
+      prefix+="REPAIR: $repair"$'\n'
     else
-      repair="--load payload is $payload_total bytes, over the $PAYLOAD_MAX_BYTES byte budget — open these four files directly this session: ${learned#"$root"/}, ${contract#"$root"/}, ${purpose#"$root"/}, ${memory#"$root"/}"
+      prefix+="$notice"
+      include_files=1
     fi
-    printf 'REPAIR: %s\n' "$repair"
-  else
-    printf '%s' "$notice"
-    for f in "${load_files[@]}"; do
-      [[ -s "$f" ]] || continue
-      printf '\n==== %s ====\n' "${f#"$root"/}"
-      cat "$f"
-    done
   fi
+}
+
+print_files() {
+  local f rc=0
+  for f in "${load_files[@]}"; do
+    [[ -s "$f" ]] || continue
+    printf '\n==== %s ====\n' "${f#"$root"/}"
+    cat "$f" || rc=1
+  done
+  return "$rc"
+}
+
+if [[ -z "$hook_limit" ]]; then
+  prepare_load "$TAIL_LINES"
+  printf '%s' "$prefix"
+  [[ "$include_files" -eq 0 ]] || print_files
+  printf '%s' "$main_tail"
+  exit 0
 fi
-printf '%s' "$main_tail"
+
+# Keep trailing newlines when checking what the hook would print. A repair
+# message can be far shorter than the load it replaced at PAYLOAD_MAX_BYTES.
+file_body=""
+for variant in full tail0; do
+  if [[ "$variant" == full ]]; then
+    header=$hook_full_header
+    entries=$TAIL_LINES
+  else
+    header=$hook_short_header
+    entries=0
+  fi
+  prepare_load "$entries"
+  out=$prefix
+  if [[ "$include_files" -eq 1 ]]; then
+    if [[ -z "$file_body" ]]; then
+      file_body=$(print_files && printf x) || exit 1
+    fi
+    out+=${file_body%x}
+  fi
+  out+=$main_tail
+  [[ -n "$out" ]] || exit 1
+  bytes_of "$header"$'\n'"$out"
+  if [ "$nbytes" -le "$hook_limit" ]; then
+    printf '%s\n%s' "$header" "$out"
+    exit 0
+  fi
+  [[ "$variant" != full ]] || full_size=$nbytes
+done
+printf '%s\n' "$full_size"
 
 exit 0

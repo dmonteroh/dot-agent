@@ -62,27 +62,15 @@ tail0) printf '%s\n' "$header_tail0"; exit 0 ;;
 *) exit 0 ;;
 esac
 
-# The trailing x keeps the output's own trailing newlines, so the size
-# checked here is the size printed, byte for byte.
-load() { # $@: extra status.sh flags — sets out
-  out=$(cd "$node" && bash "$scripts/status.sh" --load "$@" . 2>/dev/null </dev/null && printf x) || return 1
-  out=${out%x}
-  [ -n "$out" ]
-}
-fits() { # $1: header — true when the header line and out pass no limit
-  [ $(( $(printf '%s\n%s' "$1" "$out" | wc -c | tr -d '[:space:]') )) -le "$max_bytes" ]
-}
-
-load || exit 0
-if fits "$header"; then
-  printf '%s\n%s' "$header" "$out"
-  exit 0
-fi
-size=$(printf '%s\n%s' "$header" "$out" | wc -c | tr -d '[:space:]')
-if load --tail 0 && fits "$header_tail0"; then
-  printf '%s\n%s' "$header_tail0" "$out"
-  exit 0
-fi
+# status.sh returns the selected block, or the size for the pointer when
+# neither block fits. Keep trailing newlines in a delivered block.
+out=$(cd "$node" && bash "$scripts/status.sh" --hook-load "$max_bytes" "$header" "$header_tail0" . 2>/dev/null </dev/null && printf x) || exit 0
+out=${out%x}
+case "$out" in
+"$header"$'\n'* | "$header_tail0"$'\n'*) printf '%s' "$out"; exit 0 ;;
+esac
+size=${out%$'\n'}
+case "$size" in '' | *[!0-9]*) exit 0 ;; esac
 printf 'dot-agent session-start hook: `%s` for the node at %s prints %s bytes, over this hook'"'"'s %s-byte limit even without the session-log tail, so its output is not here. Make that call as your first tool call, before you answer, plan, or edit.\n' \
   "$call" "$where" "$size" "$max_bytes"
 exit 0
