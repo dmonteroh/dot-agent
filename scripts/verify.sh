@@ -4,9 +4,6 @@ export LC_ALL=C
 unset CDPATH
 
 schema_version=3
-# Only prove sets these, for the driver in its checkout. A caller's copies
-# must not reach a run of the current tree.
-unset DA_PROVE DA_PROVE_MAIN
 self_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=runtime.sh
 . "$self_dir/runtime.sh"
@@ -15,8 +12,6 @@ usage() {
   cat <<'EOF'
 Usage:
   verify.sh run CHECK [--root ROOT] [--timeout SECONDS] [--output-share N]
-  verify.sh prove CHECK --test PATH... [--base REF] [--root ROOT] [--timeout SECONDS]
-  verify.sh prove CHECK --break PATH=FILE... [--test PATH...] [--root ROOT] [--timeout SECONDS]
   verify.sh check RECEIPT [--root ROOT]
   verify.sh why RECEIPT [--root ROOT]
   verify.sh --help
@@ -28,19 +23,7 @@ node --test, pytest, unittest, Jest, Vitest, cargo test, go test -v, minitest,
 and bun test. tap counts TAP alone. A runner outside that list needs its TAP
 reporter in .agent/scripts/checks.sh. Skipped tests are not counted.
 
-prove runs CHECK on the current tree, then in a throwaway checkout without
-the change, and records on the receipt whether it fails there. --base REF
-(default HEAD) is the commit before the change, and each --test PATH is a
-test file copied onto it, Git-ignored or not. --break PATH=FILE proves a
-rule the old code already met: it replaces PATH with the broken copy FILE in
-a checkout of the current files. prove exits 0 only when the check passes now
-and fails without the change. A run without the change fails only when a test
-fails in its output, read from the lines the test count is read from. The
-driver runs in the checkout with DA_PROVE=1 and DA_PROVE_MAIN set to the
-project, for what the checkout lacks.
-
-why prints one word for a current receipt: pass, proved or unproved (a pass
-whose proof ran and held or did not), failed, uncounted (a
+why prints one word for a current receipt: pass, failed, uncounted (a
 positive check with no test count in its output), format (the same, when
 TEST_COUNT_FORMAT is tap or none), empty (a positive check that ran 0 tests),
 or changed (any other inconclusive run: project files changed, or its output
@@ -205,94 +188,50 @@ tap_count() {
 # summary line never stands in for a TAP stream that was cut short.
 is_tap() { grep -Eq '^(TAP version [0-9]+|1\.\.[0-9]+)' "$1"; }
 
-# The number of tests a runner's own closing summary says passed or failed,
-# or with "failed" as the second argument the number that failed, or
+# The number of tests a runner's own closing summary says passed or failed, or
 # "unknown" when no line has one of these shapes. Each shape was read from the
 # runner named beside it: observed output, except Jest, whose line is the
 # template in its SummaryReporter source (scripts/docs/verify.md lists the
 # versions). Skipped and filtered tests are left out, so a run whose every
 # test was skipped or filtered away counts 0. Several summaries add up, as
-# cargo prints one per test binary. A failed test is one whose own code
-# ran and failed, so a file that could not load is left out where the
-# runner tells it apart: pytest's "error", unittest's _FailedTest, and
-# bun's "error", which bun 1.3 also counts in "fail". unittest and minitest
-# count a test that raised in their "errors".
+# cargo prints one per test binary.
 summary_count() {
-  awk -v want="${2:-total}" '
+  awk '
     function before(s, word,   n) {
       if (!match(s, "[0-9]+ " word)) return 0
       n = substr(s, RSTART, RLENGTH); sub(/ .*/, "", n)
       return n + 0
     }
-    function after(s, word,   n) {
-      if (!match(s, "(\\(|, )" word "=[0-9]+")) return 0
-      n = substr(s, RSTART, RLENGTH); sub(/.*=/, "", n)
-      return n + 0
-    }
-    function add(n, f) { total += n; failed += f; seen = 1 }
+    function add(n) { total += n; seen = 1 }
     # node --test, spec reporter: "<U+2139> pass 2", "<U+2139> fail 0"
-    $0 ~ "^\342\204\271 (pass|fail) [0-9]+$" { add($3, $2 == "fail" ? $3 : 0); next }
-    # bun test: " 2 pass", " 0 fail", and " 1 error" for a file that could
-    # not load. Its "Ran 2 tests" line counts skips.
-    /^ [0-9]+ (pass|fail)$/ { add($1, 0); if ($2 == "fail") bunfail += $1; next }
-    /^ [0-9]+ errors?$/ { bunerror += $1; next }
-    # Python unittest: "Ran 3 tests in 0.000s", then "OK (skipped=1)" or
-    # "FAILED (failures=1, errors=1)". A module that could not be imported
-    # is an error named "(unittest.loader._FailedTest".
-    /^ERROR: .*\(unittest\.loader\._FailedTest/ { loaderror++; next }
-    /^Ran [0-9]+ tests? in [0-9.]+s$/ { add($2, 0); next }
-    /^(OK|FAILED) \(/ {
-      failed += after($0, "failures") + after($0, "errors")
-      if ($0 ~ /skipped=[0-9]+/) add(-after($0, "skipped"), 0)
-      next
-    }
+    $0 ~ "^\342\204\271 (pass|fail) [0-9]+$" { add($3); next }
+    # bun test: " 2 pass", " 0 fail". Its "Ran 2 tests" line counts skips.
+    /^ [0-9]+ (pass|fail)$/ { add($1); next }
+    # Python unittest: "Ran 3 tests in 0.000s", then "OK (skipped=1)"
+    /^Ran [0-9]+ tests? in [0-9.]+s$/ { add($2); next }
+    /^(OK|FAILED) \(.*skipped=[0-9]+/ { n = $0; sub(/.*skipped=/, "", n); sub(/[^0-9].*/, "", n); add(-n); next }
     # Jest: "Tests:       1 failed, 2 passed, 3 total"
-    /^Tests: +([0-9]+ [a-z]+, )*[0-9]+ total$/ { add(before($0, "passed") + before($0, "failed"), before($0, "failed")); next }
+    /^Tests: +([0-9]+ [a-z]+, )*[0-9]+ total$/ { add(before($0, "passed") + before($0, "failed")); next }
     # Vitest: "      Tests  1 failed | 2 passed (3)"
-    /^ +Tests  [0-9]+ [a-z]+( \| [0-9]+ [a-z]+)* \([0-9]+\)$/ { add(before($0, "passed") + before($0, "failed"), before($0, "failed")); next }
+    /^ +Tests  [0-9]+ [a-z]+( \| [0-9]+ [a-z]+)* \([0-9]+\)$/ { add(before($0, "passed") + before($0, "failed")); next }
     # cargo test: "test result: ok. 2 passed; 0 failed; 0 ignored; ..."
-    /^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { add($4 + $6, $6); next }
+    /^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { add($4 + $6); next }
     # go test -v, top-level tests: "--- PASS: TestA (0.00s)"
-    /^--- (PASS|FAIL): / { add(1, $2 == "FAIL:"); next }
+    /^--- (PASS|FAIL): / { add(1); next }
     # minitest: "2 runs, 1 assertions, 0 failures, 0 errors, 1 skips"
-    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1 - $9, $5 + $7); next }
+    /^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$/ { add($1 - $9); next }
     # pytest: "==== 1 failed, 2 passed in 0.02s ====", or bare under -q
     {
       line = $0
       gsub(/^=+ | =+$/, "", line)
-      if (line ~ /^no tests ran in [0-9.]+s/) { add(0, 0); next }
+      if (line ~ /^no tests ran in [0-9.]+s/) { add(0); next }
       if (line ~ /^[0-9]+ [a-z]+(, [0-9]+ [a-z]+)* in [0-9.]+s( \([0-9:]+\))?$/)
-        add(before(line, "passed") + before(line, "failed") + before(line, "xfailed") + before(line, "xpassed"), before(line, "failed"))
+        add(before(line, "passed") + before(line, "failed") + before(line, "xfailed") + before(line, "xpassed"))
     }
     # unittest counts class, module, and subtest skips in "skipped" and not
     # in "Ran", so the difference can fall below 0. No test ran then.
-    END {
-      if (!seen) print "unknown"
-      else if (want == "failed") {
-        failed += (bunfail > bunerror ? bunfail - bunerror : 0) - loaderror
-        print (failed > 0 ? failed : 0)
-      }
-      else if (total < 0) print 0
-      else print total + 0
-    }
+    END { if (!seen) print "unknown"; else if (total < 0) print 0; else print total + 0 }
   ' "$1"
-}
-
-# The number of failed tests in a run's output, read from the same lines
-# as the test count, or "unknown". A TAP "not ok" marked "# TODO" or
-# "# SKIP" is not a failure.
-failed_count() {
-  case "$TEST_COUNT_FORMAT" in
-    tap | auto)
-      if is_tap "$1"; then
-        awk '/^not ok([[:space:]]|$)/ && $0 !~ /#[[:space:]]*([Tt][Oo][Dd][Oo]|[Ss][Kk][Ii][Pp])/ { n++ } END { print n + 0 }' "$1"
-      elif [ "$TEST_COUNT_FORMAT" = auto ]; then
-        summary_count "$1" failed
-      else
-        echo unknown
-      fi ;;
-    *) echo unknown ;;
-  esac
 }
 
 # Why a run that exited 0 is inconclusive, as one word, from what its receipt
@@ -321,236 +260,14 @@ inconclusive_reason() {
 print_record() { printf 'receipt\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
 
 receipt_digest() {
-  printf 'version=%s\ncheck=%s\nstatus=%s\nexit=%s\ncount=%s\nfingerprint=%s\nworktree=%s\ninvocation=%s\nexecuted_at=%s\nproof=%s\nfails_without_change=%s\n' \
-    "$schema_version" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" "${10}" | git hash-object --stdin
+  printf 'version=%s\ncheck=%s\nstatus=%s\nexit=%s\ncount=%s\nfingerprint=%s\nworktree=%s\ninvocation=%s\nexecuted_at=%s\nfails_without_change=%s\n' \
+    "$schema_version" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" | git hash-object --stdin
 }
 
-# Whether the check was seen failing without the change: yes, no, or unknown.
-# Only prove sets it. proof names what the verdict rests on, so it stays on
-# record after a Git-ignored scratch test is deleted: none, or the mode, the
-# base commit or the digest of the broken copies, and the digest of the test
-# files.
+# Whether the check was seen failing at the base commit with only the
+# change's test files applied: yes, no, or unknown. Nothing runs that proof
+# yet, so every run records unknown (scripts/docs/verify.md, design note).
 fails_without_change=unknown
-proof=none
-
-prove_path_ok() {
-  # A file system that folds case reads .GIT as .git.
-  case "$(printf '%s' "$1" | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')" in
-    '' | /* | .. | ../* | */../* | */.. | .git | .git/* | */.git | */.git/*) return 1 ;;
-  esac
-  safe_value "$1"
-}
-
-# prove_copy SRC DST: copies the file SRC over DST, a path of the checkout
-# relative to the Git top level. A missing SRC removes DST, which is how a
-# deleted file reaches the checkout. A parent of DST that is a symbolic link
-# could lead back into the project, and a part of DST that is the checkout's
-# own .git would turn the next Git command on the project, so both are refused.
-prove_copy() {
-  pcp_walk=$prove_tree; pcp_rest=$2
-  while :; do
-    case "$pcp_rest" in
-      */*) pcp_walk="$pcp_walk/${pcp_rest%%/*}"; pcp_rest=${pcp_rest#*/} ;;
-      *) [ ! "$pcp_walk/$pcp_rest" -ef "$prove_tree/.git" ] || return 1; break ;;
-    esac
-    [ ! -L "$pcp_walk" ] && [ ! "$pcp_walk" -ef "$prove_tree/.git" ] || return 1
-  done
-  rm -rf -- "${prove_tree:?}/$2" || return 1
-  if [ -e "$1" ] || [ -L "$1" ]; then
-    mkdir -p -- "$(dirname -- "$prove_tree/$2")" && cp -pPR -- "$1" "$prove_tree/$2"
-  fi
-}
-
-# A driver can leave a folder it cannot be removed from, as a module cache
-# does. Only folders change: a file there can be a hard link to one of the
-# project's own, and removing a file needs its folder's permission alone.
-prove_unlock() { find "$1" -type d ! -perm -700 -exec chmod u+rwx {} \; 2>/dev/null || :; }
-
-prove_tests_in() {
-  [ "${#prove_tests[@]}" -gt 0 ] || return 0
-  for pt in "${prove_tests[@]}"; do prove_copy "$prove_dir/in/$pt" "$prove_prefix$pt" || return 1; done
-}
-
-# Digest of the named snapshot files as "path<TAB>blob" lines, so a proof
-# names the exact content that ran.
-prove_digest() {
-  for pd in "$@"; do
-    pd_blob=$(git hash-object --no-filters -- "$prove_dir/in/$pd") || return 1
-    printf '%s\t%s\n' "$pd" "$pd_blob"
-  done >"$prove_dir/digest" || return 1
-  LC_ALL=C sort "$prove_dir/digest" | git hash-object --stdin
-}
-
-# How the last run without the change ended, from driver_rc and its output:
-# pass, failed (a test failed in it), empty (it exited nonzero and no test
-# failed, as when a test file cannot load or there is none to run), or
-# uncounted (its output carries no test result this script reads).
-prove_outcome() {
-  [ "$driver_rc" -ne 0 ] || { echo pass; return 0; }
-  case "$(failed_count "$1")" in
-    unknown) echo uncounted ;;
-    0) echo empty ;;
-    *) echo failed ;;
-  esac
-}
-
-# Runs the check without the change in a throwaway clone, after a control run
-# of the current files there. The control separates a checkout that cannot
-# run the check from a test that fails for the change. A run without the
-# change fails only when a test fails in its output, because a file that
-# cannot load fails a check too. Sets fails_without_change, proof,
-# prove_said, and prove_show. The session's tree, index, and repository are
-# never written.
-prove_change() {
-  pc_rc=$driver_rc; pc_timed_out=$timed_out
-  pc_restore() { driver_rc=$pc_rc; timed_out=$pc_timed_out; }
-  pc_stop() { prove_said=$1; pc_restore; return 0; }
-  prove_said=; prove_show=
-  prove_top=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || { pc_stop "prove needs a Git worktree, so nothing was proved"; return 0; }
-  prove_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null)
-  pc_head=$(git -C "$root" rev-parse -q --verify 'HEAD^{commit}') || { pc_stop "the repository has no commit, so nothing was proved. Commit once, then run this call again"; return 0; }
-  pc_base=$pc_head
-  if [ -n "$prove_base" ]; then
-    pc_base=$(git -C "$root" rev-parse -q --verify "$prove_base^{commit}") || { pc_stop "--base $prove_base names no commit, so nothing was proved. Pass the commit before the change"; return 0; }
-    git -C "$root" merge-base --is-ancestor "$pc_base" "$pc_head" 2>/dev/null || { pc_stop "--base $prove_base is no ancestor of HEAD, so nothing was proved. Pass the commit before the change"; return 0; }
-  fi
-  if [ -n "$(git -C "$prove_top" submodule status 2>/dev/null)" ]; then
-    pc_stop "the checkout would lack this repository's submodules, so nothing was proved. See the failure by hand in a copy, and say so in the report"; return 0
-  fi
-  prove_dir=$(mktemp -d "${TMPDIR:-/tmp}/verify-prove.XXXXXX") || { pc_stop "could not create the proving folder, so nothing was proved. Check the temporary folder and run this call again"; return 0; }
-  prove_tree="$prove_dir/tree"
-  # The proof runs and is digested from this snapshot, so a file edited or
-  # deleted while the runs go on cannot change what the receipt names.
-  pc_inputs=()
-  [ "${#prove_tests[@]}" -eq 0 ] || pc_inputs+=("${prove_tests[@]}")
-  if [ "${#prove_breaks[@]}" -gt 0 ]; then
-    for pc_pair in "${prove_breaks[@]}"; do pc_inputs+=("${pc_pair#*=}"); done
-  fi
-  for pc_in in "${pc_inputs[@]}"; do
-    mkdir -p -- "$(dirname -- "$prove_dir/in/$pc_in")" && cp -p -- "$root/$pc_in" "$prove_dir/in/$pc_in" \
-      || { pc_stop "could not read $pc_in, so nothing was proved. Check that the file is readable and run this call again"; return 0; }
-  done
-  # A caller's GIT_DIR or GIT_WORK_TREE would aim the commands below, and the
-  # driver in the checkout, at the session's repository.
-  # shellcheck disable=SC2046
-  unset $(git rev-parse --local-env-vars 2>/dev/null)
-  if ! git clone -q --shared --no-checkout "$prove_top" "$prove_tree" >/dev/null 2>&1 \
-    || ! git -C "$prove_tree" checkout -q --detach "$pc_head" >/dev/null 2>&1; then
-    pc_stop "could not build the proving checkout, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
-  fi
-  # The plumbing command below reads the index as it is. The porcelain one
-  # would refresh the index and rewrite it.
-  if ! { git -C "$prove_top" diff-index --no-renames --name-only -z HEAD -- && git -C "$prove_top" ls-files -o --exclude-standard -z; } >"$prove_dir/paths" 2>/dev/null; then
-    pc_stop "git could not list the current changes, so nothing was proved. Run git status, fix what it reports, then run this call again"; return 0
-  fi
-  while IFS= read -r -d '' pc_path; do
-    prove_copy "$prove_top/$pc_path" "$pc_path" || { pc_stop "could not copy $pc_path into the proving checkout, so nothing was proved. Check that the file is readable and run this call again"; return 0; }
-  done <"$prove_dir/paths"
-  prove_tests_in || { pc_stop "a --test path passes through a symbolic link in the proving checkout, so nothing was proved. Name a test file in a real folder"; return 0; }
-  export DA_PROVE=1 DA_PROVE_MAIN="$root"
-  drive "$prove_tree/$prove_prefix" "$prove_dir/control"
-  if [ "$timed_out" -eq 1 ]; then
-    pc_stop "$check timed out in the proving checkout with the current files, so nothing was proved. Raise --timeout or prove a narrower check"; return 0
-  fi
-  if [ "$driver_rc" -ne 0 ]; then
-    prove_show="$prove_dir/control"
-    pc_stop "$check fails in the proving checkout with the current files, so nothing was proved. The checkout holds tracked and unignored files only. Make $CHECK_DRIVER read what it lacks from \$DA_PROVE_MAIN when DA_PROVE is set"; return 0
-  fi
-  pc_timeout=0; pc_passing=; pc_unrun=; pc_uncounted=0
-  : >"$prove_dir/target"
-  if [ "${#prove_breaks[@]}" -gt 0 ]; then
-    pc_mode='break'
-    pc_files=()
-    # Builds that compare modification times read whole seconds, and take an
-    # equal time as up to date. The copies below must be a second newer than
-    # what the control run just built.
-    sleep 1
-    for pc_pair in "${prove_breaks[@]}"; do
-      pc_files+=("${pc_pair#*=}")
-      prove_copy "$prove_dir/in/${pc_pair#*=}" "$prove_prefix${pc_pair%%=*}" && touch -- "$prove_tree/$prove_prefix${pc_pair%%=*}" \
-        || { pc_stop "${pc_pair%%=*} passes through a symbolic link in the proving checkout, so nothing was proved. Break a file in a real folder of the project"; return 0; }
-    done
-    drive "$prove_tree/$prove_prefix" "$prove_dir/target"
-    pc_timeout=$timed_out
-    case "$(prove_outcome "$prove_dir/target")" in
-      pass) pc_passing=all ;;
-      empty) pc_unrun=all ;;
-      uncounted) pc_unrun=all; pc_uncounted=1 ;;
-    esac
-    pc_ref=$(prove_digest "${pc_files[@]}") || pc_ref=
-    pc_without="with ${#prove_breaks[@]} broken file(s) in place"
-  else
-    pc_mode=base
-    # The base without the test files is a second control. A check in which
-    # a test already fails there would fail with any test copied in. One
-    # that finds no test to run there, as a check of one new file does, is
-    # not red.
-    prove_unlock "$prove_tree"
-    if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
-      pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
-    fi
-    drive "$prove_tree/$prove_prefix" "$prove_dir/basecontrol"
-    if [ "$timed_out" -eq 1 ]; then
-      pc_stop "$check timed out at ${pc_base:0:12}, so nothing was proved. Raise --timeout or prove a narrower check"; return 0
-    fi
-    if [ "$(prove_outcome "$prove_dir/basecontrol")" = failed ]; then
-      prove_show="$prove_dir/basecontrol"
-      pc_stop "a test of $check already fails at ${pc_base:0:12} without the test files, so a failure there proves nothing. Prove a narrower check that passes at the base"; return 0
-    fi
-    # One run for each test file, with that file alone copied onto the base.
-    # A runner that stops at its first failure would otherwise let one
-    # failing test stand for the others.
-    for pt in "${prove_tests[@]}"; do
-      prove_unlock "$prove_tree"
-      if ! git -C "$prove_tree" checkout -q -f --detach "$pc_base" >/dev/null 2>&1 || ! git -C "$prove_tree" clean -q -ffdx >/dev/null 2>&1; then
-        pc_stop "could not put the proving checkout at ${pc_base:0:12}, so nothing was proved. Run this call again"; return 0
-      fi
-      prove_copy "$prove_dir/in/$pt" "$prove_prefix$pt" || { pc_stop "$pt passes through a symbolic link at ${pc_base:0:12}, so nothing was proved. Name a test file in a real folder"; return 0; }
-      drive "$prove_tree/$prove_prefix" "$prove_dir/one"
-      [ "$timed_out" -eq 0 ] || { pc_timeout=1; break; }
-      { printf '== %s copied onto %s: exit %s ==\n' "$pt" "${pc_base:0:12}" "$driver_rc"; cat "$prove_dir/one"; } >>"$prove_dir/target"
-      case "$(prove_outcome "$prove_dir/one")" in
-        pass) pc_passing="${pc_passing:+$pc_passing, }$pt" ;;
-        empty) pc_unrun="${pc_unrun:+$pc_unrun, }$pt" ;;
-        uncounted) pc_unrun="${pc_unrun:+$pc_unrun, }$pt"; pc_uncounted=1 ;;
-      esac
-    done
-    pc_ref=$pc_base
-    pc_without="at ${pc_base:0:12} with each of ${#prove_tests[@]} test file(s) copied in"
-  fi
-  prove_show="$prove_dir/target"
-  pc_tests=$(prove_digest ${prove_tests[@]+"${prove_tests[@]}"}) || pc_tests=
-  if [ "$pc_timeout" -eq 1 ]; then
-    prove_said="$check timed out without the change, so nothing was proved. Raise --timeout or prove a narrower check"
-  elif [ -z "$pc_tests" ] || [ -z "$pc_ref" ]; then
-    prove_said="could not digest the proof's files, so nothing was proved. Run this call again"
-  elif [ -z "$pc_passing" ] && [ -n "$pc_unrun" ]; then
-    if [ "$pc_uncounted" -eq 1 ]; then
-      if [ "$TEST_COUNT_FORMAT" = auto ]; then
-        prove_said="$check exits nonzero $pc_without, but its output carries no test result this script reads, so nothing was proved. Make $CHECK_DRIVER run the runner with its TAP reporter or a summary that verify.sh --help lists"
-      else
-        prove_said="$check exits nonzero $pc_without, but TEST_COUNT_FORMAT=$TEST_COUNT_FORMAT read no test result from its output, so nothing was proved. If verify.sh --help lists this runner, set TEST_COUNT_FORMAT=auto in .agent/scripts/verify.conf. Otherwise make $CHECK_DRIVER run the runner with its TAP reporter"
-      fi
-    elif [ "$pc_mode" = break ]; then
-      prove_said="$check exits nonzero $pc_without, but no test failed in its output, so nothing was proved. A broken copy that cannot load fails every check. Break the behavior, keep the file loadable, and run this call again"
-    else
-      prove_said="$check exits nonzero at ${pc_base:0:12} with $pc_unrun copied in, but no test failed in its output, so nothing was proved. Read the output above for why it exits nonzero: a test file that cannot load there, or a failure outside the tests. When the test needs a file or a name the change adds, prove it with --break PATH=FILE on the current files instead"
-    fi
-  elif [ -z "$pc_passing" ]; then
-    fails_without_change=yes
-    proof="$pc_mode:$pc_ref:$pc_tests"
-    prove_said="$check fails $pc_without and passes on the current tree. Read the output above and confirm each failure is the one you mean"
-  else
-    fails_without_change=no
-    proof="$pc_mode:$pc_ref:$pc_tests"
-    if [ "$pc_mode" = break ]; then
-      prove_said="$check still passes $pc_without, so no test here protects that behavior. Add or fix the test, then run this call again"
-    else
-      prove_said="$check passes at ${pc_base:0:12} with $pc_passing copied in, so that does not prove the change. Make it fail without the change, pass --base <commit before the change> when the change is committed, or prove a rule the old code already met with --break PATH=FILE"
-    fi
-  fi
-  pc_restore
-}
 
 hex_value() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
 
@@ -581,7 +298,6 @@ cleanup_run() {
   [ -z "${out_tmp:-}" ] || rm -f "$out_tmp"
   [ -z "${watchdog_marker:-}" ] || rm -f "$watchdog_marker"
   cancel_watchdog
-  case "${prove_dir:-}" in */verify-prove.*) prove_unlock "$prove_dir"; rm -rf -- "$prove_dir" ;; esac
   if [ "${lock_owned:-0}" -eq 1 ]; then
     da_unlock "$lock" >/dev/null 2>&1 || :
     lock_owned=0
@@ -649,15 +365,14 @@ drive() {
 case "${1:-}" in
   --help | -h) usage; exit 0 ;;
   --version) printf 'dot-agent v6.3; verify.sh receipt schema %s\n' "$schema_version"; exit 0 ;;
-  run | check | why | prove) op=$1; shift ;;
+  run | check | why) op=$1; shift ;;
   *) usage >&2; exit 2 ;;
 esac
 
 root=.
 timeout=
 output_share=1
-prove_base=; prove_tests=(); prove_breaks=(); prove_dir=; prove_said=; prove_show=
-if [ "$op" = run ] || [ "$op" = prove ]; then
+if [ "$op" = run ]; then
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   check=$1; shift
   case "$check" in '' | *[!A-Za-z0-9_.-]*) die "CHECK must contain only letters, digits, dot, underscore, or hyphen" ;; esac
@@ -669,44 +384,15 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) [ "$#" -ge 2 ] || die "--root needs a value"; root=$2; shift 2 ;;
     --timeout)
-      [ "$op" = run ] || [ "$op" = prove ] || die "--timeout is valid only with run and prove"
+      [ "$op" = run ] || die "--timeout is valid only with run"
       [ "$#" -ge 2 ] || die "--timeout needs a value"; timeout=$2; shift 2 ;;
     --output-share)
       [ "$op" = run ] || die "--output-share is valid only with run"
       [ "$#" -ge 2 ] || die "--output-share needs a value"; output_share=$2; shift 2 ;;
-    --base)
-      [ "$op" = prove ] || die "--base is valid only with prove"
-      [ "$#" -ge 2 ] || die "--base needs a value"; prove_base=$2; shift 2 ;;
-    --test)
-      [ "$op" = prove ] || die "--test is valid only with prove"
-      [ "$#" -ge 2 ] || die "--test needs a value"; prove_tests+=("$2"); shift 2 ;;
-    --break)
-      [ "$op" = prove ] || die "--break is valid only with prove"
-      [ "$#" -ge 2 ] || die "--break needs a value"; prove_breaks+=("$2"); shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
 root=$(da_root "$root") || exit 2
-if [ "$op" = prove ]; then
-  # Two check outputs print into one tool result.
-  output_share=2
-  [ -z "$prove_base" ] || [ "${#prove_breaks[@]}" -eq 0 ] || die "--base and --break were both given. Pass one of them"
-  [ "${#prove_tests[@]}" -gt 0 ] || [ "${#prove_breaks[@]}" -gt 0 ] || die "prove needs --test PATH for the test that proves the change, or --break PATH=FILE for a rule the old code already met"
-  if [ "${#prove_tests[@]}" -gt 0 ]; then
-    for pt in "${prove_tests[@]}"; do
-      prove_path_ok "$pt" || die "--test takes a path inside the project, without a leading slash, .., or .git: $pt"
-      [ -f "$root/$pt" ] && [ ! -L "$root/$pt" ] || die "--test names no regular file: $pt. Pass the test file's path from the project folder"
-    done
-  fi
-  if [ "${#prove_breaks[@]}" -gt 0 ]; then
-    for pb in "${prove_breaks[@]}"; do
-      case "$pb" in ?*=?*) ;; *) die "--break takes PATH=FILE, the file to replace and its broken copy: $pb" ;; esac
-      prove_path_ok "${pb%%=*}" && prove_path_ok "${pb#*=}" || die "--break takes paths inside the project, without a leading slash, .., or .git: $pb. Keep the broken copy in the project's scratch folder"
-      [ -f "$root/${pb%%=*}" ] && [ ! -L "$root/${pb%%=*}" ] || die "--break names no regular file to replace: ${pb%%=*}"
-      [ -f "$root/${pb#*=}" ] && [ ! -L "$root/${pb#*=}" ] || die "--break names no regular broken copy: ${pb#*=}. Copy the file, break the behavior in the copy, and pass the copy"
-    done
-  fi
-fi
 safe_value "$root" || die "worktree path contains a control character"
 cfg="$root/.agent/scripts/verify.conf"
 [ -f "$cfg" ] || cfg="$self_dir/verify.conf"
@@ -733,27 +419,23 @@ if [ -L "$receipts" ]; then die "refusing symlink receipt directory: $receipts";
 (umask 077 && mkdir -p "$receipts") || die "cannot create receipt directory"
 [ -d "$receipts" ] && [ ! -L "$receipts" ] || die "receipt path is not a physical directory: $receipts"
 
-if [ "$op" = check ] || [ "$op" = why ]; then
+if [ "$op" != run ]; then
   case "$receipt_arg" in '' | *[!A-Za-z0-9_.-]*) die "RECEIPT must be an opaque id" ;; esac
   receipt="$receipts/$receipt_arg.receipt"
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || die "receipt is missing or not a regular file: $receipt_arg"
   lines=$(wc -l <"$receipt" | tr -d '[:space:]')
-  [ "$lines" = 12 ] || die "invalid receipt shape"
+  [ "$lines" = 11 ] || die "invalid receipt shape"
   IFS= read -r r1 <"$receipt"
   r2=$(sed -n '2p' "$receipt"); r3=$(sed -n '3p' "$receipt"); r4=$(sed -n '4p' "$receipt")
   r5=$(sed -n '5p' "$receipt"); r6=$(sed -n '6p' "$receipt"); r7=$(sed -n '7p' "$receipt")
   r8=$(sed -n '8p' "$receipt"); r9=$(sed -n '9p' "$receipt"); r10=$(sed -n '10p' "$receipt")
-  r11=$(sed -n '11p' "$receipt"); r12=$(sed -n '12p' "$receipt")
+  r11=$(sed -n '11p' "$receipt")
   [ "$r1" = "version=$schema_version" ] || die "invalid receipt version"
   id=${r2#id=}; rcheck=${r3#check=}; status=${r4#status=}; exit_code=${r5#exit=}; count=${r6#count=}; recorded=${r7#fingerprint=}
   recorded_root=${r8#worktree=}; recorded_invocation=${r9#invocation=}; executed_at=${r10#executed_at=}
-  recorded_proof=${r11#proof=}
-  [ "$r11" = "proof=$recorded_proof" ] || die "receipt has no proof field"
-  printf '%s\n' "$recorded_proof" | grep -Eq '^(none|(base|break):[0-9a-f]+:[0-9a-f]+)$' || die "invalid receipt proof"
-  recorded_fwc=${r12#fails_without_change=}
-  [ "$r12" = "fails_without_change=$recorded_fwc" ] || die "receipt has no fails_without_change field"
+  recorded_fwc=${r11#fails_without_change=}
+  [ "$r11" = "fails_without_change=$recorded_fwc" ] || die "receipt has no fails_without_change field"
   case "$recorded_fwc" in yes | no | unknown) ;; *) die "invalid receipt fails_without_change" ;; esac
-  case "$recorded_proof:$recorded_fwc" in none:unknown | base:*:yes | base:*:no | break:*:yes | break:*:no) ;; *) die "receipt proof does not match its fails_without_change" ;; esac
   [ "$r2" = "id=$id" ] && [ "$r3" = "check=$rcheck" ] && [ "$r4" = "status=$status" ] && [ "$r5" = "exit=$exit_code" ] && [ "$r6" = "count=$count" ] && [ "$r7" = "fingerprint=$recorded" ] && [ "$r8" = "worktree=$recorded_root" ] && [ "$r9" = "invocation=$recorded_invocation" ] && [ "$r10" = "executed_at=$executed_at" ] || die "invalid receipt fields"
   case "$id" in '' | *[!A-Za-z0-9_.-]*) die "invalid receipt id" ;; esac
   case "$rcheck" in '' | *[!A-Za-z0-9_.-]*) die "invalid receipt check" ;; esac
@@ -766,18 +448,13 @@ if [ "$op" = check ] || [ "$op" = why ]; then
   [ "$recorded_invocation" = "$invocation" ] || die "receipt driver invocation does not match configuration"
   printf '%s\n' "$executed_at" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || die "invalid receipt execution timestamp"
   [ "${receipt##*/}" = "$id.receipt" ] || die "receipt name does not match its id"
-  expected_receipt_digest=$(receipt_digest "$rcheck" "$status" "$exit_code" "$count" "$recorded" "$recorded_root" "$recorded_invocation" "$executed_at" "$recorded_proof" "$recorded_fwc") || die "could not validate receipt digest"
+  expected_receipt_digest=$(receipt_digest "$rcheck" "$status" "$exit_code" "$count" "$recorded" "$recorded_root" "$recorded_invocation" "$executed_at" "$recorded_fwc") || die "could not validate receipt digest"
   [ "${id##*-}" = "$expected_receipt_digest" ] || die "receipt content digest does not match its id"
   current=$(da_fingerprint "$root") || exit 2
   [ "$current" = "$recorded" ] || die "receipt is stale: project inputs changed"
   if [ "$op" = why ]; then
     case "$status:$exit_code" in
-      pass:*)
-        case "$recorded_proof:$recorded_fwc" in
-          none:*) echo pass ;;
-          *:yes) echo proved ;;
-          *) echo unproved ;;
-        esac ;;
+      pass:*) echo pass ;;
       inconclusive:0) inconclusive_code "$rcheck" "$count" ;;
       *) echo failed ;;
     esac
@@ -833,17 +510,10 @@ elif is_positive_check "$check" && { [ "$count" = unknown ] || [ "$count" -eq 0 
 else
   status=pass
 fi
-if [ "$op" = prove ]; then
-  if [ "$status" = pass ]; then
-    prove_change
-  else
-    prove_said="$check does not pass on the current tree, so there is nothing to prove. Make it pass first, then run this call again"
-  fi
-fi
 executed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 invocation="bash:$(hex_value "$CHECK_DRIVER"):$(hex_value "$check")"
-content_digest=$(receipt_digest "$check" "$status" "$driver_rc" "$count" "$after" "$root" "$invocation" "$executed_at" "$proof" "$fails_without_change") || die "could not digest receipt"
+content_digest=$(receipt_digest "$check" "$status" "$driver_rc" "$count" "$after" "$root" "$invocation" "$executed_at" "$fails_without_change") || die "could not digest receipt"
 tries=0
 while :; do
   id="$stamp-$$-$RANDOM-$content_digest"
@@ -852,7 +522,7 @@ while :; do
       printf 'version=%s\n' "$schema_version"
       printf 'id=%s\ncheck=%s\nstatus=%s\nexit=%s\ncount=%s\nfingerprint=%s\n' "$id" "$check" "$status" "$driver_rc" "$count" "$after"
       printf 'worktree=%s\ninvocation=%s\nexecuted_at=%s\n' "$root" "$invocation" "$executed_at"
-      printf 'proof=%s\nfails_without_change=%s\n' "$proof" "$fails_without_change"
+      printf 'fails_without_change=%s\n' "$fails_without_change"
     } >"$receipt") 2>/dev/null; then break; fi
   tries=$((tries + 1)); [ "$tries" -lt 100 ] || die "could not allocate receipt id"
 done
@@ -868,12 +538,5 @@ fi
 [ "$output_lost" -eq 1 ] || emit_output "$out_tmp" "$saved"
 output_emitted=1
 [ -z "$why" ] || echo "verify.sh: $why" >&2
-if [ -n "$prove_show" ] && [ -s "$prove_show" ]; then
-  echo "verify.sh: prove: the run without the change printed:" >&2
-  emit_output "$prove_show" ""
-fi
-[ -z "$prove_said" ] || echo "verify.sh: prove: $prove_said" >&2
 print_record "$id" "$status" "$check" "$driver_rc" "$count"
-case "$driver_rc:$status" in 124:*) exit 124 ;; *:pass) ;; *) exit 1 ;; esac
-[ "$op" != prove ] || [ "$fails_without_change" = yes ] || exit 1
-exit 0
+case "$driver_rc:$status" in 124:*) exit 124 ;; *:pass) exit 0 ;; *) exit 1 ;; esac
