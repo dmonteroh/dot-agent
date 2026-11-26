@@ -15,6 +15,7 @@ Design evolution of the `.agent/` operating model. Each version captures the rea
 - The opt-in `capture.sh` prototype preserves a session-start fingerprint for interruption checks. Runtime adapters supply session IDs. It creates no memory or log entries.
 - Status offers stable TSV finding codes. Its checks run one process per file list instead of per file. Strict policy remains the default. Completion policy defers size-only maintenance.
 - Every refusal from `checkpoint.sh`, `log.sh`, `memory.sh`, and `learn.sh` is one line that ends with the next step. `test.sh` refuses one without it. `checkpoint.sh --help` says which flags fit which situation.
+- `log.sh` accepts a summary that names a file or a SHA.
 - Memory lookup searches canonical context with bounded results. Fact updates accept file input and expected versions. Learned lookup supports both index modes and ignores dates for duplicate-body checks.
 - `docs.sh sync` reconciles routing metadata for one doc, or for every routed doc with no `--name`. `docs.sh catalog` validates and updates reusable-block entries.
 - Updates refresh managed scripts atomically, including same-version refreshes. Existing check drivers, configuration, rules, docs, and memory are preserved.

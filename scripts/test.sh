@@ -3790,18 +3790,9 @@ rc=$?
 [ "$rc" -ne 0 ] && pass "log.sh: missing session-log.md rejected" || fail "log.sh: missing session-log.md rejected"
 [ ! -e "$nolog/.agent/session-log.md" ] && pass "log.sh: missing session-log.md creates nothing" || fail "log.sh: missing session-log.md creates nothing"
 
-before8c=$(cat "$sessionlog")
-out8c=$("$logcopy" --tool claude --area testing --verify pass --summary "Added backoff to submitPayment in src/client.ts" "$logroot" 2>&1)
+"$logcopy" --tool claude --area testing --verify pass --summary "Renamed submitPayment in src/client.ts, commit 47feccc" "$logroot" >/dev/null 2>&1
 rc=$?
-after8c=$(cat "$sessionlog")
-[ "$rc" -ne 0 ] && printf '%s' "$out8c" | grep -qF 'src/client.ts' && pass "log.sh: a summary naming a file is rejected and the token named" || fail "log.sh: a summary naming a file is rejected and the token named"
-[ "$before8c" = "$after8c" ] && pass "log.sh: a file-naming summary writes nothing" || fail "log.sh: a file-naming summary writes nothing"
-out8d=$("$logcopy" --tool claude --area testing --verify pass --summary "Backoff landed in commit 47feccc" "$logroot" 2>&1)
-rc=$?
-[ "$rc" -ne 0 ] && printf '%s' "$out8d" | grep -qF '47feccc' && pass "log.sh: a summary naming a SHA is rejected and the token named" || fail "log.sh: a summary naming a SHA is rejected and the token named"
-"$logcopy" --tool claude --area testing --verify pass --summary "Added exponential backoff, three attempts, ticket PAY-318, version 6.3" "$logroot" >/dev/null 2>&1
-rc=$?
-[ "$rc" -eq 0 ] && pass "log.sh: a ticket id and a version number are not read as a file or a SHA" || fail "log.sh: a ticket id and a version number are not read as a file or a SHA"
+[ "$rc" -eq 0 ] && tail -n 1 "$sessionlog" | grep -qF ') Renamed submitPayment in src/client.ts, commit 47feccc (testing). verify: pass.' && pass "log.sh: a summary naming a file or a SHA is written as given" || fail "log.sh: a summary naming a file or a SHA is written as given"
 
 load8=$("$logroot/.agent/scripts/status.sh" --load "$logroot" 2>&1)
 order8=$(printf '%s\n' "$load8" | grep -n '^==== ' | grep -v 'session-log.md, newest' | cut -d: -f2 | tr '\n' ' ')
@@ -8968,7 +8959,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1403
+EXPECTED_CHECKS=1400
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

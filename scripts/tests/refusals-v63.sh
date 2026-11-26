@@ -69,7 +69,6 @@ last_line() { # expected ending, then the call
 long='one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven'
 last_line 'Shorten it by 2 words and run this call again' bash "$s/log.sh" --tool t --area a --verify pass --summary "$long" "$node"
 last_line 'Shorten it by 1 word and run this call again' bash "$s/log.sh" --tool t --area a --verify pass --summary "${long% *}" "$node"
-last_line 'Reword it without that token and run this call again' bash "$s/log.sh" --tool t --area a --verify pass --summary 'fixed src/client.ts' "$node"
 last_line 'Run this call again with all four' bash "$s/log.sh" --tool t
 last_line 'Run this call again with all three' bash "$s/checkpoint.sh" --tool t
 last_line 'Pass only the flags listed above' bash "$s/memory.sh" new --nope

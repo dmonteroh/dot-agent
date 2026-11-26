@@ -82,21 +82,6 @@ case "$summary_lc" in
   refuse "--summary must not contain 'verify:', because the entry already carries one verify tag" 'State the outcome in words and run this call again' ;;
 esac
 
-bad_token=$(printf '%s' "$summary" | awk '
-  {
-    for (i = 1; i <= NF; i++) {
-      t = $i
-      gsub(/^[`"'"'"'(\[]+|[`"'"'"')\],.;:!?]+$/, "", t)
-      if (t == "") continue
-      if (t ~ /\.(ts|tsx|js|jsx|mjs|cjs|cs|java|kt|go|rs|rb|py|sh|bash|css|scss|less|html|vue|svelte|json|yaml|yml|toml|md|sql|c|h|cc|cpp|hpp|swift|php|lock)$/) { print t; exit }
-      if (t ~ /\// && t ~ /\.[A-Za-z0-9]+$/) { print t; exit }
-      if (length(t) >= 7 && length(t) <= 40 && t ~ /^[0-9a-f]+$/ && t ~ /[a-f]/ && t ~ /[0-9]/) { print t; exit }
-    }
-  }')
-if [ -n "$bad_token" ]; then
-  refuse "--summary names a file or a SHA ($bad_token), which live in git" 'Reword it without that token and run this call again'
-fi
-
 conf="$root/.agent/scripts/log.conf"
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
 if [ -f "$conf" ]; then
