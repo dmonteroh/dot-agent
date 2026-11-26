@@ -272,9 +272,9 @@ Use `--base <ref>` for committed work. Explicit ignored-node writes use `--node-
 
 The software-development preset separates proving a change from keeping a test. A session proves its change with a scratch test in a Git-ignored folder, or with anything cheaper, and the scratch test does not outlive the task. A test enters the suite only when it protects a rule that no kept test protects, because every later change pays for each kept test again.
 
-`checkpoint.sh --checks <check> --prove <test file>` proves the change in the closing call, so a proof costs no extra step. It runs `verify.sh prove`, which runs the check on the current tree, then in a throwaway clone at the base commit with the test copied in. It records on the receipt whether the check fails without the change, and that record outlives a deleted scratch file. `verify.sh prove <check> --break <path>=<broken copy>` does the same for a test that guards a rule the old code already met. The session's tree is never written, apart from the proved scratch test, which the checkpoint removes.
+The session sees each proof fail once, before the change or with the behavior briefly broken, and quotes the failing line. No script reruns the check without the change. That rerun cost several runs of the check on every proof, and a project with a slow suite paid it in every closing call.
 
-`review.sh` prompts at the checkpoint: `TEST_KEPT` when a kept test file changed, and `SCRATCH_LEFT` when scratch files remain. Both are advisory, because a pattern cannot tell whether a rule was already protected. See [verify documentation](scripts/docs/verify.md).
+`review.sh` prompts at the checkpoint: `TEST_KEPT` when a kept test file changed, and `SCRATCH_LEFT` when scratch files remain. Both are advisory, because a pattern cannot tell whether a rule was already protected. See [review documentation](scripts/docs/review.md).
 
 ### The node manifest
 
