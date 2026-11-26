@@ -5,10 +5,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/checkpoint-v63.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
-# Past this line a failed command is recorded by fail and the file goes on,
-# so one run under verify.sh prove shows every failing assertion.
-[ -z "${DA_PROVE:-}" ] || set +e
-fail() { echo "FAIL checkpoint-v63: $*" >&2; [ -n "${DA_PROVE:-}" ] || exit 1; proved_failures=1; }
+fail() { echo "FAIL checkpoint-v63: $*" >&2; exit 1; }
 project="$scratch/project with spaces"
 mkdir -p "$project/src"
 bash "$repo/scripts/node.sh" init --preset software-development --mode track-all "$project" >/dev/null
@@ -23,10 +20,6 @@ set -eu
 state="$PWD/.agent/.state"
 mkdir -p "$state"
 printf 'run\n' >>"$state/check-count"
-for scratch_test in src/*.test.sh tmp/scratch/*.test.sh; do
-  [ -f "$scratch_test" ] || continue
-  bash "$scratch_test" || { printf 'TAP version 13\n1..1\nnot ok 1 - %s\n' "$scratch_test"; exit 1; }
-done
 mode=$(cat .agent/scripts/test-mode)
 case "$mode" in
   pass) printf 'TAP version 13\n1..1\nok 1 - fixture\n# tests 1\n' ;;
@@ -141,48 +134,6 @@ if checkpoint --checks test; then fail 'a check that changed project files compl
 tail -1 "$scratch/err" | grep -q 'project files changed while test ran, or its output was lost, so nothing was logged\. Run this call again\. If it repeats, make the check write only where Git ignores$' \
   || fail "a check that changed files did not name the next step: $(tail -1 "$scratch/err")"
 rm -f "$project/src/mutated.ts"
-printf 'pass\n' >"$project/.agent/scripts/test-mode"
-
-# One call with --prove holds the proof, the log entry, and the removal of the
-# scratch test.
-printf 'tmp/\n' >>"$project/.git/info/exclude"
-mkdir -p "$project/tmp/scratch"
-printf 'const amount = 9\n' >"$project/src/client.ts"
-printf "grep -q 'amount = 9' src/client.ts\n" >"$project/tmp/scratch/amount.test.sh"
-before=$(entries)
-checkpoint --checks test --prove tmp/scratch/amount.test.sh || { cat "$scratch/err" >&2; fail '--prove did not complete the checkpoint'; }
-[ "$(entries)" -eq "$((before + 1))" ] && tail -1 "$log" | grep -q 'verify: pass' || fail '--prove wrote no passing entry'
-grep -q '^PROVED: test fails at [0-9a-f]* with tmp/scratch/amount.test.sh copied in$' "$scratch/out" || fail "--prove did not report the proof: $(cat "$scratch/out")"
-[ ! -e "$project/tmp/scratch/amount.test.sh" ] || fail 'a proved scratch test was left behind'
-! grep -q 'SCRATCH_LEFT\|TEST_COVERAGE' "$scratch/out" || fail "--prove still drew a prompt to prove or clean up: $(grep 'REVIEW:' "$scratch/out")"
-printf 'const amount = 10\n' >"$project/src/client.ts"
-printf "grep -q 'amount = 10' src/client.ts\n" >"$project/src/amount.test.sh"
-checkpoint --checks test --prove src/amount.test.sh || { cat "$scratch/err" >&2; fail '--prove refused a kept test'; }
-[ -f "$project/src/amount.test.sh" ] || fail 'a proved test that Git does not ignore was removed'
-rm "$project/src/amount.test.sh"
-printf 'const amount = 11\n' >"$project/src/client.ts"
-printf 'true\n' >"$project/tmp/scratch/weak.test.sh"
-before=$(entries)
-if checkpoint --checks test --prove tmp/scratch/weak.test.sh; then fail 'a test that passes at the base completed the checkpoint'; fi
-tail -1 "$scratch/err" | grep -q 'the check passes, but the proof did not hold, so nothing was logged\. Do what the verify.sh prove line above says, then run this call again\. To log without the proof, drop --prove$' \
-  || fail "a proof that did not hold did not name the next step: $(tail -1 "$scratch/err")"
-[ "$(entries)" -eq "$before" ] && [ -f "$project/tmp/scratch/weak.test.sh" ] || fail 'a proof that did not hold logged an entry or removed the test'
-prove_rows=0
-while IFS='|' read -r prove_want prove_args; do
-  # shellcheck disable=SC2086
-  if checkpoint $prove_args; then fail "--prove was accepted with: $prove_args"; fi
-  tail -1 "$scratch/err" | grep -q "$prove_want" || fail "--prove with '$prove_args' ended on: $(tail -1 "$scratch/err")"
-  prove_rows=$((prove_rows + 1))
-done <<'ROWS'
-prove needs --checks with one check name|--prove tmp/scratch/weak.test.sh
-prove needs --checks with one check name|--checks test,test --prove tmp/scratch/weak.test.sh
-prove and --verification were both given|--checks test --verification abc --prove tmp/scratch/weak.test.sh
-prove and --verify were both given|--checks test --verify fail --prove tmp/scratch/weak.test.sh
-ROWS
-[ "$prove_rows" -eq 4 ] || fail "--prove usage rows ran: $prove_rows"
-if checkpoint --checks test --prove ''; then fail 'an empty --prove logged a pass with no proof'; fi
-tail -1 "$scratch/err" | grep -q 'prove holds an empty path' || fail "an empty --prove ended on: $(tail -1 "$scratch/err")"
-rm -f "$project/tmp/scratch/weak.test.sh"
 printf 'pass\n' >"$project/.agent/scripts/test-mode"
 
 printf 'zero\n' >"$project/.agent/scripts/test-mode"
@@ -540,76 +491,4 @@ git_mono commit -qm swapped
 mono_checkpoint || fail 'a recorded type change was refused after its commit'
 [ "$(mono_entries)" -eq "$((before + 1))" ] || fail 'a recorded type change was logged twice'
 
-# --prove takes its base from the review, so committed work is proved against
-# the commit before it. A proof that could not run is no proof.
-proved="$scratch/proved"
-mkdir -p "$proved/src" "$proved/tmp/scratch"
-bash "$repo/scripts/node.sh" init --preset software-development --mode ignore-all "$proved" >/dev/null
-cp "$later/.agent/rules/contract.md" "$later/.agent/rules/quality-bar.md" "$proved/.agent/rules/"
-cat >"$proved/.agent/scripts/checks.sh" <<'EOF'
-#!/usr/bin/env bash
-[ -z "${DA_PROVE:-}" ] || [ ! -f "$DA_PROVE_MAIN/tmp/stop-control" ] || { echo 'the checkout cannot run this'; exit 1; }
-for scratch_test in tmp/scratch/*.test.sh tmp/vendor/*.test.sh .agent/*.test.sh pkg/.agent/*.test.sh; do
-  [ -f "$scratch_test" ] || continue
-  bash "$scratch_test" || { printf 'TAP version 13\n1..1\nnot ok 1 - %s\n' "$scratch_test"; exit 1; }
-done
-printf 'TAP version 13\n1..1\nok 1 - fixture\n'
-EOF
-git_proved() { git -C "$proved" -c user.name=fixture -c user.email=fixture@local -c commit.gpgsign=false "$@"; }
-checkpoint_proved() {
-  bash "$proved/.agent/scripts/checkpoint.sh" --tool test --area fixture --summary 'Changed fixture behavior' "$@" "$proved" >"$scratch/out" 2>"$scratch/err"
-}
-git_proved init -q
-printf 'tmp/\n' >>"$proved/.git/info/exclude"
-printf 'const value = 1\n' >"$proved/src/value.ts"
-git_proved add -A
-git_proved commit -qm fixture
-printf 'const value = 2\n' >"$proved/src/value.ts"
-git_proved add -A
-git_proved commit -qm second
-checkpoint_proved --verify n/a --base HEAD~1 || { cat "$scratch/err" >&2; fail 'the proved fixture did not record its first checkpoint'; }
-proved_mark=$(git -C "$proved" rev-parse HEAD)
-printf 'const value = 3\n' >"$proved/src/value.ts"
-git_proved add -A
-git_proved commit -qm work
-printf "grep -q 'value = 3' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
-checkpoint_proved --checks test --prove tmp/scratch/value.test.sh || { cat "$scratch/err" >&2; fail 'committed work was not proved against the commit before it'; }
-grep -q "^PROVED: test fails at ${proved_mark:0:12} with tmp/scratch/value.test.sh copied in$" "$scratch/out" || fail "the proof did not use the review's base: $(grep PROVED "$scratch/out")"
-# A proof removes no file of a node, of another repository, or that Git
-# tracks, however its path is spelled. The case rows need a file system that
-# folds case. Git folds ASCII case alone, so the tracked row is not ASCII.
-mkdir -p "$proved/pkg/.agent" "$proved/tmp/vendor"
-proved_tracked=$'tmp/scratch/caf\303\251.test.sh'
-printf 'true\n' >"$proved/$proved_tracked"
-git -C "$proved/tmp/vendor" init -q
-printf '.agent/\n' >>"$proved/.git/info/exclude"
-git_proved add -f "$proved_tracked"
-git_proved commit -qm kept
-proved_rows='./.agent/node.test.sh|.agent/node.test.sh
-pkg/.agent/node.test.sh|pkg/.agent/node.test.sh
-tmp/vendor/one.test.sh|tmp/vendor/one.test.sh'
-proved_want=3
-if [ -d "$proved/.AGENT" ]; then
-  proved_rows+=$'\n.AGENT/node.test.sh|.agent/node.test.sh'
-  proved_rows+=$'\ntmp/scratch/CAF\303\211.test.sh|'"$proved_tracked"
-  proved_want=5
-fi
-proved_ran=0
-while IFS='|' read -r proved_path proved_file; do
-  printf 'const value = row %s\n' "$proved_ran" >"$proved/src/value.ts"
-  printf "grep -q 'row %s$' src/value.ts\n" "$proved_ran" >"$proved/$proved_file"
-  checkpoint_proved --checks test --prove "$proved_path" || { cat "$scratch/err" >&2; fail "a test at $proved_path was not proved"; }
-  [ -f "$proved/$proved_file" ] || fail "a proof given as $proved_path removed $proved_file"
-  printf 'true\n' >"$proved/$proved_file"
-  proved_ran=$((proved_ran + 1))
-done <<<"$proved_rows"
-[ "$proved_ran" -eq "$proved_want" ] || fail "proved removal rows ran: $proved_ran"
-printf 'const value = 4\n' >"$proved/src/value.ts"
-printf "grep -q 'value = 4' src/value.ts\n" >"$proved/tmp/scratch/value.test.sh"
-: >"$proved/tmp/stop-control"
-proved_before=$(awk '/^- \[/{n++} END{print n+0}' "$proved/.agent/session-log.md")
-if checkpoint_proved --checks test --prove tmp/scratch/value.test.sh; then fail 'a proof that could not run completed the checkpoint'; fi
-tail -1 "$scratch/err" | grep -q 'the proof did not hold, so nothing was logged' || fail "a proof that could not run ended on: $(tail -1 "$scratch/err")"
-[ "$(awk '/^- \[/{n++} END{print n+0}' "$proved/.agent/session-log.md")" -eq "$proved_before" ] || fail 'a proof that could not run logged an entry'
-[ -z "${proved_failures:-}" ] || exit 1
 printf 'checkpoint-v63: verification, stale evidence, deduplication, policies, locking, and publication recovery passed\n'

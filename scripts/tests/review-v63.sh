@@ -155,13 +155,8 @@ check "leftover scratch files draw one advisory line, ignored by Git or not" \
   '[ "$scratch_rc" -eq 0 ] && [ "$(printf "%s\n" "$scratch_out" | grep -c "^REVIEW: SCRATCH_LEFT ")" -eq 1 ] && printf "%s\n" "$scratch_out" | grep -qx "REVIEW: SCRATCH_LEFT tmp/scratch 3 scratch file(s) remain; delete yours when the task ends"'
 check "an unignored scratch file is no candidate of its own" \
   '! printf "%s\n" "$scratch_out" | grep -q "tmp/scratch/pay.test.ts"'
-set +e
-proving_out=$(DA_PROVING=$'tmp/scratch/pay.test.ts\ntmp/scratch/ignored/a.test.ts' "$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
-set -e
-check "scratch tests that checkpoint.sh is proving are not left over, and the change draws no prompt to prove it" \
-  'printf "%s\n" "$proving_out" | grep -qx "REVIEW: SCRATCH_LEFT tmp/scratch 1 scratch file(s) remain; delete yours when the task ends" && ! printf "%s\n" "$proving_out" | grep -q "TEST_COVERAGE"'
 check "a scratch test is not a changed kept test, and the source is told how to prove the change" \
-  'printf "%s\n" "$scratch_out" | grep -qx "REVIEW: TEST_COVERAGE src/pay.ts no changed test file was detected; prove the change with a scratch test passed to checkpoint.sh --prove, or name the kept test that covers it"'
+  'printf "%s\n" "$scratch_out" | grep -qx "REVIEW: TEST_COVERAGE src/pay.ts no changed test file was detected; prove the change with a scratch test, or name the kept test that covers it"'
 
 printf 'pay + 1;\n' >>"$scratch/tests/kept.test.ts"
 printf 'pay;\n' >"$scratch/tests/new one.test.ts"
@@ -171,7 +166,7 @@ kept_out=$("$bin/review.sh" --base "$scratch_base" --root "$scratch" 2>&1)
 kept_rc=$?
 set -e
 check "a modified and an added kept test each draw TEST_KEPT, a deleted one and a scratch one do not" \
-  '[ "$kept_rc" -eq 0 ] && [ "$(printf "%s\n" "$kept_out" | grep -c "^REVIEW: TEST_KEPT ")" -eq 2 ] && printf "%s\n" "$kept_out" | grep -qx "REVIEW: TEST_KEPT tests/kept.test.ts a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test passed to checkpoint.sh --prove" && printf "%s\n" "$kept_out" | grep -qx "REVIEW: TEST_KEPT tests/new one.test.ts a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test passed to checkpoint.sh --prove"'
+  '[ "$kept_rc" -eq 0 ] && [ "$(printf "%s\n" "$kept_out" | grep -c "^REVIEW: TEST_KEPT ")" -eq 2 ] && printf "%s\n" "$kept_out" | grep -qx "REVIEW: TEST_KEPT tests/kept.test.ts a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test instead" && printf "%s\n" "$kept_out" | grep -qx "REVIEW: TEST_KEPT tests/new one.test.ts a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test instead"'
 
 review_conf_set MAX_FINDINGS 1
 set +e

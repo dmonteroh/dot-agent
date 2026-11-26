@@ -10,7 +10,7 @@ selfdir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
 usage() {
   cat <<'EOF'
 Usage: checkpoint.sh --tool NAME --area NAME --summary TEXT
-       [--checks CHECK[,CHECK...]] [--verification ID[,ID...]] [--prove FILE[,FILE...]]
+       [--checks CHECK[,CHECK...]] [--verification ID[,ID...]]
        [--verify fail|n/a] [--base REF] [--node-only] [--policy strict|completion] [ROOT]
 
 Situation                                          Flags
@@ -18,7 +18,6 @@ Product files changed, not committed               --checks <name>
 The work is committed                              --checks <name>
   and no earlier checkpoint was recorded here      --checks <name> --base <commit before the work>
 Only ignored node files changed                    --node-only --verify n/a
-A test file proves the change                      --checks <name> --prove <test file>
 A check already ran on these inputs                --verification <receipt id>
 The work failed and that is the outcome            --verification <receipt id> --verify fail
 Nothing can be run for this change                 --verify n/a
@@ -26,9 +25,6 @@ Nothing can be run for this change                 --verify n/a
 --verify pass needs --checks or --verification. Given both, a current receipt
 answers for the check it records, and every other named check runs.
 --checks n/a means --verify n/a.
---prove runs the one named check through verify.sh prove: on the current tree,
-then at the base with each test file copied in, where it must fail. A proved
-test file that Git ignores is a scratch test, and is removed once logged.
 Work is reviewed from the last recorded checkpoint. --base overrides that.
 strict blocks every status finding. completion defers advisory maintenance.
 A rerun over recorded content writes no second log entry.
@@ -37,7 +33,7 @@ EOF
 
 root=.; base=""; policy=""; tool=""; area=""; summary=""
 checks=""; receipts=""; requested_verify=""; node_only=0
-failed_checks=""; uncounted=""; unread=""; empty=""; moved=""; prove=""; prove_given=0
+failed_checks=""; uncounted=""; unread=""; empty=""; moved=""
 lock=""; content_out=""; node=""; status_out=""; status_err=""; publish=""; prepare=""
 cleanup() {
   [ -z "$publish" ] || rm -f -- "$publish"
@@ -57,13 +53,12 @@ trap 'exit 143' TERM
 refuse() { da_refuse "$@"; exit $?; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --tool|--area|--summary|--checks|--verification|--verify|--base|--policy|--prove)
+    --tool|--area|--summary|--checks|--verification|--verify|--base|--policy)
       [ "$#" -ge 2 ] || refuse "$1 needs a value" 'Pass the value after the flag, or run checkpoint.sh --help'
       case "$1" in
         --tool) tool=$2 ;; --area) area=$2 ;; --summary) summary=$2 ;;
         --checks) checks=$2 ;; --verification) receipts=$2 ;;
         --verify) requested_verify=$2 ;; --base) base=$2 ;; --policy) policy=$2 ;;
-        --prove) prove=$2; prove_given=1 ;;
       esac
       shift 2 ;;
     --help|-h) usage; exit 0 ;;
@@ -80,12 +75,6 @@ if [ "$checks" = n/a ]; then
   checks=""
   [ -n "$requested_verify" ] || requested_verify=n/a
   echo 'checkpoint.sh: --checks n/a read as --verify n/a'
-fi
-if [ "$prove_given" -eq 1 ]; then
-  case "$prove" in ''|,*|*,|*,,*) refuse '--prove holds an empty path' 'Pass test files separated by single commas' ;; esac
-  case "$checks" in ''|n/a|*,*) refuse '--prove needs --checks with one check name' 'Name the one check that runs the test files, as in --checks test --prove <test file>' ;; esac
-  [ -z "$receipts" ] || refuse '--prove and --verification were both given' 'Pass --prove with --checks alone. A receipt from verify.sh prove needs no --prove'
-  [ -z "$requested_verify" ] || refuse '--prove and --verify were both given' 'Drop --verify. A proof that holds is logged as a pass'
 fi
 case "$requested_verify" in ''|pass|fail|n/a) ;; *) refuse '--verify must be pass, fail, or n/a' 'Pass one of those, or drop it when --checks or --verification is given' ;; esac
 root=$(da_root "$root") || exit 1
@@ -311,7 +300,7 @@ fi
 if [ "$is_git" -eq 1 ] && [ "$node_only" -eq 0 ]; then
   review_args=(--root "$root")
   [ -z "$base" ] || review_args+=(--base "$base")
-  DA_PROVING=${prove//,/$'\n'} bash "$scripts/review.sh" "${review_args[@]}" || refuse 'diff review blocked or could not run, so no log entry was written' 'Fix each blocking line above. If the diff is the wrong range, pass the commit before your work with --base. Then run this call again'
+  bash "$scripts/review.sh" "${review_args[@]}" || refuse 'diff review blocked or could not run, so no log entry was written' 'Fix each blocking line above. If the diff is the wrong range, pass the commit before your work with --base. Then run this call again'
 else
   echo 'REVIEW: DIFF_UNAVAILABLE node-only or non-Git work; no product diff inspected'
 fi
@@ -350,17 +339,7 @@ if [ -n "$checks" ]; then
   # Every check's output lands in this one tool result, and verify.sh sizes
   # its limit for a whole result, so each check gets an equal share of it.
   for check_name in "${check_names[@]}"; do
-    if [ -n "$prove" ]; then
-      [ "$is_git" -eq 1 ] || refuse '--prove needs a Git worktree' 'Run this call again without --prove'
-      IFS=',' read -r -a prove_files <<<"$prove"
-      # The base the review used, as an ancestor of HEAD.
-      prove_base=$(git -C "$root" merge-base "${base:-HEAD}" HEAD 2>/dev/null) || refuse 'the base has no commit shared with HEAD' 'Pass the commit before your work with --base'
-      prove_args=()
-      for prove_file in "${prove_files[@]}"; do prove_args+=(--test "$prove_file"); done
-      result=$(bash "$scripts/verify.sh" prove "$check_name" "${prove_args[@]}" --base "$prove_base" --root "$root")
-    else
-      result=$(bash "$scripts/verify.sh" run "$check_name" --root "$root" --output-share "${#check_names[@]}")
-    fi
+    result=$(bash "$scripts/verify.sh" run "$check_name" --root "$root" --output-share "${#check_names[@]}")
     run_rc=$?
     IFS=$'\t' read -r tag receipt outcome recorded_check command_exit count extra <<<"$result"
     [ "$tag" = receipt ] && [ -n "$receipt" ] && [ -z "${extra:-}" ] || refuse "verification did not produce a receipt (exit $run_rc), so no log entry was written" 'Fix what the lines above report, or pass a check name that .agent/scripts/checks.sh defines, then run this call again'
@@ -404,11 +383,6 @@ if [ -n "$receipts" ]; then
     refuse "project files changed while $moved ran, or its output was lost, so nothing was logged" 'Run this call again. If it repeats, make the check write only where Git ignores'
   fi
   [ "$requested_verify" != fail ] || verify=fail
-  if [ -n "$prove" ]; then
-    [ "$(bash "$scripts/verify.sh" why "$receipts" --root "$root" 2>/dev/null)" = proved ] \
-      || refuse 'the check passes, but the proof did not hold, so nothing was logged' 'Do what the verify.sh prove line above says, then run this call again. To log without the proof, drop --prove'
-    printf 'PROVED: %s fails at %s with %s copied in\n' "$checks" "${prove_base:0:12}" "${prove//,/, }"
-  fi
 fi
 
 indexes=$(sed -n 's/^  indexes:[[:space:]]*\([a-z]*\).*/\1/p' "$root/.agent/purpose.md" | head -n 1)
@@ -452,37 +426,3 @@ record_last "$identity"
 record_mark
 clear_pending
 printf 'checkpoint.sh: recorded verify=%s\n' "$verify"
-# Whether a path runs through a node, this one or a child, or through another
-# repository or worktree. Folders are compared by identity, because ./.agent
-# and .AGENT can name the same one.
-in_other_tree() {
-  in_dir=$root; in_rest=$1
-  while case "$in_rest" in */*) ;; *) return 1 ;; esac; do
-    in_next="$in_dir/${in_rest%%/*}"
-    [ ! "$in_next" -ef "$in_dir/.agent" ] || return 0
-    [ ! -e "$in_next/.git" ] || [ "$in_next" -ef "$root" ] || return 0
-    in_dir=$in_next; in_rest=${in_rest#*/}
-  done
-}
-# Files are compared by identity, because a file system can fold spellings
-# that Git tells apart. A list that cannot be read counts the file as tracked.
-is_tracked() {
-  while IFS= read -r -d '' it_path; do
-    [ ! "$root/$it_path" -ef "$root/$1" ] || return 0
-  done < <(git -C "$root" ls-files -z 2>/dev/null || printf '%s\0' "$1")
-  return 1
-}
-# A proved test that Git ignores is a scratch test. Its proof is on the
-# receipt, so it goes now and nothing is left for the session to clean up.
-if [ -n "$prove" ]; then
-  # A caller's GIT_INDEX_FILE would hide what the project tracks.
-  # shellcheck disable=SC2046
-  unset $(git rev-parse --local-env-vars 2>/dev/null)
-  for prove_file in "${prove_files[@]}"; do
-    ! in_other_tree "$prove_file" && ! is_tracked "$prove_file" || continue
-    # Without ./ a leading colon is read as pathspec magic.
-    if git -C "$root" check-ignore -q -- "./$prove_file" 2>/dev/null && rm -f -- "$root/$prove_file"; then
-      echo "checkpoint.sh: removed the scratch test $prove_file, whose proof is on the receipt"
-    fi
-  done
-fi

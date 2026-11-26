@@ -4,7 +4,7 @@ Checkpoint coordinates verification evidence, diff review, node health, and the 
 
 ```sh
 checkpoint.sh --tool NAME --area NAME --summary TEXT \
-  [--checks CHECK[,CHECK...]] [--verification ID[,ID...]] [--prove FILE[,FILE...]] \
+  [--checks CHECK[,CHECK...]] [--verification ID[,ID...]] \
   [--verify fail|n/a] [--base REF] [--node-only] \
   [--policy strict|completion] [ROOT]
 ```
@@ -15,13 +15,9 @@ checkpoint.sh --tool NAME --area NAME --summary TEXT \
 
 `--checks` runs named checks through `verify.sh`. `--verification` consumes existing receipts for unchanged inputs. Given both, a current receipt answers for the check it records, a missing or stale receipt is left out, and every named check with no current receipt runs. `--checks n/a` is read as `--verify n/a`, because `n/a` is no check name. Each of the two prints a line saying what was done.
 
-`--prove <test file>[,<test file>...]` proves the change in the same call. It needs `--checks` with one check name, and runs that check through `verify.sh prove`: on the current tree, then at the base the review used, with each test file copied in, where it must fail. A proof that holds prints a `PROVED:` line and is logged as a pass. One that does not hold logs nothing, and the `verify.sh prove` line above the refusal says why. A proved test file that Git ignores is a scratch test: checkpoint removes it once the entry is logged, because the receipt holds its proof. However the path is spelled, checkpoint never removes a file Git tracks, a file in a node's `.agent/` folder, a child node's included, or a file in another repository or worktree inside the project. See [verify.md](verify.md) for what a proof runs and its limits.
-
 Each check's output prints on stderr. The checks share one `OUTPUT_MAX_BYTES` limit equally, so their combined output fits one tool result. See [verify.md](verify.md) for how long output is trimmed.
 
-A valid receipt determines the recorded verification status. Known failures and inconclusive checks stop automatic publication, and the refusal names which of five things happened, as `verify.sh why` reports them.
-
-For a failed check, fix and retry, or add `--verification <id> --verify fail` to the same call to record a final failed outcome. For a check that exited 0 with no test count `verify.sh` reads, fix the check driver, and leave the project's own test command as it is. For the same under `TEST_COUNT_FORMAT=tap` or `none`, set `auto` when the runner is one `verify.sh` counts. For a check that ran 0 tests, add or select a test, or pass `--verify n/a` without `--checks` when nothing can be tested. For a check that ran while project files changed, or whose output was lost, run the call again. A bare `--verify pass` is refused. `--verify fail` and `--verify n/a` remain explicit reports for failed or manual-only work.
+A valid receipt determines the recorded verification status. Known failures and inconclusive checks stop automatic publication, and the refusal names which of five things happened, as `verify.sh why` reports them. For a failed check, fix and retry, or add `--verification <id> --verify fail` to the same call to record a final failed outcome. For a check that exited 0 with no test count `verify.sh` reads, fix the check driver, and leave the project's own test command as it is. For the same under `TEST_COUNT_FORMAT=tap` or `none`, set `auto` when the runner is one `verify.sh` counts. For a check that ran 0 tests, add or select a test, or pass `--verify n/a` without `--checks` when nothing can be tested. For a check that ran while project files changed, or whose output was lost, run the call again. A bare `--verify pass` is refused. `--verify fail` and `--verify n/a` remain explicit reports for failed or manual-only work.
 
 Logging failed work is allowed. A successful checkpoint means the record was written, not that project tests passed. The output names the recorded verification status.
 

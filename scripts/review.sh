@@ -258,10 +258,9 @@ for path in "${changed[@]-}"; do
     test_name=${test_path##*/}
     case "$test_name" in *"$source_stem"*) related_test=$test_path; break ;; esac
   done
-  # DA_PROVING means a proof is attached, so a prompt to prove would be noise.
-  if [ -z "$related_test" ] && [ -z "${DA_PROVING:-}" ]; then
+  if [ -z "$related_test" ]; then
     if [ "${#tests[@]}" -eq 0 ]; then
-      emit_review TEST_COVERAGE "$path" "no changed test file was detected; prove the change with a scratch test passed to checkpoint.sh --prove, or name the kept test that covers it"
+      emit_review TEST_COVERAGE "$path" "no changed test file was detected; prove the change with a scratch test, or name the kept test that covers it"
     else
       emit_review TEST_COVERAGE "$path" "changed tests exist, but none has a filename containing '$source_stem'; review coverage rather than inferring it from names"
     fi
@@ -270,19 +269,12 @@ done
 
 for path in "${tests[@]-}"; do
   [ -n "$path" ] || continue
-  emit_review TEST_KEPT "$path" "a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test passed to checkpoint.sh --prove"
+  emit_review TEST_KEPT "$path" "a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test instead"
 done
 
 if [ -n "$SCRATCH_DIR" ] && [ -d "$root/$SCRATCH_DIR" ]; then
   scratch_left=$(find "$root/$SCRATCH_DIR" -type f -print0 2>/dev/null | tr -dc '\000' | wc -c)
   scratch_left=$((scratch_left))
-  # Paths in DA_PROVING, one to a line, are scratch tests whose proof and
-  # removal are under way, so they are not left over.
-  if [ -n "${DA_PROVING:-}" ]; then
-    while IFS= read -r proving; do
-      case "$proving" in "$SCRATCH_DIR"/*) [ ! -f "$root/$proving" ] || scratch_left=$((scratch_left - 1)) ;; esac
-    done <<<"$DA_PROVING"
-  fi
   [ "$scratch_left" -eq 0 ] \
     || printf 'REVIEW: SCRATCH_LEFT %s %d scratch file(s) remain; delete yours when the task ends\n' "$SCRATCH_DIR" "$scratch_left"
 fi
