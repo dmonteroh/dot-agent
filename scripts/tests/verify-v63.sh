@@ -480,7 +480,7 @@ auto_root="$tmp/auto"
 new_git "$auto_root"
 cat >"$auto_root/.agent/scripts/verify.conf" <<'EOF'
 CHECK_DRIVER=.agent/scripts/checks.sh
-POSITIVE_TEST_CHECKS=node,bun,unittest,unittestskip,jest,vitest,cargo,gov,goplain,minitest,pytest,pytestnone,cutversion,cutplan
+POSITIVE_TEST_CHECKS=node,bun,unittest,unittestskip,jest,vitest,cargo,gov,goplain,minitest,pytest,pytestnone,cutversion,cutplan,tapskip,tapmix,tapgroup,tapchildren
 TEST_COUNT_FORMAT=auto
 TIMEOUT_SECONDS=60
 EOF
@@ -499,6 +499,10 @@ case "$1" in
   minitest) printf '2 runs, 1 assertions, 0 failures, 0 errors, 1 skips\n' ;;
   pytest) printf '========================= 1 failed, 2 passed in 0.02s ==========================\n' ;;
   pytestnone) printf '============================ 2 deselected in 0.00s =============================\n' ;;
+  tapskip) printf '1..2\nok 1 - skipped # sKiP unavailable\nok 2 - placeholder # TODO\n' ;;
+  tapmix) printf 'ok 1 - skiplist # skip\n  ---\n  example: |\n    1..0\n  ...\nok 2 - name contains # skipper\n1..2\n' ;;
+  tapgroup) printf '    ok 1 - skipped # SKIP\n    1..1\nok 1 - group\n1..1\n' ;;
+  tapchildren) printf '    ok - ran\n    ok - skipped # SKIP\n    1..2\nok 1 - group\n1..1\n' ;;
   cutversion) printf 'TAP version 13\nok 1 - one\nRan 3 tests in 0.100s\n' ;;
   cutplan) printf '1..3\nok 1 - one\nRan 3 tests in 0.100s\n' ;;
   build) printf 'built\n' >>src/input.txt; printf 'built\n' ;;
@@ -527,10 +531,14 @@ gov pass 2
 minitest pass 1
 pytest pass 3
 unittestskip inconclusive 0
+tapskip inconclusive 0
+tapmix pass 1
+tapgroup inconclusive 0
+tapchildren pass 1
 cutversion inconclusive unknown
 cutplan inconclusive unknown
 EOF
-[ "$auto_rows" -eq 12 ] && ok "every auto row ran" || bad "auto rows ran: $auto_rows"
+[ "$auto_rows" -eq 16 ] && ok "every auto row ran" || bad "auto rows ran: $auto_rows"
 # why names the cause of the run just recorded, in the one word checkpoint.sh
 # reads, and the run's last line carries the matching next step.
 auto_why() {

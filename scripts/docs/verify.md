@@ -24,7 +24,7 @@ If the selection itself fails, for example on an invalid pattern, the plain last
 
 `--output-share N` divides the limit by N for one run, so N runs printed into one tool result stay within one limit together. `checkpoint.sh --checks` passes the number of checks it runs. The limit never drops below 1 byte. A share smaller than the trimming header prints only the header and the section markers, and the full output is still kept.
 
-TAP counts require one unindented `1..N` plan and exactly N sequentially numbered top-level results. Nested plans are ignored. Missing, malformed, or duplicate top-level plans produce an unknown count. Incomplete result sets also produce an unknown count. A zero or unknown count makes a check named by `POSITIVE_TEST_CHECKS` inconclusive. A source change during the check also makes the result inconclusive. For both, `run` prints one more line on stderr that says why and names the next step.
+TAP counts require one unindented `1..N` plan and exactly N sequentially numbered top-level results. A numbered result marked `# SKIP` or `# TODO` satisfies the plan but contributes zero to the executed count. A parent with a nested plan counts once when any child executed. Missing, malformed, or duplicate top-level plans produce an unknown count. Incomplete result sets also produce an unknown count. A zero or unknown count makes a check named by `POSITIVE_TEST_CHECKS` inconclusive. A source change during the check also makes the result inconclusive. For both, `run` prints one more line on stderr that says why and names the next step.
 
 `TEST_COUNT_FORMAT=auto`, the default, counts TAP by those rules. Output is TAP when it has a `TAP version` line or a top-level plan, and a summary line never stands in for a TAP stream that was cut short. For any other output, `auto` reads the runner's own closing summary and counts the tests that passed or failed:
 
@@ -40,7 +40,7 @@ TAP counts require one unindented `1..N` plan and exactly N sequentially numbere
 | minitest | `2 runs, 1 assertions, 0 failures, 0 errors, 1 skips` | runs less skips | minitest 5.11.3, observed |
 | `bun test` | ` 2 pass`, ` 0 fail` | pass + fail | Bun 1.3.9, observed |
 
-Skipped and filtered tests are left out, so a run whose every test was skipped or filtered away counts 0 and is inconclusive. A line of one of these shapes counts wherever it appears in the output. TAP counting does not leave skips out: `ok 1 # SKIP` counts as a result. `go test` without `-v` prints no count, so its driver line needs `-v`. A runner outside the table needs its TAP reporter in the check driver, or its own row here once its summary line has been observed.
+Skipped and filtered tests are left out, so a run whose every test was skipped or filtered away counts 0 and is inconclusive. A line of one of these shapes counts wherever it appears in the output. `go test` without `-v` prints no count, so its driver line needs `-v`. A runner outside the table needs its TAP reporter in the check driver, or its own row here once its summary line has been observed.
 
 `why` prints one word for a current receipt, so a caller need not guess the cause from the record. The words are `pass`, `failed`, `uncounted`, `format`, `empty`, and `changed`. `uncounted` is a positive check whose output carries no test count, and `format` is the same under `TEST_COUNT_FORMAT=tap` or `none`. `empty` is a positive check that ran 0 tests. `changed` is any other inconclusive run: project files changed, or its output was lost.
 

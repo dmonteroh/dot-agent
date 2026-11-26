@@ -158,26 +158,39 @@ is_positive_check() {
 
 tap_count() {
   awk '
-    BEGIN { results=0 }
-    /^[^[:space:]]/ && /^1\.\./ {
-      if ($0 !~ /^1\.\.[0-9]+([[:space:]]+#.*)?[[:space:]]*$/) bad=1
-      else {
-        plans++
-        line=$0; sub(/^1\.\./, "", line); sub(/[[:space:]#].*$/, "", line); n=line
-      }
+    /^ +---[[:space:]]*$/ && !yaml { yaml=index($0,"-"); next }
+    yaml {
+      if ($0 ~ /^ +\.\.\.[[:space:]]*$/ && index($0,".") == yaml) yaml=0
+      next
     }
-    /^[^[:space:]]/ && /^(ok|not ok)([[:space:]]|$)/ {
-      if ($0 !~ /^(ok|not ok)[[:space:]]+[0-9]+([[:space:]]|$)/) bad=1
-      else {
-        result=$0
+    /^ *(1\.\.|(ok|not ok)([[:space:]]|$))/ {
+      line=$0
+      sub(/^ +/, "", line)
+      spaces=length($0) - length(line)
+      if (spaces % 4) next
+      depth=spaces / 4
+      if (line ~ /^1\.\./) {
+        if (depth) { child_plan[depth]=1; next }
+        if (line !~ /^1\.\.[0-9]+([[:space:]]+#.*)?[[:space:]]*$/) bad=1
+        else { plans++; sub(/^1\.\./, "", line); sub(/[[:space:]#].*$/, "", line); n=line }
+        next
+      }
+      if (!depth) {
+        if (line !~ /^(ok|not ok)[[:space:]]+[0-9]+([[:space:]]|$)/) { bad=1; next }
+        result=line
         sub(/^(ok|not ok)[[:space:]]+/, "", result)
         sub(/[^0-9].*$/, "", result)
-        results++
-        if (result != results) bad=1
+        if (result != ++results) bad=1
       }
+      # A parent result closes the preceding indented subtest. A whole
+      # skipped group supplies no more execution evidence than a skipped leaf.
+      if (tolower(line) !~ /[[:space:]]+#[[:space:]]*(skip|todo)([[:space:]]|$)/ &&
+          (!child_plan[depth+1] || executed[depth+1])) executed[depth]++
+      delete child_plan[depth+1]
+      delete executed[depth+1]
     }
     END {
-      if (!bad && plans == 1 && n ~ /^[0-9]+$/ && results == n) print n
+      if (!bad && plans == 1 && n ~ /^[0-9]+$/ && results+0 == n+0) print executed[0]+0
       else print "unknown"
     }
   ' "$1"
