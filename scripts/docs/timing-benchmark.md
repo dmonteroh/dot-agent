@@ -1,10 +1,11 @@
-# timing-benchmark.sh — read-side latency
+# timing-benchmark.sh — helper and checkpoint latency
 
 `scripts/tools/timing-benchmark.sh` times the helpers a session or a checkpoint reads a node with. It builds fixture nodes with `node.sh init`, fills them with generated records, and reports the median and the 90th percentile of each command in milliseconds.
 
 ```
 scripts/tools/timing-benchmark.sh                             # this checkout, 10 runs, sizes 10, 60, 200
 scripts/tools/timing-benchmark.sh --runs 20 --sizes "60 600"
+scripts/tools/timing-benchmark.sh --checkpoint-files "25 250 1000" --runs 3
 scripts/tools/timing-benchmark.sh --scripts OLD/scripts --scripts scripts   # two revisions in one run
 ```
 
@@ -24,6 +25,18 @@ A size counts records. A quarter are memory facts of 120 words, a quarter learne
 | `index.sh check` | `index.sh check --root ROOT` |
 | `review.sh` | `review.sh --base HEAD --root ROOT` |
 | `links.sh` | `links.sh ROOT` |
+
+## Checkpoint timing
+
+Pass `--checkpoint-files` to time a complete `checkpoint.sh --checks test` at each specified count of tracked files under `src/`. The fixture uses manual indexes and tracks its node in Git. Before each sample, the harness restores the fixture’s starting session log and changes one numeric value. This keeps the log workload constant at every repeat count. The project check confirms the value is numeric and emits one passing TAP result. Every sample must record a fresh verified log entry. Fixture creation and editing are outside the timer.
+
+On 2026-11-26, the complete checkpoint at 1,000 tracked source files fell from a median of 44.24 s to 3.43 s with batched fingerprinting. This comparison used macOS arm64, Bash 3.2.57 and Git 2.55.0. The baseline was `2491f2a`. Both revisions ran on the same machine under other work, with one warm-up and three interleaved samples per file count. The measured fixture accumulated up to three log entries. At three samples, p90 is the slowest observation.
+
+| Source files | Median before | Median batched | p90 before | p90 batched |
+| ---: | ---: | ---: | ---: | ---: |
+| 25 | 4,126 ms | 1,352 ms | 7,586 ms | 3,297 ms |
+| 250 | 13,340 ms | 1,640 ms | 25,510 ms | 3,653 ms |
+| 1,000 | 44,244 ms | 3,430 ms | 60,905 ms | 5,267 ms |
 
 ## Not part of test.sh
 

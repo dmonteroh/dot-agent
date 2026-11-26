@@ -6,11 +6,11 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
 usage() {
   cat <<'EOF'
-Usage: scripts/tools/timing-benchmark.sh [--scripts DIR]... [--runs N] [--sizes "N..."]
+Usage: scripts/tools/timing-benchmark.sh [--scripts DIR]... [--runs N] [--sizes "N..." | --checkpoint-files "N..."]
 
-Builds one fixture node per size and times the read-side helpers in it. Each
-command gets one warm-up run, then N timed runs, and reports the median and
-the 90th percentile in milliseconds.
+Times read-side helpers by node size, or a checkpoint by source-file count.
+Each command gets one warm-up run and N timed runs. The report gives the
+median and 90th percentile in milliseconds.
 
 --scripts DIR  the scripts/ directory of a dot-agent checkout to time (default:
                the one this file is in). Repeat it to compare revisions: every
@@ -18,6 +18,7 @@ the 90th percentile in milliseconds.
                reaches all of them.
 --runs N       timed runs per command (default 10)
 --sizes "N..." fixture sizes in records (default "10 60 200")
+--checkpoint-files "N..."  time checkpoint instead, at each tracked source-file count
 EOF
 }
 die() { printf 'timing-benchmark.sh: %s\n' "$1" >&2; usage >&2; exit 2; }
@@ -25,11 +26,13 @@ whole() { case "$2" in '' | 0 | *[!0-9]*) die "$1 takes a whole number above 0" 
 
 sets=()
 runs=10
-sizes="10 60 200"
+sizes=
+size_label=Records
+commands="status_load status_tsv memory_lookup index_check review links"
 while [ "$#" -gt 0 ]; do
   case "$1" in
   -h | --help) usage; exit 0 ;;
-  --scripts | --runs | --sizes) [ "$#" -ge 2 ] || die "$1 needs a value" ;;
+  --scripts | --runs | --sizes | --checkpoint-files) [ "$#" -ge 2 ] || die "$1 needs a value" ;;
   *) die "unknown argument: $1" ;;
   esac
   case "$1" in
@@ -37,12 +40,16 @@ while [ "$#" -gt 0 ]; do
     [ -f "$2/node.sh" ] || die "no node.sh in $2"
     sets+=("$(cd "$2" && pwd -P)") ;;
   --runs) whole --runs "$2"; runs=$2 ;;
-  --sizes)
+  --sizes | --checkpoint-files)
+    [ -z "$sizes" ] || die "pass one size list"
+    [ -n "${2// /}" ] || die "$1 needs a size"
+    if [ "$1" = --checkpoint-files ]; then size_label="Source files"; commands=checkpoint; fi
     for size in $2; do whole --sizes "$size"; done
     sizes=$2 ;;
   esac
   shift 2
 done
+sizes=${sizes:-"10 60 200"}
 [ "${#sets[@]}" -gt 0 ] || sets=("${here%/*}")
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/timing-bench.XXXXXXXX")
@@ -89,14 +96,13 @@ write_record() { # $1: node directory  $2: record number
   esac
 }
 
-# Besides the node, the project holds one tracked note per record, ten ignored
-# Markdown files per record, and one uncommitted source change for review.sh.
-make_project() { # $1: project directory  $2: records  $3: scripts directory
-  local node="$1/.agent" n
+make_project() { # $1: project directory  $2: records or source files  $3: scripts directory
+  local node="$1/.agent" n index_mode=generated hooks=session-start records=$2
+  if [ "$commands" = checkpoint ]; then index_mode=manual; hooks=none; records=0; fi
   mkdir -p "$1/src" "$1/notes" "$1/out"
   git -C "$1" init -q
   bash "$3/node.sh" init --preset software-development --mode track-all \
-    --indexes generated --hooks session-start "$1" >/dev/null 2>&1
+    --indexes "$index_mode" --hooks "$hooks" "$1" >/dev/null 2>&1
   awk -v bar="$node/rules/quality-bar.md" '
     /^## / { in_bar = /^## Quality bar/ }
     in_bar { print > bar; next }
@@ -107,26 +113,37 @@ make_project() { # $1: project directory  $2: records  $3: scripts directory
   [ -s "$node/docs/architecture.md" ] || printf '# Architecture routing table\n' >"$node/docs/architecture.md"
   printf 'out/\n' >>"$1/.gitignore"
   n=1
-  while [ "$n" -le "$2" ]; do
+  while [ "$n" -le "$records" ]; do
     write_record "$node" "$n"
     printf '# Note %d\n' "$n" >"$1/notes/note-$n.md"
     for copy in 0 1 2 3 4 5 6 7 8 9; do printf '# Output\n' >"$1/out/run-$n-$copy.md"; done
     n=$((n + 1))
   done
+  if [ "$commands" = checkpoint ]; then
+    while [ "$n" -lt "$2" ]; do
+      printf 'value = 0\n' >"$1/src/file-$n.py"
+      n=$((n + 1))
+    done
+    cat >"$node/scripts/checks.sh" <<'DRIVER'
+#!/usr/bin/env bash
+[ "$1" = test ] && grep -Eq '^value = [0-9]+$' src/client.py || exit 1
+printf '1..1\nok 1 - value is numeric\n'
+DRIVER
+  fi
   printf 'one\n' >"$1/src/client.py"
   git -C "$1" add -A
   git -C "$1" commit -qm base
-  bash "$node/scripts/index.sh" ensure --root "$1" >/dev/null 2>&1 || true
+  if [ "$index_mode" = generated ]; then bash "$node/scripts/index.sh" ensure --root "$1" >/dev/null 2>&1 || true; fi
   printf 'def two():\n    return 2\n' >"$1/src/client.py"
 }
 
-commands="status_load status_tsv memory_lookup index_check review links"
 label() {
   case "$1" in
   status_load) echo 'status.sh --load' ;;
   status_tsv) echo 'status.sh --format tsv' ;;
   memory_lookup) echo 'memory.sh lookup' ;;
   index_check) echo 'index.sh check' ;;
+  checkpoint) echo 'checkpoint.sh --checks test' ;;
   review) echo 'review.sh' ;;
   links) echo 'links.sh' ;;
   esac
@@ -138,6 +155,8 @@ run_command() { # $1: command  $2: project directory
   status_tsv) bash "$s/status.sh" --format tsv "$2" ;;
   memory_lookup) bash "$s/memory.sh" lookup --query 'area word12' "$2" ;;
   index_check) bash "$s/index.sh" check --root "$2" ;;
+  checkpoint)
+    bash "$s/checkpoint.sh" --tool bench --area fixture --summary "Updated the numeric value" --checks test "$2" ;;
   review) bash "$s/review.sh" --base HEAD --root "$2" ;;
   links) bash "$s/links.sh" "$2" ;;
   esac
@@ -162,7 +181,7 @@ for set in "${sets[@]}"; do
   i=$((i + 1))
   printf 'scripts %d: %s\n' "$i" "$set"
 done
-printf '\n| Records | Command | Scripts | n | Median ms | p90 ms |\n| --- | --- | --- | --- | --- | --- |\n'
+printf '\n| %s | Command | Scripts | n | Median ms | p90 ms |\n| --- | --- | --- | --- | --- | --- |\n' "$size_label"
 
 for size in $sizes; do
   i=0
@@ -176,10 +195,17 @@ for size in $sizes; do
       i=0
       for set in "${sets[@]}"; do
         i=$((i + 1))
+        if [ "$cmd" = checkpoint ]; then
+          git -C "$scratch/p$size-$i" checkout -- .agent/session-log.md
+          printf 'value = %d\n' "$run" >"$scratch/p$size-$i/src/client.py"
+        fi
         if [ "$run" -eq 0 ]; then
           warm_up "$cmd" "$scratch/p$size-$i"
         else
           time_command "$cmd" "$scratch/p$size-$i" >>"$scratch/$size-$cmd-$i"
+        fi
+        if [ "$cmd" = checkpoint ]; then
+          grep -qx 'checkpoint.sh: recorded verify=pass' "$scratch/out" || die 'checkpoint did not record a fresh pass'
         fi
       done
       run=$((run + 1))

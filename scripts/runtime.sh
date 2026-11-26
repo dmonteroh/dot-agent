@@ -124,37 +124,72 @@ da__line() {
   done
 }
 
-# Appends one path's record to a file, and leaves in da_hp_content what a file
-# or a link holds, empty for anything else.
-da__hash_path() {
-  da_hp_root=$1 da_hp_rel=$2 da_hp_out=$3
-  da_hp_content=
-  da_hp_rest=$da_hp_rel
-  da_hp_prefix=
-  while [ "${da_hp_rest#*/}" != "$da_hp_rest" ]; do
-    da_hp_part=${da_hp_rest%%/*}
-    da_hp_rest=${da_hp_rest#*/}
-    if [ -n "$da_hp_prefix" ]; then da_hp_prefix="$da_hp_prefix/$da_hp_part"; else da_hp_prefix=$da_hp_part; fi
-    if [ -L "$da_hp_root/$da_hp_prefix" ]; then
-      da_hp_target=$(readlink "$da_hp_root/$da_hp_prefix") || return 1
-      printf 'A\0%s\0%s\0%s\0' "$da_hp_rel" "$da_hp_prefix" "$da_hp_target" >>"$da_hp_out"
-      return 0
+# Keep consecutive regular files in discovery order. Each hash belongs to the
+# path at the same position, including when xargs splits a long argument list.
+da__flush_files() {
+  local hashes hash rel mode i=0
+  [ "${#files[@]}" -gt 0 ] || return 0
+  hashes=$(set -o pipefail
+    printf '%s\0' "${files[@]}" | xargs -0 git hash-object --no-filters --) || return 1
+  while IFS= read -r hash; do
+    [ "$i" -lt "${#files[@]}" ] && [ -n "$hash" ] || return 1
+    rel=${files[$i]#"$root"/}
+    mode=${modes[$i]}
+    printf 'F\0%s\0%s\0%s\0' "$rel" "$mode" "$hash" || return 1
+    if [ -n "$lines" ]; then
+      da__line "$rel" "file $mode $hash"
+      printf '%s\n' "$REPLY" >>"$lines" || return 1
+    fi
+    i=$((i + 1))
+  done <<<"$hashes"
+  [ "$i" -eq "${#files[@]}" ] || return 1
+  files=() modes=()
+}
+
+# ROOT DELIMITER CONTENT_LINES: append fingerprint records to stdout. Git
+# supplies NUL-separated names; non-Git discovery rejects names with newlines.
+da__hash_paths() {
+  local root=$1 delimiter=$2 lines=$3 rel rest part prefix target
+  local -a files=() modes=()
+  while IFS= read -r -d "$delimiter" rel; do
+    if [ -n "$delimiter" ]; then
+      while [ "${rel#./}" != "$rel" ]; do rel=${rel#./}; done
+    fi
+    da__excluded_path "$root" "$rel" && continue
+    rest=$rel prefix=
+    while [ "${rest#*/}" != "$rest" ]; do
+      part=${rest%%/*}
+      rest=${rest#*/}
+      prefix=${prefix:+$prefix/}$part
+      if [ -L "$root/$prefix" ]; then
+        da__flush_files || return 1
+        target=$(readlink "$root/$prefix") || return 1
+        printf 'A\0%s\0%s\0%s\0' "$rel" "$prefix" "$target" || return 1
+        continue 2
+      fi
+    done
+    if [ ! -L "$root/$rel" ] && [ -f "$root/$rel" ]; then
+      files+=("$root/$rel")
+      if [ -x "$root/$rel" ]; then modes+=(1); else modes+=(0); fi
+      # Bound memory and the wait between classifying a file and opening it.
+      if [ "${#files[@]}" -ge 128 ]; then da__flush_files || return 1; fi
+      continue
+    fi
+    da__flush_files || return 1
+    if [ -L "$root/$rel" ]; then
+      target=$(readlink "$root/$rel") || return 1
+      printf 'L\0%s\0%s\0' "$rel" "$target" || return 1
+      if [ -n "$lines" ]; then
+        da__line "$rel" "link $target"
+        printf '%s\n' "$REPLY" >>"$lines" || return 1
+      fi
+    elif [ -e "$root/$rel" ]; then
+      printf 'O\0%s\0' "$rel" || return 1
+    else
+      printf 'M\0%s\0' "$rel" || return 1
     fi
   done
-  if [ -L "$da_hp_root/$da_hp_rel" ]; then
-    da_hp_target=$(readlink "$da_hp_root/$da_hp_rel") || return 1
-    printf 'L\0%s\0%s\0' "$da_hp_rel" "$da_hp_target" >>"$da_hp_out"
-    da_hp_content="link $da_hp_target"
-  elif [ -f "$da_hp_root/$da_hp_rel" ]; then
-    da_hp_hash=$(git hash-object --no-filters -- "$da_hp_root/$da_hp_rel") || return 1
-    if [ -x "$da_hp_root/$da_hp_rel" ]; then da_hp_exec=1; else da_hp_exec=0; fi
-    printf 'F\0%s\0%s\0%s\0' "$da_hp_rel" "$da_hp_exec" "$da_hp_hash" >>"$da_hp_out"
-    da_hp_content="file $da_hp_exec $da_hp_hash"
-  elif [ -e "$da_hp_root/$da_hp_rel" ]; then
-    printf 'O\0%s\0' "$da_hp_rel" >>"$da_hp_out"
-  else
-    printf 'M\0%s\0' "$da_hp_rel" >>"$da_hp_out"
-  fi
+  da__flush_files
 }
 
 # da_fingerprint ROOT [FILE]: a digest of the current inputs. In a Git root, FILE
@@ -219,7 +254,7 @@ da_fingerprint() {
               esac
             done
             if [ "$da_fp_sub_symlink" -eq 1 ]; then
-              # da__hash_path records the exact link boundary later.  This
+              # da__hash_paths records the exact link boundary later.  This
               # marker makes explicit that no repository beyond it was read.
               printf 'SL\0%s\0' "$da_fp_path" >>"$da_fp_tmp"
             elif [ -d "$da_fp_root/$da_fp_path" ]; then
@@ -268,13 +303,7 @@ da_fingerprint() {
       git -C "$da_fp_root" ls-files -co --exclude-standard -z >"$da_fp_list" || da_fp_rc=1
     fi
     if [ "$da_fp_rc" -eq 0 ]; then
-      while IFS= read -r -d '' da_fp_path; do
-        da__excluded_path "$da_fp_root" "$da_fp_path" && continue
-        da__hash_path "$da_fp_root" "$da_fp_path" "$da_fp_tmp" || { da_fp_rc=1; break; }
-        [ -n "$da_fp_lines" ] && [ -n "$da_hp_content" ] || continue
-        da__line "$da_fp_path" "$da_hp_content"
-        printf '%s\n' "$REPLY" >>"$da_fp_lines" || { da_fp_rc=1; break; }
-      done <"$da_fp_list"
+      da__hash_paths "$da_fp_root" '' "$da_fp_lines" <"$da_fp_list" >>"$da_fp_tmp" || da_fp_rc=1
     fi
     if [ "$da_fp_rc" -eq 0 ] && [ -n "$da_fp_lines" ]; then
       LC_ALL=C sort -u "$da_fp_lines" -o "$da_fp_lines" && git hash-object --no-filters -- "$da_fp_lines" >"$da_fp_content_out" || da_fp_rc=1
@@ -286,10 +315,7 @@ da_fingerprint() {
       printf '%s\0%s\0' "$da_fp_config" "$da_fp_driver" >>"$da_fp_list"
     fi
     if [ "$da_fp_rc" -eq 0 ]; then
-      while IFS= read -r -d '' da_fp_path; do
-        da__excluded_path "$da_fp_root" "$da_fp_path" && continue
-        da__hash_path "$da_fp_root" "$da_fp_path" "$da_fp_tmp" || { da_fp_rc=1; break; }
-      done <"$da_fp_list"
+      da__hash_paths "$da_fp_root" '' '' <"$da_fp_list" >>"$da_fp_tmp" || da_fp_rc=1
     fi
   else
     printf 'non-git\0' >>"$da_fp_tmp"
@@ -332,11 +358,7 @@ da_fingerprint() {
       LC_ALL=C sort -u "$da_fp_list" -o "$da_fp_list" || da_fp_rc=1
     fi
     if [ "$da_fp_rc" -eq 0 ]; then
-      while IFS= read -r da_fp_path; do
-        while [ "${da_fp_path#./}" != "$da_fp_path" ]; do da_fp_path=${da_fp_path#./}; done
-        da__excluded_path "$da_fp_root" "$da_fp_path" && continue
-        da__hash_path "$da_fp_root" "$da_fp_path" "$da_fp_tmp" || { da_fp_rc=1; break; }
-      done <"$da_fp_list"
+      da__hash_paths "$da_fp_root" $'\n' '' <"$da_fp_list" >>"$da_fp_tmp" || da_fp_rc=1
     fi
   fi
   if [ "$da_fp_rc" -eq 0 ]; then
