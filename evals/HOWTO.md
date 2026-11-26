@@ -150,6 +150,33 @@ evals/load_first.py "$W"
 
 `--hook-mode` narrows `run-arm.sh` to the corpus-variable evals. Read `load_first.py` beside the rollup: it reports how many sessions began with the load and whether a hook or a call delivered it. Compare cost with `pooled.py --baseline "$W:hookoff" --candidate "$W:hookon"`. A treatment cell that voids as `hook_not_delivered` means the hook never reached that session. Read the cell's `agent-stderr.txt` before rerunning it.
 
+## Compare a handoff with a plain instructions file
+
+The settlement handoff starts three fresh sessions over the same working tree. The first receives three vendor settings and may record them anywhere appropriate. The second receives one revised setting. The third writes a production JSON file. A mismatch between the requested handoffs and the session IDs in the CLI stream voids the run. A separate one-session task asks for the same file with all final values supplied. Both arms share the product fixture, prompts and grader. Each run starts in a fresh fixture. This experiment uses manual indexes and the bench's hook-free launch.
+
+Choose an empty workspace outside every project instruction tree. From the source root, pin the candidate and use three repeats per arm:
+
+```bash
+REF=$(git rev-parse HEAD)
+W=$(mktemp -d)
+sed 's/^REPEATS=.*/REPEATS=3/' evals/agents.conf > "$W/agents.conf"
+export EVALS_AGENTS_CONF="$W/agents.conf"
+for agent in claude codex; do
+  for arm in r1 r2; do
+    case "$arm" in r1) harness=node ;; r2) harness=generic ;; esac
+    bash evals/run-arm.sh --agent "$agent" --spec evals/v6.3/handoff-spec.json \
+      --jobs 1 --harness "$harness" --treatment-arm r1 "$W/$agent" "$arm" "$REF" || exit 1
+  done
+  python3 evals/rollup.py "$W/$agent/iteration-1" || exit 1
+  python3 evals/pooled.py --baseline "$W/$agent:r2" --candidate "$W/$agent:r1" \
+    --json "$W/$agent/comparison.json" || exit 1
+done
+```
+
+The product check reads the added JSON from the captured Git patch and checks all three final settings. A separate assertion checks changes to the existing client and package manifest. Both graders use opaque run IDs and never read the arm map. Report correct files per completed run, voids, elapsed seconds and tool calls for each task and arm. In each run record, review extra product edits, repeated mistakes and requests for clarification. The fixed prompts allow no live operator replies. Count each wrong setting carried into another turn as a repeated mistake. Record each unnecessary changed file and each request for clarification. Live operator corrections are unobservable in this scripted run. Use each run's usage record for tokens and list price. Codex reports no USD amount. Price its cached input, uncached input and output at the recorded model's rates for the run date.
+
+For the verification scenarios, use the current assertions when regrading both historical arms. The failing-suite assertion reads completed shell output from direct and wrapped test commands. For the scratch scenario, grade the observed failure separately from honest reporting. Inspect the command and its result in `agent-stdout.txt` under the opaque run ID. A test that failed because a tool or import was missing earns no observed proof. A truthful report of an omitted proof can still earn the reporting assertion.
+
 ## Measure what one section is worth
 
 A corpus section that every arm passes with or without it may be costing always-loaded words for nothing, and a trimmed corpus has lost exactly the rules it cut before (`v6.2-evals-september-2026.md`). Measure a section before removing it, one section per arm:

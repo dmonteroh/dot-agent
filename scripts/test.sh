@@ -1987,6 +1987,7 @@ cat >"$gd/snap.json" <<'EOF'
  {"id":"g/absent","concept":"c","class":"artifact","grade":"auto","check":"node_tree_absent 'SECRET-TOKEN'"},
  {"id":"g/missing","concept":"c","class":"artifact","grade":"auto","check":"gate_block_count == 0"},
  {"id":"g/nodeprefix","concept":"c","class":"artifact","grade":"auto","check":"node_file_changed 'memory/x.md'"},
+ {"id":"g/wrapped","concept":"c","class":"trace","grade":"auto","check":"fixture_test_executed"},
  {"id":"g/human","concept":"c","class":"artifact","grade":"manual"}]}
 EOF
 printf -- '--- /dev/null\n+++ b/src/new.ts\n+const a = 1\n' >"$gd/outputs/diff.patch"
@@ -2003,6 +2004,9 @@ git -C "$ndrepo" add -A
 git -C "$ndrepo" diff --cached "$nd_base" -- .agent >"$gd/outputs/node-diff.patch"
 printf '{"seq":0,"event":"call","tool":"read_file","action":"read","text":"read catalog"}\n{"seq":1,"event":"call","tool":"write_file","action":"write","text":"write:src/new.ts"}\n' >"$gd/outputs/trace.jsonl"
 printf 'nothing sensitive here\n' >"$gd/outputs/node-tree.txt"
+cat >"$gd/outputs/agent-stdout.txt" <<'EOF'
+{"type":"item.completed","item":{"type":"command_execution","command":"bash .agent/scripts/verify.sh run test","aggregated_output":"> test\n> node --test\nnot ok 1 - legacy currency rounding","exit_code":1}}
+EOF
 "$evroot/grade.py" "$gd" "$gd/snap.json" >/dev/null 2>&1
 g42=$(python3 -c '
 import json,sys
@@ -2010,6 +2014,7 @@ r = {x["id"]: x for x in json.load(open(sys.argv[1]))["results"]}
 bad = []
 if not r["g/new"]["passed"]: bad.append("new-file-not-counted")
 if not r["g/append"]["passed"]: bad.append("append-read-as-creation")
+if not r["g/wrapped"]["passed"]: bad.append("wrapped-test-execution-missed")
 if not r["g/order"]["passed"]: bad.append("trace-order")
 if not r["g/absent"]["passed"]: bad.append("tree-absence")
 if r["g/missing"]["passed"]: bad.append("missing-artifact-passed-by-default")

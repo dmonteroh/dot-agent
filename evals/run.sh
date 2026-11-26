@@ -1636,6 +1636,13 @@ EOF
     continue
   fi
 
+  if [ "$arm_variable" = harness ] && [ "${#turns[@]}" -gt 1 ]; then
+    if ! "$selfdir/run_lib.py" check-session-ids "$agent" "$turnstmp" "$rundir/outputs/agent-stdout.txt"; then
+      mark_stage_void "$rundir" handoff_session_mismatch "the CLI session IDs differ from the requested handoffs" 1
+      any_void=1; rep=$((rep + 1)); continue
+    fi
+  fi
+
   # A hook-mode treatment measures the hook only if it fired: one delivery,
   # payload or pointer, at every session start. Fewer means the session ran
   # hook-free, and grading it would credit the control's behavior to the

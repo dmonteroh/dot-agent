@@ -18,7 +18,7 @@ What the runs so far found is written up in [What the September 2026 evaluations
 
 An eval is a small, realistic situation and a list of things a good session does in it. The bench builds a tiny project with a fresh `.agent/` node inside it, plants one trap (a doc the routing hook does not name, a memory fact due for an update, a file carrying an instruction aimed at the agent, a test that was already red), hands a real agent one prompt in that project, and records everything the session leaves behind: the diff, the `.agent/` diff, the reply, and the sequence of tool calls. Then it grades that record against the list.
 
-The list is the point. Each item is a checkable claim about the session's actions, artifacts, or reply. Scripts settle most of them. A blind reviewer grades the thirty-four that need judgement.
+The list is the point. Each item is a checkable claim about the session's actions, artifacts, or reply. Scripts settle most of them. A blind reviewer grades the thirty-five that need judgement.
 
 A single score means nothing on its own, because most of what any session does well it would have done with no corpus at all. So every eval runs at least twice with one thing varied: the corpus revision, or the agent. The result is the difference between the arms, assertion by assertion, and the report says which assertions moved, which regressed, and which stayed the same in both arms. The last bucket is usually the largest, and that is expected.
 
@@ -107,7 +107,7 @@ Each assertion carries a stable `id` (joins the arms), a `concept` (groups asser
 
 The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once. The grading copies of `status.sh` and `comments.sh` are snapshotted from this repository, never taken from the node under test, so a corpus revision cannot grade itself.
 
-That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content, whether a durable write is correctly scoped, deduplicated, or superseded. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Thirty-four of the one hundred seventeen are manual.
+That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content, whether a durable write is correctly scoped, deduplicated, or superseded. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Thirty-five of the one hundred seventeen are manual.
 
 ## What is wired
 
@@ -245,7 +245,7 @@ Note one thing the transcript cannot show: only each turn's final text is captur
 
 ## Filling in the manual assertions
 
-Thirty-four of one hundred seventeen need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
+Thirty-five of one hundred seventeen need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
 
 Run `evals/triage.py <iteration-dir>`: it prints, per ungraded record, a proposed verdict and the quotation that produced it, applying one fixed rule per assertion. Read the quotations. `--apply` writes the PASS and FAIL proposals with their evidence; UNSURE ones, and any proposal you disagree with, are filled by hand with a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. Never open `arm-map.json` while grading.
 

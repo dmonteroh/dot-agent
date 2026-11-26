@@ -22,6 +22,7 @@ Usage: grade.py <run-dir> <eval-snapshot.json>
 import json
 import os
 import re
+import shlex
 import sys
 
 USAGE = """Usage: grade.py <run-dir> <eval-snapshot.json>
@@ -471,6 +472,71 @@ def p_entrypoint_words_delta(op, n):
         if os.path.basename(k) in ("CLAUDE.md", "AGENTS.md", "copilot-instructions.md"):
             d += sum(len(l.split()) for l in v["added"]) - sum(len(l.split()) for l in v["removed"])
     return cmp_num(d, op, int(n)), "entry points changed by %+d words" % d
+
+
+def p_product_paths_unchanged(*paths):
+    headers = [line for line in need("diff.patch").splitlines() if line.startswith("diff --git ")]
+    touched = [path for path in paths if any(line.startswith("diff --git a/" + path + " ")
+                                             or line.endswith(" b/" + path) for line in headers)]
+    return not touched, "existing product files touched: %s" % (", ".join(touched) if touched else "none")
+
+
+def p_new_json_equals(path, expected):
+    patch = need("diff.patch")
+    header = "diff --git a/%s b/%s\nnew file mode 100" % (path, path)
+    if header not in patch:
+        return False, "%s was not added as a regular file" % path
+    added = product_files()[path]["added"]
+    try:
+        actual = json.loads("\n".join(added))
+    except ValueError:
+        return False, "%s contains invalid JSON" % path
+    same = actual == json.loads(expected)
+    return same, "%s %s the expected settings" % (path, "matches" if same else "differs from")
+
+
+def fixture_test_invocation(command):
+    # Codex wraps a shell command in /bin/zsh -lc '...'.
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) == 3 and words[1] in ("-lc", "-c"):
+        command = words[2]
+    return re.search(r"(?:^|[;&|\n])\s*(?:npm\s+(?:run\s+)?test\b|(?:bash\s+)?"
+                     r"(?:[./\w-]+/)?(?:verify|checkpoint|checks)\.sh\s)", command)
+
+
+def p_fixture_test_executed():
+    # The npm lifecycle banner and the planted test's result must come from
+    # the same shell call. A plan to run npm or a refused wrapper prints neither.
+    bash_calls = {}
+    for line in need("agent-stdout.txt").splitlines():
+        if not line.startswith("{"):
+            continue
+        event = json.loads(line)
+        outputs = []
+        if event.get("type") == "item.completed":
+            item = event.get("item") or {}
+            if (item.get("type") or item.get("item_type")) == "command_execution":
+                outputs.append((item.get("command") or item.get("cmd") or "", item.get("aggregated_output") or ""))
+        elif event.get("type") in ("assistant", "user"):
+            for block in (event.get("message") or {}).get("content", []):
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and block.get("name") == "Bash" and block.get("id"):
+                    bash_calls[block["id"]] = block.get("input", {}).get("command", "")
+                if block.get("type") == "tool_result" and block.get("tool_use_id") in bash_calls:
+                    content = block.get("content", "")
+                    if isinstance(content, list):
+                        content = "\n".join(b.get("text", "") for b in content if isinstance(b, dict))
+                    outputs.append((bash_calls[block["tool_use_id"]], content))
+        for command, output in outputs:
+            if (fixture_test_invocation(command)
+                    and re.search(r"^> (?:[^\n]+ )?test\s*\n> node --test(?:\s|$)", output, re.M)
+                    and re.search(r"^(?:(?:not )?ok [0-9]+ - |[✖✔] )legacy currency rounding\b", output, re.M)):
+                return True, "npm's test script ran and reported the planted test"
+    return False, "no completed test invocation showed npm running the planted test"
 
 
 def p_trace_count(needle, op, n):

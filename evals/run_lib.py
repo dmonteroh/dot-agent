@@ -61,6 +61,7 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
   arm-variable                           env: SPEC   stdin: eval entry JSON
   install-contract <source> <target>     preserve fixture Project guardrails
   split-turns                            stdin: eval entry JSON
+  check-session-ids <agent> <turns-file> <agent-stdout>
   arm-map-update <path> <runid> <arm>
   run-meta-init                          env: RUNID EVALID FIXTURE CORPUS_REF AGENT
                                                AGENT_BIN AGENT_BIN_REAL AGENT_BIN_HASH
@@ -911,7 +912,7 @@ def _arm_variable_locks(av):
     `hook-mode` locks the same set as `contract`; its arms differ only in
     whether the fixture keeps the session-start hook.
     """
-    lock_agent_model = av in ("corpus", "node-mode", "contract", "hook-mode")
+    lock_agent_model = av in ("corpus", "node-mode", "contract", "hook-mode", "harness")
     lock_corpus_ref = av != "corpus"
     return lock_agent_model, lock_corpus_ref
 
@@ -940,7 +941,7 @@ def cmd_lock_run_config_create(args):
         "locked_model": os.environ["MD"] if lock_agent_model else None,
         "locked_corpus_ref": os.environ["CR"] if lock_corpus_ref else None,
         "locked_harness": os.environ.get("HM") if av in ("contract", "hook-mode") else None,
-        "locked_index_mode": os.environ.get("IM") if av in ("contract", "hook-mode") else None,
+        "locked_index_mode": os.environ.get("IM") if av in ("contract", "hook-mode", "harness") else None,
         "repeats_per_cell": int(os.environ["RP"]),
         "arms": {os.environ["AM"]: _arm_entry()},
         "resolved": {
@@ -984,6 +985,7 @@ def cmd_lock_run_config_update(args):
     if av in ("contract", "hook-mode"):
         if os.environ.get("HM") != cfg.get("locked_harness"):
             errs.append("harness drifted in a %s-variable comparison" % av)
+    if av in ("contract", "hook-mode", "harness"):
         if os.environ.get("IM") != cfg.get("locked_index_mode"):
             errs.append("index mode drifted in a %s-variable comparison" % av)
     resolved = cfg.setdefault("resolved", {})
@@ -992,6 +994,9 @@ def cmd_lock_run_config_update(args):
     arm = os.environ["AM"]
     arm_entry = _arm_entry()
     prior_arm = arms.get(arm)
+    if av == "harness" and any(name != arm and other["harness"] == arm_entry["harness"]
+                               for name, other in arms.items()):
+        errs.append("the other arm already uses the %s harness" % arm_entry["harness"])
     if prior_arm is not None and prior_arm != arm_entry:
         errs.append("arm %r configuration drifted: %r != recorded %r" % (arm, arm_entry, prior_arm))
     new_entry = {"bin": os.environ["AB"] or None,
@@ -1091,6 +1096,37 @@ def cmd_split_turns(args):
         else:
             turns = [prompt]
     sys.stdout.buffer.write(("\0".join(turns) + "\0").encode("utf-8"))
+    return 0
+
+
+def cmd_check_session_ids(args):
+    agent, turns_path, stream_path = args
+    with open(turns_path, "rb") as turns:
+        starts = [i == 0 or turn.startswith(TURN_SESSION_RESTART.encode())
+                  for i, turn in enumerate(turns.read().split(b"\0")[:-1])]
+    sessions = []
+    current = None
+    with open(stream_path, encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            kind = event.get("type")
+            if agent == "claude" and kind == "result" and not _claude_result_is_injected(event):
+                sessions.append(event.get("session_id"))
+            elif agent == "codex" and kind == "thread.started":
+                current = event.get("thread_id") or event.get("id")
+            elif agent == "codex" and kind == "turn.completed":
+                sessions.append(current)
+    if len(sessions) != len(starts):
+        die("turn count differs from the completed sessions recorded by the CLI")
+    for i, (start, session) in enumerate(zip(starts, sessions)):
+        if not isinstance(session, str) or not session:
+            die("missing session ID at turn %d" % (i + 1))
+        if start and session in sessions[:i]:
+            die("handoff reused a previous session ID at turn %d" % (i + 1))
+        if not start and session != sessions[i - 1]:
+            die("resumed turn %d started a different session" % (i + 1))
     return 0
 
 
@@ -1281,6 +1317,7 @@ COMMANDS = {
     "arm-variable": cmd_arm_variable,
     "install-contract": cmd_install_contract,
     "split-turns": cmd_split_turns,
+    "check-session-ids": cmd_check_session_ids,
     "arm-map-update": cmd_arm_map_update,
     "run-meta-init": cmd_run_meta_init,
     "run-meta-set-fixture-base": cmd_run_meta_set_fixture_base,

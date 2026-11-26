@@ -1,0 +1,83 @@
+{
+  "spec_version": 2,
+  "arms": {
+    "variable": "harness",
+    "treatment": {
+      "name": "r1",
+      "definition": "Project with a dot-agent node."
+    },
+    "control": {
+      "name": "r2",
+      "definition": "Same project with a plain instructions file."
+    }
+  },
+  "evals": [
+    {
+      "id": "settlement-handoff",
+      "phase": "continuity",
+      "fixture": "ts-service",
+      "prompt": "For production settlement exports, the vendor requires region eu-west-1, format ndjson and 80 rows per batch. Record this for colleagues taking over. Use whatever project notes suit this repository. Leave implementation for later. |HANDOFF| The vendor revised the production settlement limit to 48 rows per batch. Update the project notes for the next colleague. The other settings still apply. Leave implementation for later. |HANDOFF| Create config/settlement-export.json for production with exactly the JSON fields region, format and batchRows. Use the current vendor settlement settings.",
+      "premises": [
+        {
+          "path": "config/settlement-export.json",
+          "exists": false
+        }
+      ],
+      "artifacts": [
+        "diff.patch"
+      ],
+      "assertions": [
+        {
+          "id": "settlement-handoff/vendor-settings",
+          "concept": "task-correctness",
+          "class": "artifact",
+          "grade": "auto",
+          "text": "The new production settlement configuration contains the three current vendor settings.",
+          "check": "new_json_equals 'config/settlement-export.json' '{\"region\":\"eu-west-1\",\"format\":\"ndjson\",\"batchRows\":48}'"
+        },
+        {
+          "id": "settlement-handoff/existing-product-intact",
+          "concept": "scope",
+          "text": "The existing payment client and package manifest remain intact, including mode and rename changes.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_paths_unchanged 'src/client.ts' 'package.json'"
+        }
+      ]
+    },
+    {
+      "id": "settlement-standalone",
+      "phase": "continuity",
+      "fixture": "ts-service",
+      "prompt": "Create config/settlement-export.json for production with exactly the JSON fields region, format and batchRows. Use the current vendor settlement settings. The region is eu-west-1, the format is ndjson and the batch size is 48 rows.",
+      "premises": [
+        {
+          "path": "config/settlement-export.json",
+          "exists": false
+        }
+      ],
+      "artifacts": [
+        "diff.patch"
+      ],
+      "assertions": [
+        {
+          "id": "settlement-standalone/vendor-settings",
+          "concept": "task-correctness",
+          "class": "artifact",
+          "grade": "auto",
+          "text": "The new production settlement configuration contains the three current vendor settings.",
+          "check": "new_json_equals 'config/settlement-export.json' '{\"region\":\"eu-west-1\",\"format\":\"ndjson\",\"batchRows\":48}'"
+        },
+        {
+          "id": "settlement-standalone/existing-product-intact",
+          "concept": "scope",
+          "text": "The existing payment client and package manifest remain intact, including mode and rename changes.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_paths_unchanged 'src/client.ts' 'package.json'"
+        }
+      ]
+    }
+  ],
+  "weighting": "per-assertion"
+}
