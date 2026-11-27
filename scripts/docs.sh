@@ -577,9 +577,16 @@ route)
   if [ "$base_given" -eq 1 ]; then
     git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
       || da_refuse "--base reads git history, and $root is not in a git work tree" "Pass the changed paths with --paths instead" || exit
-    merge_base=$(git -C "$root" merge-base "$base" HEAD 2>/dev/null) \
-      || da_refuse "no merge base between '$base' and HEAD" "Pass a branch or commit that shares history with HEAD" || exit
-    changed=$(set -o pipefail; git -C "$root" -c core.quotepath=false diff --name-only --relative -z "$merge_base" -- | tr '\0' '\n') \
+    # Git's empty tree is its own base, so a first commit can be looked up
+    # as review.sh reviews it.
+    if [ "$(git -C "$root" cat-file -t "$base" 2>/dev/null)" = tree ]; then
+      merge_base=$base
+    else
+      merge_base=$(git -C "$root" merge-base "$base" HEAD 2>/dev/null) \
+        || da_refuse "no merge base between '$base' and HEAD" "Pass a branch or commit that shares history with HEAD" || exit
+    fi
+    # --no-renames keeps a renamed file's old path, which a doc may cite.
+    changed=$(set -o pipefail; git -C "$root" -c core.quotepath=false diff --no-renames --name-only --relative -z "$merge_base" -- | tr '\0' '\n') \
       || da_refuse "git diff against $merge_base failed" "Check that $root is readable and run this call again" || exit
     untracked=$(set -o pipefail; git -C "$root" ls-files --others --exclude-standard -z | tr '\0' '\n') \
       || da_refuse "could not list the untracked files under $root" "Check that $root is readable and run this call again" || exit
@@ -597,7 +604,13 @@ EOF
   # not architecture.md or references/. A citation names a path as written
   # from the project root or from the doc's folder, and a cited directory
   # takes every path under it.
-  wanted=$(printf '%s\n' "${paths[@]}")
+  # The paths go through a file: an environment string has a size limit,
+  # and past it awk would not start.
+  wanted=$(mktemp "${TMPDIR:-/tmp}/docs-route.XXXXXX") \
+    || da_refuse "could not create a temporary file" "Check that the temporary folder is writable, then run this call again" || exit
+  trap 'rm -f "$wanted"' EXIT
+  printf '%s\n' "${paths[@]}" >"$wanted" \
+    || da_refuse "could not write the temporary path list" "Check that the temporary folder is writable, then run this call again" || exit
   docs="$root/.agent/docs"
   for doc in "$docs"/*.md "$docs"/*/*.md; do
     [ -f "$doc" ] || continue
@@ -606,7 +619,7 @@ EOF
     case "$rel" in references/* | */references/*) continue ;; esac
     docdir=.agent/docs
     case "$rel" in */*) docdir=".agent/docs/${rel%/*}" ;; esac
-    da_doc_citations "$doc" | ROUTE_FILE="$doc" ROUTE_DOC="docs/$rel" ROUTE_DIR="$docdir" ROUTE_PATHS="$wanted" awk '
+    (set -o pipefail; da_doc_citations "$doc" | ROUTE_FILE="$doc" ROUTE_DOC="docs/$rel" ROUTE_DIR="$docdir" ROUTE_PATHS="$wanted" awk '
       function norm(p,   k, i, n, seg, part, out) {
         k = split(p, seg, "/")
         n = 0
@@ -624,9 +637,9 @@ EOF
         for (i = 1; i <= 5 && (getline line < f) > 0; i++)
           if (!found && line ~ /^<!-- Read when: .* -->$/) { found = 1; hook = substr(line, 17, length(line) - 20) }
         close(f)
-        k = split(ENVIRON["ROUTE_PATHS"], given, "\n")
-        for (i = 1; i <= k; i++) {
-          g = norm(given[i])
+        pf = ENVIRON["ROUTE_PATHS"]
+        while ((getline line < pf) > 0) {
+          g = norm(line)
           if (g == "") continue
           want[g] = 1
           while (sub(/\/[^\/]*$/, "", g)) under[g] = 1
@@ -643,7 +656,7 @@ EOF
           shown[hit] = 1
         }
       }
-    '
+    ') || da_refuse "could not read the citations of docs/$rel" "Check that the doc is readable, then run this call again" || exit
   done
   exit 0
   ;;

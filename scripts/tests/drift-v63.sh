@@ -95,6 +95,10 @@ check "docs.sh route matches a path under a cited directory" \
   '[ "$("$DOCS" route "$proj" --paths src/util/helper.ts 2>&1)" = "ROUTE: docs/payments.md | touching payments or refunds | src/util/" ]'
 check "docs.sh route --base looks up the paths changed since the ref" \
   '[ "$("$DOCS" route "$proj" --base HEAD~1 2>&1)" = "$client_routes" ]'
+git -C "$proj" mv src/client.ts src/renamed.ts
+check "docs.sh route --base keeps a renamed file's old path" \
+  '[ "$("$DOCS" route "$proj" --base HEAD 2>&1)" = "$client_routes" ]'
+git -C "$proj" mv src/renamed.ts src/client.ts
 
 printf 'export const helper = 2;\n' >"$proj/src/util/helper.ts"
 printf 'export const client = 3;\n' >"$proj/src/client.ts"
