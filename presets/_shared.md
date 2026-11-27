@@ -7,7 +7,7 @@ Each fenced block is identical in all three presets. Domain rules and quality ru
 
 - Follow the entry point once per session, and reload after compaction or handoff.
 - Open matching memory facts when the task changes area.
-- Read only the area docs needed for the task through `docs/architecture.md`.
+- Read only the area docs needed for the task through `docs/architecture.md`. For a change, `.agent/scripts/docs.sh route --base <ref>` names the docs it touches.
 - Check existing project context before asking about an unknown term, file, or deliverable.
 - Check branch history before repeating work that a session-log entry says already landed.
 ```
