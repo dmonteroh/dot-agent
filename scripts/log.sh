@@ -12,9 +12,10 @@ LOG_INCLUDE_BRANCH=false
 
 usage() {
   cat <<'EOF'
-Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
+Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [--session <id>] [root]
 
 root defaults to . — appends to <root>/.agent/session-log.md
+--session stamps the id a runtime adapter supplies, the same id capture.sh --id takes.
 EOF
 }
 
@@ -25,12 +26,13 @@ tool=""
 area=""
 verify=""
 summary=""
+session=""
 root="."
 print_entry=0
 
 need_value() {
   case "${2-}" in
-  --tool|--area|--verify|--summary)
+  --tool|--area|--verify|--summary|--session)
     refuse_usage "$1 needs a value, got the flag $2" "Pass a value after $1" ;;
   esac
   if [ $# -lt 2 ]; then
@@ -56,6 +58,9 @@ while [ $# -gt 0 ]; do
   --summary)
     need_value "$@"
     summary="$2"; shift 2 ;;
+  --session)
+    need_value "$@"
+    session="$2"; shift 2 ;;
   -h | --help)
     usage; exit 0 ;;
   --*)
@@ -113,6 +118,15 @@ case "$tool$area" in
 *"("* | *")"*)
   refuse '--tool and --area must not contain parentheses, because they become the (tool) and (area) tags' 'Remove them and run this call again' ;;
 esac
+# The rule capture.sh applies to the same adapter-supplied id. It also keeps
+# spaces, line breaks, and parentheses out of the entry.
+if [ -n "$session" ]; then
+  case "$session" in
+  *[!A-Za-z0-9_.-]* | . | ..)
+    refuse "--session must hold only letters, digits, '.', '_', and '-' (got '$session')" 'Pass the id the runtime adapter supplied, or drop --session, and run this call again' ;;
+  esac
+  [ "${#session}" -le 128 ] || refuse '--session is over 128 characters' 'Pass the id the runtime adapter supplied, or drop --session, and run this call again'
+fi
 case "$summary" in
 *[![:space:]]*) ;;
 *)
@@ -149,11 +163,10 @@ branch=""
 if [ "$LOG_INCLUDE_BRANCH" = "true" ]; then
   branch=$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)
 fi
-if [ -n "$branch" ]; then
-  entry=$(printf -- '- [%s] (%s) %s (%s). branch: %s. verify: %s.' "$date_stamp" "$tool" "$summary" "$area" "$branch" "$verify")
-else
-  entry=$(printf -- '- [%s] (%s) %s (%s). verify: %s.' "$date_stamp" "$tool" "$summary" "$area" "$verify")
-fi
+stamps=""
+[ -z "$branch" ] || stamps=" branch: $branch."
+[ -z "$session" ] || stamps="$stamps session: $session."
+entry=$(printf -- '- [%s] (%s) %s (%s).%s verify: %s.' "$date_stamp" "$tool" "$summary" "$area" "$stamps" "$verify")
 
 if [ "$print_entry" -eq 1 ]; then
   printf '%s\n' "$entry"

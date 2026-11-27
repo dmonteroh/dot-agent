@@ -5609,6 +5609,15 @@ subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=false/LOG_INCLUDE_BRA
 "$LOGSH" --tool t --area a --verify pass --summary "did the thing" "$lb" >/dev/null 2>&1
 tail -n 1 "$lb/.agent/session-log.md" | grep -qF '. branch: feat-x. verify: pass.' && pass "log.sh: the branch stamp reads the checked-out branch" || fail "log.sh: the branch stamp reads the checked-out branch ($(tail -n 1 "$lb/.agent/session-log.md"))"
 
+"$LOGSH" --tool t --area a --verify pass --summary "stamped" --session s-1.x_Y "$lb" >/dev/null 2>&1
+"$LOGSH" --tool t --area a --verify pass --summary "bad id" --session 'a b' "$lb" >/dev/null 2>&1
+rc_ls=$?
+ls_last=$(tail -n 1 "$lb/.agent/session-log.md")
+case "$rc_ls:$ls_last" in
+  [1-9]*:*' (t) stamped (a). branch: feat-x. session: s-1.x_Y. verify: pass.') pass "log.sh: a session id is stamped between branch and verify, and an unsafe one is refused" ;;
+  *) fail "log.sh: a session id is stamped between branch and verify, and an unsafe one is refused (rc=$rc_ls; $ls_last)" ;;
+esac
+
 subst "$lb/.agent/scripts/log.conf" 's/^LOG_INCLUDE_BRANCH=true/LOG_INCLUDE_BRANCH=false/'
 "$LOGSH" --tool t --area a --verify pass --summary "did it again" "$lb" >/dev/null 2>&1
 tail -n 1 "$lb/.agent/session-log.md" | grep -q 'branch:' && fail "log.sh: false leaves the entry format unchanged" || pass "log.sh: false leaves the entry format unchanged"
@@ -8955,7 +8964,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1399
+EXPECTED_CHECKS=1400
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

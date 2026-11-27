@@ -11,7 +11,8 @@ usage() {
   cat <<'EOF'
 Usage: checkpoint.sh --tool NAME --area NAME --summary TEXT
        [--checks CHECK[,CHECK...]] [--verification ID[,ID...]]
-       [--verify fail|n/a] [--base REF] [--node-only] [--policy strict|completion] [ROOT]
+       [--verify fail|n/a] [--base REF] [--node-only] [--policy strict|completion]
+       [--session ID] [ROOT]
 
 Situation                                          Flags
 Product files changed, not committed               --checks <name>
@@ -28,10 +29,11 @@ answers for the check it records, and every other named check runs.
 Work is reviewed from the last recorded checkpoint. --base overrides that.
 strict blocks every status finding. completion defers advisory maintenance.
 A rerun over recorded content writes no second log entry.
+--session passes a runtime adapter's session id to log.sh, which stamps it.
 EOF
 }
 
-root=.; base=""; policy=""; tool=""; area=""; summary=""
+root=.; base=""; policy=""; tool=""; area=""; summary=""; session=""
 checks=""; receipts=""; requested_verify=""; node_only=0
 failed_checks=""; uncounted=""; unread=""; empty=""; moved=""
 lock=""; content_out=""; node=""; status_out=""; status_err=""; publish=""; prepare=""
@@ -53,10 +55,10 @@ trap 'exit 143' TERM
 refuse() { da_refuse "$@"; exit $?; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --tool|--area|--summary|--checks|--verification|--verify|--base|--policy)
+    --tool|--area|--summary|--checks|--verification|--verify|--base|--policy|--session)
       [ "$#" -ge 2 ] || refuse "$1 needs a value" 'Pass the value after the flag, or run checkpoint.sh --help'
       case "$1" in
-        --tool) tool=$2 ;; --area) area=$2 ;; --summary) summary=$2 ;;
+        --tool) tool=$2 ;; --area) area=$2 ;; --summary) summary=$2 ;; --session) session=$2 ;;
         --checks) checks=$2 ;; --verification) receipts=$2 ;;
         --verify) requested_verify=$2 ;; --base) base=$2 ;; --policy) policy=$2 ;;
       esac
@@ -96,7 +98,9 @@ if [ -z "$policy" ]; then
 fi
 policy=${policy:-strict}
 case "$policy" in strict|completion) ;; *) refuse 'the policy must be strict or completion' 'Fix POLICY in .agent/scripts/checkpoint.conf, or pass --policy strict' ;; esac
-bash "$scripts/log.sh" --print-entry --tool "$tool" --area "$area" --verify n/a --summary "$summary" "$root" >/dev/null || exit 1
+log_session=()
+[ -z "$session" ] || log_session=(--session "$session")
+bash "$scripts/log.sh" --print-entry --tool "$tool" --area "$area" --verify n/a --summary "$summary" ${log_session[@]+"${log_session[@]}"} "$root" >/dev/null || exit 1
 is_git=0
 git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && is_git=1
 if [ "$is_git" -eq 0 ]; then
@@ -418,7 +422,7 @@ if [ "$indexes" = generated ]; then
   fi
 fi
 
-entry=$(bash "$scripts/log.sh" --print-entry --tool "$tool" --area "$area" --verify "$verify" --summary "$summary" "$root") || exit 1
+entry=$(bash "$scripts/log.sh" --print-entry --tool "$tool" --area "$area" --verify "$verify" --summary "$summary" ${log_session[@]+"${log_session[@]}"} "$root") || exit 1
 if [ -n "$receipts" ]; then
   for receipt in "${receipt_ids[@]}"; do
     bash "$scripts/verify.sh" check "$receipt" --root "$root" >/dev/null || refuse 'the inputs changed before logging' 'Run the check again with --checks <name>'

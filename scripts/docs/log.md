@@ -3,7 +3,7 @@
 Appends one session-log entry per `session-log.md`'s header contract. It stamps the date and enforces the summary word ceiling, so neither is something an agent can get wrong by hand.
 
 ```
-Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
+Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [--session <id>] [root]
 ```
 
 `root` defaults to `.` and the script appends to `<root>/.agent/session-log.md`. Refuses to run if that file does not already exist — an uninitialized node.
@@ -23,6 +23,18 @@ A summary containing `verify:` is refused too. The entry already carries one ver
 Words are counted, not punctuation: a free-standing separator — an em dash, a lone hyphen — does not spend the ceiling. Separators are matched as literal bytes rather than by asking the locale what counts as a letter. That is because under a locale whose alphanumeric table covers the em dash's leading byte `0xE2`, such as ISO-8859-1 or UTF-8, `[[:alnum:]]` treats that byte as a letter and the dash spends a word. `LC_ALL=C` is not such a locale, so the bug hides there.
 
 `--print-entry` validates and renders one entry without writing. Checkpoint uses this mode for recoverable publication. Direct writes share the checkpoint lock. The script needs `runtime.sh` beside it.
+
+## Session id
+
+`--session <id>` stamps the id of the session that wrote the entry, so a later session or a retro can find its transcript. The id comes from the harness through a runtime adapter, the same id that `capture.sh --id` takes. `log.sh` reads no environment variable and guesses no id. `checkpoint.sh --session` passes the id through.
+
+The stamp sits after the branch stamp and before the verify tag:
+
+`- [date] (tool) summary (area). branch: <name>. session: <id>. verify: …`
+
+The id follows `capture.sh`'s rule: letters, digits, `.`, `_`, and `-`, at most 128 characters, and not `.` or `..`. Any other value is refused, because a space, a line break, or a parenthesis would break the entry's delimiters. Without `--session` the entry is exactly as before. The stamp spends no summary budget, and it keeps the verify tag last, so a reader that looks for the tag at the end still finds it.
+
+Readers of the log that this format was checked against: the `status.sh` load tail and its entry-count and entry-size findings, `absorb.sh`, which merges whole lines, `checkpoint.sh`, whose rerun check uses its own identity and not the entry text, and the bench's `grade.py`, which leaves the stamp out of the summary word count and the `log_entry_absent` match.
 
 ## Configuration
 

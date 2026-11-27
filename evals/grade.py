@@ -237,15 +237,19 @@ def p_log_entry_words(op, n):
     worst = max(entries, key=lambda e: len(e.split()))
     # The header format counts the summary, not the tags it is wrapped in.
     body = re.sub(r"^- \[[^\]]*\] \([^)]*\)\s*", "", worst)
-    body = re.sub(r"(branch|verify):\s*\S+\.?", "", body)
+    body = re.sub(r"(branch|session|verify):\s*\S+\.?", "", body)
     w = len(body.split())
     return cmp_num(w, op, int(n)), "longest entry's summary is %d words: %s" % (w, worst[:140])
+
+
+# log.sh --session stamps a harness id, often hex, just before the verify tag.
+SESSION_STAMP = re.compile(r" session: [A-Za-z0-9_.-]+\.(?= verify: \S+\.$)")
 
 
 def p_log_entry_absent(pattern):
     f = node_files().get("session-log.md", {"added": []})
     entries = [l for l in f["added"] if l.startswith("- [")]
-    hits = [e for e in entries if re.search(pattern, e)]
+    hits = [e for e in entries if re.search(pattern, SESSION_STAMP.sub("", e))]
     return (not hits), ("no appended entry matches %r" % pattern) if not hits else ("entry carries it: " + hits[0][:160])
 
 

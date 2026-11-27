@@ -6,12 +6,14 @@ Checkpoint coordinates verification evidence, diff review, node health, and the 
 checkpoint.sh --tool NAME --area NAME --summary TEXT \
   [--checks CHECK[,CHECK...]] [--verification ID[,ID...]] \
   [--verify fail|n/a] [--base REF] [--node-only] \
-  [--policy strict|completion] [ROOT]
+  [--policy strict|completion] [--session ID] [ROOT]
 ```
 
 `ROOT` defaults to the project root at `.`. Use `--help` or `--version` for the installed interface.
 
 A root that holds no `.agent` and is a linked worktree of a checkout with a node is refused in one line: the change lives in this worktree, and the node is the main checkout's. That checkout's checkpoint cannot see the change, so the line asks for a link to the node, `ln -s <main>/.agent <root>/.agent`. The link makes a shared node (`scripts/docs/runtime.md`), and the call then reviews the worktree and logs to the main checkout's node.
+
+`--session` passes a session id from a runtime adapter to `log.sh`, which stamps it on the entry. See [log.md](log.md). The id is not part of the checkpoint identity, so a rerun over recorded content with another id still writes no second entry.
 
 ## Verification
 

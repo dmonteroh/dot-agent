@@ -44,8 +44,9 @@ checkpoint() {
 printf 'const amount = 2\n' >"$project/src/client.ts"
 if checkpoint --verify pass; then fail 'caller-supplied pass was accepted'; fi
 [ "$(entries)" -eq 0 ] || fail 'unverified work was logged'
-checkpoint --checks test || { cat "$scratch/err" >&2; fail 'verified checkpoint failed'; }
+checkpoint --checks test --session ck-1 || { cat "$scratch/err" >&2; fail 'verified checkpoint failed'; }
 [ "$(entries)" -eq 1 ] || fail 'first checkpoint did not append once'
+case "$(tail -n 1 "$log")" in *'(fixture). session: ck-1. verify: pass.') ;; *) fail 'checkpoint did not pass --session to the entry' ;; esac
 checkpoint --checks test || fail 'identical retry failed'
 [ "$(entries)" -eq 1 ] || fail 'identical retry duplicated the log'
 [ "$(wc -l <"$project/.agent/.state/check-count" | tr -d ' ')" -eq 1 ] || fail 'identical retry reran verification'
