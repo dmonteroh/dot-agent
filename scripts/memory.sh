@@ -13,12 +13,14 @@ usage() {
   cat <<'EOF'
 Usage: memory.sh lookup --query <text> [--limit <n>] [root]
        memory.sh new --slug <slug> --title <title> --hook <hook> (--fact "…" | --file <path|->) [--scope <project|package|root>] [--type <fact|reference>] [root]
-       memory.sh supersede --slug <slug> (--fact "…" | --file <path|->) [--expected <digest>] [--scope <project|package|root>] [--type <fact|reference>] [root]
+       memory.sh supersede --slug <slug> (--fact "…" | --file <path|->) [--expected <digest>] [--drop <value>]... [--scope <project|package|root>] [--type <fact|reference>] [root]
 
 root defaults to . — scope defaults to project, type to fact. new writes
 <root>/.agent/memory/<slug>.md and indexes it in <root>/.agent/memory.md.
 supersede rewrites an existing fact file's body, restamps its date, and
-leaves the index line alone.
+leaves the index line alone. It refuses to drop a path, URL, id, constant,
+date, flag, or code name that no other node file holds, unless --drop names
+it as no longer true. A dropped number is reported, not refused.
 EOF
 }
 
@@ -27,7 +29,7 @@ refuse_usage() { usage >&2; refuse "$@"; }
 
 need_value() {
   case "${2-}" in
-  --slug|--title|--hook|--fact|--file|--expected|--scope|--type|--query|--limit)
+  --slug|--title|--hook|--fact|--file|--expected|--drop|--scope|--type|--query|--limit)
     refuse_usage "$1 needs a value, got the flag $2" "Pass a value after $1" ;;
   esac
   if [ $# -lt 2 ]; then
@@ -276,6 +278,81 @@ validate_slug() {
   esac
 }
 
+# The names, values, paths, and ids of the old fact that no other file in the
+# node would hold after a supersede, one per line as <class>\t<value>. Class
+# id is a path, URL, host, ticket, constant, date, flag, or code name, which a
+# rewrite loses only by mistake. Class value is a number or counted thing,
+# which an update replaces. A value the new text or another node file still
+# holds, matched without case, is kept. Each --drop value names one dropped on
+# purpose. The session log, scripts, and generated indexes are not knowledge.
+lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file listing --drop values
+  local list
+  list=$(mktemp "${TMPDIR:-/tmp}/memory-corpus.XXXXXX") || return 2
+  {
+    printf '%s\n' "$2"
+    find "$3" -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
+      case "$f" in
+      "$1" | "$3"/session-log.md | "$3"/scripts/* | "$3"/indexes/*) ;;
+      *) printf '%s\n' "$f" ;;
+      esac
+    done
+  } >"$list" || { rm -f "$list"; return 2; }
+  MS_OLD="$1" MS_LIST="$list" MS_DROP="$4" awk '
+    function add(a, c) { if (a == "" || (a in seen)) return; seen[a] = 1; an[++n] = a; ac[n] = c }
+    function scan(line,   s, m, w, i, t, lt, nx) {
+      s = line
+      while (match(s, /`[^`]+`/)) { add(substr(s, RSTART + 1, RLENGTH - 2), "id"); s = substr(s, RSTART + RLENGTH) }
+      gsub(/`/, " ", line)
+      m = split(line, w, /[ \t]+/)
+      for (i = 1; i <= m; i++) {
+        t = w[i]
+        sub(/^[(\["'"'"'<]+/, "", t)
+        sub(/[)\]"'"'"'>.,;:!?]+$/, "", t)
+        if (length(t) < 2) continue
+        lt = tolower(t)
+        if (t ~ /:\/\// || (t ~ /\// && (t ~ /\/$/ || t ~ /\.[A-Za-z0-9]+$/ || t ~ /^[.~]/))) add(t, "id")
+        else if (t ~ /^[A-Z][A-Z0-9]*-[0-9]+$/ || t ~ /^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/) add(t, "id")
+        else if (t ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/ || t ~ /^--[A-Za-z][A-Za-z0-9-]*$/) add(t, "id")
+        else if (t ~ /^[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*$/ || t ~ /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/) add(t, "id")
+        else if (t ~ /[A-Za-z][A-Za-z0-9_-]*\.[A-Za-z][A-Za-z0-9_.:-]*/ && lt !~ /^(e\.g|i\.e|etc|vs)$/) add(t, "id")
+        else if (t ~ /[0-9]/) add(t, "value")
+        else if (lt ~ /^(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twice)$/ && i < m) {
+          nx = tolower(w[i + 1]); sub(/[^a-z].*$/, "", nx)
+          if (nx != "") add(lt " " nx, "value")
+        }
+      }
+    }
+    BEGIN {
+      f = ENVIRON["MS_OLD"]; k = 0; fm = 0
+      while ((getline line < f) > 0) {
+        if (++k == 1 && line == "---") { fm = 1; continue }
+        if (fm) { if (line == "---") fm = 0; continue }
+        scan(line)
+      }
+      close(f)
+      lf = ENVIRON["MS_LIST"]
+      while ((getline p < lf) > 0) {
+        while ((getline line < p) > 0) corpus = corpus "\n" tolower(line)
+        close(p)
+      }
+      nd = 0
+      df = ENVIRON["MS_DROP"]
+      while ((getline line < df) > 0) if (line != "") drop[++nd] = tolower(line)
+      for (i = 1; i <= n; i++) {
+        a = an[i]; la = tolower(a); key = la
+        if (ac[i] == "value" && match(a, /[0-9][0-9.,]*/)) { key = substr(a, RSTART, RLENGTH); sub(/[.,]+$/, "", key) }
+        if (index(corpus, key)) continue
+        kept = 0
+        for (j = 1; j <= nd; j++) if (index(drop[j], la) || index(la, drop[j])) kept = 1
+        if (!kept) print ac[i] "\t" a
+      }
+    }
+  '
+  local rc=$?
+  rm -f "$list"
+  return "$rc"
+}
+
 # Writers in one checkout serialize on one lock per node, so parallel workers
 # can write memory directly. absorb.sh takes the same lock.
 memory_lock() {
@@ -448,6 +525,7 @@ supersede)
   fact=""
   file=""
   expected=""
+  drops=""
   scope=""
   type=""
   root="."
@@ -465,6 +543,9 @@ supersede)
     --expected)
       need_value "$@"
       expected="$2"; shift 2 ;;
+    --drop)
+      need_value "$@"
+      drops="$drops$2"$'\n'; shift 2 ;;
     --scope)
       need_value "$@"
       scope="$2"; shift 2 ;;
@@ -537,6 +618,22 @@ supersede)
   [ -n "$scope" ] || scope="project"
   [ -n "$type" ] || type="fact"
 
+  # A rewrite changes the fact, never what the node knows: a name, path, or id
+  # the old text held must stay in the new text or another node file.
+  if [ -z "$file" ]; then
+    body_tmp=$(mktemp "${TMPDIR:-/tmp}/memory-body.XXXXXX") || refuse "could not create a temporary body file" "Check that the temporary folder is writable, then run this call again"
+    printf '%s\n' "$fact" >"$body_tmp" || refuse "could not write a temporary body file" "Check that the temporary folder is writable, then run this call again"
+  fi
+  drop_list="$body_tmp.drop"
+  printf '%s' "$drops" >"$drop_list" || refuse "could not write a temporary file" "Check that the temporary folder is writable, then run this call again"
+  lost=$(lost_anchors "$factfile" "$body_tmp" "$agent" "$drop_list") || { rm -f "$drop_list"; refuse "could not compare the old fact with the node" "Check that .agent/ is readable, then run this call again"; }
+  rm -f "$drop_list"
+  lost_ids=$(printf '%s\n' "$lost" | sed -n 's/^id	//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
+  lost_values=$(printf '%s\n' "$lost" | sed -n 's/^value	//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
+  if [ -n "$lost_ids" ]; then
+    refuse "superseding $slug would drop $lost_ids, which no other file in the node holds, so $factfile is unchanged" "Keep each one that still holds in the new text, or write it to the doc or fact that will hold it first. For one that is no longer true, pass --drop <value> and name it as false in your report. Then run this call again"
+  fi
+
   date_stamp=$(date +%Y-%m-%d)
 
   tmpfile="$factfile.tmp.$$"
@@ -566,6 +663,7 @@ EOF
   if mv "$tmpfile" "$factfile"
   then
     echo "memory.sh: superseded $factfile and stamped $date_stamp"
+    [ -z "$lost_values" ] || echo "memory.sh: no file in the node holds these values from the old text any more: $lost_values. Put back each one that still holds, and name each one that was false in your report."
     echo "memory.sh: the index line in $memory is unchanged — edit its title or hook by hand if the fact's hook moved."
     echo "memory.sh: drop the fact once no work here changes on it. Full contract: memory.md's header."
     printf 'superseded\t%s\t%s\n' "$slug" "$(digest_file "$factfile")"

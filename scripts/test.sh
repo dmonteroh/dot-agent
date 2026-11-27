@@ -4157,6 +4157,16 @@ rc=$?
 out9t=$("$memcopy" new --slug vendor-rate-limit --title "Dup" --hook "dup" --fact "duplicate attempt" "$memroot" 2>&1)
 printf '%s\n' "$out9t" | grep -qF 'memory.sh supersede --slug vendor-rate-limit' && pass "memory.sh new: the overwrite refusal points at supersede" || fail "memory.sh new: the overwrite refusal points at supersede ($out9t)"
 
+# A rewrite may change a fact but not lose what the node knows: a ticket or
+# path no other node file holds is refused unless --drop names it as false.
+"$memcopy" new --slug deploy-ticket --title "Deploy ticket" --hook "deploy history" --fact "Deploys moved under PAY-318; see docs/deploy.md." "$memroot" >/dev/null 2>&1
+out9u=$("$memcopy" supersede --slug deploy-ticket --fact "Deploys moved." "$memroot" 2>&1)
+rc=$?
+[ "$rc" -eq 1 ] && grep -qF 'PAY-318' "$memroot/.agent/memory/deploy-ticket.md" && printf '%s\n' "$out9u" | grep -qF 'would drop PAY-318, docs/deploy.md' && pass "memory.sh supersede: a rewrite losing a ticket and a path no other node file holds is refused" || fail "memory.sh supersede: a rewrite losing a ticket and a path no other node file holds is refused ($rc: $out9u)"
+"$memcopy" supersede --slug deploy-ticket --fact "Deploys moved; docs/deploy.md holds how." --drop PAY-318 "$memroot" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && ! grep -qF 'PAY-318' "$memroot/.agent/memory/deploy-ticket.md" && pass "memory.sh supersede: --drop names a value dropped as no longer true" || fail "memory.sh supersede: --drop names a value dropped as no longer true ($rc)"
+
 docroot="$WORK/docs-tests"
 mkdir -p "$docroot"
 "$NODE" init --preset academic-research --mode track-all "$docroot" >/dev/null 2>&1
@@ -8964,7 +8974,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1400
+EXPECTED_CHECKS=1402
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

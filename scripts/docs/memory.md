@@ -7,7 +7,7 @@ Usage: memory.sh lookup --query <text> [--limit <n>] [root]
        memory.sh new --slug <slug> --title <title> --hook <hook> (--fact "…" | --file <path|->) \
          [--scope <project|package|root>] [--type <fact|reference>] [root]
        memory.sh supersede --slug <slug> (--fact "…" | --file <path|->) \
-         [--expected <digest>] \
+         [--expected <digest>] [--drop <value>]... \
          [--scope <project|package|root>] [--type <fact|reference>] [root]
 ```
 
@@ -32,6 +32,8 @@ Each result is `exact|overlap<TAB>.agent/path<TAB>version<TAB>excerpt`. Paths ar
 `--expected <digest>` compares a fresh `git hash-object --no-filters --` digest during validation and rechecks it immediately before replacing the file. A stale value refuses at exit 3 and prints the current version. This is optimistic stale-write protection, not an atomic compare-and-swap against noncooperating writers: the final check and rename are still separate filesystem operations. Omitting it retains the legacy supersede behavior.
 
 It refuses a fact file that does not exist (use `new`) and one `memory.md` does not index. The second refusal is the point: rewriting an unindexed file leaves the two-place write exactly as split as writing it by hand does. Add the index line, then supersede.
+
+A supersede changes the fact, never what the node knows. Before it writes, it reads the old text for names a rewrite loses only by mistake: paths, URLs, hosts, tickets such as `PAY-318`, constants such as `API_KEY`, dates, flags, and code names such as `submitPayment`. Each must still be in the new text or in another node file (the session log, `scripts/`, and `indexes/` do not count), matched without case. If one is not, it refuses and names them, and the fact is unchanged. Splitting a fact into a doc therefore writes the doc first. `--drop <value>`, repeatable, names one that is no longer true; name it as false in your report too. A number or a counted thing (`200ms`, `three attempts`) an update replaces is not refused: the success output names each one no node file holds any more, so a false one can be reported and a true one put back.
 
 The rewrite goes to a temporary file beside the fact and is renamed over it, so a write that fails leaves the previous fact intact rather than half-gone.
 
