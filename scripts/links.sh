@@ -3,6 +3,11 @@
 set -u
 unset CDPATH
 
+case "${BASH_SOURCE[0]}" in */*) selfdir=${BASH_SOURCE[0]%/*} ;; *) selfdir=. ;; esac
+[ -f "$selfdir/runtime.sh" ] || { echo 'links.sh: runtime.sh is missing. Update this node with node.sh update from the dot-agent repository' >&2; exit 1; }
+# shellcheck source=runtime.sh
+. "$selfdir/runtime.sh"
+
 root="${1:-.}"
 case "$root" in
 -h | --help)
@@ -306,8 +311,7 @@ if [ "${#stamped[@]}" -gt 0 ]; then
       fi
       stale=$((stale + 1))
     done <<EOF
-$(strip_comments "$d" | grep -oE '\]\([^)]+\)' 2>/dev/null | sed 's/^](//; s/)$//; s/[[:space:]].*//; s/#.*//'
-  strip_comments "$d" | grep -oE '`[^`]+`' 2>/dev/null | tr -d '`' | sed 's/:[0-9][0-9-]*$//')
+$(da_doc_citations "$d")
 EOF
   done
   if [ "$stale" -eq 0 ]; then

@@ -469,3 +469,38 @@ da_unlock() {
     echo "runtime.sh: could not release lock: $da_ul_path" >&2; return 2;
   }
 }
+
+# da_doc_citations DOC: what a doc cites, one per line as its author spelled
+# it: every Markdown link target, then every backticked span. HTML comments
+# are skipped and fenced code is read. A link target loses its title and
+# fragment, a span its :<line> suffix. links.sh's drift check reads
+# stamped docs through it.
+da_doc_citations() {
+  [ "$#" -eq 1 ] || { echo "runtime.sh: da_doc_citations needs one argument" >&2; return 2; }
+  awk '
+    incm { if (/-->/) { incm = 0; sub(/.*-->/, "") } else next }
+    { gsub(/<!--.*-->/, "") }
+    /<!--/ { incm = 1; sub(/<!--.*/, "") }
+    {
+      s = $0
+      while (match(s, /[]][(][^)]+[)]/)) {
+        t = substr(s, RSTART + 2, RLENGTH - 3)
+        s = substr(s, RSTART + RLENGTH)
+        sub(/[[:space:]].*/, "", t)
+        sub(/#.*/, "", t)
+        link[++links] = t
+      }
+      s = $0
+      while (match(s, /`[^`]+`/)) {
+        t = substr(s, RSTART + 1, RLENGTH - 2)
+        s = substr(s, RSTART + RLENGTH)
+        sub(/:[0-9][0-9-]*$/, "", t)
+        span[++spans] = t
+      }
+    }
+    END {
+      for (i = 1; i <= links; i++) print link[i]
+      for (i = 1; i <= spans; i++) print span[i]
+    }
+  ' "$1"
+}
