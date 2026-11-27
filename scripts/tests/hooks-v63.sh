@@ -73,6 +73,16 @@ node update "$t" >"$scratch/update.out"
 cmp -s "$t/.claude/settings.json" "$scratch/claude.before" || fail 'second run changed Claude settings'
 cmp -s "$t/.codex/hooks.json" "$scratch/codex.before" || fail 'second run changed Codex hooks'
 grep -qF 'unchanged in .claude/settings.json' "$scratch/update.out" || fail 'update did not report unchanged'
+# An older definition is rewritten in place, so a node gets a new command.
+python3 -I - "$t/.claude/settings.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["hooks"]["SessionStart"][1]["hooks"][0]["command"] = 'bash "$CLAUDE_PROJECT_DIR/.agent/scripts/session-start.sh"'
+json.dump(d, open(sys.argv[1], "w"), indent=2)
+PY
+node update "$t" >"$scratch/update.out"
+grep -qF 'Claude Code session-start hook updated in .claude/settings.json' "$scratch/update.out" || fail 'update did not report the rewritten command'
+cmp -s "$t/.claude/settings.json" "$scratch/claude.before" || fail 'update did not restore the current command'
 node update --hooks none "$t" >/dev/null
 grep -qx '  hooks: none        # session-start | none' "$t/.agent/purpose.md" || fail 'update --hooks none not recorded'
 ! grep -qF 'session-start.sh' "$t/.claude/settings.json" || fail 'Claude hook not removed'
@@ -109,6 +119,21 @@ mkdir -p "$n"
 node init --preset domain-knowledge --mode ignore-all "$n" >/dev/null
 grep -qF 'session-start.sh' "$n/.claude/settings.local.json" || fail 'ignore-all outside git lost its hook'
 [ "$(git -C "$i" status --porcelain)" = '?? .gitignore' ] || { git -C "$i" status --porcelain >&2; fail 'ignore-all left files git would share beyond its gitignore'; }
+# A linked worktree gets none of those files and no .agent. The hook, which a
+# harness may still run there, loads the main checkout's node and says so.
+git -C "$i" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$i" worktree add -q "$scratch/ignore-wt" -b wt
+i_node=$(cd "$i/.agent" && pwd -P)
+i_claude=$(json "$i/.claude/settings.local.json" 'd["hooks"]["SessionStart"][0]["hooks"][0]["command"]')
+i_codex=$(json "$i/.codex/hooks.json" 'd["hooks"]["SessionStart"][0]["hooks"][0]["command"]')
+for run in claude codex; do
+  case "$run" in
+  claude) first=$(cd "$scratch" && CLAUDE_PROJECT_DIR="$scratch/ignore-wt" sh -c "$i_claude" | head -n 1) ;;
+  codex) first=$(cd "$scratch/ignore-wt" && sh -c "$i_codex" | head -n 1) ;;
+  esac
+  printf '%s' "$first" | grep -qF "for the node at $i_node/ " || fail "$run hook in a worktree with no node did not load the main node: $first"
+  printf '%s' "$first" | grep -qF 'This worktree holds no .agent/ and no entry point' || fail "$run hook in a worktree with no node did not say so: $first"
+done
 
 k="$scratch/ignore-tracked"
 mkdir -p "$k/.codex"

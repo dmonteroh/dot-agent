@@ -78,6 +78,15 @@ if [ "$checks" = n/a ]; then
 fi
 case "$requested_verify" in ''|pass|fail|n/a) ;; *) refuse '--verify must be pass, fail, or n/a' 'Pass one of those, or drop it when --checks or --verification is given' ;; esac
 root=$(da_root "$root") || exit 1
+# A linked worktree that holds no node: its main checkout may hold one, and
+# that checkout's checkpoint cannot see a change made here.
+if [ ! -e "$root/.agent" ] && [ ! -L "$root/.agent" ] \
+  && top=$(cd "$root" && t=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$t" && pwd -P) \
+  && common=$(cd "$root" && c=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$c" && pwd -P) \
+  && [ "$top" = "$root" ] && [ "${common##*/}" = .git ] && [ "${common%/.git}" != "$root" ] \
+  && [ -f "${common%/.git}/.agent/purpose.md" ]; then
+  refuse "the change lives in this worktree, which holds no .agent, and the node is the main checkout's, at ${common%/.git}/.agent" "Link that node here with ln -s '${common%/.git}/.agent' '$root/.agent', then run this call again"
+fi
 scripts="$root/.agent/scripts"
 for helper in review.sh status.sh log.sh verify.sh; do
   [ -f "$scripts/$helper" ] || refuse "$scripts/$helper is missing" 'Update this node with node.sh update from the dot-agent repository'

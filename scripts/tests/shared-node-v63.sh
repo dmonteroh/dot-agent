@@ -100,6 +100,16 @@ mkdir -p "$scratch/nogit"
 ln -s "$main_node" "$scratch/nogit/.agent"
 refused 'a link from a root that is not a Git checkout' "$scratch/nogit"
 
+# A worktree with no link names the main checkout's node and says the change
+# lives in the worktree, where the generic message named neither.
+git -C "$main" worktree add -q "$scratch/wt-none" -b wt-none
+if (cd "$scratch/wt-none" && bash "$scripts/status.sh" >/dev/null 2>"$scratch/err"); then fail 'status.sh ran in a worktree with no node'; fi
+grep -qF "changes made here live in this worktree and the node is the main checkout's, at $main_node" "$scratch/err" || fail "status.sh in a worktree with no node: $(cat "$scratch/err")"
+if (cd "$scratch/wt-none" && bash "$scripts/checkpoint.sh" --tool x --area svc --summary 'Must not land' --verify n/a >/dev/null 2>"$scratch/err"); then
+  fail 'checkpoint.sh ran in a worktree with no node'
+fi
+grep -qF "the change lives in this worktree, which holds no .agent, and the node is the main checkout's, at $main_node. Link that node here" "$scratch/err" || fail "checkpoint.sh in a worktree with no node: $(cat "$scratch/err")"
+
 # A reader sees the linked node as the node: links.sh audits the same files
 # from the worktree as from the main checkout
 links_main=$(bash "$scripts/links.sh" "$main" 2>&1)

@@ -120,6 +120,16 @@ finding() { # severity code path message default-text
 
 agent="$root/.agent"
 if [ ! -d "$agent" ]; then
+  # A linked worktree that holds no node: its main checkout may hold one.
+  if [ ! -L "$agent" ] && here=$(cd "$root" 2>/dev/null && pwd -P) \
+    && top=$(cd "$here" && t=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$t" && pwd -P) \
+    && common=$(cd "$here" && c=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$c" && pwd -P) \
+    && [ "$top" = "$here" ] && [ "${common##*/}" = .git ] && [ "${common%/.git}" != "$here" ] \
+    && [ -f "${common%/.git}/.agent/purpose.md" ]; then
+    main=${common%/.git}
+    echo "status.sh: this worktree holds no .agent, so changes made here live in this worktree and the node is the main checkout's, at $main/.agent. Load it with bash '$main/.agent/scripts/status.sh' --load '$main'" >&2
+    exit 1
+  fi
   echo "status.sh: no .agent directory at $agent — run from the node's project root, or pass that root as an argument" >&2
   exit 1
 fi

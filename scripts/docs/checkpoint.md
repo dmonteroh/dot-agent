@@ -11,6 +11,8 @@ checkpoint.sh --tool NAME --area NAME --summary TEXT \
 
 `ROOT` defaults to the project root at `.`. Use `--help` or `--version` for the installed interface.
 
+A root that holds no `.agent` and is a linked worktree of a checkout with a node is refused in one line: the change lives in this worktree, and the node is the main checkout's. That checkout's checkpoint cannot see the change, so the line asks for a link to the node, `ln -s <main>/.agent <root>/.agent`. The link makes a shared node (`scripts/docs/runtime.md`), and the call then reviews the worktree and logs to the main checkout's node.
+
 ## Verification
 
 `--checks` runs named checks through `verify.sh`. `--verification` consumes existing receipts for unchanged inputs. Given both, a current receipt answers for the check it records, a missing or stale receipt is left out, and every named check with no current receipt runs. `--checks n/a` is read as `--verify n/a`, because `n/a` is no check name. Each of the two prints a line saying what was done.

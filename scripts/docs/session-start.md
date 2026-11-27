@@ -3,13 +3,14 @@
 `session-start.sh` lets a harness load the node before the agent's first turn. Claude Code and Codex both run a command when a session starts and add what it prints to the model's context. This script is that command. It prints the output of `status.sh --load` under one header line, so the session opens with the node already loaded and the entry point's load step has nothing left to do.
 
 ```
-session-start.sh [--max-bytes N]
+session-start.sh [--max-bytes N] [--project DIR]
 ```
 
 - It finds its node from its own location, `<node>/.agent/scripts/`, and scans that node once with `status.sh`. The output is byte-identical to the entry point's own call.
 - The header names the call and the node: `dot-agent session-start hook: the output of `…` for the node at .agent/ follows` (`~/.agent/` for a root node). It never names an absolute path, because the `--load` output itself carries only relative ones. Both entry-point templates tell the agent to skip the load step when this block holds the output.
 - `--max-bytes` is the most the harness will take. When the full output exceeds the limit, the same scan supplies the output of `status.sh --load --tail 0`. Its header names the shorter call and explains the missing log tail. Over the limit again, it prints one line instead, naming the full call and telling the agent to make it first. The default, 30000, is the tool-result cap `PAYLOAD_MAX_BYTES` defaults to.
 - The size checked is the size printed: the header line, its newline, and the output with its own trailing newlines kept.
+- `--project` names the folder the session runs in. When it is not the node's checkout and holds no `.agent`, the script loads the node only if that folder is a linked worktree whose Git directory the node's checkout holds. The header and the pointer then name the call and the node by absolute path, because no relative path reaches the node from there, and say that this worktree holds no `.agent/` and no entry point, so the changes made there live in the worktree. A folder whose `.agent` links to this node gets the usual header. Any other folder prints nothing.
 - `--header full` and `--header tail0` print only the header line each attempt uses and run nothing. `status.sh` calls them to count the header in its `HOOK:` line (`scripts/docs/status.md`).
 - Any problem (no `status.sh`, a failed run, a bad limit) prints nothing and exits 0. The entry point's load step then runs as it always did, so the hook can only save a call, never cost a session.
 
@@ -28,7 +29,7 @@ Most nodes pass 10,000 bytes. A filled `contract.md` alone runs near 9,000. On C
 | Node | Claude Code | Codex | Shared through git |
 | --- | --- | --- | --- |
 | `track-shared`, `track-all` | `.claude/settings.json` | `.codex/hooks.json` | yes: every developer gets the hook with the repository |
-| `ignore-all` | `.claude/settings.local.json` | `.codex/hooks.json` | no: both are listed in `.git/info/exclude`, which git never shares |
+| `ignore-all` | `.claude/settings.local.json` | `.codex/hooks.json` | no: both are listed in `.git/info/exclude`, which git never shares, so neither file reaches a clone or a worktree, and a session there loads through the entry point, through a harness that runs the main checkout's hook, or not at all |
 | root node at `$HOME` | `~/.claude/settings.json` | `~/.codex/hooks.json` | not applicable |
 
 The installer merges into existing files. Other settings and other hooks stay. A second run changes nothing. A file it cannot parse stays byte-identical, and the installer prints the snippet to add by hand. Under `ignore-all`, a `.codex/hooks.json` the repository already tracks is left alone, because ignore-all keeps the node out of shared files. Codex has no personal project-level file to use instead.
@@ -41,11 +42,13 @@ The merge needs `python3`. Without it, nothing is written and the snippets print
 
 Under `ignore-all` the hook files travel with no clone and no worktree: git ignores `.claude/settings.local.json` and `.codex/hooks.json`, so a `git worktree add` holds neither, and the hook never runs there. That holds even when the orchestrator links or copies `.agent/` and the entry points into the worktree. An orchestrator that wants the hook in its workers links or copies those two files beside the node. `.claude/settings.local.json` is a developer's personal file and may carry their own permissions and settings, so linking it hands those to every worker. An orchestrator that puts its own bootstrap instruction in each worker's prompt can leave the hook out, and its workers load the node through the entry point or that instruction.
 
+A harness can still run the main checkout's hook in a worktree it makes, as Claude Code does for an isolated session under `.claude/worktrees/`. The project directory it passes then holds no `.agent`. The installed command asks `git rev-parse --git-common-dir` for the checkout that holds the worktree's Git directory and runs that checkout's `session-start.sh` with `--project`, so the session opens with the main checkout's node and a header saying that this worktree holds no entry point. `status.sh` and `checkpoint.sh` run in such a worktree print one line instead: it names the main checkout's node and says that the change lives in the worktree. `checkpoint.sh` asks for a link to that node, which makes it a shared node (`scripts/docs/runtime.md`), so the review reads the worktree's change.
+
 ## What a team sees
 
 - **Claude Code.** In a tracked mode the hook arrives with `git pull`. It does nothing until that developer's checkout has the node's scripts: `track-shared` keeps `scripts/` out of git, so each developer runs `node.sh update` once, as before. Project hooks run after the developer trusts the folder, the same trust project settings already need.
 - **Codex.** Codex runs a project hook only in a trusted project, and only after the developer approves that exact hook definition with `/hooks`. The approval is per checkout path, so a new clone or worktree asks again. Until approved, Codex warns at startup, skips the hook, and the entry point loads the node.
-- **Hook definitions are frozen.** Codex asks again whenever a definition changes. The commands therefore call a fixed script path with no arguments that might change. Updating dot-agent replaces the script, not the definition, and asks nobody to approve anything.
+- **Hook definitions are frozen.** Codex asks again whenever a definition changes. The commands therefore call a fixed script path with fixed arguments. Updating dot-agent replaces the script, not the definition, and asks nobody to approve anything. v6.3 changed each definition once, to find the node from a worktree with none: `node.sh update` rewrites it, and Codex asks for approval again.
 - **Policy switches win.** `disableAllHooks`, Claude Code's managed `allowManagedHooksOnly`, or Codex's `[features] hooks = false` turn the hook off. The entry point still loads the node.
 
 To opt a node out: `node.sh update --hooks none`. It removes the hook and records `none`, so later updates leave it out.

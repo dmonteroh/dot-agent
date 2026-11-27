@@ -68,8 +68,11 @@ else
     claude_file="$root_abs/.claude/settings.json"
   fi
   codex_file="$root_abs/.codex/hooks.json"
-  claude_cmd='[ ! -f "$CLAUDE_PROJECT_DIR/.agent/scripts/session-start.sh" ] || bash "$CLAUDE_PROJECT_DIR/.agent/scripts/session-start.sh" --max-bytes 10000'
-  codex_cmd='[ ! -f .agent/scripts/session-start.sh ] || bash .agent/scripts/session-start.sh'
+  # A linked worktree with no .agent of its own, as Claude Code makes for an
+  # isolated session under ignore-all, loads the node of the checkout that
+  # holds its Git directory. session-start.sh checks it is that worktree.
+  claude_cmd='d=$CLAUDE_PROJECT_DIR; [ -e "$d/.agent" ] || d=$(cd "$d" 2>/dev/null && g=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$g/.." && pwd -P); [ ! -f "$d/.agent/scripts/session-start.sh" ] || bash "$d/.agent/scripts/session-start.sh" --max-bytes 10000 --project "$CLAUDE_PROJECT_DIR"'
+  codex_cmd='d=.; [ -e .agent ] || d=$(g=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$g/.." && pwd -P); [ ! -f "$d/.agent/scripts/session-start.sh" ] || bash "$d/.agent/scripts/session-start.sh" --project .'
   is_home=0
 fi
 matcher='startup|clear|compact'
