@@ -23,6 +23,15 @@ import sys
 NEG = re.compile(r"\b(?:not|never|no|don't|do not|doesn't|does not|isn't|is not|avoid|instead of|rather than|without|shouldn't|should not|can't|cannot|won't|will not|nor|neither)\b", re.I)
 NEG_AFTER = re.compile(r"\b(?:disallowed|forbidden|prohibited|banned|off-limits|discouraged)\b", re.I)
 SENT = re.compile(r"[^.!?\n]+[.!?]?")
+# A name assigned with `=`, optionally typed, and not compared with `==` or `=>`.
+DECLARED = re.compile(r"\b([A-Za-z_$][\w$]*)\s*(?::\s*[\w$.<>\[\]| ]+?)?\s*=(?![=>])")
+LIMIT_NAME = re.compile(r"rate_?limit|(?:^|_)[rq]ps(?:_|$)|per_sec|(?:request|call)s?_(?:interval|gap|spacing)|throttl")
+
+
+def snake_words(name):
+    """VENDOR_REQUEST_INTERVAL_MS and vendorRequestIntervalMs both become vendor_request_interval_ms."""
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name)
+    return name.lower()
 
 
 def read(path):
@@ -164,10 +173,15 @@ def propose(aid, o):
             return "PASS", "comment: " + " | ".join(hit)[:240]
         # A constant whose name carries the constraint satisfies the rule's
         # own preference for a clear name over a comment.
-        src = "\n".join(l for l in d.splitlines() if l.startswith("+") and not l.startswith("+++"))
-        m = re.search(r"^\+.*\b([A-Za-z_]*(?:RATE_LIMIT|_RPS\b|RPS_|PER_SECOND|RateLimit|Rps\b)[A-Za-z_]*)\s*=", src, re.M)
-        if m:
-            return "PASS", "named constant: " + m.group(0).strip()[:200]
+        # The name must carry the limit: a rate, a per-second count, or the
+        # interval between vendor requests. A bare number, or a delay named
+        # for the retry, does not.
+        for l in d.splitlines():
+            if not l.startswith("+") or l.startswith("+++"):
+                continue
+            for m in DECLARED.finditer(l):
+                if LIMIT_NAME.search(snake_words(m.group(1))):
+                    return "PASS", "named constant: " + l[1:].strip()[:200]
         return "FAIL", "no rate-limit comment or named constant; added comments: %s" % (" | ".join(cl)[:220] if cl else "none")
 
     if suffix == "landed-in-node":

@@ -28,6 +28,18 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(verdict, "UNSURE")
         self.assertIn("refund", evidence)
 
+    def test_vendor_limit_needs_a_name_that_carries_it(self):
+        cases = [
+            ("+const VENDOR_REQUEST_INTERVAL_MS = 1_000 / 10;\n", "PASS"),
+            ("+const RETRY_INTERVAL_MS = 200;\n+await sleep(100);\n", "FAIL"),
+        ]
+        for added, expected in cases:
+            with self.subTest(added=added):
+                artifacts = {"transcript": "", "node_diff": "", "node_tree": "",
+                             "diff": "diff --git a/src/client.ts b/src/client.ts\n" + added}
+                verdict, _ = triage.propose("comments-feature/vendor-constraint-kept", artifacts)
+                self.assertEqual(verdict, expected)
+
     def test_repeat_disagreement_survives_majority_pass(self):
         runs = [{"arm": "a", "meta": {"eval": "case", "duration_seconds": n},
                  "tool_calls": 2, "grading": {"results": [{"passed": bit}]}}
