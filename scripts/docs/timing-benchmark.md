@@ -96,6 +96,10 @@ A Debian container in a virtual machine on the same machine. bash 5.2.37, mawk, 
 | 200 | `review.sh` | 43 ms | 70 ms | 48 ms | 74 ms |
 | 200 | `links.sh` | 942 ms | 1064 ms | 744 ms | 1119 ms |
 
+### `memory.sh lookup` without a process per file
+
+On 2026-11-27, `memory.sh lookup` at 200 records fell from a median of 1,751 ms to 429 ms (p90 1,959 ms to 492 ms) once it stopped starting processes for each file it checks. The baseline was `342a3f6`. The run used macOS arm64, bash 3.2.57 and git 2.55.0, both revisions in one run of the harness, 10 runs each, with a load average near 20. The other five commands ran the same scripts in both columns and stayed within 50 ms of each other.
+
 ## What the numbers do not cover
 
 - One machine, under load, with one run of the harness per system.

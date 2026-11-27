@@ -193,6 +193,14 @@ ln -s "$outside" "$escaped/.agent"
 if "$here/scripts/memory.sh" lookup --query outside-only "$escaped" >/dev/null 2>&1; then status=0; else status=$?; fi
 [ "$status" -ne 0 ] && ok 'canonical lookup refuses parent-directory symlink escapes' || bad 'canonical lookup refuses parent-directory symlink escapes'
 
+ln -s "$outside" "$node/.agent/docs/linked-out"
+printf '%s\n' '' '### `linked-out/purpose.md`' '- **Read when:** linked route' >>"$node/.agent/docs/architecture.md"
+if "$here/scripts/memory.sh" lookup --query outside-only "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
+[ "$status" -ne 0 ] && ok 'canonical lookup refuses a routed doc whose folder links outside the project' || bad 'canonical lookup refuses a routed doc whose folder links outside the project'
+awk '$0=="### `linked-out/purpose.md`" {drop=1; next} drop && /^- / {next} {drop=0; print}' "$node/.agent/docs/architecture.md" >"$node/.agent/docs/architecture.clean"
+mv "$node/.agent/docs/architecture.clean" "$node/.agent/docs/architecture.md"
+rm -f "$node/.agent/docs/linked-out"
+
 printf '%s\n' '' '### `missing-routed.md`' '- **Read when:** missing route' '- **Sections:**' >>"$node/.agent/docs/architecture.md"
 if "$here/scripts/memory.sh" lookup --query missing "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
 [ "$status" -ne 0 ] && ok 'canonical lookup does not turn a missing routed file into an empty success' || bad 'canonical lookup does not turn a missing routed file into an empty success'

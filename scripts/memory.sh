@@ -62,10 +62,22 @@ digest_file() {
   git hash-object --no-filters -- "$1"
 }
 
+# grep reads a newline as a line break, not a control character, so the
+# builtin match only decides when grep has to run.
+has_cntrl() {
+  case "$1" in
+  *[[:cntrl:]]*) printf '%s' "$1" | grep -q '[[:cntrl:]]' ;;
+  *) return 1 ;;
+  esac
+}
+
+# Files arrive a folder at a time, so each folder is resolved once.
+lookup_parent_dir=""
+lookup_parent_phys=""
 lookup_add() {
   la_rel="$1"
   la_file="$2"
-  if printf '%s%s' "$la_rel" "$la_file" | grep -q '[[:cntrl:]]'; then
+  if has_cntrl "$la_rel$la_file"; then
     da_refuse "canonical lookup path contains a control character and cannot be represented safely" "Rename that file, then run this call again"
     return 1
   fi
@@ -76,10 +88,15 @@ lookup_add() {
     da_refuse "canonical lookup path is not a regular non-symlink file: $la_rel" "Replace it with a regular file, then run this call again"
     return 1
   fi
-  la_parent=$(cd "$(dirname "$la_file")" 2>/dev/null && pwd -P) || {
-    da_refuse "cannot resolve canonical lookup parent for $la_rel" "Check that its folder exists and is readable, then run this call again"
-    return 1
-  }
+  la_dir="${la_file%/*}"
+  if [ "$la_dir" != "$lookup_parent_dir" ]; then
+    lookup_parent_phys=$(cd "$la_dir" 2>/dev/null && pwd -P) || {
+      da_refuse "cannot resolve canonical lookup parent for $la_rel" "Check that its folder exists and is readable, then run this call again"
+      return 1
+    }
+    lookup_parent_dir="$la_dir"
+  fi
+  la_parent="$lookup_parent_phys"
   case "$la_parent" in
   "$lookup_root_phys"|"$lookup_root_phys"/*) ;;
   "$lookup_node_phys"|"$lookup_node_phys"/*) [ -n "$lookup_node_phys" ] || return 1 ;;
@@ -113,7 +130,7 @@ lookup_routed_docs() {
     *.md) lr_bad=0 ;;
     *) lr_bad=1 ;;
     esac
-    if [ "$lr_bad" -ne 0 ] || printf '%s' "$lr_name" | grep -q '[[:cntrl:]]'; then
+    if [ "$lr_bad" -ne 0 ] || has_cntrl "$lr_name"; then
       rm -f "$lr_names"
       da_refuse "routed canonical document has an unsafe path: $lr_name" "Fix that entry in .agent/docs/architecture.md, then run this call again"
     return 1
@@ -132,7 +149,7 @@ run_lookup() {
   rl_root="$1"
   rl_query="$2"
   rl_limit="$3"
-  if printf '%s' "$rl_root" | grep -q '[[:cntrl:]]'; then
+  if has_cntrl "$rl_root"; then
     da_refuse "project root contains a control character and cannot be searched safely" "Pass a root path without control characters"
     return 1
   fi
@@ -140,7 +157,7 @@ run_lookup() {
     da_refuse "cannot resolve project root: $rl_root" "Pass the folder that holds .agent/ as the last argument"
     return 1
   }
-  if printf '%s' "$lookup_root_phys" | grep -q '[[:cntrl:]]'; then
+  if has_cntrl "$lookup_root_phys"; then
     da_refuse "physical project root contains a control character and cannot be searched safely" "Move the project to a path without control characters"
     return 1
   fi
