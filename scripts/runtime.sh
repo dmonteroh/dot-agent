@@ -473,8 +473,8 @@ da_unlock() {
 # da_doc_citations DOC: what a doc cites, one per line as its author spelled
 # it: every Markdown link target, then every backticked span. HTML comments
 # are skipped and fenced code is read. A link target loses its title and
-# fragment, a span its :<line> suffix. links.sh's drift check reads
-# stamped docs through it.
+# fragment, a span its :<line> suffix. links.sh's drift check and docs.sh
+# route both read docs through it, so they agree on what a doc cites.
 da_doc_citations() {
   [ "$#" -eq 1 ] || { echo "runtime.sh: da_doc_citations needs one argument" >&2; return 2; }
   awk '

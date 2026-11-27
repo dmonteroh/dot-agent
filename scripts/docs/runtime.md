@@ -14,6 +14,6 @@ Shared Bash primitives for verification and checkpoint bookkeeping. This file is
 
 A writer killed while releasing a lock can leave the directory with no owner file, which no dead-owner check can clear. When every attempt of a whole wait finds the directory that way, `da_lock_wait` removes it with `rmdir` and takes the lock, and says so on stderr. `rmdir` removes only an empty directory, so a lock that gained an owner in the meantime stays held. A wait of 0 makes one attempt and never removes one.
 
-`da_doc_citations <doc>` prints what a doc cites, one per line as written: every Markdown link target, then every backticked span. HTML comments are skipped. Fenced code is read like any other line. A link target loses its title and its `#` fragment, and a span loses a trailing `:<line>` or `:<line>-<line>`. It resolves nothing. `links.sh`'s drift check reads stamped docs through it.
+`da_doc_citations <doc>` prints what a doc cites, one per line as written: every Markdown link target, then every backticked span. HTML comments are skipped. Fenced code is read like any other line. A link target loses its title and its `#` fragment, and a span loses a trailing `:<line>` or `:<line>-<line>`. It resolves nothing. `links.sh`'s drift check and `docs.sh route` both read docs through it, so they agree on what a doc cites.
 
 Non-Git verification needs declared input roots in `verify.conf`. Ordinary node bookkeeping uses `.agent/` without recursively scanning the user's home. Receipts are local execution records, not an adversarial attestation mechanism.

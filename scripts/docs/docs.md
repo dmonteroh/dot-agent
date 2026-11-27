@@ -8,6 +8,8 @@ Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh sync [--name <file> [--read-when "…"]] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
        docs.sh check --name <file> [root]
+       docs.sh route [root] --paths <path>... [--base <ref>]
+       docs.sh route [root] --base <ref>
 ```
 
 `root` defaults to `.` and `.md` is appended to `<file>` if missing. `new` writes `<root>/.agent/docs/<file>` and appends a row to `<root>/.agent/docs/architecture.md`, creating it with a minimal routing header if it does not already exist.
@@ -39,3 +41,21 @@ The `Sections:` value is derived from exact `## ` headings. A fence-aware scan i
 `catalog` updates the row whose first cell is `<symbol>`, or inserts one when absent, in exactly one compatible three-column catalog table. Its columns are `Block`, `Symbol`, or `Name`, then `Path`, then a `When` column. It refuses no table, more than one compatible table, duplicate keys, and values containing Markdown table escaping hazards. The emitted row quotes the symbol and path with backticks.
 
 `--path` is project-relative and must already exist. Ordinary spaces are accepted. Absolute paths, `..`, newlines, tabs, pipes, backticks, unsafe characters, symlink traversal, and a physical location outside the project are refused. `--catalog` is likewise confined to a regular file below `.agent/docs/`. A successful upsert prints the symbol and the catalog's new content digest.
+
+## Route lookup
+
+`route` answers which routed docs a change touches. The routing table answers which doc covers a topic. `route` answers which doc cites a file. It prints one line per routed doc and cited path:
+
+```
+ROUTE: docs/payments.md | touching payments | src/client.ts
+```
+
+The fields are the doc's path in the node, its `Read when:` hook, and the cited path. The hook field is empty for a doc with no hook. A cited directory carries a trailing `/`.
+
+- Routed docs are the ones `status.sh`'s routing checks cover: `docs/*.md`, then `docs/*/*.md`, except `architecture.md` and `references/`. A stamp is not needed.
+- A doc cites what `links.sh`'s drift check reads from it, through `da_doc_citations` in `runtime.sh`: link targets and backticked spans, outside HTML comments, fenced code included. So the two never disagree about what a doc cites.
+- A citation names a path as written, from the project root or from the doc's folder. `route` does not check that the path exists, so a citation of a deleted file still matches.
+- A cited directory matches every path under it, written as `src/billing/` or as `src/billing`.
+- `--paths` takes the arguments up to the next flag, so give `root` before it. The paths are project-relative.
+- `--base <ref>` adds the paths changed since the merge base of `<ref>` and `HEAD`, uncommitted changes included, and the untracked files. That is the set `review.sh` inspects, except that a deleted path stays in. Git's paths are taken relative to the root, so a node below the repository's top sees only the changes under it. With `--paths` too, it looks up both.
+- `route` writes nothing. It exits 0 whatever it finds, and prints nothing when no doc cites a given path. A usage error, a root with no `.agent/`, and a `--base` it cannot resolve exit 1 with the next step.

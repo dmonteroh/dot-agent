@@ -4,6 +4,11 @@ set -u
 export LC_ALL=C
 unset CDPATH
 
+case "${BASH_SOURCE[0]}" in */*) selfdir=${BASH_SOURCE[0]%/*} ;; *) selfdir=. ;; esac
+[ -f "$selfdir/runtime.sh" ] || { echo 'docs.sh: runtime.sh is missing. Update this node with node.sh update from the dot-agent repository' >&2; exit 1; }
+# shellcheck source=runtime.sh
+. "$selfdir/runtime.sh"
+
 usage() {
   cat <<'EOF'
 Usage: docs.sh new --name <file> --read-when "…" [root]
@@ -11,6 +16,8 @@ Usage: docs.sh new --name <file> --read-when "…" [root]
        docs.sh sync [--name <file> [--read-when "…"]] [root]
        docs.sh catalog --catalog <file> --name <symbol> --path <project-path> --when "…" [root]
        docs.sh check --name <file> [root]
+       docs.sh route [root] --paths <path>... [--base <ref>]
+       docs.sh route [root] --base <ref>
 
 root defaults to . — new writes <root>/.agent/docs/<file> and a routing row
 in <root>/.agent/docs/architecture.md; rehook rewrites an existing doc's
@@ -19,6 +26,12 @@ sync reconciles one doc's routing entry with its header and headings, or every
 routed doc's when --name is left out.
 check records HEAD in the doc's "Checked:" stamp, after you have re-read the
 code the doc cites; links.sh reports cited paths changed since that commit.
+route prints one line per routed doc that cites a given path, stamped or not:
+  ROUTE: <doc path> | <Read when: hook> | <cited path>
+A cited directory matches every path under it. --paths takes the arguments up
+to the next flag, so give root first. --base adds the paths changed since the
+merge base of <ref> and HEAD, plus untracked files. route writes nothing and
+exits 0 whatever it finds.
 EOF
 }
 
@@ -526,6 +539,113 @@ check)
   rm -f "$check_tmp"
   echo "docs.sh: could not write the stamp to $doc — the doc is unchanged" >&2
   exit 1
+  ;;
+
+route)
+  paths=()
+  base=""
+  base_given=0
+  root="."
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    --paths)
+      shift
+      [ $# -gt 0 ] && case "$1" in --*) false ;; esac \
+        || da_refuse "--paths needs at least one path" "Pass project-relative paths after it, then any other flag" || exit
+      while [ $# -gt 0 ]; do
+        case "$1" in --*) break ;; esac
+        paths+=("$1")
+        shift
+      done ;;
+    --base)
+      [ $# -ge 2 ] && case "$2" in --*) false ;; esac \
+        || da_refuse "--base needs a ref" "Pass the branch or commit the change started from, such as main" || exit
+      base="$2"; base_given=1; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    --*) da_refuse "unknown flag for route: $1" "Pass --paths <path>... or --base <ref>, as docs.sh --help shows" || exit ;;
+    *) root="$1"; shift ;;
+    esac
+  done
+  [ "${#paths[@]}" -gt 0 ] || [ "$base_given" -eq 1 ] \
+    || da_refuse "route needs the paths to look up" "Pass --paths <path>... or --base <ref>" || exit
+  [ -d "$root/.agent" ] \
+    || da_refuse "no .agent directory at $root/.agent" "Run from the node's project root, or pass that root before --paths" || exit
+
+  # The changed set is the one review.sh inspects: the diff from the merge
+  # base with HEAD, plus untracked files. A deleted path stays in, because a
+  # doc citing it is a doc the change touched.
+  if [ "$base_given" -eq 1 ]; then
+    git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+      || da_refuse "--base reads git history, and $root is not in a git work tree" "Pass the changed paths with --paths instead" || exit
+    merge_base=$(git -C "$root" merge-base "$base" HEAD 2>/dev/null) \
+      || da_refuse "no merge base between '$base' and HEAD" "Pass a branch or commit that shares history with HEAD" || exit
+    changed=$(set -o pipefail; git -C "$root" -c core.quotepath=false diff --name-only --relative -z "$merge_base" -- | tr '\0' '\n') \
+      || da_refuse "git diff against $merge_base failed" "Check that $root is readable and run this call again" || exit
+    untracked=$(set -o pipefail; git -C "$root" ls-files --others --exclude-standard -z | tr '\0' '\n') \
+      || da_refuse "could not list the untracked files under $root" "Check that $root is readable and run this call again" || exit
+    while IFS= read -r p; do
+      [ -n "$p" ] && paths+=("$p")
+    done <<EOF
+$changed
+$untracked
+EOF
+  fi
+  [ "${#paths[@]}" -gt 0 ] || exit 0
+  [ -d "$root/.agent/docs" ] || exit 0
+
+  # Routed docs are the ones status.sh routes: docs/*.md and docs/*/*.md, but
+  # not architecture.md or references/. A citation names a path as written
+  # from the project root or from the doc's folder, and a cited directory
+  # takes every path under it.
+  wanted=$(printf '%s\n' "${paths[@]}")
+  docs="$root/.agent/docs"
+  for doc in "$docs"/*.md "$docs"/*/*.md; do
+    [ -f "$doc" ] || continue
+    rel=${doc#"$docs"/}
+    [ "$rel" = architecture.md ] && continue
+    case "$rel" in references/* | */references/*) continue ;; esac
+    docdir=.agent/docs
+    case "$rel" in */*) docdir=".agent/docs/${rel%/*}" ;; esac
+    da_doc_citations "$doc" | ROUTE_FILE="$doc" ROUTE_DOC="docs/$rel" ROUTE_DIR="$docdir" ROUTE_PATHS="$wanted" awk '
+      function norm(p,   k, i, n, seg, part, out) {
+        k = split(p, seg, "/")
+        n = 0
+        for (i = 1; i <= k; i++) {
+          if (seg[i] == "" || seg[i] == ".") continue
+          if (seg[i] == "..") { if (n == 0) return ""; n--; continue }
+          part[++n] = seg[i]
+        }
+        out = part[1]
+        for (i = 2; i <= n; i++) out = out "/" part[i]
+        return n ? out : ""
+      }
+      BEGIN {
+        f = ENVIRON["ROUTE_FILE"]
+        for (i = 1; i <= 5 && (getline line < f) > 0; i++)
+          if (!found && line ~ /^<!-- Read when: .* -->$/) { found = 1; hook = substr(line, 17, length(line) - 20) }
+        close(f)
+        k = split(ENVIRON["ROUTE_PATHS"], given, "\n")
+        for (i = 1; i <= k; i++) {
+          g = norm(given[i])
+          if (g == "") continue
+          want[g] = 1
+          while (sub(/\/[^\/]*$/, "", g)) under[g] = 1
+        }
+      }
+      {
+        for (b = 0; b < 2; b++) {
+          n = norm(b ? ENVIRON["ROUTE_DIR"] "/" $0 : $0)
+          if (n == "" || n == ".agent" || n == ".git" || index(n, ".agent/") == 1 || index(n, ".git/") == 1) continue
+          if (n in under) hit = n "/"
+          else if (n in want) hit = n (/\/$/ ? "/" : "")
+          else continue
+          if (!(hit in shown)) print "ROUTE: " ENVIRON["ROUTE_DOC"] " | " hook " | " hit
+          shown[hit] = 1
+        }
+      }
+    '
+  done
+  exit 0
   ;;
 
 rehook)

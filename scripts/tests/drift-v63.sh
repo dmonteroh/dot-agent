@@ -49,7 +49,7 @@ cat >>"$pay" <<'EOF'
 The client lives in `src/client.ts:12`, helpers under [util](../../src/util/).
 `src/other.ts` holds the rest. Routing: `docs/architecture.md`.
 EOF
-printf '%s\n' '<!-- Read when: legacy billing -->' '# Legacy' '' 'Calls `src/client.ts` directly.' >"$proj/.agent/docs/legacy.md"
+printf '%s\n' '<!-- Read when: legacy billing -->' '# Legacy' '' '```' 'Calls `src/client.ts` directly.' '```' >"$proj/.agent/docs/legacy.md"
 "$DOCS" sync --name payments "$proj" >/dev/null 2>&1
 "$DOCS" sync --name legacy "$proj" >/dev/null 2>&1
 check "docs.sh sync keeps the stamp and the hook" \
@@ -84,6 +84,17 @@ check "an unstamped doc citing the same file has no finding" \
   '! printf "%s\n" "$out" | grep -qF "docs/legacy.md"'
 check "a cited file no commit touched stays quiet" \
   '! printf "%s\n" "$out" | grep -qF "cites src/other.ts"'
+
+# docs.sh route names the routed docs citing a path, stamped or not, a cited
+# path in fenced code included, as the drift check reads them.
+client_routes='ROUTE: docs/legacy.md | legacy billing | src/client.ts
+ROUTE: docs/payments.md | touching payments or refunds | src/client.ts'
+check "docs.sh route lists every routed doc citing a path, and none for an uncited one" \
+  '[ "$("$DOCS" route "$proj" --paths src/client.ts 2>&1)" = "$client_routes" ] && [ -z "$("$DOCS" route "$proj" --paths src/nowhere.ts 2>&1)" ]'
+check "docs.sh route matches a path under a cited directory" \
+  '[ "$("$DOCS" route "$proj" --paths src/util/helper.ts 2>&1)" = "ROUTE: docs/payments.md | touching payments or refunds | src/util/" ]'
+check "docs.sh route --base looks up the paths changed since the ref" \
+  '[ "$("$DOCS" route "$proj" --base HEAD~1 2>&1)" = "$client_routes" ]'
 
 printf 'export const helper = 2;\n' >"$proj/src/util/helper.ts"
 printf 'export const client = 3;\n' >"$proj/src/client.ts"
