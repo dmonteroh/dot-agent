@@ -16,8 +16,9 @@ Usage: review.sh [--base REF] [--root ROOT]
        review.sh --help | --version
 
 Runs comments.sh once, then lists bounded, advisory candidates for new helper
-catalog entries, test coverage, and changed kept tests. It also reports scratch
-files left in SCRATCH_DIR. It does not stage files or claim that a catalog
+catalog entries, test coverage, changed kept tests, and routed docs that cite
+a changed path (docs.sh route). It also reports scratch files left in
+SCRATCH_DIR. It does not stage files or claim that a catalog
 match proves reuse or that a test name proves coverage.
 
 Exit 0 means the review completed, 1 means comments.sh found blocking
@@ -277,6 +278,31 @@ for path in "${tests[@]-}"; do
   [ -n "$path" ] || continue
   emit_review TEST_KEPT "$path" "a kept test changed; name the rule it protects that no kept test protects, or prove the change with a scratch test instead"
 done
+
+# A routed doc that cites a path this change touched may now describe the code
+# wrongly, and the change is the moment to check it. docs.sh route answers it,
+# so no session has to remember to ask. A doc the change also edited was read.
+if [ -f "$selfdir/docs.sh" ] && [ -d "$root/.agent/docs" ]; then
+  routes=$(bash "$selfdir/docs.sh" route "$root" --base "$merge_base" 2>/dev/null) || routes=""
+  while IFS=$'\t' read -r doc cited; do
+    [ -n "$doc" ] || continue
+    edited=0
+    for known in "${changed[@]-}"; do
+      [ "$known" = ".agent/$doc" ] && { edited=1; break; }
+    done
+    [ "$edited" -eq 0 ] || continue
+    emit_review DOC_ROUTE ".agent/$doc" "cites $cited, which this change touches; re-read it, and update it only where the change makes it wrong"
+  done <<EOF
+$(printf '%s\n' "$routes" | awk -F' [|] ' '
+  /^ROUTE: / {
+    d = substr($1, 8)
+    if (!(d in paths)) order[++n] = d
+    paths[d] = (d in paths) ? paths[d] ", " $NF : $NF
+  }
+  END { for (i = 1; i <= n; i++) print order[i] "\t" paths[order[i]] }
+')
+EOF
+fi
 
 if [ -n "$SCRATCH_DIR" ] && [ -d "$root/$SCRATCH_DIR" ]; then
   scratch_left=$(find "$root/$SCRATCH_DIR" -type f -print0 2>/dev/null | tr -dc '\000' | wc -c)

@@ -97,6 +97,9 @@ check "docs.sh route matches a path under a cited directory, not under a bare wo
   '[ "$("$DOCS" route "$proj" --paths src/util/helper.ts 2>&1)" = "ROUTE: docs/payments.md | touching payments or refunds | src/util/" ]'
 check "docs.sh route --base looks up the paths changed since the ref" \
   '[ "$("$DOCS" route "$proj" --base HEAD~1 2>&1)" = "$client_routes" ]'
+review_out=$(bash "$proj/.agent/scripts/review.sh" --root "$proj" --base HEAD~1 2>&1)
+check "review.sh names each routed doc citing a changed path" \
+  'printf "%s\n" "$review_out" | grep -qxF "REVIEW: DOC_ROUTE .agent/docs/payments.md cites src/client.ts, which this change touches; re-read it, and update it only where the change makes it wrong" && [ "$(printf "%s\n" "$review_out" | grep -c "DOC_ROUTE")" -eq 2 ]'
 git -C "$proj" mv src/client.ts src/renamed.ts
 check "docs.sh route --base keeps a renamed file's old path" \
   '[ "$("$DOCS" route "$proj" --base HEAD 2>&1)" = "$client_routes" ]'
