@@ -658,7 +658,7 @@ supersede)
   lost_ids=$(printf '%s\n' "$lost" | sed -n 's/^id	//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
   lost_values=$(printf '%s\n' "$lost" | sed -n 's/^value	//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
   if [ -n "$lost_ids" ]; then
-    refuse "superseding $slug would drop $lost_ids, which no other file in the node holds, so $factfile is unchanged" "Keep each one that still holds in the new text, or first write it into the routed doc for this area (docs.sh new makes one), not into a new fact. For one that is no longer true, pass --drop <value>; checkpoint lists it for your report. Then run this call again"
+    refuse "superseding $slug would drop $lost_ids, which no other file in the node holds, so $factfile is unchanged" "Keep each one that still holds in the new text, or first write it into the routed doc for this area (docs.sh new makes one). History, how-to, and stable knowledge never go into a new fact. For one that is no longer true, pass --drop <value>; checkpoint lists it for your report. Then run this call again"
   fi
 
   date_stamp=$(date +%Y-%m-%d)
