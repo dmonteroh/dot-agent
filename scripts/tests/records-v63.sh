@@ -195,8 +195,8 @@ if "$here/scripts/memory.sh" lookup --query outside-only "$escaped" >/dev/null 2
 
 ln -s "$outside" "$node/.agent/docs/linked-out"
 printf '%s\n' '' '### `linked-out/purpose.md`' '- **Read when:** linked route' >>"$node/.agent/docs/architecture.md"
-if "$here/scripts/memory.sh" lookup --query outside-only "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
-[ "$status" -ne 0 ] && ok 'canonical lookup refuses a routed doc whose folder links outside the project' || bad 'canonical lookup refuses a routed doc whose folder links outside the project'
+if "$here/scripts/memory.sh" lookup --query outside-only "$node" >/dev/null 2>"$tmp/outside.err"; then status=0; else status=$?; fi
+[ "$status" -ne 0 ] && grep -q 'resolves outside the project: .agent/docs/linked-out/purpose.md.*then run this call again' "$tmp/outside.err" && ok 'canonical lookup refuses a routed doc whose folder links outside the project, and says so' || bad "canonical lookup refuses a routed doc whose folder links outside the project, and says so (rc=$status; $(cat "$tmp/outside.err"))"
 awk '$0=="### `linked-out/purpose.md`" {drop=1; next} drop && /^- / {next} {drop=0; print}' "$node/.agent/docs/architecture.md" >"$node/.agent/docs/architecture.clean"
 mv "$node/.agent/docs/architecture.clean" "$node/.agent/docs/architecture.md"
 rm -f "$node/.agent/docs/linked-out"

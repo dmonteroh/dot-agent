@@ -97,11 +97,20 @@ lookup_add() {
     lookup_parent_dir="$la_dir"
   fi
   la_parent="$lookup_parent_phys"
+  la_inside=0
   case "$la_parent" in
-  "$lookup_root_phys"|"$lookup_root_phys"/*) ;;
-  "$lookup_node_phys"|"$lookup_node_phys"/*) [ -n "$lookup_node_phys" ] || return 1 ;;
-  *) da_refuse "canonical lookup path resolves outside the project: $la_rel" "Move it inside the project or remove the link, then run this call again"; return 1 ;;
+  "$lookup_root_phys"|"$lookup_root_phys"/*) la_inside=1 ;;
   esac
+  # An empty node pattern would match every absolute path, so test it only when set.
+  if [ "$la_inside" = 0 ] && [ -n "$lookup_node_phys" ]; then
+    case "$la_parent" in
+    "$lookup_node_phys"|"$lookup_node_phys"/*) la_inside=1 ;;
+    esac
+  fi
+  if [ "$la_inside" = 0 ]; then
+    da_refuse "canonical lookup path resolves outside the project: $la_rel" "Move it inside the project or remove the link, then run this call again"
+    return 1
+  fi
   printf '%s\n' "$lookup_root_phys/$la_rel" >>"$lookup_list" || return 1
 }
 
