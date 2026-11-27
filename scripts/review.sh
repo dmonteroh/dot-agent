@@ -296,8 +296,8 @@ if [ -f "$selfdir/docs.sh" ] && [ -d "$root/.agent/docs" ]; then
 $(printf '%s\n' "$routes" | awk -F' [|] ' '
   /^ROUTE: / {
     d = substr($1, 8)
-    if (!(d in paths)) order[++n] = d
-    paths[d] = (d in paths) ? paths[d] ", " $NF : $NF
+    if (d in paths) paths[d] = paths[d] ", " $NF
+    else { order[++n] = d; paths[d] = $NF }
   }
   END { for (i = 1; i <= n; i++) print order[i] "\t" paths[order[i]] }
 ')

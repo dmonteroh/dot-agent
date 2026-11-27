@@ -309,7 +309,7 @@ lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file list
         t = w[i]
         sub(/^[(\["'"'"'<]+/, "", t)
         sub(/[)\]"'"'"'>.,;:!?]+$/, "", t)
-        sub(/('"'"'|’)s$/, "", t)
+        sub(/('"'"'|\342\200\231)s$/, "", t)
         if (length(t) < 2) continue
         lt = tolower(t)
         if (t ~ /:\/\// || (t ~ /\// && (t ~ /\/$/ || t ~ /\.[A-Za-z0-9]+$/ || t ~ /^[.~]/))) add(t, "id")
