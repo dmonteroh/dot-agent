@@ -61,7 +61,7 @@ The last line a refusing `checkpoint.sh`, `log.sh`, `memory.sh`, or `learn.sh` p
 
 ## What stays stable
 
-These hold across versions. A version that changes one of them raises `WORKER_CONTRACT` in the node's `status.sh` and says so in its changelog entry. `node.sh describe` prints that number from the node's own copy, so an orchestrator compares one number scoped to this interface, never the release version. This page describes revision 1. A node that prints `WORKER_CONTRACT=0` predates the page: its bootstrap call and markers match revision 1, and its output puts the log tail first.
+These hold across versions. A version that changes one of them raises `WORKER_CONTRACT` in the node's `status.sh` and says so in its changelog entry. `node.sh describe` prints that number from the node's own copy, so an orchestrator compares one number scoped to this interface, never the release version. This page describes revision 2. Revision 1 listed `verify.sh` in `WORKER_MAY_RUN`; revision 2 moves it to `ORCHESTRATOR_ONLY`. A node that prints `WORKER_CONTRACT=0` predates the page: its bootstrap call and markers match revision 1, and its output puts the log tail first.
 
 - The bootstrap call above, and its write-free, exit-0 behavior.
 - The `==== <path> ====` marker form, and the order of the four parts.

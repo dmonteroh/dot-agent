@@ -19,7 +19,7 @@ MEMORY_INDEX_BYTES=5000
 # Not a tunable: the worker-load contract revision this script implements
 # (scripts/docs/worker-contract.md). node.sh describe reads it from here.
 # shellcheck disable=SC2034 # read by node.sh describe, not by this script
-WORKER_CONTRACT=1
+WORKER_CONTRACT=2
 
 root="."
 load=0
