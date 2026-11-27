@@ -4166,6 +4166,10 @@ rc=$?
 "$memcopy" supersede --slug deploy-ticket --fact "Deploys moved; docs/deploy.md holds how." --drop PAY-318 "$memroot" >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 0 ] && ! grep -qF 'PAY-318' "$memroot/.agent/memory/deploy-ticket.md" && pass "memory.sh supersede: --drop names a value dropped as no longer true" || fail "memory.sh supersede: --drop names a value dropped as no longer true ($rc)"
+"$memcopy" new --slug backoff --title "Backoff" --hook "retry timing" --fact "Per docs/backoff.md's table, retries start at 200ms. HTTP 200 is success." "$memroot" >/dev/null 2>&1
+out9v=$("$memcopy" supersede --slug backoff --fact "Per docs/backoff.md, retries back off. HTTP 200 is success." "$memroot" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && printf '%s\n' "$out9v" | grep -qF 'any more: 200ms.' && pass "memory.sh supersede: a possessive path is held bare, and a number counts only with its unit" || fail "memory.sh supersede: a possessive path is held bare, and a number counts only with its unit ($rc: $out9v)"
 
 docroot="$WORK/docs-tests"
 mkdir -p "$docroot"
@@ -8974,7 +8978,7 @@ for v63_test in "$reporoot"/scripts/tests/*-v63.sh; do
 done
 
 ran=$((PASS + FAIL))
-EXPECTED_CHECKS=1402
+EXPECTED_CHECKS=1403
 if [ "$ran" -ne "$EXPECTED_CHECKS" ]; then
   printf 'FAIL check count: expected %d, ran %d — a check was added, removed, or stopped running\n' "$EXPECTED_CHECKS" "$ran"
   FAIL=$((FAIL + 1))

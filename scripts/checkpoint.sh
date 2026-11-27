@@ -453,3 +453,12 @@ record_last "$identity"
 record_mark
 clear_pending
 printf 'checkpoint.sh: recorded verify=%s\n' "$verify"
+# What memory.sh supersede let leave the node since the last checkpoint: the
+# report names each, so whoever reads it knows what is no longer recorded.
+if [ -s "$state/dropped" ] && [ ! -L "$state/dropped" ]; then
+  while IFS=$'\t' read -r dropped_file dropped_values; do
+    [ -n "$dropped_file" ] || continue
+    printf 'DROPPED: %s no longer records %s. Name each in your report as no longer true.\n' "$dropped_file" "$dropped_values"
+  done <"$state/dropped"
+  rm -f "$state/dropped"
+fi

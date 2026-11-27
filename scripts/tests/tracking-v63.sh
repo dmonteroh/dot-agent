@@ -35,8 +35,9 @@ checkpoint() {
 checkpoint || { cat "$scratch/err" >&2; fail 'ignored node write could not be logged'; }
 checkpoint || fail 'ignored-node retry failed'
 [ "$(grep -c '^- \[' "$root/.agent/session-log.md")" -eq 1 ] || fail 'ignored-node retry duplicated entry'
-bash "$root/.agent/scripts/memory.sh" supersede --slug timezone --fact 'The project uses Europe/Helsinki.' "$root" >/dev/null
+bash "$root/.agent/scripts/memory.sh" supersede --slug timezone --fact 'The project uses Europe/Helsinki.' --drop UTC "$root" >/dev/null
 checkpoint || fail 'second ignored-node write failed'
+grep -qxF 'DROPPED: memory/timezone.md no longer records UTC. Name each in your report as no longer true.' "$scratch/out" || fail 'checkpoint did not list the value a supersede dropped'
 [ "$(grep -c '^- \[' "$root/.agent/session-log.md")" -eq 2 ] || fail 'second ignored-node write was skipped'
 printf 'export const value = 2\n' >"$root/src/input.ts"
 if checkpoint; then fail 'node-only mode skipped product review'; fi

@@ -20,7 +20,8 @@ root defaults to . — scope defaults to project, type to fact. new writes
 supersede rewrites an existing fact file's body, restamps its date, and
 leaves the index line alone. It refuses to drop a path, URL, id, constant,
 date, flag, or code name that no other node file holds, unless --drop names
-it as no longer true. A dropped number is reported, not refused.
+it as no longer true. A dropped number is reported, not refused. The next
+checkpoint lists both for the report.
 EOF
 }
 
@@ -308,6 +309,7 @@ lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file list
         t = w[i]
         sub(/^[(\["'"'"'<]+/, "", t)
         sub(/[)\]"'"'"'>.,;:!?]+$/, "", t)
+        sub(/('"'"'|’)s$/, "", t)
         if (length(t) < 2) continue
         lt = tolower(t)
         if (t ~ /:\/\// || (t ~ /\// && (t ~ /\/$/ || t ~ /\.[A-Za-z0-9]+$/ || t ~ /^[.~]/))) add(t, "id")
@@ -321,6 +323,32 @@ lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file list
           if (nx != "") add(lt " " nx, "value")
         }
       }
+    }
+    # A number is held when it appears with the same unit, spaced or not,
+    # and with no digit on either side: 200ms is not held by HTTP 200.
+    function has_num(text, num, unit,   p, q, at, end, rest) {
+      p = 0
+      while ((q = index(substr(text, p + 1), num)) > 0) {
+        at = p + q
+        end = at + length(num)
+        p = at
+        if (at > 1 && substr(text, at - 1, 1) ~ /[0-9.]/) continue
+        if (substr(text, end, 1) ~ /[0-9]/) continue
+        if (unit == "") return 1
+        rest = substr(text, end)
+        sub(/^ /, "", rest)
+        if (index(rest, unit) == 1) return 1
+      }
+      return 0
+    }
+    function has_value(v,   num, unit) {
+      if (!match(v, /[0-9][0-9.,]*/)) return index(corpus, v) > 0
+      num = substr(v, RSTART, RLENGTH)
+      sub(/[.,]+$/, "", num)
+      unit = substr(v, RSTART + length(num))
+      sub(/^[ .,]+/, "", unit)
+      sub(/[^a-z%].*$/, "", unit)
+      return has_num(corpus, num, unit)
     }
     BEGIN {
       f = ENVIRON["MS_OLD"]; k = 0; fm = 0
@@ -339,9 +367,8 @@ lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file list
       df = ENVIRON["MS_DROP"]
       while ((getline line < df) > 0) if (line != "") drop[++nd] = tolower(line)
       for (i = 1; i <= n; i++) {
-        a = an[i]; la = tolower(a); key = la
-        if (ac[i] == "value" && match(a, /[0-9][0-9.,]*/)) { key = substr(a, RSTART, RLENGTH); sub(/[.,]+$/, "", key) }
-        if (index(corpus, key)) continue
+        a = an[i]; la = tolower(a)
+        if (ac[i] == "value" ? has_value(la) : index(corpus, la)) continue
         kept = 0
         for (j = 1; j <= nd; j++) if (index(drop[j], la) || index(la, drop[j])) kept = 1
         if (!kept) print ac[i] "\t" a
@@ -631,7 +658,7 @@ supersede)
   lost_ids=$(printf '%s\n' "$lost" | sed -n 's/^id	//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
   lost_values=$(printf '%s\n' "$lost" | sed -n 's/^value	//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
   if [ -n "$lost_ids" ]; then
-    refuse "superseding $slug would drop $lost_ids, which no other file in the node holds, so $factfile is unchanged" "Keep each one that still holds in the new text, or write it to the doc or fact that will hold it first. For one that is no longer true, pass --drop <value> and name it as false in your report. Then run this call again"
+    refuse "superseding $slug would drop $lost_ids, which no other file in the node holds, so $factfile is unchanged" "Keep each one that still holds in the new text, or first write it into the routed doc for this area (docs.sh new makes one), not into a new fact. For one that is no longer true, pass --drop <value>; checkpoint lists it for your report. Then run this call again"
   fi
 
   date_stamp=$(date +%Y-%m-%d)
@@ -664,6 +691,13 @@ EOF
   then
     echo "memory.sh: superseded $factfile and stamped $date_stamp"
     [ -z "$lost_values" ] || echo "memory.sh: no file in the node holds these values from the old text any more: $lost_values. Put back each one that still holds, and name each one that was false in your report."
+    # The next checkpoint lists what left the node, so the report names it.
+    gone=$(printf '%s' "$drops" | awk 'NF { printf "%s%s", (n++ ? ", " : ""), $0 }')
+    [ -z "$lost_values" ] || gone="${gone:+$gone, }$lost_values"
+    if [ -n "$gone" ]; then
+      printf 'memory/%s.md\t%s\n' "$slug" "$gone" >>"$(da_state_dir "$root")/dropped" \
+        || echo "memory.sh: could not record the dropped values for checkpoint; name them in your report: $gone"
+    fi
     echo "memory.sh: the index line in $memory is unchanged — edit its title or hook by hand if the fact's hook moved."
     echo "memory.sh: drop the fact once no work here changes on it. Full contract: memory.md's header."
     printf 'superseded\t%s\t%s\n' "$slug" "$(digest_file "$factfile")"

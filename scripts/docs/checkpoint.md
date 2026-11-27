@@ -31,13 +31,15 @@ Checkpoint validates receipts again before publishing the log. A source edit bet
 
 Review and status run before verification. A finding that blocks stops checkpoint before any check runs, so a fix costs one check run rather than two. A check that changes the inputs they read records an inconclusive result, and receipts are validated again before logging.
 
-For Git work, `review.sh` invokes the comment gate and reports catalog and coverage candidates. Its blocking or execution errors stop checkpoint. Advisory review candidates still need agent judgment.
+For Git work, `review.sh` invokes the comment gate and reports catalog and coverage candidates, and `DOC_ROUTE` for each routed doc that cites a changed path. Its blocking or execution errors stop checkpoint. Advisory review candidates still need agent judgment.
 
 `status.sh --format tsv` supplies stable finding codes. The default `POLICY=strict` in `checkpoint.conf` blocks every actionable finding. `--policy completion` defers advisory maintenance while structural defects remain blocking. Informational tool notes do not block either policy.
 
 A status block ends with a line that names the next step: do what each finding's line says, then run the call again. When only advisory findings blocked under the strict policy, the line says that they block too and that the session handles them now, without asking first. The node's contract already assigns that maintenance to the current session, so the line saves a question and keeps a session from relaxing the policy to get past the block.
 
 A failed status command, unexpected stderr, or malformed finding is an inspection failure. Checkpoint writes no entry in that case.
+
+After the entry is logged, a `DROPPED:` line names each value `memory.sh supersede` let leave the node since the last checkpoint, by `--drop` or as a number no node file holds any more, so the report names it as no longer true. The list is then cleared.
 
 Generated-index nodes refresh their cache before logging. A missing or failed indexer remains advisory because canonical rules and docs remain available.
 
