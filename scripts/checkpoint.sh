@@ -453,8 +453,8 @@ record_last "$identity"
 record_mark
 clear_pending
 printf 'checkpoint.sh: recorded verify=%s\n' "$verify"
-# What memory.sh supersede let leave the node since the last checkpoint: the
-# report names each, so whoever reads it knows what is no longer recorded.
+# Values memory.sh supersede let leave the node since the last checkpoint. The
+# report must name each, or its reader cannot tell the node forgot them.
 if [ -s "$state/dropped" ] && [ ! -L "$state/dropped" ]; then
   while IFS=$'\t' read -r dropped_file dropped_values; do
     [ -n "$dropped_file" ] || continue
