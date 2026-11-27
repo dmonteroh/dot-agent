@@ -230,7 +230,7 @@ remove_migration_target() {
 write_session_log_header() {
   cat >"$1" <<'EOF'
 # Session log
-<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git, and `log.sh --session <id>` stamps `session: <id>.` after it. -->
 EOF
 }
 
