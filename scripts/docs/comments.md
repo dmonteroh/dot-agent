@@ -86,7 +86,7 @@ The argument is a git base ref, not the `[root]` the reporting scripts take. Thi
 
 ## What it reads
 
-The diff is merge-base(base, `HEAD`) → **the working tree**, plus untracked source files scanned whole. The gate runs before a diff is handed back, and hand-back is normally an uncommitted state, so a committed-only diff would pass exactly the comments this exists to catch.
+The diff is merge-base(base, `HEAD`) → **the working tree**, plus untracked source files scanned whole. Git's empty tree, `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, has no merge base and is taken as it is, so the first commit of a repository can be read whole. The gate runs before a diff is handed back, and hand-back is normally an uncommitted state, so a committed-only diff would pass exactly the comments this exists to catch.
 
 That scope includes comments already sitting uncommitted in scanned files, whoever wrote them. They are part of the diff being handed back, and `REVIEW:`'s justify-or-delete decision absorbs them.
 

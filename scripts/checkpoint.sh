@@ -199,7 +199,15 @@ fi
 
 identity_base=""
 if [ "$is_git" -eq 1 ]; then
-  identity_base=$(git -C "$root" merge-base "${base:-HEAD}" HEAD 2>/dev/null) || refuse 'the base has no commit shared with HEAD' 'Pass the commit before your work with --base, or make a first commit'
+  # Git's empty tree is the base of a first commit, and no commit is.
+  empty_tree=$(git -C "$root" hash-object -t tree /dev/null) || refuse 'git could not name the empty tree' 'Run git status, fix what it reports, then run this call again'
+  if [ -n "$base" ] && git -C "$root" rev-parse --verify -q HEAD >/dev/null \
+    && [ "$(git -C "$root" rev-parse --verify -q "$base")" = "$empty_tree" ]; then
+    base=$empty_tree
+    identity_base=$empty_tree
+  else
+    identity_base=$(git -C "$root" merge-base "${base:-HEAD}" HEAD 2>/dev/null) || refuse 'the base has no commit shared with HEAD' 'Pass the commit before your work with --base, or make a first commit'
+  fi
 fi
 content_out=$(mktemp "${TMPDIR:-/tmp}/checkpoint-content.XXXXXX") || refuse 'could not prepare the checkpoint' 'Check that the disk and the temporary folder are writable, then run this call again'
 fingerprint=$(da_fingerprint "$root" "$content_out") || refuse 'could not fingerprint the current inputs' 'Fix what the lines above name, then run this call again'
@@ -243,7 +251,13 @@ if [ -z "$base" ] && [ "$is_git" -eq 1 ]; then
     if [ "$recorded" -eq 1 ]; then
       :
     elif [ -z "$mark_head" ] || ! git -C "$root" merge-base --is-ancestor "$mark_head" HEAD 2>/dev/null; then
-      [ -n "$changes" ] || refuse 'the tree is clean and no earlier checkpoint marks where this work began' 'Run this call again with --base <the commit before your work>, or with --node-only if only ignored node files changed'
+      # A first commit has no commit before it to name, so its base is the
+      # empty tree and the review reads the whole commit.
+      if [ -z "$changes" ]; then
+        ! git -C "$root" rev-parse --verify -q 'HEAD^' >/dev/null || refuse 'the tree is clean and no earlier checkpoint marks where this work began' 'Run this call again with --base <the commit before your work>, or with --node-only if only ignored node files changed'
+        base=$empty_tree
+        echo "checkpoint.sh: using --base $empty_tree, Git's empty tree: HEAD is the first commit"
+      fi
     elif [ "$mark_head" = "$start_head" ]; then
       [ -n "$changes" ] || recorded=1
     else

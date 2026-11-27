@@ -106,10 +106,16 @@ case "$comments_rc" in
 *) exit 2 ;;
 esac
 
-merge_base=$(git -C "$root" merge-base "$base" HEAD 2>/dev/null) || {
-  echo "review.sh: no merge base between '$base' and HEAD" >&2
-  exit 2
-}
+# Git's empty tree is the base of a first commit, and no commit is.
+empty_tree=$(git -C "$root" hash-object -t tree /dev/null) || exit 2
+if [ "$(git -C "$root" rev-parse --verify -q "$base")" = "$empty_tree" ]; then
+  merge_base=$empty_tree
+else
+  merge_base=$(git -C "$root" merge-base "$base" HEAD 2>/dev/null) || {
+    echo "review.sh: no merge base between '$base' and HEAD" >&2
+    exit 2
+  }
+fi
 
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/review-v63.XXXXXX") || {
   echo "review.sh: could not create temporary workspace" >&2

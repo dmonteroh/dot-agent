@@ -11,7 +11,7 @@ It exits 0 when inspection completes, even with advisory `REVIEW:` lines. Exit 1
 
 ## Change scope
 
-The inspected set is merge-base(base, `HEAD`) through the current working tree, plus untracked files. It therefore includes committed, staged, unstaged, and untracked work, including additions inside existing files. It does not run `git add` or otherwise modify the index or working files.
+The inspected set is merge-base(base, `HEAD`) through the current working tree, plus untracked files. Git's empty tree, `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, is taken as its own base, so a first commit can be reviewed whole. It therefore includes committed, staged, unstaged, and untracked work, including additions inside existing files. It does not run `git add` or otherwise modify the index or working files.
 
 Paths are passed to Git as separate quoted arguments, so spaces are supported. The shipped lexical detectors support JavaScript/TypeScript, Python, Ruby, Go, and shell source files under configured source roots. JavaScript and TypeScript catalog candidates are limited to explicit `export` declarations. The scan does not inspect or prohibit imports, including extensionless ones. Python considers top-level public functions, Go exported functions or methods, Ruby methods, and shell function declarations. Other languages remain outside this advisory detector rather than being guessed at.
 

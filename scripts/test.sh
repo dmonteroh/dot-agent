@@ -3841,7 +3841,9 @@ mkdir -p "$finroot/src"
 "$NODE" init --preset software-development --mode track-all "$finroot" >/dev/null 2>&1
 finish_bootstrap "$finroot"
 printf 'export const a = 1\n' >"$finroot/src/a.ts"
-git -C "$finroot" init -q && git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+# A parent commit: a first commit with a clean tree is reviewed whole.
+git -C "$finroot" init -q && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m init
+git -C "$finroot" add -A && git -C "$finroot" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 out8e=$("$finroot/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered a question, no change" "$finroot" 2>&1)
 rc=$?
 n8f=$(grep -c '^- \[' "$finroot/.agent/session-log.md")
@@ -3944,7 +3946,8 @@ mkdir -p "$seqB/src"
 "$NODE" init --preset software-development --mode track-all "$seqB" >/dev/null 2>&1
 finish_bootstrap "$seqB"
 printf 'export const a = 1\n' >"$seqB/src/a.ts"
-git -C "$seqB" init -q && git -C "$seqB" add -A && git -C "$seqB" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+git -C "$seqB" init -q && git -C "$seqB" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m init
+git -C "$seqB" add -A && git -C "$seqB" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 
 out_b1=$("$seqB/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "answered only, no edits" "$seqB" 2>&1)
 rc_b1=$?
@@ -3966,7 +3969,8 @@ mkdir -p "$seqC/src"
 "$NODE" init --preset software-development --mode track-all "$seqC" >/dev/null 2>&1
 finish_bootstrap "$seqC"
 printf 'export const a = 1\n' >"$seqC/src/a.ts"
-git -C "$seqC" init -q && git -C "$seqC" add -A && git -C "$seqC" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+git -C "$seqC" init -q && git -C "$seqC" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m init
+git -C "$seqC" add -A && git -C "$seqC" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
 "$seqC/.agent/scripts/checkpoint.sh" --tool claude --area testing --verify n/a --summary "only answered, nothing to record" "$seqC" >/dev/null 2>&1
 rc_c1=$?
 n_c1=$(grep -c '^- \[' "$seqC/.agent/session-log.md")

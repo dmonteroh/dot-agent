@@ -46,7 +46,7 @@ Each recorded entry also records the worktree's commit, and a digest of its cont
 | Check | Meaning | Result |
 | --- | --- | --- |
 | The content digest is the marked one, or `HEAD` is the marked commit and nothing is uncommitted | The last checkpoint covers this tree | Prints `nothing to record since the last checkpoint` and exits 0, unless ignored node files changed. That is refused, and the message names `--node-only` |
-| No mark, or the marked commit is not an ancestor of `HEAD` | A first checkpoint, a rewritten history, or another branch | Uncommitted work is compared with `HEAD`. A clean tree is refused, and the message names `--base <the commit before your work>` |
+| No mark, or the marked commit is not an ancestor of `HEAD` | A first checkpoint, a rewritten history, or another branch | Uncommitted work is compared with `HEAD`. A clean tree is refused, and the message names `--base <the commit before your work>`. When `HEAD` is the first commit, nothing comes before it, so the base is Git's empty tree, the review reads the whole commit, and the output prints `using --base` with the empty tree's id |
 | `HEAD` is the marked commit | Only uncommitted work is new | Compares with `HEAD` |
 | `HEAD` moved | Commits landed since the last checkpoint | Uses the marked commit as the base, uncommitted work included, and prints `using --base <sha>` with the number of commits |
 
@@ -54,13 +54,13 @@ Work recorded before its commit counts as recorded afterwards, because its conte
 
 Five limits follow from this:
 
-- A checkpoint over uncommitted work with no usable mark starts the mark at `HEAD`, so earlier commits count as recorded. Pass `--base` when they are part of the work.
+- A checkpoint over uncommitted work with no usable mark starts the mark at `HEAD`, so earlier commits count as recorded, a first commit included. Pass `--base` when they are part of the work.
 - A base inferred after a pull covers the pulled commits. When the review blocks on them, pass the commit before your own work with `--base`. The mark then moves to `HEAD`.
 - Work recorded and then committed is reviewed again with the next change, because the base is the marked commit. It is logged once. Deleting a leftover file that was recorded with it counts as a change.
 - A worktree holds one mark, so after a switch to another branch and a checkpoint there, a call back on the first branch can review and log its recorded work again.
 - A file Git is told not to compare, with `assume-unchanged` or `skip-worktree`, cannot be reviewed, so a change to it alone records nothing.
 
-`--base <ref>` overrides the inference. `--node-only` refuses product changes the last checkpoint did not record. Non-Git and node-only work report that no product diff was inspected.
+`--base <ref>` overrides the inference. `--base 4b825dc642cb6eb9a060e54bf8d69288fbee4904`, Git's empty tree, reviews every file from nothing. A repository with no commit is refused with any base and told to make a first commit. `--node-only` refuses product changes the last checkpoint did not record. Non-Git and node-only work report that no product diff was inspected.
 
 An inherited dirty tree does not establish that the current turn changed anything. Call checkpoint only after changed work. Exact per-turn attribution still requires a runtime turn identifier or an explicit start snapshot.
 

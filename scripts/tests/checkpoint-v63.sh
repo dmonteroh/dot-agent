@@ -233,6 +233,23 @@ checkpoint_later() {
   bash "$later/.agent/scripts/checkpoint.sh" --tool test --area fixture --summary 'Changed fixture behavior' "$@" "$later" >"$scratch/out" 2>"$scratch/err"
 }
 expect_entries() { [ "$(later_entries)" -eq "$1" ] || { cat "$scratch/out" "$scratch/err" >&2; fail "$2"; }; }
+# A first commit has no commit before it, so its base is Git's empty tree.
+first="$scratch/first"
+cp -R "$later" "$first"
+empty_tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+checkpoint_first() {
+  bash "$first/.agent/scripts/checkpoint.sh" --tool test --area fixture --summary 'First commit' --verify n/a "$@" "$first" >"$scratch/out" 2>"$scratch/err"
+}
+git -C "$first" init -q
+if checkpoint_first --base "$empty_tree"; then fail 'a repository with no commit was accepted'; fi
+tail -1 "$scratch/err" | grep -q 'make a first commit$' || fail 'a repository with no commit was not told to make one'
+printf 'const first = 1\n' >"$first/src/first.ts"
+git -C "$first" add -A
+git -C "$first" -c user.name=fixture -c user.email=fixture@local -c commit.gpgsign=false commit -qm first
+checkpoint_first || { cat "$scratch/err" >&2; fail 'a clean first commit was refused'; }
+grep -q "using --base $empty_tree" "$scratch/out" || fail 'a first commit was not reviewed from the empty tree'
+[ "$(awk '/^- \[/{n++} END{print n+0}' "$first/.agent/session-log.md")" -eq 1 ] || fail 'a first commit was not recorded once'
+checkpoint_first --base "$empty_tree" || { cat "$scratch/err" >&2; fail 'an explicit empty-tree base was refused'; }
 git_later init -q
 git_later add -A
 git_later commit -q --allow-empty -m fixture
