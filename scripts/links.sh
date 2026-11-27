@@ -123,72 +123,151 @@ fi
 
 findings=0
 audited=0
-
+audit=()
 for f in "${nodefiles[@]}"; do
   rel=${f#"$agent"/}
   is_exempt "$rel" && continue
   audited=$((audited + 1))
-  base=${rel##*/}
-  cited=0
-  while IFS= read -r hit; do
-    [ -n "$hit" ] || continue
-    if [ "$hit" != "$f" ]; then
-      cited=1
-      break
-    fi
-  done < <(grep -lF -e "$rel" -e "$base" -- "${corpus[@]}" 2>/dev/null)
-  if [ "$cited" -eq 0 ]; then
-    case "$rel" in
-    */references/* | references/*)
-      echo "ORPHAN: $rel — nothing cites it; a reference carries no routing entry, so an uncited one is unreachable: cite it from its area doc, or retire it to archive/" ;;
-    *)
-      echo "ORPHAN: $rel — nothing in the node cites it" ;;
-    esac
-    findings=$((findings + 1))
-  fi
+  audit+=("$rel")
 done
 
+# One awk pass over the corpus answers every audited file. A line citing a
+# file's path also holds its basename, so the basename alone decides. Every
+# basename ends in .md, so each ".md" in a line is looked up at the lengths
+# the basenames take.
+uncited=$'\n'
+if [ "$audited" -gt 0 ]; then
+  uncited=$'\n'$(
+    LINKS_AGENT=$agent LINKS_AUDIT=$(printf '%s\n' "${audit[@]}") awk '
+      BEGIN {
+        n = split(ENVIRON["LINKS_AUDIT"], rel, "\n")
+        for (i = 1; i <= n; i++) {
+          path[i] = ENVIRON["LINKS_AGENT"] "/" rel[i]
+          base = rel[i]
+          sub(/.*\//, "", base)
+          want[base] = want[base] " " i
+          size[length(base)] = 1
+        }
+        left = n
+        for (a = 1; a < ARGC && left > 0; a++) {
+          c = ARGV[a]
+          while (left > 0 && (getline line < c) > 0) {
+            p = 0
+            while ((k = index(substr(line, p + 1), ".md")) > 0) {
+              p += k
+              for (l in size) {
+                if (l + 0 > p + 2) continue
+                s = substr(line, p + 3 - l, l + 0)
+                if (!(s in want)) continue
+                m = split(want[s], ids, " ")
+                for (j = 1; j <= m; j++)
+                  if (!cited[ids[j]] && path[ids[j]] != c) { cited[ids[j]] = 1; left-- }
+              }
+            }
+          }
+          close(c)
+        }
+        for (i = 1; i <= n; i++) if (!cited[i]) print rel[i]
+        exit
+      }
+    ' "${corpus[@]}"
+  )$'\n'
+fi
+for rel in ${audit[@]+"${audit[@]}"}; do
+  case "$uncited" in *$'\n'"$rel"$'\n'*) ;; *) continue ;; esac
+  case "$rel" in
+  */references/* | references/*)
+    echo "ORPHAN: $rel — nothing cites it; a reference carries no routing entry, so an uncited one is unreachable: cite it from its area doc, or retire it to archive/" ;;
+  *)
+    echo "ORPHAN: $rel — nothing in the node cites it" ;;
+  esac
+  findings=$((findings + 1))
+done
+
+nodebases=$'\n'
+for nf in "${nodefiles[@]}"; do nodebases="$nodebases${nf##*/}"$'\n'; done
+sources=()
 for c in "${corpus[@]}"; do
   case "${c#"$agent"/}" in
   session-log.md | archive/* | rules/*) continue ;;
   esac
-  dir=$(dirname "$c")
-  reported=""
-  while IFS= read -r target; do
-    [ -n "$target" ] || continue
-    case "$target" in
-    http* | \#* | mailto:*) continue ;;
-    *'<'* | *'>'* | *'…'* | *'*'*) continue ;;   # template placeholders
-    esac
-    case "$target" in *.md) ;; *) continue ;; esac
-
-    stripped=${target#./}
-    inagent=${stripped#.agent/}
-    case "$inagent" in
-    docs/* | memory/* | rules/* | archive/* | scripts/*) ;;
-    */*) continue ;;
-    *) ;;
-    esac
-
-    tbase=${inagent##*/}
-    if [ -e "$dir/$stripped" ] || [ -e "$agent/$inagent" ] || [ -e "$root/$stripped" ]; then
-      continue
-    fi
-    resolved=0
-    for nf in "${nodefiles[@]}"; do
-      case "$nf" in */"$tbase") resolved=1; break ;; esac
-    done
-    [ "$resolved" -eq 1 ] && continue
-    case "$projbasenames" in *$'\n'"$tbase"$'\n'*) continue ;; esac
-    case " $reported " in *" $target "*) continue ;; esac
-    reported="$reported $target"
-    echo "BROKEN: ${c#"$root"/} cites $target — no such file in the node"
-    findings=$((findings + 1))
-  done <<EOF
-$(strip_comments "$c" | grep -oE '\]\([^)]+\)' 2>/dev/null | sed 's/^](//; s/)$//'
-  strip_comments "$c" | grep -oE '`[^`]+\.md`' 2>/dev/null | tr -d '`')
-EOF
+  sources+=("$c")
 done
+# One awk pass reads every source. Per file it prints the name, then the link
+# targets and backticked .md spans outside comments. An unreadable file comes
+# back marked, and strip_comments reports it on stderr as before.
+while IFS= read -r rec; do
+  case "$rec" in
+  U*)
+    strip_comments "${rec#U}" >/dev/null
+    strip_comments "${rec#U}" >/dev/null
+    continue ;;
+  F*)
+    c=${rec#F}
+    dir=${c%/*}
+    reported=""
+    continue ;;
+  esac
+  target=${rec#T}
+  [ -n "$target" ] || continue
+  case "$target" in
+  http* | \#* | mailto:*) continue ;;
+  *'<'* | *'>'* | *'…'* | *'*'*) continue ;;   # template placeholders
+  esac
+  case "$target" in *.md) ;; *) continue ;; esac
+
+  stripped=${target#./}
+  inagent=${stripped#.agent/}
+  case "$inagent" in
+  docs/* | memory/* | rules/* | archive/* | scripts/*) ;;
+  */*) continue ;;
+  *) ;;
+  esac
+
+  tbase=${inagent##*/}
+  if [ -e "$dir/$stripped" ] || [ -e "$agent/$inagent" ] || [ -e "$root/$stripped" ]; then
+    continue
+  fi
+  case "$nodebases" in *$'\n'"$tbase"$'\n'*) continue ;; esac
+  case "$projbasenames" in *$'\n'"$tbase"$'\n'*) continue ;; esac
+  case " $reported " in *" $target "*) continue ;; esac
+  reported="$reported $target"
+  echo "BROKEN: ${c#"$root"/} cites $target — no such file in the node"
+  findings=$((findings + 1))
+done < <(
+  [ "${#sources[@]}" -eq 0 ] || awk '
+    BEGIN {
+      for (a = 1; a < ARGC; a++) {
+        c = ARGV[a]
+        incm = 0
+        links = 0
+        spans = 0
+        r = (getline < c)
+        if (r < 0) { print "U" c; continue }
+        print "F" c
+        for (; r > 0; r = (getline < c)) {
+          if (incm) { if (/-->/) { incm = 0; sub(/.*-->/, "") } else continue }
+          gsub(/<!--.*-->/, "")
+          if (/<!--/) { incm = 1; sub(/<!--.*/, "") }
+          s = $0
+          while (match(s, /[]][(][^)]+[)]/)) {
+            link[++links] = substr(s, RSTART + 2, RLENGTH - 3)
+            s = substr(s, RSTART + RLENGTH)
+          }
+          s = $0
+          while (match(s, /`[^`]+\.md`/)) {
+            span[++spans] = substr(s, RSTART + 1, RLENGTH - 2)
+            s = substr(s, RSTART + RLENGTH)
+          }
+        }
+        close(c)
+        for (i = 1; i <= links; i++) print "T" link[i]
+        for (i = 1; i <= spans; i++) print "T" span[i]
+      }
+      exit
+    }
+  ' "${sources[@]}"
+)
 
 if [ "$findings" -eq 0 ]; then
   echo "links.sh: $audited files audited, no orphans or broken links"
@@ -249,16 +328,47 @@ gone_path() { # $1 a cited path, $2 the citing doc's directory, $3 the stamp: th
   done
 }
 
-stamped=()
-unstamped=0
+docfiles=()
 for f in "${nodefiles[@]}"; do
   case "${f#"$agent"/}" in
   docs/architecture.md) continue ;;
-  docs/*) ;;
-  *) continue ;;
+  docs/*) docfiles+=("$f") ;;
   esac
-  if [ -n "$(stamp_of "$f")" ]; then stamped+=("$f"); else unstamped=$((unstamped + 1)); fi
 done
+# One awk pass reads every doc's stamp the way stamp_of does. An unreadable
+# doc comes back marked, and stamp_of reports it on stderr as before.
+stamped=()
+stamps=()
+unstamped=0
+i=0
+while IFS= read -r rec; do
+  f=${docfiles[$i]}
+  i=$((i + 1))
+  case "$rec" in
+  U) stamp_of "$f" >/dev/null; unstamped=$((unstamped + 1)) ;;
+  S) unstamped=$((unstamped + 1)) ;;
+  *) stamped+=("$f"); stamps+=("${rec#S}") ;;
+  esac
+done < <(
+  [ "${#docfiles[@]}" -eq 0 ] || awk '
+    BEGIN {
+      for (a = 1; a < ARGC; a++) {
+        c = ARGV[a]
+        r = (getline < c)
+        if (r < 0) { print "U"; continue }
+        found = 0
+        stamp = ""
+        for (k = 1; r > 0 && k <= 5; k++) {
+          if (!found && /^<!-- Checked: .* -->$/) { found = 1; stamp = substr($0, 15, length($0) - 18) }
+          r = (getline < c)
+        }
+        close(c)
+        print "S" stamp
+      }
+      exit
+    }
+  ' "${docfiles[@]}"
+)
 
 if [ "${#stamped[@]}" -gt 0 ]; then
   root_phys=$(cd "$root" && pwd -P)
@@ -268,9 +378,10 @@ if [ "${#stamped[@]}" -gt 0 ]; then
     exit 0
   fi
   stale=0
-  for d in "${stamped[@]}"; do
+  for i in "${!stamped[@]}"; do
+    d=${stamped[$i]}
     rel=${d#"$agent"/}
-    stamp=$(stamp_of "$d")
+    stamp=${stamps[$i]}
     known=1
     case "$stamp" in *[!0123456789abcdef]*) known=0 ;; esac
     if [ "$known" -eq 1 ]; then
@@ -283,7 +394,7 @@ if [ "${#stamped[@]}" -gt 0 ]; then
     # A commit that also changed the doc is not counted: the doc moved with
     # the code, which is what restamping in the same change records.
     doc_commits=$(git -C "$root" --literal-pathspecs log --format=%H "$stamp..HEAD" -- ".agent/$rel" 2>/dev/null | tr '\n' ' ')
-    dir=$(dirname "$d")
+    dir=${d%/*}
     seen=$'\n'
     while IFS= read -r cand; do
       [ -n "$cand" ] || continue
