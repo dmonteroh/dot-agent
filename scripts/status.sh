@@ -759,7 +759,10 @@ settle() {
 
 hook_header_bytes() { # $1: full | tail0
   local h
-  h=$(bash "$agent/scripts/session-start.sh" --header "$1" 2>/dev/null) || h=""
+  # Run from a linked worktree that holds no node, the hook loads this node
+  # under a longer header naming it; any other folder gets the plain one.
+  h=$(bash "$agent/scripts/session-start.sh" --header "$1" --project "$PWD" 2>/dev/null) || h=""
+  [[ -n "$h" ]] || h=$(bash "$agent/scripts/session-start.sh" --header "$1" 2>/dev/null) || h=""
   [[ -n "$h" ]] || { echo 0; return; }
   bytes_of "$h"
   echo $((nbytes + 1))

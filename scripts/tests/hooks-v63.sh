@@ -134,6 +134,12 @@ for run in claude codex; do
   printf '%s' "$first" | grep -qF "for the node at $i_node/ " || fail "$run hook in a worktree with no node did not load the main node: $first"
   printf '%s' "$first" | grep -qF 'This worktree holds no .agent/ and no entry point' || fail "$run hook in a worktree with no node did not say so: $first"
 done
+# Run from there, status.sh sizes its HOOK: line with the longer header the
+# hook prints there, not the main checkout's.
+printf 'HOOK_MAX_BYTES=500\n' >>"$i/.agent/scripts/status.conf"
+wt_header=$(bash "$i/.agent/scripts/session-start.sh" --header full --project "$scratch/ignore-wt" | wc -c | tr -d ' ')
+(cd "$scratch/ignore-wt" && bash "$i/.agent/scripts/status.sh" --load "$i") | grep -qF "adds a $wt_header-byte header" \
+  || fail "status.sh run from a worktree with no node did not count the $wt_header-byte header the hook prints there"
 
 k="$scratch/ignore-tracked"
 mkdir -p "$k/.codex"
