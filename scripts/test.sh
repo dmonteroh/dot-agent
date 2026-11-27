@@ -8249,9 +8249,10 @@ printf '%s\n' "$lrn73_dup_out" | grep -qF "duplicate	$lrn73_pick	" \
 
 printf -- '- [2026-01-09] First rule, flat, reworded slightly. Trigger: something.\n' >"$WORK/lrn73-overlap-cand.md"
 lrn73_ov_out=$("$LRN" lookup --file "$WORK/lrn73-overlap-cand.md" "$lrn73" 2>/dev/null)
-printf '%s\n' "$lrn73_ov_out" | grep -qF "overlap	$lrn73_pick	" \
-  && pass "learn.sh: lookup reports a shared-term record as overlap" \
-  || fail "learn.sh: lookup reports a shared-term record as overlap ($lrn73_ov_out)"
+lrn73_first=$(grep -l 'First rule, flat' "$lrn73"/.agent/rules/learned/*.md)
+printf '%s\n' "$lrn73_ov_out" | grep -qF "overlap	$lrn73_first	" \
+  && pass "learn.sh: lookup reports a near record as overlap" \
+  || fail "learn.sh: lookup reports a near record as overlap ($lrn73_ov_out)"
 
 printf -- '- [2026-01-10] Cache the compiled template before every render. Trigger: repeated recompilation.\n' >"$WORK/lrn73-new-cand.md"
 lrn73_new_out=$("$LRN" new --file "$WORK/lrn73-new-cand.md" "$lrn73" 2>"$WORK/lrn73-new.err")

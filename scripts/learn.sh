@@ -99,20 +99,24 @@ lrn_scan_records() {
       s=tolower(s); gsub(/[^abcdefghijklmnopqrstuvwxyz0123456789]+/," ",s)
       n=split(s,t," "); for(i=1;i<=n;i++) if(length(t[i])>2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/) a[t[i]]=1
     }
-    function finish( k,hit) {
+    function finish( k,n,shared,small) {
       if(name=="") return
-      if(name==candidate) { cand=body; for(k in curterms) cterms[k]=1 }
+      if(name==candidate) { cand=body; for(k in curterms) { cterms[k]=1; nc++ } }
       else {
-        hit=0; for(k in curterms) if(k in cterms) hit=1
+        n=shared=0; for(k in curterms) { n++; if(k in cterms) shared++ }
+        small=(n<nc ? n : nc)
         if(body==cand) print "duplicate\t" name
-        else if(hit) print "overlap\t" name
+        else if(shared>=2 && 4*shared>=small) print "overlap\t" name
       }
     }
-    FNR==1 { finish(); name=FILENAME; body=""; first=1; delete curterms }
+    FNR==1 { finish(); name=FILENAME; body=""; first=1; cause=0; delete curterms }
     {
       line=$0
       if(first) { sub(/^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] /,"",line); first=0 }
-      body=body (body=="" ? "" : "\n") line; words(line,curterms)
+      body=body (body=="" ? "" : "\n") line
+      if(cause) next
+      if(at=index(line,"Trigger:")) { line=substr(line,1,at-1); cause=1 }
+      words(line,curterms)
     }
     END { finish() }
   ' "$@" || return 2
@@ -130,7 +134,8 @@ lrn_find_duplicate() {
 # counts, not its Trigger clause. A record is listed when the two rules share a
 # quarter of the shorter one's terms and at least two, and a section when it
 # holds half of the candidate's and at least five (chosen defaults). One shared
-# term would list nearly every record and section.
+# term would list nearly every record and section. lookup lists records by the
+# same record test.
 lrn_gate() {
   ga_candidate="$1"
   ga_contract="$3/contract.md"
@@ -180,16 +185,27 @@ lrn_manual_lookup() {
   awk -v path="$ml_rel" -v version="$ml_version" '
     function words(s,a, n,i,t) { s=tolower(s); gsub(/[^abcdefghijklmnopqrstuvwxyz0123456789]+/," ",s); n=split(s,t," "); for(i=1;i<=n;i++) if(length(t[i])>2 && t[i] !~ /^(the|and|for|with|from|this|that|must|should|trigger)$/) a[t[i]]=1 }
     function normfirst(s) { sub(/^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] /,"",s); return s }
-    function emit( k,hit,kind) {
-      if(rec=="") return
-      hit=0; for(k in rt) if(k in ct) hit=1
-      kind=(rec==cand ? "duplicate" : (hit ? "overlap" : ""))
-      if(kind!="") print kind "\t" path "\t" version
+    function rule(s,a) {
+      if(cause) return
+      if(at=index(s,"Trigger:")) { s=substr(s,1,at-1); cause=1 }
+      words(s,a)
     }
-    NR==FNR { line=$0; if(FNR==1) line=normfirst(line); cand=cand (cand==""?"":"\n") line; words(line,ct); next }
-    /^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] / { emit(); delete rt; rec=normfirst($0); firstline=$0; words(rec,rt); next }
-    rec!="" { rec=rec "\n" $0; words($0,rt) }
-    END { emit() }
+    function judge( k,n,shared,small) {
+      if(rec=="") return
+      if(nc=="") { nc=0; for(k in ct) nc++ }
+      n=shared=0; for(k in rt) { n++; if(k in ct) shared++ }
+      small=(n<nc ? n : nc)
+      if(rec==cand) dup=1
+      else if(shared>=2 && 4*shared>=small) near=1
+    }
+    NR==FNR { line=$0; if(FNR==1) line=normfirst(line); cand=cand (cand==""?"":"\n") line; rule(line,ct); next }
+    /^- \[[0123456789][0123456789][0123456789][0123456789]-[0123456789][0123456789]-[0123456789][0123456789]\] / { judge(); delete rt; cause=0; rec=normfirst($0); rule(rec,rt); next }
+    rec!="" { rec=rec "\n" $0; rule($0,rt) }
+    END {
+      judge()
+      if(dup) print "duplicate\t" path "\t" version
+      if(near) print "overlap\t" path "\t" version
+    }
   ' "$ml_candidate" "$ml_file"
 }
 

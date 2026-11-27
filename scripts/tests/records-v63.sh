@@ -22,6 +22,8 @@ printf '%s\n' '- [2026-01-01] Keep refund retry bounded. Trigger: refund work.' 
 
 generated=$(printf '%s\n' '- [2026-09-27] Keep refund retry bounded. Trigger: refund work.' | "$here/scripts/learn.sh" lookup --file - "$node")
 printf '%s\n' "$generated" | grep -qF "duplicate	$node/.agent/rules/learned/aaaaaaaaaaaa.md" && ok 'generated lookup ignores leading dates for duplicate bodies' || bad 'generated lookup ignores leading dates for duplicate bodies'
+one_term=$(printf '%s\n' '- [2026-09-27] Refund receipts expire nightly.' | "$here/scripts/learn.sh" lookup --file - "$node")
+[ -z "$one_term" ] && ok 'generated lookup omits a record that shares one term' || bad "generated lookup omits a record that shares one term: $one_term"
 
 printf '%s\n' '- [2026-01-01] Boundary text follows.' >"$node/.agent/rules/learned/bbbbbbbbbbbb.md"
 printf '\034fabricated-record\n' >>"$node/.agent/rules/learned/bbbbbbbbbbbb.md"
@@ -150,6 +152,9 @@ printf '%s\n' '# Learned' '- [2026-02-02] Keep refund retry bounded. Trigger: re
 manual_result=$(printf '%s\n' '- [2026-09-27] Keep refund retry bounded. Trigger: refund work.' | "$here/scripts/learn.sh" lookup --file - "$manual")
 printf '%s\n' "$manual_result" | grep -qF "duplicate	$manual/.agent/rules/learned.md" && ok 'manual learned lookup reads without migrating storage' || bad 'manual learned lookup reads without migrating storage'
 [ ! -d "$manual/.agent/rules/learned" ] && ok 'manual lookup creates no generated record directory' || bad 'manual lookup creates no generated record directory'
+printf '%s\n' '- [2026-02-03] Keep refund retry bounded per provider.' >>"$manual/.agent/rules/learned.md"
+manual_near=$(printf '%s\n' '- [2026-09-27] Keep refund retry bounded for card payments.' | "$here/scripts/learn.sh" lookup --file - "$manual")
+[ "$(printf '%s\n' "$manual_near" | cut -f1,2)" = "overlap	$manual/.agent/rules/learned.md" ] && ok 'manual lookup prints one line for several near rules' || bad "manual lookup prints one line for several near rules: $manual_near"
 
 "$here/scripts/docs.sh" new --name service-catalog --read-when 'ANY service work' "$node" >/dev/null
 printf '%s\n' '' '## Building blocks' 'refundPayment lives here.' >>"$node/.agent/docs/service-catalog.md"
