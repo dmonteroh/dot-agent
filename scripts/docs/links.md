@@ -63,7 +63,7 @@ A cited path that no longer exists is checked against the tree at the stamp. If 
 STALE: docs/payments.md cites src/retry.ts, removed or renamed in 1 commit since checked at abc1234
 ```
 
-A backticked word that git never held at the stamp is not a path, so it is never reported.
+A backticked word that git never held at the stamp is not a path, so it is never reported. A directory counts only when the citation holds a slash, as in `src/billing` or `src/`: a bare word such as `src` is prose, even where a directory of that name exists.
 
 A commit that also changed the doc is not counted. The doc moved with the code, which is what restamping in the same change records. One summary line follows: how many docs are stamped, how many are not, and how many citations are stale.
 

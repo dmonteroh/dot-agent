@@ -28,7 +28,7 @@ check records HEAD in the doc's "Checked:" stamp, after you have re-read the
 code the doc cites; links.sh reports cited paths changed since that commit.
 route prints one line per routed doc that cites a given path, stamped or not:
   ROUTE: <doc path> | <Read when: hook> | <cited path>
-A cited directory matches every path under it. --paths takes the arguments up
+A cited directory written with a slash matches every path under it. --paths takes the arguments up
 to the next flag, so give root first. --base adds the paths changed since the
 merge base of <ref> and HEAD, plus untracked files. route writes nothing and
 exits 0 whatever it finds.
@@ -602,8 +602,8 @@ EOF
 
   # Routed docs are the ones status.sh routes: docs/*.md and docs/*/*.md, but
   # not architecture.md or references/. A citation names a path as written
-  # from the project root or from the doc's folder, and a cited directory
-  # takes every path under it.
+  # from the project root or from the doc's folder, and a cited directory,
+  # written with a slash, takes every path under it.
   # The paths go through a file: an environment string has a size limit,
   # and past it awk would not start.
   wanted=$(mktemp "${TMPDIR:-/tmp}/docs-route.XXXXXX") \
@@ -649,7 +649,8 @@ EOF
         for (b = 0; b < 2; b++) {
           n = norm(b ? ENVIRON["ROUTE_DIR"] "/" $0 : $0)
           if (n == "" || n == ".agent" || n == ".git" || index(n, ".agent/") == 1 || index(n, ".git/") == 1) continue
-          if (n in under) hit = n "/"
+          # A bare word such as `src` is prose, not a cited directory.
+          if ((n in under) && index($0, "/")) hit = n "/"
           else if (n in want) hit = n (/\/$/ ? "/" : "")
           else continue
           if (!(hit in shown)) print "ROUTE: " ENVIRON["ROUTE_DOC"] " | " hook " | " hit

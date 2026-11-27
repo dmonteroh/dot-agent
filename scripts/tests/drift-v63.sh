@@ -47,9 +47,9 @@ cat >>"$pay" <<'EOF'
 
 ## Flow
 The client lives in `src/client.ts:12`, helpers under [util](../../src/util/).
-`src/other.ts` holds the rest. Routing: `docs/architecture.md`.
+`src/other.ts` holds the rest. Routing: `docs/architecture.md`. All of it is in `src`.
 EOF
-printf '%s\n' '<!-- Read when: legacy billing -->' '# Legacy' '' '```' 'Calls `src/client.ts` directly.' '```' >"$proj/.agent/docs/legacy.md"
+printf '%s\n' '<!-- Read when: legacy billing -->' '# Legacy' '' '```' 'Calls `src/client.ts` directly.' '```' 'Lives in `src`.' >"$proj/.agent/docs/legacy.md"
 "$DOCS" sync --name payments "$proj" >/dev/null 2>&1
 "$DOCS" sync --name legacy "$proj" >/dev/null 2>&1
 check "docs.sh sync keeps the stamp and the hook" \
@@ -80,6 +80,8 @@ out=$("$LINKS" "$proj" 2>&1)
 rc=$?
 check "a commit touching a cited file after the stamp is a STALE line" \
   '[ "$rc" -eq 0 ] && printf "%s\n" "$out" | grep -qxF "STALE: docs/payments.md cites src/client.ts, changed in 1 commit since checked at $base"'
+check "a bare word naming a directory is not a cited directory" \
+  '! printf "%s\n" "$out" | grep -qF "cites src/,"'
 check "an unstamped doc citing the same file has no finding" \
   '! printf "%s\n" "$out" | grep -qF "docs/legacy.md"'
 check "a cited file no commit touched stays quiet" \
@@ -91,7 +93,7 @@ client_routes='ROUTE: docs/legacy.md | legacy billing | src/client.ts
 ROUTE: docs/payments.md | touching payments or refunds | src/client.ts'
 check "docs.sh route lists every routed doc citing a path, and none for an uncited one" \
   '[ "$("$DOCS" route "$proj" --paths src/client.ts 2>&1)" = "$client_routes" ] && [ -z "$("$DOCS" route "$proj" --paths src/nowhere.ts 2>&1)" ]'
-check "docs.sh route matches a path under a cited directory" \
+check "docs.sh route matches a path under a cited directory, not under a bare word" \
   '[ "$("$DOCS" route "$proj" --paths src/util/helper.ts 2>&1)" = "ROUTE: docs/payments.md | touching payments or refunds | src/util/" ]'
 check "docs.sh route --base looks up the paths changed since the ref" \
   '[ "$("$DOCS" route "$proj" --base HEAD~1 2>&1)" = "$client_routes" ]'

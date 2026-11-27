@@ -299,6 +299,8 @@ project_path() { # $1 a cited path, $2 the citing doc's directory: the project-r
     pp_t="$pp_base/$pp_c"
     [ -e "$pp_t" ] || continue
     if [ -d "$pp_t" ]; then
+      # A bare word such as `src` is prose, not a cited directory.
+      case "$pp_c" in */*) ;; *) return 0 ;; esac
       pp_p=$(cd "$pp_t" 2>/dev/null && pwd -P) || continue
     else
       pp_p=$(cd "$(dirname "$pp_t")" 2>/dev/null && pwd -P) || continue
@@ -337,7 +339,12 @@ gone_path() { # $1 a cited path, $2 the citing doc's directory, $3 the stamp: th
     case "$gp_n" in '' | .agent | .agent/* | .git | .git/*) continue ;; esac
     [ ! -e "$root/$gp_n" ] || continue
     gp_type=$(git -C "$root" cat-file -t "$3:$gp_n" 2>/dev/null) || continue
-    if [ "$gp_type" = tree ]; then printf '%s/\n' "$gp_n"; else printf '%s\n' "$gp_n"; fi
+    if [ "$gp_type" = tree ]; then
+      case "$1" in */*) ;; *) return 0 ;; esac
+      printf '%s/\n' "$gp_n"
+    else
+      printf '%s\n' "$gp_n"
+    fi
     return 0
   done
 }
