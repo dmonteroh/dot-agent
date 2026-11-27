@@ -30,6 +30,19 @@ if [ ! -d "$agent" ]; then
   exit 1
 fi
 
+# File lists reach awk through files in this folder. An argument list and an
+# environment string both have a size limit, and a node with thousands of docs
+# passes it, after which awk would not start.
+lists=$(mktemp -d "${TMPDIR:-/tmp}/links.XXXXXX") \
+  || da_refuse "could not create a temporary folder" "Check that the temporary folder is writable, then run this call again" || exit
+trap 'rm -rf "$lists"' EXIT
+list_to() { # $1 file, then the items, one per line
+  local f=$1
+  shift
+  printf '%s\n' "$@" >"$f" \
+    || da_refuse "could not write the temporary list $f" "Check that the temporary folder is writable, then run this call again" || exit
+}
+
 is_exempt() {
   case "$1" in
   purpose.md | memory.md | session-log.md) return 0 ;;
@@ -138,9 +151,12 @@ done
 uncited=$'\n'
 if [ "$audited" -gt 0 ]; then
   uncited=$'\n'$(
-    LINKS_AGENT=$agent LINKS_AUDIT=$(printf '%s\n' "${audit[@]}") awk '
+    list_to "$lists/audit" "${audit[@]}"
+    list_to "$lists/corpus" "${corpus[@]}"
+    LINKS_AGENT=$agent LINKS_AUDIT="$lists/audit" LINKS_CORPUS="$lists/corpus" awk '
       BEGIN {
-        n = split(ENVIRON["LINKS_AUDIT"], rel, "\n")
+        n = 0
+        while ((getline line < ENVIRON["LINKS_AUDIT"]) > 0) rel[++n] = line
         for (i = 1; i <= n; i++) {
           path[i] = ENVIRON["LINKS_AGENT"] "/" rel[i]
           base = rel[i]
@@ -149,8 +165,7 @@ if [ "$audited" -gt 0 ]; then
           size[length(base)] = 1
         }
         left = n
-        for (a = 1; a < ARGC && left > 0; a++) {
-          c = ARGV[a]
+        while (left > 0 && (getline c < ENVIRON["LINKS_CORPUS"]) > 0) {
           while (left > 0 && (getline line < c) > 0) {
             p = 0
             while ((k = index(substr(line, p + 1), ".md")) > 0) {
@@ -170,7 +185,7 @@ if [ "$audited" -gt 0 ]; then
         for (i = 1; i <= n; i++) if (!cited[i]) print rel[i]
         exit
       }
-    ' "${corpus[@]}"
+    '
   )$'\n'
 fi
 for rel in ${audit[@]+"${audit[@]}"}; do
@@ -235,10 +250,9 @@ while IFS= read -r rec; do
   echo "BROKEN: ${c#"$root"/} cites $target — no such file in the node"
   findings=$((findings + 1))
 done < <(
-  [ "${#sources[@]}" -eq 0 ] || awk '
+  [ "${#sources[@]}" -eq 0 ] || { list_to "$lists/sources" "${sources[@]}" && LINKS_SOURCES="$lists/sources" awk '
     BEGIN {
-      for (a = 1; a < ARGC; a++) {
-        c = ARGV[a]
+      while ((getline c < ENVIRON["LINKS_SOURCES"]) > 0) {
         incm = 0
         links = 0
         spans = 0
@@ -266,7 +280,7 @@ done < <(
       }
       exit
     }
-  ' "${sources[@]}"
+  '; }
 )
 
 if [ "$findings" -eq 0 ]; then
@@ -350,10 +364,9 @@ while IFS= read -r rec; do
   *) stamped+=("$f"); stamps+=("${rec#S}") ;;
   esac
 done < <(
-  [ "${#docfiles[@]}" -eq 0 ] || awk '
+  [ "${#docfiles[@]}" -eq 0 ] || { list_to "$lists/docfiles" "${docfiles[@]}" && LINKS_DOCFILES="$lists/docfiles" awk '
     BEGIN {
-      for (a = 1; a < ARGC; a++) {
-        c = ARGV[a]
+      while ((getline c < ENVIRON["LINKS_DOCFILES"]) > 0) {
         r = (getline < c)
         if (r < 0) { print "U"; continue }
         found = 0
@@ -367,7 +380,7 @@ done < <(
       }
       exit
     }
-  ' "${docfiles[@]}"
+  '; }
 )
 
 if [ "${#stamped[@]}" -gt 0 ]; then

@@ -14,7 +14,7 @@ Usage: links.sh [root]    # root defaults to . — audits <root>/.agent/
 | `BROKEN:` | a path a node file cites that does not exist |
 | `STALE:` | a project path a stamped doc cites changed, or was removed or renamed, in a commit after the doc's stamp |
 
-Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **No finding reaches the exit status** — the report is the product. The one non-zero exit is a usage error: a root holding no `.agent/`, which is not a finding about a node.
+Findings are review triggers, not errors: an orphan is often a file that should be cited, sometimes one that should be deleted, occasionally neither. **No finding reaches the exit status** — the report is the product. The two non-zero exits are not findings about a node: a root holding no `.agent/`, which is a usage error, and a temporary folder links.sh cannot create. The file lists it reads go through that folder rather than the command line, so a node with thousands of docs is audited in full.
 
 ## Scope
 
