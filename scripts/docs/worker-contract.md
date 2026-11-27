@@ -28,14 +28,15 @@ When the whole output would pass `PAYLOAD_MAX_BYTES`, one `REPAIR:` line naming 
 ## What a worker may run
 
 ```worker-commands
-WORKER_MAY_RUN=status.sh, links.sh, comments.sh, review.sh, index.sh check, verify.sh, log.sh, memory.sh, learn.sh, docs.sh
-ORCHESTRATOR_ONLY=checkpoint.sh, index.sh ensure, absorb.sh
+WORKER_MAY_RUN=status.sh, links.sh, comments.sh, review.sh, index.sh check, log.sh, memory.sh, learn.sh, docs.sh
+ORCHESTRATOR_ONLY=checkpoint.sh, verify.sh, index.sh ensure, absorb.sh
 ```
 
-- **Readers:** `status.sh`, `links.sh`, `comments.sh`, `review.sh`, and `index.sh check` read and print. `verify.sh` runs a configured check and writes its receipt under the node's private state, which no other writer reads.
+- **Readers:** `status.sh`, `links.sh`, `comments.sh`, `review.sh`, and `index.sh check` read and print.
+- **Focused tests:** a worker runs the tests for the code it changed directly, outside `verify.sh`, and reports each command and its result.
 - **Experience records:** `memory.sh` and `learn.sh` for a lesson, and `log.sh`. Each takes the node's lock, waiting up to `DA_LOCK_WAIT_SECONDS` for a held one, so workers in one checkout, or in checkouts whose `.agent` links to the main node, write the shared files directly.
 - **Code-coupled docs:** `docs.sh`. A doc a worker writes in its own checkout reaches the main node only through `absorb.sh docs`, when the worker's code is integrated.
-- **The orchestrator's:** `checkpoint.sh` (verification, review, and completion), `index.sh ensure` (it writes the generated cache), `absorb.sh` (it merges a worker's node into the main one), and handling the `GROOM:`, `REPAIR:`, and `INDEX:` flags the bootstrap prints. A helper this page does not list is the orchestrator's.
+- **The orchestrator's:** `checkpoint.sh` (verification, review, and completion), `verify.sh` (the configured checks, run once on the integrated change rather than again by each worker), `index.sh ensure` (it writes the generated cache), `absorb.sh` (it merges a worker's node into the main one), and handling the `GROOM:`, `REPAIR:`, and `INDEX:` flags the bootstrap prints. A helper this page does not list is the orchestrator's.
 
 Permission to run the record writers does not produce records. An orchestrator that wants lessons asks for them in the report it validates, and either lets the worker run `learn.sh` or `memory.sh` or runs them itself from the report. The session-log entry is the orchestrator's: one per integrated task, through its own checkpoint. `log.sh` stays in the worker's list, so an orchestrator may still ask for an entry.
 

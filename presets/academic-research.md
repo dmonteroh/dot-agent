@@ -43,7 +43,7 @@
 - Run `.agent/scripts/checkpoint.sh` before handing back changed work, using the entry point's flags.
 - A read-only turn needs no new entry.
 - Resolve blocking findings. Defer advisory maintenance only under the node's completion policy.
-- Workers write `.agent/` only through its scripts, and only a lesson: a learned rule or a memory fact. The session-log entry, `checkpoint.sh`, and `index.sh ensure` are the orchestrator's.
+- Workers write `.agent/` only through its scripts, and only a lesson: a learned rule or a memory fact. The session-log entry, the configured checks, `checkpoint.sh`, and `index.sh ensure` are the orchestrator's.
 - An orchestrator whose workers run in their own checkout merges each worker's node back with `absorb.sh`.
 - Use `.agent/scripts/memory.sh lookup --query "..."` before admitting a durable record.
 - Memory holds current state, user preferences, blockers, or external references absent from canonical sources.

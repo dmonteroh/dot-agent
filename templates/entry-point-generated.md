@@ -18,6 +18,6 @@ Before handing back changed work, run `bash .agent/scripts/checkpoint.sh --tool 
 
 Check names live in `.agent/scripts/checks.sh`. Helper `--help` explains details. `checkpoint.conf` controls maintenance policy.
 
-Exception — subagents: flags are the orchestrator's to handle, and so are `checkpoint.sh` and `index.sh ensure`. Read everything else. Write `.agent/` only through its scripts, lessons only.
+Exception — subagents: flags are the orchestrator's to handle, and so are `checkpoint.sh` and `index.sh ensure`. So are the configured checks; run focused tests directly. Read everything else. Write `.agent/` only through its scripts, lessons only.
 
 Keep every entry-point mirror identical.

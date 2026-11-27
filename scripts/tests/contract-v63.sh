@@ -64,7 +64,7 @@ printf '  migration_target: "9.9"\n' >"$scratch/target"
 awk -v f="$scratch/target" 'NR == 2 { while ((getline l < f) > 0) print l } { print }' "$n/.agent/purpose.md" >"$scratch/purpose" \
   && cp "$scratch/purpose" "$n/.agent/purpose.md"
 out=$(bash "$repo/scripts/node.sh" describe "$n")
-[ "$(get ORCHESTRATOR_ONLY)" = 'checkpoint.sh, index.sh ensure' ] || fail "a missing absorb.sh is still listed: $(get ORCHESTRATOR_ONLY)"
+[ "$(get ORCHESTRATOR_ONLY)" = 'checkpoint.sh, verify.sh, index.sh ensure' ] || fail "a missing absorb.sh is still listed: $(get ORCHESTRATOR_ONLY)"
 [ "$(get WORKER_CONTRACT)" = 0 ] || fail 'a status.sh without WORKER_CONTRACT does not report 0'
 printf 'case "$1" in --load) ;; esac\n' >"$n/.agent/scripts/status.sh"
 [ "$(bash "$repo/scripts/node.sh" describe "$n" | sed -n 's/^BOOTSTRAP=//p')" = 'bash .agent/scripts/status.sh --load' ] || fail 'a status.sh with no --tail is given the flag'

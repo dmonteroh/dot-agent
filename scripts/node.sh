@@ -14,8 +14,8 @@ SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf 
 
 # The worker-load contract's two lists, as scripts/docs/worker-contract.md
 # states them. test.sh holds the page and these to the same text.
-WORKER_MAY_RUN=("status.sh" "links.sh" "comments.sh" "review.sh" "index.sh check" "verify.sh" "log.sh" "memory.sh" "learn.sh" "docs.sh")
-ORCHESTRATOR_ONLY=("checkpoint.sh" "index.sh ensure" "absorb.sh")
+WORKER_MAY_RUN=("status.sh" "links.sh" "comments.sh" "review.sh" "index.sh check" "log.sh" "memory.sh" "learn.sh" "docs.sh")
+ORCHESTRATOR_ONLY=("checkpoint.sh" "verify.sh" "index.sh ensure" "absorb.sh")
 
 install_node_scripts() {
   local target script conf temp
