@@ -620,46 +620,41 @@ enable_generated_indexes() {
 # Before 6.3, skills were installed inside the node at .agent/skills/ and read
 # through per-tool symlinks. Most agent tools now read .agents/skills/ beside
 # the node, and one of those symlink locations is no longer read at all.
-migrate_skills_location() {
-  local root="$1" old="$1/.agent/skills" new="$1/.agents/skills" entry name link target clashes=""
+migrate_skills_location() (
+  local root="$1" old="$1/.agent/skills" new="$1/.agents/skills" entry name link clashes=""
   [ -d "$old" ] && [ ! -L "$old" ] || return 0
-  if [ -n "$(ls -A "$old" 2>/dev/null)" ]; then
-    if [ -L "$1/.agents" ] || [ -L "$new" ] || { [ -e "$new" ] && [ ! -d "$new" ]; }; then
-      echo "node.sh: skills stay at $old — $new is not a plain directory" >&2
-      return 0
-    fi
-    for entry in "$old"/*; do
-      [ -e "$entry" ] || [ -L "$entry" ] || continue
-      name=${entry##*/}
-      if [ -e "$new/$name" ] || [ -L "$new/$name" ]; then clashes="$clashes $name"; fi
-    done
-    if [ -n "$clashes" ]; then
-      echo "node.sh: skills stay at $old — these names already exist in $new:$clashes. Keep one copy of each, then re-run update" >&2
-      return 0
-    fi
-    mkdir -p "$new" || return 1
-    for entry in "$old"/*; do
-      [ -e "$entry" ] || [ -L "$entry" ] || continue
-      mv -- "$entry" "$new/" || { echo "node.sh: moving $entry to $new failed" >&2; return 1; }
-    done
+  if [ -L "$root/.agents" ] || [ -L "$new" ] || { [ -e "$new" ] && [ ! -d "$new" ]; }; then
+    echo "node.sh: skills stay at $old — $new is not a plain directory" >&2
+    return 0
   fi
-  rmdir "$old" 2>/dev/null || { echo "node.sh: $old still holds hidden files — inspect it" >&2; return 0; }
-  echo "node.sh: moved installed skills from .agent/skills/ to .agents/skills/ — no tracking mode ignores them there, so decide whether they enter git"
+  shopt -s dotglob nullglob
+  set -- "$old"/*
+  for entry do
+    name=${entry##*/}
+    if [ -e "$new/$name" ] || [ -L "$new/$name" ]; then clashes="$clashes $name"; fi
+  done
+  if [ -n "$clashes" ]; then
+    echo "node.sh: skills stay at $old — these names already exist in $new:$clashes. Keep one copy of each, then re-run update" >&2
+    return 0
+  fi
+  mkdir -p "$new" || return 1
+  for entry do
+    mv -- "$entry" "$new/" || { echo "node.sh: moving $entry to $new failed. Check the directory permissions and re-run update" >&2; return 1; }
+  done
+  # Keep the original directory until both links are settled so a retry can identify them.
   for link in "$root/.claude/skills" "$root/.codex/skills"; do
-    [ -L "$link" ] || continue
-    target=$(readlink "$link")
-    case "$target" in
-    *.agent/skills | *.agent/skills/) ;;
-    *) continue ;;
-    esac
+    [ -L "$link" ] && [ "$link" -ef "$old" ] || continue
     if [ "$link" = "$root/.claude/skills" ]; then
-      ln -sfn ../.agents/skills "$link" && echo "node.sh: repointed $link to ../.agents/skills"
+      ln -sfn ../.agents/skills "$link" || return 1
+      echo "node.sh: repointed $link to ../.agents/skills"
     else
-      rm -f "$link" && echo "node.sh: removed $link — that tool reads .agents/skills/ itself"
+      rm -f "$link" || return 1
+      echo "node.sh: removed $link — that tool reads .agents/skills/ itself"
     fi
   done
-  return 0
-}
+  rmdir "$old" || { echo "node.sh: could not remove $old. Inspect its contents and re-run update" >&2; return 1; }
+  echo "node.sh: moved installed skills from .agent/skills/ to .agents/skills/ — no tracking mode ignores them there, so decide whether they enter git"
+)
 
 case "$cmd" in
 init)

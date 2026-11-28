@@ -70,10 +70,12 @@ git -C "$mv_node" init -q
 bash "$node_sh" init --preset software-development --mode track-shared "$mv_node" >/dev/null
 mkdir -p "$mv_node/.agent/skills" "$mv_node/.claude" "$mv_node/.codex"
 cp -R "$repo/tools/skills/groom" "$mv_node/.agent/skills/"
+printf 'local metadata\n' >"$mv_node/.agent/skills/.DS_Store"
 ln -s ../.agent/skills "$mv_node/.claude/skills"
 ln -s ../.agent/skills "$mv_node/.codex/skills"
 bash "$node_sh" update "$mv_node" >"$scratch/skills-move.out" 2>&1 || { cat "$scratch/skills-move.out" >&2; fail 'update failed while moving skills'; }
 [ -f "$mv_node/.agents/skills/groom/SKILL.md" ] || fail 'update did not move installed skills to .agents/skills/'
+grep -qxF 'local metadata' "$mv_node/.agents/skills/.DS_Store" || fail 'update left hidden skill metadata behind'
 [ ! -e "$mv_node/.agent/skills" ] || fail 'update left .agent/skills/ behind'
 [ "$(readlink "$mv_node/.claude/skills")" = ../.agents/skills ] || fail 'update did not repoint .claude/skills'
 [ ! -L "$mv_node/.codex/skills" ] || fail 'update kept a .codex/skills link to the old location'
@@ -82,9 +84,12 @@ clash="$scratch/skills-clash"
 mkdir -p "$clash"
 git -C "$clash" init -q
 bash "$node_sh" init --preset software-development --mode track-shared "$clash" >/dev/null
-mkdir -p "$clash/.agent/skills/groom" "$clash/.agents/skills/groom"
+mkdir -p "$clash/.agent/skills/groom" "$clash/.agents/skills"
+printf 'old metadata\n' >"$clash/.agent/skills/.metadata"
+printf 'existing metadata\n' >"$clash/.agents/skills/.metadata"
 bash "$node_sh" update "$clash" >"$scratch/skills-clash.out" 2>&1 || fail 'update failed on a skills clash instead of leaving the skills in place'
 [ -d "$clash/.agent/skills/groom" ] || fail 'update moved skills over a clashing name'
+grep -qxF 'existing metadata' "$clash/.agents/skills/.metadata" || fail 'update replaced hidden metadata on a clash'
 grep -q 'already exist in' "$scratch/skills-clash.out" || fail 'the skills clash was not reported'
 
 # Installed skills
