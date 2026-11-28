@@ -289,16 +289,9 @@ validate_slug() {
 lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file listing --drop values
   local list
   list=$(mktemp "${TMPDIR:-/tmp}/memory-corpus.XXXXXX") || return 2
-  {
-    printf '%s\n' "$2"
-    find "$3" -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
-      case "$f" in
-      "$1" | "$3"/session-log.md | "$3"/scripts/* | "$3"/indexes/*) ;;
-      *) printf '%s\n' "$f" ;;
-      esac
-    done
-  } >"$list" || { rm -f "$list"; return 2; }
-  MS_OLD="$1" MS_LIST="$list" MS_DROP="$4" awk '
+  (cd "$3" && find . \( -path ./scripts -o -path ./indexes -o -path ./.state \) -prune -o \
+    -type f -name '*.md' ! -path "./memory/${1##*/}" ! -path ./session-log.md -print) >"$list" || { rm -f "$list"; return 2; }
+  MS_OLD="$1" MS_BODY="$2" MS_LIST="$list" MS_NODE="$3" MS_DROP="$4" awk '
     function add(a, c) { if (a == "" || (a in seen)) return; seen[a] = 1; an[++n] = a; ac[n] = c }
     function scan(line,   s, m, w, i, t, lt, nx) {
       s = line
@@ -337,42 +330,71 @@ lost_anchors() { # $1 old fact file, $2 new body file, $3 node dir, $4 file list
         if (unit == "") return 1
         rest = substr(text, end)
         sub(/^ /, "", rest)
-        if (index(rest, unit) == 1) return 1
+        if (index(rest, unit) == 1 && substr(rest, length(unit) + 1, 1) !~ /[a-z]/) return 1
       }
       return 0
     }
-    function has_value(v,   num, unit) {
-      if (!match(v, /[0-9][0-9.,]*/)) return index(corpus, v) > 0
+    function has_value(text, v,   num, unit) {
+      if (!match(v, /[0-9][0-9.,]*/)) return index(text, v) > 0
       num = substr(v, RSTART, RLENGTH)
       sub(/[.,]+$/, "", num)
       unit = substr(v, RSTART + length(num))
       sub(/^[ .,]+/, "", unit)
       sub(/[^a-z%].*$/, "", unit)
-      return has_num(corpus, num, unit)
+      return has_num(text, num, unit)
+    }
+    function has_id(text, id,   pos, start, rest, prev, prefix) {
+      start = 1
+      while ((pos = index(substr(text, start), id)) > 0) {
+        pos += start - 1
+        prev = pos > 1 ? substr(text, pos - 1, 1) : ""
+        rest = substr(text, pos + length(id))
+        start = pos + 1
+        if (prev ~ /[a-z0-9_-]/ || rest ~ /^([a-z0-9_-]|[.][a-z0-9_])/) continue
+        if (index(id, ".") || index(id, "/")) {
+          prefix = substr(text, 1, pos - 1)
+          if (prefix ~ /[a-z0-9_-][.]$/) continue
+          if (prev == "/" && prefix !~ /(^|[^a-z0-9_.\/-])[.]\/$/ && prefix !~ /:\/\/$/) continue
+          if (rest ~ /^\// && prefix !~ /:\/\/$/) continue
+        }
+        return 1
+      }
+      return 0
     }
     BEGIN {
       f = ENVIRON["MS_OLD"]; k = 0; fm = 0
-      while ((getline line < f) > 0) {
+      while ((rc = getline line < f) > 0) {
         if (++k == 1 && line == "---") { fm = 1; continue }
         if (fm) { if (line == "---") fm = 0; continue }
         scan(line)
       }
+      if (rc < 0) exit 2
       close(f)
-      lf = ENVIRON["MS_LIST"]
-      while ((getline p < lf) > 0) {
-        while ((getline line < p) > 0) corpus = corpus "\n" tolower(line)
-        close(p)
-      }
-      nd = 0
       df = ENVIRON["MS_DROP"]
-      while ((getline line < df) > 0) if (line != "") drop[++nd] = tolower(line)
+      while ((getline line < df) > 0) drop[tolower(line)] = 1
+      close(df)
       for (i = 1; i <= n; i++) {
-        a = an[i]; la = tolower(a)
-        if (ac[i] == "value" ? has_value(la) : index(corpus, la)) continue
-        kept = 0
-        for (j = 1; j <= nd; j++) if (index(drop[j], la) || index(la, drop[j])) kept = 1
-        if (!kept) print ac[i] "\t" a
+        key = tolower(an[i])
+        if (!(key in drop)) { pending[i] = key; remaining++ }
       }
+      lf = ENVIRON["MS_LIST"]
+      p = ENVIRON["MS_BODY"]
+      while (remaining) {
+        while ((rc = getline line < p) > 0) {
+          line = tolower(line)
+          for (i in pending) {
+            key = pending[i]
+            if (ac[i] == "value" ? has_value(line, key) : has_id(line, key)) { delete pending[i]; remaining-- }
+          }
+          if (!remaining) break
+        }
+        if (rc < 0) exit 2
+        close(p)
+        if ((rc = getline rel < lf) <= 0) break
+        p = ENVIRON["MS_NODE"] "/" rel
+      }
+      if (rc < 0) exit 2
+      for (i = 1; i <= n; i++) if (i in pending) print ac[i] "\t" an[i]
     }
   '
   local rc=$?

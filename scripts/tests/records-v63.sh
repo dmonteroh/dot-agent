@@ -214,6 +214,18 @@ printf '%s\n' 'body from stdin' | "$here/scripts/memory.sh" new --slug stdin-fac
 assert_file_has "$node/.agent/memory/stdin-fact.md" 'body from stdin' 'memory new safely reads standard input'
 "$here/scripts/memory.sh" new --slug legacy-fact --title Legacy --hook compatible --fact 'legacy argument body' "$node" >/dev/null
 assert_file_has "$node/.agent/memory/legacy-fact.md" 'legacy argument body' 'legacy memory --fact remains supported'
+"$here/scripts/memory.sh" new --slug tickets --title Tickets --hook deploy --fact 'Track OPS-23 and OPS-230.' "$node" >/dev/null
+for evidence in retained dropped; do
+  case "$evidence" in
+    retained) set -- --fact 'Track OPS-230.' ;;
+    dropped) set -- --fact 'Retired.' --drop OPS-230 ;;
+  esac
+  if "$here/scripts/memory.sh" supersede --slug tickets "$@" "$node" >"$tmp/tickets" 2>&1; then status=0; else status=$?; fi
+  [ "$status" -eq 1 ] && grep -qF 'would drop OPS-23,' "$tmp/tickets" && grep -qF 'Track OPS-23 and OPS-230.' "$node/.agent/memory/tickets.md" && ok "a longer $evidence ticket cannot erase OPS-23" || bad "a longer $evidence ticket cannot erase OPS-23"
+done
+"$here/scripts/memory.sh" new --slug deploy-host --title Host --hook deploy --fact 'Read settings.json for api.example.org.' "$node" >/dev/null
+if "$here/scripts/memory.sh" supersede --slug deploy-host --fact 'Read dir/settings.json for secondary.api.example.org.' "$node" >"$tmp/host" 2>&1; then status=0; else status=$?; fi
+[ "$status" -eq 1 ] && grep -qF 'would drop settings.json, api.example.org,' "$tmp/host" && ok 'a different path or host cannot preserve its suffix' || bad 'a different path or host cannot preserve its suffix'
 chmod a-w "$node/.agent/memory.md"
 if "$here/scripts/memory.sh" new --slug readonly-index --title Readonly --hook blocked --fact body "$node" >/dev/null 2>&1; then status=0; else status=$?; fi
 chmod u+w "$node/.agent/memory.md"
