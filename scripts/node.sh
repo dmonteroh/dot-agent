@@ -9,7 +9,8 @@ SOURCE_URL="https://github.com/dmonteroh/dot-agent"
 selfdir=$(cd "$(dirname "$0")" && pwd)
 srcroot=$(cd "$selfdir/.." && pwd)
 
-SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh runtime.sh verify.sh review.sh capture.sh absorb.sh session-start.sh)
+V63_HELPERS=(runtime.sh verify.sh review.sh capture.sh absorb.sh session-start.sh)
+SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh "${V63_HELPERS[@]}")
 SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf review.conf)
 
 # The worker-load contract's two lists, as scripts/docs/worker-contract.md
@@ -881,8 +882,6 @@ EOF
     exit 1
   fi
 
-  migrate_skills_location "$root" || exit 1
-
   version_line=$(grep -m1 '^  version:' "$purpose")
   oldversion=$(printf '%s\n' "$version_line" | sed -E 's/^[[:space:]]*version:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
   mode_line=$(grep -m1 '^  mode:' "$purpose")
@@ -930,7 +929,7 @@ EOF
   fi
 
   if [ "$version_order" -lt 0 ] && [ "$migration_target" != "$TARGET_VERSION" ]; then
-    for new_helper in runtime.sh verify.sh review.sh capture.sh absorb.sh; do
+    for new_helper in "${V63_HELPERS[@]}"; do
       existing="$agent/scripts/$new_helper"
       if [ -L "$existing" ] || { [ -e "$existing" ] && ! cmp -s "$existing" "$srcroot/scripts/$new_helper"; }; then
         echo "node.sh: $existing occupies a new managed helper name; preserve and relocate the custom helper before updating" >&2
@@ -1003,6 +1002,7 @@ EOF
       migrate_session_log_header "$agent"
       echo "node.sh: $migrate_log_note"
     fi
+    migrate_skills_location "$root" || exit 1
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
@@ -1096,6 +1096,7 @@ EOF
     enable_generated_indexes "$root" "$agent" "$mode" || exit 1
   fi
 
+  migrate_skills_location "$root" || exit 1
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"

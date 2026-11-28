@@ -23,15 +23,20 @@ done
 sed 's/version: "6.3"/version: "6.2"/' "$project/.agent/purpose.md" >"$scratch/purpose"
 mv "$scratch/purpose" "$project/.agent/purpose.md"
 rm "$project/.agent/scripts/runtime.sh" "$project/.agent/scripts/verify.sh" "$project/.agent/scripts/review.sh"
-printf 'project-owned older helper\n' >"$project/.agent/scripts/verify.sh"
-if bash "$repo/scripts/node.sh" update "$project" >/dev/null 2>&1; then fail 'new helper collision was overwritten'; fi
-grep -q 'project-owned older helper' "$project/.agent/scripts/verify.sh" || fail 'colliding helper was lost'
-if grep -q 'migration_target:' "$project/.agent/purpose.md"; then fail 'collision changed the manifest'; fi
-rm "$project/.agent/scripts/verify.sh"
+mkdir -p "$project/.agent/skills/custom"
+printf 'original skill\n' >"$project/.agent/skills/custom/SKILL.md"
+for helper in verify.sh session-start.sh; do
+  printf 'project-owned older helper\n' >"$project/.agent/scripts/$helper"
+  if bash "$repo/scripts/node.sh" update "$project" >/dev/null 2>&1; then fail "new helper collision was overwritten: $helper"; fi
+  grep -q 'project-owned older helper' "$project/.agent/scripts/$helper" || fail "colliding helper was lost: $helper"
+  if grep -q 'migration_target:' "$project/.agent/purpose.md"; then fail 'collision changed the manifest'; fi
+  [ -f "$project/.agent/skills/custom/SKILL.md" ] || fail 'collision moved installed skills'
+  rm "$project/.agent/scripts/$helper"
+done
 bash "$repo/scripts/node.sh" update "$project" >"$scratch/update.out"
 grep -q 'migration_target: "6.3"' "$project/.agent/purpose.md" || fail 'migration target missing'
 grep -q 'version: "6.2"' "$project/.agent/purpose.md" || fail 'version advanced before finalize'
-[ -d "$project/.agent.backup-v6.2" ] || fail 'old node was not backed up'
+cmp "$project/.agent.backup-v6.2/skills/custom/SKILL.md" "$project/.agents/skills/custom/SKILL.md" || fail 'backup did not retain the original skill'
 for file in scripts/checks.sh scripts/verify.conf rules/contract.md memory.md; do
   cmp "$project/.agent/$file" "$scratch/original/$file" || fail "update replaced project-owned $file"
 done
