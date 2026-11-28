@@ -44,12 +44,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # One shellcheck per file instead of one process for the whole set:
-      # scripts/test.sh alone is ~10k lines and shellcheck prints nothing
-      # until it finishes analyzing everything handed to it, so the single-
-      # invocation form goes silent for the whole run. Looping gives a
-      # progress line per file, which is cheap and easier to debug either
-      # way.
       - run: |
           status=0
           for f in scripts/*.sh scripts/tests/*.sh evals/*.sh tools/hooks/*.sh; do

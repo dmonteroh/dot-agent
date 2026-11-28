@@ -35,7 +35,7 @@ A record's directory decides how it renders:
 - **`.agent/rules/**/*.md`** — a *rule record*. Its complete body is copied verbatim into a rule page behind one `Source: <path>` line. Nothing here is ever truncated or summarized; a rule record too large to fit in one page fails the build (see Failure modes) rather than splitting a rule's meaning across a page boundary.
 - **`.agent/docs/**/*.md`** — a *route record*. It contributes one line to a routes page: `- <title> | <hook> | READ: <path>`, where title is the record's first `# ` heading (or its path, if it has none) and hook is the payload of its first `<!-- Read when: ... -->` comment (or `(no hook)`, if it has none) — the same header `docs.sh` already writes for every doc.
 
-This is the whole grammar: one heading, one optional hook comment, and relative Markdown links inside rule bodies rewritten to their canonical location (below) — nothing else index.sh parses. The node's real `rules/` and `docs/` files are migrated to this grammar as described in `scripts/docs/node.md`. Parser fixtures in `scripts/test.sh` pin the grammar itself (heading present/absent, hook present/absent, multi-line rule bodies) independently of the render tests that build on it.
+This is the whole grammar: one heading, one optional hook comment, and relative Markdown links inside rule bodies rewritten to their canonical location (below) — nothing else index.sh parses. The node's real `rules/` and `docs/` files are migrated to this grammar as described in `scripts/docs/node.md`. Parser fixtures in `scripts/tests/generated-index-suite.sh` pin the grammar itself (heading present/absent, hook present/absent, multi-line rule bodies) independently of the render tests that build on it.
 
 ### Relative links inside a rule body
 
