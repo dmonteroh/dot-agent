@@ -1,0 +1,21 @@
+diff --git a/.agent/docs/service-catalog.md b/.agent/docs/service-catalog.md
+index b2774db..6fdb149 100644
+--- a/.agent/docs/service-catalog.md
++++ b/.agent/docs/service-catalog.md
+@@ -6,6 +6,7 @@
+ | Block | Path | Use when |
+ | --- | --- | --- |
+ | `httpClient` | `src/http.ts` | any outbound vendor call — handles auth, timeouts, and the retry ladder |
++| `submitRefund` | `src/client.ts` | any refund call to the vendor's refunds endpoint |
+ 
+ ## Adding one
+ 
+diff --git a/.agent/session-log.md b/.agent/session-log.md
+index d7bfecd..576962e 100644
+--- a/.agent/session-log.md
++++ b/.agent/session-log.md
+@@ -1,2 +1,4 @@
+ # Session log
+ <!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
++- [2026-09-27] (claude) Add submitRefund client via shared httpClient; fix test script to emit TAP (service). verify: pass.
++- [2026-09-27] (claude) Add submitRefund client via shared httpClient; fix test script to emit TAP (service). verify: pass.

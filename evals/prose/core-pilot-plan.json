@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-27",
+  "round": "compact-core-pilot",
+  "control": "current installed contract",
+  "treatment": "continuity-core.md",
+  "spec": "quality-spec.json",
+  "models": [
+    "claude-sonnet-5",
+    "gpt-5.6-terra"
+  ],
+  "effort": "medium",
+  "repeats": 1,
+  "timeout_seconds": 600,
+  "planned_sessions": 8,
+  "stopping_rule": "One pilot comparison. No further contract tuning in this investigation.",
+  "limitations": [
+    "The task prompts have been seen. These are added quality checks, not held-out scenarios.",
+    "The pilot does not cover every continuity or comment rule."
+  ],
+  "sha256": {
+    "quality-spec.json": "eaacf4e69fef88bdcdd3579913e4f3b72023c4a480b515348cfedffb1bfe1958",
+    "continuity-core.md": "d6398bde31a409040ac33b38208dc98b34bb4c5bc563f88385ef2f9d5503e5e9",
+    "quality_oracle.mjs": "0d263608a8008d6a6691f5acf1559b71f2dc6ff98f0da82e7b82418eea12912e"
+  }
+}

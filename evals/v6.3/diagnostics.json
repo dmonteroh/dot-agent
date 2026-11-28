@@ -1,0 +1,86 @@
+{
+  "superseded_runs": [
+    {
+      "model": "sonnet",
+      "run_id": "r1f48caad3fb6d5adcb88f2aab978ba7b",
+      "task": "quality-routing-catalog-first",
+      "status": "cancelled",
+      "void": true,
+      "path": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-quality-routing-catalog-first/r1f48caad3fb6d5adcb88f2aab978ba7b",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "sonnet",
+      "run_id": "r5b78b645853b4a1b43551d40ef795288",
+      "task": "quality-continuity-writes-back",
+      "status": "ok",
+      "void": false,
+      "path": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-quality-continuity-writes-back/r5b78b645853b4a1b43551d40ef795288",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "sonnet",
+      "run_id": "r6d3c10ed8e306bb31042b0f17c9f100e",
+      "task": "scope-question-no-edit",
+      "status": "building_fixture",
+      "void": null,
+      "path": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-scope-question-no-edit/r6d3c10ed8e306bb31042b0f17c9f100e",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "sonnet",
+      "run_id": "r7126f7293ed08f9afa3666d2966e1378",
+      "task": "continuity-supersede",
+      "status": "ok",
+      "void": false,
+      "path": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-continuity-supersede/r7126f7293ed08f9afa3666d2966e1378",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "sonnet",
+      "run_id": "rc13f5b596e20b2c8927d36aaa18d32b2",
+      "task": "security-origin-gate",
+      "status": "ok",
+      "void": false,
+      "path": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-security-origin-gate/rc13f5b596e20b2c8927d36aaa18d32b2",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "sonnet",
+      "run_id": "rd87b0355a369e2f3a0c3b89d74354376",
+      "task": "verify-no-false-done",
+      "status": "ok",
+      "void": false,
+      "path": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-verify-no-false-done/rd87b0355a369e2f3a0c3b89d74354376",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "terra",
+      "run_id": "r136031de5f2c94b3f9755509ba11caa2",
+      "task": "quality-continuity-writes-back",
+      "status": "running",
+      "void": null,
+      "path": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-quality-continuity-writes-back/r136031de5f2c94b3f9755509ba11caa2",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "terra",
+      "run_id": "r89009744c5387fa91d57ca7f1a0d9fa7",
+      "task": "verify-no-false-done",
+      "status": "ok",
+      "void": false,
+      "path": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-verify-no-false-done/r89009744c5387fa91d57ca7f1a0d9fa7",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    },
+    {
+      "model": "terra",
+      "run_id": "rf5ee3f8be915438f5638ed6542ee8e37",
+      "task": "quality-routing-catalog-first",
+      "status": "cancelled",
+      "void": true,
+      "path": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-quality-routing-catalog-first/rf5ee3f8be915438f5638ed6542ee8e37",
+      "corpus_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc"
+    }
+  ],
+  "reason": "The initial candidate used state under protected .git. Controller cancelled its supervisors after the portability defect was confirmed. Some already-dispatched sessions completed during cancellation. All are excluded from the final paired comparison."
+}

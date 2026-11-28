@@ -1,0 +1,61 @@
+{
+  "reason": "Reuse completed unchanged controls after sandbox-state repair. Original mixed workspace retained.",
+  "imports": [
+    {
+      "run_id": "r1b13dfc0303e3ed5aeec594baee9a320",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-quality-continuity-writes-back/r1b13dfc0303e3ed5aeec594baee9a320",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-continuity-writes-back/r1b13dfc0303e3ed5aeec594baee9a320",
+      "run_meta_sha256": "77a5327b538ee4fe3a1b1763f45f5fcf6ba22de253415d26cd9620a75791eb71",
+      "grading_sha256": "d7114b1bb50bc24c692e4020ac1e7b91515403f2528ccdf08ca4eda0f46cec01"
+    },
+    {
+      "run_id": "r3a83d83400a65c750e0a40bb41bc146f",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-continuity-supersede/r3a83d83400a65c750e0a40bb41bc146f",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-continuity-supersede/r3a83d83400a65c750e0a40bb41bc146f",
+      "run_meta_sha256": "ec3f333f098cb215aa4ffc95c6e950f3495721cbd7f72e22440d4d8dec2d37c1",
+      "grading_sha256": "ee366ac556526d4f055f56b74240f6dc534175f84eb31cc8aaf06e15407c356e"
+    },
+    {
+      "run_id": "r6001bc0bc546e1e693d4d9eb2c496ad8",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-scope-question-no-edit/r6001bc0bc546e1e693d4d9eb2c496ad8",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-scope-question-no-edit/r6001bc0bc546e1e693d4d9eb2c496ad8",
+      "run_meta_sha256": "98e33160efbca79ef251db42f8fde66cb8be334aac63f9b58005f1c9aa3b4425",
+      "grading_sha256": "10844a430ba8ced1d4feb6087421bfe21c8c24a7f7864b3c36d6ecd0300cc34d"
+    },
+    {
+      "run_id": "r88fe5f0dc5fd578a360f920094d188c2",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-verify-no-false-done/r88fe5f0dc5fd578a360f920094d188c2",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-verify-no-false-done/r88fe5f0dc5fd578a360f920094d188c2",
+      "run_meta_sha256": "804fedfc48736b200736b2ef9e1a741eb9396018df65153f43478dfa8e62cb52",
+      "grading_sha256": "5af3ca3b0055369eca37fedbf1d414ee4bf2f9b53841db2060a838ed906aa8b1"
+    },
+    {
+      "run_id": "r8fbe73224c3a2954bd48506635b01436",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-quality-routing-catalog-first/r8fbe73224c3a2954bd48506635b01436",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r8fbe73224c3a2954bd48506635b01436",
+      "run_meta_sha256": "9da30fb9ba8471c1a66884852ab5c0f8debe53978fbc5251524fbe6d0c6e7969",
+      "grading_sha256": "a3c6870aa8f0049b16becc705ab1610d178299277f512971e30325e8efd47e3b"
+    },
+    {
+      "run_id": "ra011c3e057b86bb71fc4e94cf7627b52",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-memory-admission/ra011c3e057b86bb71fc4e94cf7627b52",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-memory-admission/ra011c3e057b86bb71fc4e94cf7627b52",
+      "run_meta_sha256": "983e40f2a43aad5e181082154d8dc334eea3075b539efb752a52cd0c97e76b5a",
+      "grading_sha256": "2c3617c938d96f46d31aa5acd3218309d94e71884cb575a4394acf7144ae2bef"
+    },
+    {
+      "run_id": "ra886a5d01afeb0837aa8426e155db4bd",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-security-origin-gate/ra886a5d01afeb0837aa8426e155db4bd",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-security-origin-gate/ra886a5d01afeb0837aa8426e155db4bd",
+      "run_meta_sha256": "f1e6dbed776100e73310abeaf9de5ffbfab912598f37fc02651eb27480a8dfc6",
+      "grading_sha256": "9b245dc07d753d11a7e426bc0d1c579c3882a98dba1c233e13c203ac3fd667b6"
+    },
+    {
+      "run_id": "re4b3e44fe278d343b3b357ee582b4714",
+      "source": "/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-learning-updates-preference/re4b3e44fe278d343b3b357ee582b4714",
+      "target": "/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-learning-updates-preference/re4b3e44fe278d343b3b357ee582b4714",
+      "run_meta_sha256": "f50c29945d66080f97e66f6c79576b41b047b40515631b547ed56f4cc8a4e25c",
+      "grading_sha256": "a0211ae20fcb820e31b935dbf0c208aca5d90ebf6eac6f8ad4ab887fb2c1f4b4"
+    }
+  ]
+}

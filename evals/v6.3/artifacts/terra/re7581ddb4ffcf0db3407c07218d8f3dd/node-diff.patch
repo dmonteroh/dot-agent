@@ -1,0 +1,8 @@
+diff --git a/.agent/session-log.md b/.agent/session-log.md
+index d7bfecd..7d78be1 100644
+--- a/.agent/session-log.md
++++ b/.agent/session-log.md
+@@ -1,2 +1,3 @@
+ # Session log
+ <!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
++- [2026-09-27] (codex) Added three-attempt exponential backoff for payment submission (service). verify: pass.

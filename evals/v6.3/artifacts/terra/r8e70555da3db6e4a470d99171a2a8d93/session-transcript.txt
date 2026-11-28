@@ -1,0 +1,10 @@
+## Turn 1
+Recorded the preference in [.agent/memory/postmortem-language.md](/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-learning-updates-preference/r8e70555da3db6e4a470d99171a2a8d93/fixture/.agent/memory/postmortem-language.md).
+
+`npm test` passed (1 test); the verification wrapper classified its output as inconclusive, so the checkpoint records that limitation.
+
+## Turn 2
+Updated the same preference file: future incident postmortems for this service should be written in French.
+
+`npm test` passed (1 test); the verification wrapper again marked the output inconclusive.
+

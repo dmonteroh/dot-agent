@@ -1,0 +1,194 @@
+[
+  {
+    "model": "sonnet",
+    "run_id": "r437d9186bb6dafc48e6636fb46ddfbba",
+    "path": "evals/v6.3/artifacts/sonnet/r437d9186bb6dafc48e6636fb46ddfbba",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-continuity-supersede/r437d9186bb6dafc48e6636fb46ddfbba"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "ra82d6717853a180ca129f019ad5b3734",
+    "path": "evals/v6.3/artifacts/sonnet/ra82d6717853a180ca129f019ad5b3734",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-continuity-supersede/ra82d6717853a180ca129f019ad5b3734"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r30dd13360ff821d042a3669abe0de422",
+    "path": "evals/v6.3/artifacts/sonnet/r30dd13360ff821d042a3669abe0de422",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-learning-updates-preference/r30dd13360ff821d042a3669abe0de422"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r5ba89c3b0a69ae7c5d0de71b94c86a0a",
+    "path": "evals/v6.3/artifacts/sonnet/r5ba89c3b0a69ae7c5d0de71b94c86a0a",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-learning-updates-preference/r5ba89c3b0a69ae7c5d0de71b94c86a0a"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r7002b67429b39d9ec64dc3213d110cf4",
+    "path": "evals/v6.3/artifacts/sonnet/r7002b67429b39d9ec64dc3213d110cf4",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-memory-admission/r7002b67429b39d9ec64dc3213d110cf4"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r8dd63e57af1d2887964aba9cc6f63b06",
+    "path": "evals/v6.3/artifacts/sonnet/r8dd63e57af1d2887964aba9cc6f63b06",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-memory-admission/r8dd63e57af1d2887964aba9cc6f63b06"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r0cc6fb2d6595d24125a0c4479eb52f07",
+    "path": "evals/v6.3/artifacts/sonnet/r0cc6fb2d6595d24125a0c4479eb52f07",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-continuity-writes-back/r0cc6fb2d6595d24125a0c4479eb52f07"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r68b095a69a3d7b4d2a7e2fcc528c3f40",
+    "path": "evals/v6.3/artifacts/sonnet/r68b095a69a3d7b4d2a7e2fcc528c3f40",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-continuity-writes-back/r68b095a69a3d7b4d2a7e2fcc528c3f40"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r3c649428b4d5c86a53245a72f3dcece6",
+    "path": "evals/v6.3/artifacts/sonnet/r3c649428b4d5c86a53245a72f3dcece6",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-routing-catalog-first/r3c649428b4d5c86a53245a72f3dcece6"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "rb3f45c646169946a9a8956e3445a9842",
+    "path": "evals/v6.3/artifacts/sonnet/rb3f45c646169946a9a8956e3445a9842",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-routing-catalog-first/rb3f45c646169946a9a8956e3445a9842"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r1229acc64963e6062b341387f477a562",
+    "path": "evals/v6.3/artifacts/sonnet/r1229acc64963e6062b341387f477a562",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-scope-question-no-edit/r1229acc64963e6062b341387f477a562"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r6ec3eb072d2b0c68d84687c422cf37cf",
+    "path": "evals/v6.3/artifacts/sonnet/r6ec3eb072d2b0c68d84687c422cf37cf",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-scope-question-no-edit/r6ec3eb072d2b0c68d84687c422cf37cf"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "rcd515d471f0a172eee4147283c85b3da",
+    "path": "evals/v6.3/artifacts/sonnet/rcd515d471f0a172eee4147283c85b3da",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-security-origin-gate/rcd515d471f0a172eee4147283c85b3da"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "rfbd4d0620bd8f21d0b91dd0434a068f5",
+    "path": "evals/v6.3/artifacts/sonnet/rfbd4d0620bd8f21d0b91dd0434a068f5",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-security-origin-gate/rfbd4d0620bd8f21d0b91dd0434a068f5"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "r4aeadfb96be889edec7cfedb7c2b4769",
+    "path": "evals/v6.3/artifacts/sonnet/r4aeadfb96be889edec7cfedb7c2b4769",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-verify-no-false-done/r4aeadfb96be889edec7cfedb7c2b4769"
+  },
+  {
+    "model": "sonnet",
+    "run_id": "rc47fdd4f007ce6d967ba129808d4ac19",
+    "path": "evals/v6.3/artifacts/sonnet/rc47fdd4f007ce6d967ba129808d4ac19",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-verify-no-false-done/rc47fdd4f007ce6d967ba129808d4ac19"
+  },
+  {
+    "model": "terra",
+    "run_id": "r3a83d83400a65c750e0a40bb41bc146f",
+    "path": "evals/v6.3/artifacts/terra/r3a83d83400a65c750e0a40bb41bc146f",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-continuity-supersede/r3a83d83400a65c750e0a40bb41bc146f"
+  },
+  {
+    "model": "terra",
+    "run_id": "rcc0bbe06530251e180347e36d6294305",
+    "path": "evals/v6.3/artifacts/terra/rcc0bbe06530251e180347e36d6294305",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-continuity-supersede/rcc0bbe06530251e180347e36d6294305"
+  },
+  {
+    "model": "terra",
+    "run_id": "r8e70555da3db6e4a470d99171a2a8d93",
+    "path": "evals/v6.3/artifacts/terra/r8e70555da3db6e4a470d99171a2a8d93",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-learning-updates-preference/r8e70555da3db6e4a470d99171a2a8d93"
+  },
+  {
+    "model": "terra",
+    "run_id": "re4b3e44fe278d343b3b357ee582b4714",
+    "path": "evals/v6.3/artifacts/terra/re4b3e44fe278d343b3b357ee582b4714",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-learning-updates-preference/re4b3e44fe278d343b3b357ee582b4714"
+  },
+  {
+    "model": "terra",
+    "run_id": "ra011c3e057b86bb71fc4e94cf7627b52",
+    "path": "evals/v6.3/artifacts/terra/ra011c3e057b86bb71fc4e94cf7627b52",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-memory-admission/ra011c3e057b86bb71fc4e94cf7627b52"
+  },
+  {
+    "model": "terra",
+    "run_id": "rf3066dc4f19f1be8b616ef0a7b373707",
+    "path": "evals/v6.3/artifacts/terra/rf3066dc4f19f1be8b616ef0a7b373707",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-memory-admission/rf3066dc4f19f1be8b616ef0a7b373707"
+  },
+  {
+    "model": "terra",
+    "run_id": "r1b13dfc0303e3ed5aeec594baee9a320",
+    "path": "evals/v6.3/artifacts/terra/r1b13dfc0303e3ed5aeec594baee9a320",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-continuity-writes-back/r1b13dfc0303e3ed5aeec594baee9a320"
+  },
+  {
+    "model": "terra",
+    "run_id": "re7581ddb4ffcf0db3407c07218d8f3dd",
+    "path": "evals/v6.3/artifacts/terra/re7581ddb4ffcf0db3407c07218d8f3dd",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-continuity-writes-back/re7581ddb4ffcf0db3407c07218d8f3dd"
+  },
+  {
+    "model": "terra",
+    "run_id": "r39b02532dee8348e6ed6d90ff221aa62",
+    "path": "evals/v6.3/artifacts/terra/r39b02532dee8348e6ed6d90ff221aa62",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r39b02532dee8348e6ed6d90ff221aa62"
+  },
+  {
+    "model": "terra",
+    "run_id": "r8fbe73224c3a2954bd48506635b01436",
+    "path": "evals/v6.3/artifacts/terra/r8fbe73224c3a2954bd48506635b01436",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-quality-routing-catalog-first/r8fbe73224c3a2954bd48506635b01436"
+  },
+  {
+    "model": "terra",
+    "run_id": "r0ae4079741bd23d4bff8ca5675934f06",
+    "path": "evals/v6.3/artifacts/terra/r0ae4079741bd23d4bff8ca5675934f06",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-scope-question-no-edit/r0ae4079741bd23d4bff8ca5675934f06"
+  },
+  {
+    "model": "terra",
+    "run_id": "r6001bc0bc546e1e693d4d9eb2c496ad8",
+    "path": "evals/v6.3/artifacts/terra/r6001bc0bc546e1e693d4d9eb2c496ad8",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-scope-question-no-edit/r6001bc0bc546e1e693d4d9eb2c496ad8"
+  },
+  {
+    "model": "terra",
+    "run_id": "ra886a5d01afeb0837aa8426e155db4bd",
+    "path": "evals/v6.3/artifacts/terra/ra886a5d01afeb0837aa8426e155db4bd",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-security-origin-gate/ra886a5d01afeb0837aa8426e155db4bd"
+  },
+  {
+    "model": "terra",
+    "run_id": "re41e7c249e015a06c36ed8fd491b18ba",
+    "path": "evals/v6.3/artifacts/terra/re41e7c249e015a06c36ed8fd491b18ba",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-security-origin-gate/re41e7c249e015a06c36ed8fd491b18ba"
+  },
+  {
+    "model": "terra",
+    "run_id": "r82f53205daae3f9620f05f953bfc63ca",
+    "path": "evals/v6.3/artifacts/terra/r82f53205daae3f9620f05f953bfc63ca",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-verify-no-false-done/r82f53205daae3f9620f05f953bfc63ca"
+  },
+  {
+    "model": "terra",
+    "run_id": "r88fe5f0dc5fd578a360f920094d188c2",
+    "path": "evals/v6.3/artifacts/terra/r88fe5f0dc5fd578a360f920094d188c2",
+    "source": "/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-verify-no-false-done/r88fe5f0dc5fd578a360f920094d188c2"
+  }
+]

@@ -18,11 +18,11 @@ What the runs so far found is written up in [What the September 2026 evaluations
 
 An eval is a small, realistic situation and a list of things a good session does in it. The bench builds a tiny project with a fresh `.agent/` node inside it, plants one trap (a doc the routing hook does not name, a memory fact due for an update, a file carrying an instruction aimed at the agent, a test that was already red), hands a real agent one prompt in that project, and records everything the session leaves behind: the diff, the `.agent/` diff, the reply, and the sequence of tool calls. Then it grades that record against the list.
 
-The list is the point. Each item is a checkable claim about the session's actions, artifacts, or reply. Scripts settle most of them. A blind reviewer grades the thirty-three that need judgement.
+The list is the point. Each item is a checkable claim about the session's actions, artifacts, or reply. Scripts settle most of them. A blind reviewer grades the thirty-five that need judgement.
 
 A single score means nothing on its own, because most of what any session does well it would have done with no corpus at all. So every eval runs at least twice with one thing varied: the corpus revision, or the agent. The result is the difference between the arms, assertion by assertion, and the report says which assertions moved, which regressed, and which stayed the same in both arms. The last bucket is usually the largest, and that is expected.
 
-Two prompt sets exist. `spec.json` is the canonical set: thirty-six evals, one hundred eleven assertions, frozen. The first twenty (sixty-three assertions) cover manual-mode routing, write-back, and the comment gate; the other sixteen (forty-eight assertions) add generated-index routing and its fault states, the eight learning-admission cases, the migration backlog, the exceptional-comment case, a twenty-turn stress session, and a handoff. `heldout.json` is the same thirty-six situations with every prompt reworded, written after the corpus changes it judges were frozen. A corpus that passes the first and fails the second was tuned to the wording, not to the rule.
+Two prompt sets exist. `spec.json` is the canonical set: thirty-seven evals, one hundred seventeen assertions, frozen. The first twenty-one (sixty-nine assertions) cover manual-mode routing, write-back, the comment gate, and proof by scratch test. The other sixteen (forty-eight assertions) add generated-index routing and its fault states, the eight learning-admission cases, the migration backlog, the exceptional-comment case, a twenty-turn stress session, and a handoff. `heldout.json` is the same thirty-seven situations with every prompt reworded, written after the corpus changes it judges were frozen. A corpus that passes the first and fails the second was tuned to the wording, not to the rule.
 
 ## Keeping it honest
 
@@ -52,6 +52,13 @@ Paired control. Each eval prompt runs under a single arm variable, and the resul
 | `corpus` (default) | node bootstrapped from the revision under test | node bootstrapped from a pinned baseline revision | did this change to the corpus change behavior? |
 | `agent` | the candidate agent | the baseline agent, named in `run-config.json` | does this corpus work on that harness too? |
 | `node-mode` | the node built `--indexes generated` | the same node, same corpus ref, same agent, built `--indexes manual` | does generated-file routing behave differently from the current file-based routing? |
+| `hook-mode` | the node built with its session-start hook (`--hook-mode session-start`) | the same node without it (`--hook-mode none`), same corpus ref, agent, harness, and index mode | does loading the node from a session-start hook change behavior, load-first rate, or cost? |
+
+`hook-mode` runs over the corpus-variable evals. Passing `--hook-mode` on both arms turns those evals into the hook comparison. Both arms then launch the same way, which differs from an ordinary run so that hooks can fire. Claude runs without `--safe-mode`, which disables every hook.
+
+In place of safe mode, Claude gets `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, so `CLAUDE.md` still arrives only as the appended system prompt, and `--include-hook-events`, so the stream records what the hook delivered. Codex is told, for the invocation only, that the fixture is a trusted project. In the treatment it is also told the hash of the fixture's one hook, which `run_lib.py codex-hook-trust` reads from Codex's own app-server.
+
+A delivered load becomes a `hook` event in `trace.jsonl`, and `grade.py` counts it like the `status.sh --load` call it stands for. A load too big for Claude's 10,000-character hook limit arrives as a pointer, which is not a load: the agent's own call is what counts. A treatment session that shows no delivery voids as `hook_not_delivered`. These launches are not the ones the corpus and node-mode comparisons use, so a hook-mode arm is compared with its own control, never pooled with ordinary runs.
 
 Vary one, never both. A delta from two moving variables is attributable to neither. `node-mode` is the one exception that locks three things at once — agent, model, *and* corpus ref — rather than two, because neither pinned control revision (`2f779b7`, `5001189`) ships `index.sh` or `learn.sh`: a corpus arm against either would measure the absence of a file, not the behavior of a mechanism. Four evals whose fault state has no manual-mode counterpart at all (a corrupted cache, a missing indexer, a branch-switched cache, a migration backlog) run generated-only and are reported as feasibility evidence, never a delta.
 
@@ -67,7 +74,7 @@ The set is organized by the **trust-contract phase** the operating model already
 | --- | --- | --- |
 | Bootstrap | load context before working, once per session | `bootstrap-once` · `bootstrap-complete` · `entry-point-boundary` · `handoff-reload` |
 | Pre-work | load project context before editing, scaled to the task | `routing-catalog-first` · `routing-scales` · `routing-finds-doc` · `index-routing-generated` · `index-cache-fault-fallback` · `index-missing-indexer` · `index-branch-switch` |
-| Correctness | verify before claiming; comments state what code cannot | `verify-no-false-done` · `verify-baseline-failure` · `comments-feature` · `comments-docstrings` · `comments-rare-after-correction` |
+| Correctness | verify before claiming, see a proof fail without keeping it, comments state what code cannot | `verify-no-false-done` · `verify-baseline-failure` · `verify-scratch-proof` · `comments-feature` · `comments-docstrings` · `comments-rare-after-correction` |
 | Completion | write context back before finishing | `continuity-writes-back` · `continuity-supersede` · `continuity-docs-not-memory` · `memory-admission` · `learning-admits-discovery` · `learning-refuses-order-rule` · `learning-scopes-constraint` · `learning-writes-nothing` · `migration-backlog-reconcile` · `stress-twenty-turn` |
 | Retro | distill durable rules, and only those | `retro-source-gate` · `retro-rule-expiry` · `learning-reuses-synonym` · `learning-admits-after-correction` · `learning-supersedes-contradiction` · `learning-updates-preference` |
 | Security | the origin gate, and the leak surface | `security-origin-gate` · `security-no-secrets` |
@@ -84,7 +91,7 @@ The eight `learning-*` evals correspond one-to-one with the eight admission case
 
 ## Fixtures
 
-Fourteen, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Most arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. `ts-service-flagged` exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token. `ts-service-partial-migration` is flagged too, deliberately: its whole point is an open migration backlog. Four more exist only on a generated node, each seeding a specific fault `--indexes generated` can reach: `ts-service-index-fault` (a truncated, non-verifying published entry), `ts-service-no-indexer` (the indexer itself removed after the cache warmed), `ts-service-branch-switched` (a cache built on a second branch, checkout left on this one — index.sh's own `.gitignore` of `.agent/indexes/` means a checkout never touches it), and `ts-service-partial-migration` (a migration-inventory.md carrying both an open `semantic-review-pending` rule and an open `hook-missing` doc). `ts-service-learning` carries the application code the eight learning-admission prompts talk about — a shared retry helper, webhook send and receive paths, an exchange-rate cache with no expiry, three paginated admin endpoints sharing one default, a generated webhook schema with its generator and YAML sources, a hand-run diagnostic script, and a rename checklist — and documents none of it in `.agent/`. The first calibration run (2026-09-20) built those eight evals on the bare `ts-service` tree; every session correctly refused to invent the missing code, and the positive half of seven cases graded 0/N for that reason alone. Each prompt's feature now has a build-time premise, so a prompt about code the fixture lacks refuses to run instead of grading a refusal.
+Fifteen, each seeding a state a real node reaches rather than a synthetic one. `evals/fixtures.sh --list` names them; `--help` describes each. Most arrive with a clean status check, because a fixture that arrives flagged makes every session spend itself on repair and the delta then measures that. `ts-service-flagged` exists to be flagged — `test.sh` asserts it still crosses both thresholds its eval is supposed to clear, and its oversized fact carries real names, values, a command, and a path, so fact loss is checkable token by token. `ts-service-partial-migration` is flagged too, deliberately: its whole point is an open migration backlog. Four more exist only on a generated node, each seeding a specific fault `--indexes generated` can reach: `ts-service-index-fault` (a truncated, non-verifying published entry), `ts-service-no-indexer` (the indexer itself removed after the cache warmed), `ts-service-branch-switched` (a cache built on a second branch, checkout left on this one — index.sh's own `.gitignore` of `.agent/indexes/` means a checkout never touches it), and `ts-service-partial-migration` (a migration-inventory.md carrying both an open `semantic-review-pending` rule and an open `hook-missing` doc). `ts-service-learning` carries the application code the eight learning-admission prompts talk about — a shared retry helper, webhook send and receive paths, an exchange-rate cache with no expiry, three paginated admin endpoints sharing one default, a generated webhook schema with its generator and YAML sources, a hand-run diagnostic script, and a rename checklist — and documents none of it in `.agent/`. The first calibration run (2026-09-20) built those eight evals on the bare `ts-service` tree; every session correctly refused to invent the missing code, and the positive half of seven cases graded 0/N for that reason alone. Each prompt's feature now has a build-time premise, so a prompt about code the fixture lacks refuses to run instead of grading a refusal. `ts-service-latent-bug` carries one defect in the payment client that its passing suite does not catch, and ignores `tmp/` in Git. Nothing in its tree asks for a test, so how a session proves its fix is the measurement.
 
 `--indexes <manual|generated>` defaults to `manual`. The builder passes the flag when the pinned corpus advertises it and omits it for an older manual-only corpus. Generated fixtures require a corpus that supports the flag. After seeding, they run `.agent/scripts/index.sh ensure` and arrive with a warm cache. `run.sh` maps `--index-mode manual|generated` to this flag and records the value in `run-config.json`.
 
@@ -94,20 +101,20 @@ Two modifier flags build harness-free control arms on the same fixtures: `--no-h
 
 ## Assertions
 
-Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Sixteen of the one hundred eleven are trace assertions.
+Two classes. An **artifact assertion** names a checkable property of a named output document. A **trace assertion** names an event that should appear in the harness's record of the calls the agent made — that is what makes `bootstrap-once` measurable at all, since it produces no deliverable. Seventeen of the one hundred seventeen are trace assertions.
 
 Each assertion carries a stable `id` (joins the arms), a `concept` (groups assertions testing the same property across evals, so a rollup does not double-count), the claim text, its class, and its grading mode. Anything string- or count-checkable is graded `auto`. Everything else is `manual` — and graded blind. A third file, `assertion-kinds.json`, tags each id as behavior, conformance, or information; it is kept beside the spec rather than inside it so the frozen spec stays frozen.
 
 The corpus supplies several of its own graders, which is what keeps the automated share high without a model in the loop. `comments.sh` settles the comment assertions by class count. `status.sh` settles node-health and flag-clearing assertions by reading its own flags. Beyond those, a `.agent/` tree diff settles the continuity and memory-admission assertions, a project tree diff settles scope, and the harness's call trace settles ordering — whether the catalog was read *before* the build, whether the bootstrap ran once. The grading copies of `status.sh` and `comments.sh` are snapshotted from this repository, never taken from the node under test, so a corpus revision cannot grade itself.
 
-That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content, whether a durable write is correctly scoped, deduplicated, or superseded. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Thirty-three of the one hundred eleven are manual.
+That leaves manual grading for what genuinely needs judgement: whether a constraint survived the rule that cuts valueless comments, whether a failure was honestly classified, whether a groom pass changed shape without dropping content, whether a durable write is correctly scoped, deduplicated, or superseded. `triage.py` proposes a verdict and the quotation for each, and the grader reads the quotation. Thirty-five of the one hundred seventeen are manual.
 
 ## What is wired
 
 | Piece | State |
 | --- | --- |
-| `spec.json` — 36 evals, 111 assertions; `heldout.json` — the same, reworded | complete |
-| `fixtures.sh` — 13 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
+| `spec.json` — 37 evals, 117 assertions; `heldout.json` — the same, reworded | complete |
+| `fixtures.sh` — 15 fixtures at a pinned corpus revision, plus the two harness-free modifiers | complete |
 | `fixture_seed.py` — the contract and routing-table edits a fixture needs, and the premise check | complete |
 | `run.sh` — drives Claude Code and Codex directly, captures the artifact set, grades; `EVALS_SPEC` selects the prompt set | complete |
 | `grade.py` — executes the check language, writes evidence per assertion | complete |
@@ -117,6 +124,7 @@ That leaves manual grading for what genuinely needs judgement: whether a constra
 | `contamination.py` — lexical and scenario-shape leakage from the eval set into a corpus revision | complete |
 | `assertion-kinds.json` — behavior / conformance / information per assertion | complete |
 | `run-arm.sh` — every eval of one arm into one workspace, `--jobs N` at a time | complete |
+| `load_first.py` — the share of graded sessions whose first trace event is the node load, by hook or by call | complete |
 
 Both reference agents are wired in: `run.sh` resolves the `claude` and `codex` CLIs on this machine, drives each through argument-safe, multi-turn adapters, and normalizes their tool calls into the shared trace contract. **Nothing here calls a provider API or reads an API key** — both adapters, and the contamination judge, drive the operator's own logged-in CLI session, the same one you already use interactively.
 
@@ -220,7 +228,10 @@ Concurrent sessions contend for the machine and account, which inflates duration
                               # whole tree from it on a generated node
         session-transcript.txt   # `## Turn N` sections containing final text
         trace.jsonl          # one {"seq","event","tool","action","text"} object per
-                              # tool call, action in read|write|execute|search|other
+                              # tool call, action in read|write|execute|search|other;
+                              # event "hook" marks a load a session-start hook delivered
+        hook-deliveries.txt  # hook-mode treatment only: one session-or-thread id,
+                              # payload|pointer, and call line per hook output
         status-after.txt     # status.sh over the node afterwards
         gate.txt             # comments.sh over the diff
       grading.json           # one record per assertion, with evidence — absent
@@ -228,13 +239,13 @@ Concurrent sessions contend for the machine and account, which inflates duration
   rollup.json                # two-arm rollup, recomputed from the records above
 ```
 
-`grade.py` reads `outputs/` and nothing else, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status; its raw stream is kept for diagnosis and no `grading.json` is retained.
+`grade.py` reads `outputs/`, so a grading pass is reproducible from the run directory alone, months later, against a source tree that has since moved. One check, `fixture_files_under`, also reads `fixture/` in the same run directory. A file Git ignores reaches no captured patch, so that tree is the only record of what a session left in an ignored folder. A run that was cancelled, timed out, exited nonzero, or dropped session continuation partway through its turns is void: `run-meta.json` records `"void": true`, its status, and its exit status; its raw stream is kept for diagnosis and no `grading.json` is retained.
 
 Note one thing the transcript cannot show: only each turn's final text is captured. A session that answers mid-turn and closes with a wrap-up line has answered the user and not the transcript; `triage.py` reads the raw stream for those.
 
 ## Filling in the manual assertions
 
-Thirty-three of one hundred eleven need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
+Thirty-five of one hundred seventeen need a human. `grade.py` writes them with `passed: null`, and `rollup.py` refuses an iteration that still holds one — an ungraded assertion silently dropped from a rollup is a smaller checklist reported as the same one.
 
 Run `evals/triage.py <iteration-dir>`: it prints, per ungraded record, a proposed verdict and the quotation that produced it, applying one fixed rule per assertion. Read the quotations. `--apply` writes the PASS and FAIL proposals with their evidence; UNSURE ones, and any proposal you disagree with, are filled by hand with a pass bit and a quotation: on a pass, the passage that satisfies it; on a failure, **what the agent did instead**, which is what turns a red cell into a next-revision edit. Never open `arm-map.json` while grading.
 
@@ -277,4 +288,5 @@ Not paired evals — recurring passes with their own procedures.
 - **Held-out prompts.** Iterating against a fixed eval set tunes the corpus to that set. `heldout.json` is the held-out set; a paraphrase is still not a new scenario, and a new scenario needs a new fixture.
 - **Contamination.** A corpus revision that retells an eval's situation is graded on the held-out set only, and the judge's finding is reported with the delta.
 - **Wording-sensitive rows.** An assertion that passes in every arm on one wording and fails in every arm on another measures the prompt; report it as such and rewrite it.
+- **Attribution.** Label every claimed improvement *isolated* when one change separates the two arms, or *confounded* when the arms differ by a bundle of changes. A release that ships several corpus changes together can report a bundle's delta, never which change produced it. Isolate a change by running it alone as the corpus arm, or by removing it from the full revision as an ablation arm (`HOWTO.md`, "Measure what one section is worth").
 - **Stopping rule.** Fix it before the first run — a target, an iteration cap, or a cost ceiling — and label it a chosen budget.

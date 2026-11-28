@@ -64,10 +64,12 @@ CONTRACT_ANSWERS = {
     "Catalogs": "none yet",
     "Build": "none — `package.json` has no build script",
     "Test": "`npm test`",
+    "Scratch tests": "`tmp/scratch/`, which Git ignores",
     "Lint / typecheck": "none configured — `package.json` has no lint or typecheck script",
     "Generated files": "none",
     "Doc comments": "no surface requires them; the Comments rule applies with no exemption",
     "Project constraints": "no new runtime dependencies without asking",
+    "Verification driver": "`test` in `.agent/scripts/checks.sh` runs `npm test`",
 }
 
 PLACEHOLDER = re.compile(r"^- ([A-Za-z][^:]*): <[^>]*>$", re.M)

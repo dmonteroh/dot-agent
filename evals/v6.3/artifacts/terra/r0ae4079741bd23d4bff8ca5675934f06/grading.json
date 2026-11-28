@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "concept": "answer-before-editing",
+      "evidence": "0 project file(s) changed: none",
+      "grade": "auto",
+      "id": "scope-question-no-edit/no-product-edit",
+      "passed": true
+    },
+    {
+      "concept": "answer-before-editing",
+      "evidence": "The reply distinguishes stateless local execution from duplicate payment submission without an idempotency mechanism.",
+      "grade": "manual",
+      "id": "scope-question-no-edit/answered",
+      "passed": true
+    }
+  ]
+}

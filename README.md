@@ -53,14 +53,15 @@ It stops there on purpose. Working agreements, team methodology, and how people 
 │                   # in comments.conf, never refreshed by update)
 │                   # + index.sh, the generated-index builder (indexes: generated only)
 │                   # + learn.sh, the learned-rule admission helper
-├── indexes/        # indexes: generated only — rendered from rules/ and docs/,
-│                   # gitignored, disposable, rebuilt by index.sh
-└── skills/         # Optional — installed skills, symlinked into tool dirs
+│                   # + absorb.sh, which merges a worker checkout's node back
+│                   # + session-start.sh, which hands the load to a session-start hook
+└── indexes/        # indexes: generated only — rendered from rules/ and docs/,
+                    # gitignored, disposable, rebuilt by index.sh
 ```
 
 `.agent/indexes/` and, in generated mode, the aggregate `.agent/rules/learned.md` are both regenerable and gitignored — never hand-edit either. See [`scripts/docs/index.md`](scripts/docs/index.md) for the index cache and [`scripts/docs/learn.md`](scripts/docs/learn.md) for the learned-record helper that owns `rules/learned/`.
 
-Two contracts hold it together. The self-maintenance contract covers what gets written: before finishing any task, the agent writes a session-log entry, qualifying current state to memory, and stable system knowledge to docs. The load contract covers what gets read, and keeps the always-loaded set small enough that a session opening does not cost more than the task. The binding rules live in the preset, and each file's header carries its own format contract.
+Two contracts hold it together. The self-maintenance contract covers what gets written: before handing back changed work, checkpoint records the outcome, qualifying current state goes to memory, and stable system knowledge goes to docs. The load contract covers what gets read, and keeps the always-loaded set small enough that a session opening does not cost more than the task. The binding rules live in the preset, and each file's header carries its own format contract.
 
 ## Presets
 
@@ -90,7 +91,7 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then
 5. Write purpose.md from what I told you in step 1: what this node is for and what it holds. Leave the dot-agent frontmatter block at the top of the file untouched.
 6. List any existing project nodes in the manifest's children.
 7. Wire my tools at the root from the canonical entry-point template. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. For Claude Code, the entry point is ~/.claude/CLAUDE.md. Fill every <…> placeholder. Delete the template's own header comment. Write every path absolute, since sessions run from project directories. That means ~/.agent/..., and `bash ~/.agent/scripts/status.sh ~` for the status step. Keep every entry point you write byte-identical to the others of the same kind.
-8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in ~/.claude/settings.json.
+8. Disable Claude Code's native memory: "autoMemoryEnabled": false in ~/.claude/settings.json. node.sh already set it there unless the file set the key before; check its value.
 9. Last, run `bash ~/.agent/scripts/status.sh ~`. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
 Ask me anything you can't infer.
@@ -106,11 +107,11 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then
 1. Explore the project: README, configs, source, and git history. Confirm your findings with me before writing anything. Include which preset fits, and what you could not infer.
 2. Ask me the tracking mode once. The three modes are ignore-all (.agent/ fully gitignored), track-shared (purpose/rules/docs shared, memory.md/memory/ and logs ignored), and track-all (everything committed). Also ask whether I want a generated index (`--indexes generated`) instead of the default manual mode (`--indexes manual`) — generated mode adds a rebuildable index cache over rules/ and docs/, at the cost of running `bash .agent/scripts/index.sh ensure` before each session's other reads.
 3. Clone the source repo. Then run `bash scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated] <this project's path>` from the clone. It creates .agent/, stamps its manifest, and writes the matching gitignore entries. <name> is the preset we settled in step 1: software-development, academic-research, or domain-knowledge, and no other name. Give an absolute path, since you are running from the clone. Read what it prints before going on. If it refuses because .agent/ already exists, stop and tell me. An existing node takes the update prompt, not this one.
-4. Adapt the preset that node.sh copied into rules/contract.md. Keep its Kernel intact. Fill Project guardrails with exact commands ("run the tests" is not filled in — the real test command is).
+4. Adapt the preset that node.sh copied into rules/contract.md. Keep its Kernel intact. Fill Project guardrails. Configure .agent/scripts/checks.sh with the exact project commands, and point the guardrails at its check names. Configure verify.conf for the test runner's output. The starter driver deliberately refuses to pass.
 5. Move contract.md's `## Quality bar` section into rules/quality-bar.md. After the move, that section is gone from contract.md and the rubric loads on demand.
 6. Write purpose.md from what step 1 established. Cover what this project is, who it's for, its key constraints, and where to change what. Leave the dot-agent frontmatter block at the top of the file untouched.
 7. Wire my tools from the canonical entry-point template into CLAUDE.md and AGENTS.md. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. Add .github/copilot-instructions.md if I use Copilot Chat or code review. Fill every <…> placeholder: the project line and the doc routing. Delete the template's own header comment. Keep every entry point of the same kind byte-identical.
-8. Disable Claude Code's native memory: set "autoMemoryEnabled": false in .claude/settings.json.
+8. Disable Claude Code's native memory: "autoMemoryEnabled": false in .claude/settings.json, or .claude/settings.local.json for ignore-all. node.sh already set it in the file where it wired the session-start hook, unless that file set the key before; check its value.
 9. If I have a root ~/.agent/, add this node to its manifest's children.
 10. Last, run `bash .agent/scripts/status.sh` from this project's root. Clear every REPAIR: line it prints. If clearing one needs a fact I haven't given you, ask me instead of inventing it.
 
@@ -118,6 +119,8 @@ Ask me anything you can't infer. Don't guess.
 ```
 
 The tracking mode in step 2 is the gitignore practice: it decides what enters git, once, at bootstrap, and `node.sh init` writes it. See [Tracking modes](operating-model.md#tracking-modes) for the exact gitignore each mode writes.
+
+`node.sh init` also wires a session-start hook into Claude Code and Codex, so a session starts with the node already loaded instead of depending on the agent to run the first step. It follows the tracking mode. In `track-shared` and `track-all` it goes in `.claude/settings.json` and `.codex/hooks.json`, committed for the whole team. In `ignore-all` it goes in `.claude/settings.local.json` and `.codex/hooks.json`, listed in `.git/info/exclude` so they stay personal. Teammates on Claude Code need to do nothing beyond the `node.sh update` that installs the node's scripts in their checkout. Codex asks each developer to approve the hook once with `/hooks`. Until then it skips the hook, and the entry point loads the node as before. Pass `--hooks none` to `init` or `update` to leave it out. [`scripts/docs/session-start.md`](scripts/docs/session-start.md) has the details.
 
 ### Updating an existing node
 
@@ -128,11 +131,11 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then
 
 1. Clone the source repo and read the node's `indexes` value in `.agent/purpose.md`. If it is `manual`, ask whether to keep it or adopt generated indexes. Run `bash scripts/node.sh update [--indexes generated] <this node's path>` from the clone, passing the flag only when I choose adoption. Give an absolute path, since you are running from the clone. The script reads the manifest and compares version. It backs up the node first, unless its mode is track-all. It then applies the mechanical migration baseline, recording the version it's migrating toward without bumping the node's version yet — that happens at `finalize`, once the node checks clean. Read its output before going on:
    - If it says generated indexes were adopted, continue to step 2 so the new migration inventory and entry-point wiring are reconciled.
-   - Otherwise, if it says the node is current, any recognized same-version shape refresh is complete and there is nothing pending. Skip to step 5.
+   - Otherwise, if it says the node is current, any recognized same-version shape refresh is complete and no migration is pending. The template can still change within a version, so do step 3, then skip to step 5.
    - If it reports no manifest (a pre-V6 node), update the node by hand instead. Work through CHANGELOG.md from the V6 entry forward as the migration checklist. If you restore the manifest, stamp it with the node's real prior version before re-running the script.
    - If its output says it resumed an interrupted update from an existing backup, that is not a stop — it already proceeded. Continue to step 2.
    - If it stops for any other reason, stop and tell me. Those reasons include no .agent directory at that path, or a backup path already there that it did not resume. Never delete, move, or rename anything to get past it.
-2. Reconcile. Apply what the operating model adds, while preserving accumulated content: memory, learned rules, and project-specific adaptations. That includes splitting `memory/legacy.md` into fact files per its GROOM flag. If existing content directly conflicts, flag it and let me decide. Never silently overwrite.
+2. Reconcile. Configure checks.sh and verify.conf, and preserve any existing project-owned driver. Apply the shorter preset protocol while preserving memory, learned rules, and project-specific adaptations. That includes splitting `memory/legacy.md` into fact files per its GROOM flag. If existing content directly conflicts, flag it and let me decide. Never silently overwrite.
 3. Refresh the entry points against the canonical template. Use templates/entry-point.md in the clone if the manifest says `indexes: manual`, or templates/entry-point-generated.md if it says `indexes: generated`. Carry this node's own filled-in values into the refreshed copy: the project line and the doc routing. Never leave the template's <…> placeholders. Keep every entry point of the same kind byte-identical.
 4. Run `bash scripts/node.sh finalize <this node's path>` from the clone. It checks the node and, if reconciliation is complete, stamps its version and clears the pending migration. If it refuses with outstanding REPAIR: findings, reconcile those and run it again — do not skip ahead with a migration still pending.
 5. Repeat steps 1–4 for each child node listed in the manifest's children, one node at a time.
@@ -140,19 +143,23 @@ Read the .agent/ operating model at https://github.com/dmonteroh/dot-agent. Then
 7. Report what changed, what you preserved, anything you flagged for me, whether the node finalized (or why it's still pending), and any REPAIR: line still standing.
 ```
 
-Each conversation opens with one status check: in manual mode, the entry point's first step runs `.agent/scripts/status.sh --load`, which prints the findings and then the four always-loaded files, so the bootstrap is one tool call. In generated mode the first step is `index.sh ensure` instead, reading whichever pages it lists (or the canonical `rules/`/`docs/` sources on a build failure); `status.sh --load` then covers purpose and memory only, since rule and doc bodies come from the index pages. Later user messages continue the same session and do not reopen the entry point or reload its files; after a compaction or handoff the steps run again. The check prints recent session-log entries and `GROOM:` flags when files breach their grooming thresholds. `REPAIR:` flags cover missing stamps, index/file drift, and bootstrap steps left undone (unfilled guardrails, an unsplit quality bar, entry points that stopped matching, the native-memory setting still on). It also prints `INDEX:` flags for doc-routing drift, advisory `TOOLS:` notes, and an advisory `LOAD:` line measuring what the always-loaded set costs. The agent handles the flags as part of the session — inline, or by handing `GROOM:` work to one subagent (a small model is fine) scoped to the flagged files. Flags are discovered on the load path, not held for hand-back: `scripts/checkpoint.sh` runs the same status check again before writing the session-log entry, and writes none while a `GROOM:`, `REPAIR:`, or `INDEX:` line still stands or when the status check itself fails to run cleanly.
+Each conversation opens with the entry point's load procedure. Manual mode uses `status.sh --load`. Generated mode first uses `index.sh ensure`, then reads the listed pages and status output. Later user messages continue the same session. Compaction or handoff reloads the node.
+
+`status.sh` reports GROOM:/REPAIR:/INDEX: findings, tool notes, and the load budget. `checkpoint.sh` consumes stable findings from `status.sh --format tsv` before logging. Its default strict policy blocks all actionable findings. The optional completion policy defers size-only maintenance while structural defects still block. A failed inspection never counts as a clean node.
 
 One check is deliberately not on that path: `.agent/scripts/links.sh` audits the node's own link graph on demand, reporting `ORPHAN:` (a file nothing cites) and `BROKEN:` (a cited node path that doesn't exist). Run it when grooming or after a restructuring pass. It matters most for `docs/<area>/references/`, which carries no routing entry by design, so an uncited reference file is unreachable and nothing on the load path can tell.
 
-A third check runs at diff time. `.agent/scripts/comments.sh` gates comments added by the diff against the change's true parent. `.agent/scripts/checkpoint.sh` calls that gate before the status check and log entry. It writes the entry once after a clean run, and writes nothing when the turn changed no files.
+`review.sh` runs the existing comment gate and surfaces catalog, test-coverage, and kept-test candidates from the diff, and says when scratch tests remain. Checkpoint calls this review automatically. Verification comes from `verify.sh`, which runs the project-owned check driver and records evidence tied to current inputs. A bare `--verify pass` claim is refused. Repeating a successful checkpoint for unchanged content writes no duplicate entry.
+
+Use `checkpoint.sh --checks test` to verify and record in one call. Use `--verification <receipt-id>` to reuse current evidence. Failed or inconclusive checks stop automatic publication. Manual-only or final failed work can be recorded explicitly with `--verify n/a` or `--verify fail`. Explicit ignored-node writes use `--node-only`. The [v6.3 trial guide](scripts/docs/v6.3-trial.md) covers installation, configuration, and these commands.
 
 The gate blocks six decidable kinds: dead citations, commented-out code, change narration, replies to the request, review chat residue, and short structure narration. It lists every other added comment for the author to justify or delete. A heuristic label identifies comments that merely restate the code below them.
 
 Team-specific vocabulary lives in `comments.conf` beside the gate. It covers the base ref, ticket, narration, chat-residue, constraint, extension, and exclusion patterns. The file is plain `KEY=value`, parsed and never executed. Init seeds a starter, while update preserves an existing file.
 
-The status check uses `status.conf`, and the log writer uses `log.conf`. `LOG_INCLUDE_BRANCH=true` stamps the checked-out branch on each entry. Conf edits survive update, while script edits do not. The operating model's "The comment gate" section documents every key.
+The status check uses `status.conf`, and the log writer uses `log.conf`. `LOG_INCLUDE_BRANCH=true` stamps the checked-out branch on each entry. Configuration and the project-owned `checks.sh` driver survive update. Managed runtime scripts are refreshed atomically, including on version-current nodes. The operating model's "The comment gate" section documents every key.
 
-If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed into `.agent/skills/` and read through a symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). The trust contract is the compliance story, and the reference deployments run without any of it.
+If you use **Claude Code**, optional [skills](tools/skills/) package the rare in-session procedures (grooming, retro) for on-demand loading. They are installed beside the node into `.agents/skills/`, which most agent tools read directly. Claude Code reads them through a `.claude/skills` symlink. [`tools/claude-code/`](tools/claude-code/) ships the settings the bootstrap copies (`autoMemoryEnabled: false`, `.agent/**` permissions). [`tools/hooks/`](tools/hooks/) holds the session-start hook installer `node.sh` runs. The trust contract is the compliance story, and the reference deployments run without any of it.
 
 ## The knowledge tree
 
@@ -199,7 +206,7 @@ Rationale has one home per story. `CHANGELOG.md` states what a release changed i
 
 Every script is documented in [`scripts/docs/`](scripts/docs/) — one file each, covering what it reports and how a node tunes it. Those docs stay in this repo: a node receives the executables and their starter confs, never this repo's design notes.
 
-Run `bash scripts/test.sh` after any change under `scripts/`: self-contained smoke tests for `node.sh`, `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. It must pass before a change ships.
+Run `bash scripts/test.sh` after any change under `scripts/`. It covers the existing corpus checks and the focused v6.3 suites under `scripts/tests/`. It must pass before a change ships.
 
 That suite checks the corpus as an artifact, and every check in it passes on a corpus no agent obeys. [`evals/`](evals/) covers the other half: paired runs that measure whether a session under this corpus behaves differently from one without it. It belongs to this repository and never to a node — nothing under `evals/` is installed by `node.sh` or copied into a project adopting `.agent/`. It is not in CI either, since a run costs model tokens and returns a distribution rather than a bit, but `test.sh` validates its spec, builds its fixtures and drives its grader, so the eval set cannot rot between runs.
 

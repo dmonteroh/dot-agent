@@ -1,0 +1,160 @@
+{
+  "spec_version": 2,
+  "subject": {
+    "kind": "prose-contract",
+    "name": "dot-agent product quality follow-up",
+    "components": [
+      ".agent/rules/contract.md"
+    ]
+  },
+  "arms": {
+    "variable": "contract",
+    "treatment": {
+      "name": "variant",
+      "definition": "A pinned contract-file overlay on the same corpus and fixture."
+    },
+    "control": {
+      "name": "current",
+      "definition": "The current contract from the pinned corpus ref, with no overlay."
+    }
+  },
+  "weighting": "per-assertion",
+  "evals": [
+    {
+      "id": "quality-routing-catalog-first",
+      "phase": "pre-work",
+      "fixture": "ts-service-catalog",
+      "prompt": "We need to call the refunds endpoint. Add a client for it.",
+      "expect": "The area catalog is read before anything is built, and the existing http client it lists is extended rather than a second one written.",
+      "artifacts": [
+        "diff.patch",
+        "trace.jsonl",
+        "quality-oracle.json"
+      ],
+      "assertions": [
+        {
+          "id": "quality-routing-catalog-first/catalog-read-first",
+          "concept": "catalog-first",
+          "text": "docs/service-catalog.md is read before the first write to src/. Its hook is unconditional, so task size is no excuse.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_order 'service-catalog.md' before 'write:src/'"
+        },
+        {
+          "id": "quality-routing-catalog-first/no-second-client",
+          "concept": "catalog-first",
+          "text": "No new non-test module is created. The catalog says to extend httpClient, so a correct run adds zero new modules; a test file beside the change does not count.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_modules_added == 0"
+        },
+        {
+          "id": "quality-routing-catalog-first/catalog-entry-added",
+          "concept": "catalog-first",
+          "text": "If a reusable block was added, its one-line catalog entry landed in the same change.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "quality-routing-catalog-first/behavior-covered",
+          "concept": "behavior-coverage",
+          "text": "The product diff adds tests for the requested behavior. The tests would fail against the original implementation.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "quality-routing-catalog-first/behavior-correct",
+          "concept": "task-correctness",
+          "text": "The added refund entry point invokes the shared HTTP transport with the refunds route and supplied payload. A deterministic independent check confirms the call.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/docs/service-catalog.md",
+          "contains": "httpClient"
+        },
+        {
+          "path": "src/http.ts",
+          "exists": true
+        }
+      ],
+      "why": "The operating model states this failure passes tests, passes lint, and survives review, so nothing else in the model catches it. That makes it the eval with the least redundant coverage in the set."
+    },
+    {
+      "id": "quality-continuity-writes-back",
+      "phase": "completion",
+      "fixture": "ts-service",
+      "prompt": "Add exponential backoff to the outbound call. Three attempts.",
+      "expect": "Exactly one session-log entry in format. memory/ untouched, because nothing durable changed, and the log entry says so.",
+      "artifacts": [
+        "node-diff.patch",
+        "session-transcript.txt",
+        "quality-oracle.json"
+      ],
+      "assertions": [
+        {
+          "id": "quality-continuity-writes-back/one-log-entry",
+          "concept": "log-entry-written",
+          "text": "Exactly one entry is appended to session-log.md.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entries_added == 1"
+        },
+        {
+          "id": "quality-continuity-writes-back/entry-in-format",
+          "concept": "log-entry-format",
+          "text": "The entry is at or under the header contract's 25 words and carries a verify tag. status.sh raises no entry-shape flag.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entry_words <= 25 && status_flags_absent 'entries over'"
+        },
+        {
+          "id": "quality-continuity-writes-back/no-narrative",
+          "concept": "log-entry-format",
+          "text": "The entry carries no file list, SHA, or test count.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entry_absent '[0-9a-f]{7,}' && log_entry_absent '\\.ts'"
+        },
+        {
+          "id": "quality-continuity-writes-back/no-gratuitous-fact",
+          "concept": "memory-admission",
+          "text": "No memory/ fact file is written for a change that establishes nothing durable.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "memory_files_added == 0"
+        },
+        {
+          "id": "quality-continuity-writes-back/node-stays-clean",
+          "concept": "node-health",
+          "text": "status.sh reports no new findings after the session.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "status_flags_absent 'GROOM|REPAIR|INDEX'"
+        },
+        {
+          "id": "quality-continuity-writes-back/behavior-covered",
+          "concept": "behavior-coverage",
+          "text": "The product diff adds tests for the requested behavior. The tests would fail against the original implementation.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "quality-continuity-writes-back/behavior-correct",
+          "concept": "task-correctness",
+          "text": "submitPayment attempts at most three calls, retries failures, and stops after success. A deterministic independent check confirms these cases.",
+          "class": "artifact",
+          "grade": "manual"
+        }
+      ],
+      "why": "Write-back is the harness's central claim and the reason it exists. Nothing in test.sh can observe whether a session actually does it."
+    }
+  ],
+  "notes": [
+    "Prepared after the canonical round exposed missing product-quality assertions. Do not merge these scores into earlier frozen results.",
+    "Run in a fresh workspace. Keep independent verification output as an additional review artifact.",
+    "Compare current against continuity-core.md before any promotion."
+  ]
+}

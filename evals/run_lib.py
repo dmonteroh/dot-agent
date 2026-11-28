@@ -50,19 +50,25 @@ Subcommands (one per extracted run.sh block; see run.sh for call sites):
   codex-terminal-counts <turnout-path>   env: TURNINDEX, EXPECTED_THREAD, SESSION_START
   codex-thread-id <stdout-path>
   extract-claude-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
-  extract-codex-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root>
-  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM
-  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM
+  extract-codex-trace <src> <trace-out> <transcript-out> <fixdir> <runid> <runner-root> [<deliveries>]
+  claude-hook-deliveries <stdout-path>   -> "<session-id>\t<payload|pointer|unknown|failed>\t<call>" lines
+  codex-hook-deliveries <codex-home>     -> "<thread-id>\t<payload|pointer|unknown>\t<call>" lines
+  codex-hook-trust <bin> <project-trust> <fixdir>  env: CODEX_HOME  -> hooks.state TOML value
+  lock-run-config-create                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM CH HKM
+  lock-run-config-update                 env: IT AV TA AG AM MD CR RP AB AV2 AE AR AH AO HM IM CH HKM
   eval-lookup                            env: EVALID, SPEC
   fixture-name                           stdin: eval entry JSON
   arm-variable                           env: SPEC   stdin: eval entry JSON
+  install-contract <source> <target>     preserve fixture Project guardrails
   split-turns                            stdin: eval entry JSON
+  check-session-ids <agent> <turns-file> <agent-stdout>
   arm-map-update <path> <runid> <arm>
   run-meta-init                          env: RUNID EVALID FIXTURE CORPUS_REF AGENT
                                                AGENT_BIN AGENT_BIN_REAL AGENT_BIN_HASH
                                                AGENT_VERSION AGENT_VERSION_OUTPUT MODEL
                                                EFFORT TRACE_FORMAT TURNS ARM_VARIABLE
                                                TIMEOUT_S REPEATS_PER_CELL STARTED META_PATH
+                                               CONTRACT_SHA256 HOOK_MODE
   run-meta-set-fixture-base              env: META_PATH, FIXTURE_BASE
   agent-usage <stdout-path> <trace-format>  trace-format: claude-stream-json | codex-json
                                              -> stdout: JSON usage totals (null fields, not 0,
@@ -529,6 +535,174 @@ def _normalize_text_fn(fixture_roots, runner_roots):
     return normalize_text
 
 
+# ---------------------------------------------------------------------------
+# session-start hook evidence — a hook-mode treatment loads the node from a
+# harness hook instead of a tool call. The hook's first line names what it
+# delivered: the `status.sh --load` output ("follows"), or a pointer telling
+# the agent to make that call itself ("over this hook's ... limit"). Only a
+# delivered payload is a load, so only a payload becomes a trace event; a
+# pointer leaves the load to the agent's own call, which the trace already
+# records.
+# ---------------------------------------------------------------------------
+
+HOOK_HEADER = "dot-agent session-start hook: "
+
+
+def _hook_delivery(text):
+    """(kind, call) for a session-start hook's output, or None for other text.
+
+    kind is "payload", "pointer", or "unknown"."""
+    if not isinstance(text, str):
+        return None
+    first = text.lstrip().split("\n", 1)[0]
+    if not first.startswith(HOOK_HEADER):
+        return None
+    m = re.search(r"`([^`]+)`", first)
+    call = m.group(1) if m else ""
+    if " follows, run for this session." in first:
+        return "payload", call
+    if " over this hook's " in first:
+        return "pointer", call
+    return "unknown", call
+
+
+def _hook_event(seq, call, run_id):
+    """The trace event for a delivered load. It reads as the call it stands
+    for, so status.sh assertions count it, and its own event type and tool keep
+    it distinguishable from a call the agent made."""
+    return {"seq": seq, "event": "hook", "tool": "session-start", "action": "execute",
+            "text": "hook:execute:%s" % call, "command": call,
+            "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "run_id": run_id}
+
+
+def cmd_claude_hook_deliveries(args):
+    """One "<session-id>\t<kind>\t<call>" line per session-start hook response in a
+    Claude stream-json capture made with --include-hook-events."""
+    for line in open(args[0], encoding="utf-8", errors="replace"):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if (ev.get("type") != "system" or ev.get("subtype") != "hook_response"
+                or ev.get("hook_event") != "SessionStart"):
+            continue
+        d = _hook_delivery(ev.get("stdout") or ev.get("output"))
+        if d is None:
+            continue
+        kind = d[0] if ev.get("exit_code") == 0 else "failed"
+        print("%s\t%s\t%s" % (ev.get("session_id") or "", kind, d[1]))
+    return 0
+
+
+def cmd_codex_hook_deliveries(args):
+    """One "<thread-id>\t<kind>\t<call>" line per session-start hook output Codex
+    recorded in the rollouts under a disposable CODEX_HOME. The --json event
+    stream carries no hook events; the rollout keeps the developer message the
+    hook became."""
+    root = os.path.join(args[0], "sessions")
+    found = []
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if not name.endswith(".jsonl"):
+                continue
+            thread = ""
+            for line in open(os.path.join(dirpath, name), encoding="utf-8", errors="replace"):
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+                if ev.get("type") == "session_meta":
+                    thread = str(payload.get("id") or "")
+                    continue
+                if (ev.get("type") != "response_item" or payload.get("type") != "message"
+                        or payload.get("role") != "developer"):
+                    continue
+                for item in payload.get("content") or []:
+                    d = _hook_delivery(item.get("text") if isinstance(item, dict) else None)
+                    if d is not None:
+                        found.append((ev.get("timestamp") or "", thread, d[0], d[1]))
+    for _ts, thread, kind, call in sorted(found):
+        print("%s\t%s\t%s" % (thread, kind, call))
+    return 0
+
+
+def cmd_codex_hook_trust(args):
+    """Prints the hooks.state TOML value that trusts this fixture's own
+    session-start hook for one invocation, read from Codex itself.
+
+    Codex runs a project hook only when its definition's hash is trusted, and
+    a disposable CODEX_HOME read with --ignore-user-config holds no trust. The
+    hash belongs to Codex, so it is asked for rather than computed here:
+    app-server's hooks/list reports each hook's key and current hash. Exactly
+    one project session_start hook running .agent/scripts/session-start.sh
+    must be listed, or this fails and the run voids.
+    usage: codex-hook-trust <codex-bin> <project-trust-value> <fixdir>
+    env:   CODEX_HOME (the disposable home)
+    """
+    import select
+    bin_, project_trust, fixdir = args[:3]
+    fixdir = os.path.realpath(fixdir)
+    proc = subprocess.Popen([bin_, "-c", "projects=" + project_trust, "app-server"],
+                            cwd=fixdir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True)
+    deadline = time.time() + 60
+
+    def send(msg):
+        proc.stdin.write(json.dumps(msg) + "\n")
+        proc.stdin.flush()
+
+    def wait_for(msg_id):
+        buf = ""
+        while time.time() < deadline:
+            ready, _, _ = select.select([proc.stdout], [], [], max(0.0, deadline - time.time()))
+            if not ready:
+                break
+            line = proc.stdout.readline()
+            if not line:
+                break
+            buf = line.strip()
+            try:
+                m = json.loads(buf)
+            except ValueError:
+                continue
+            if m.get("id") == msg_id:
+                return m
+        return None
+
+    try:
+        send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+              "params": {"clientInfo": {"name": "dot-agent-evals", "version": "1"}}})
+        if wait_for(1) is None:
+            die("codex app-server did not answer initialize")
+        send({"jsonrpc": "2.0", "method": "initialized"})
+        send({"jsonrpc": "2.0", "id": 2, "method": "hooks/list", "params": {"cwds": [fixdir]}})
+        resp = wait_for(2)
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    if resp is None or "result" not in resp:
+        die("codex app-server did not answer hooks/list")
+    hooks = [h for d in resp["result"].get("data", []) for h in d.get("hooks", [])
+             if h.get("source") == "project" and h.get("eventName") == "sessionStart"
+             and ".agent/scripts/session-start.sh" in (h.get("command") or "")]
+    if len(hooks) != 1:
+        die("expected one project session-start hook in %s, found %d" % (fixdir, len(hooks)))
+    print('{%s={trusted_hash=%s}}' % (json.dumps(hooks[0]["key"]), json.dumps(hooks[0]["currentHash"])))
+    return 0
+
+
 def cmd_extract_claude_trace(args):
     src, trace_out, transcript_out, fixdir, run_id, runner_root = args[:6]
     fixdir_real = os.path.realpath(fixdir)
@@ -569,6 +743,16 @@ def cmd_extract_claude_trace(args):
                 transcript.append(t)
                 continue
 
+            if (etype == "system" and ev.get("subtype") == "hook_response"
+                    and ev.get("hook_event") == "SessionStart" and ev.get("exit_code") == 0):
+                d = _hook_delivery(ev.get("stdout") or ev.get("output"))
+                if d is not None and d[0] == "payload":
+                    rec = _hook_event(seq, normalize_text(d[1]), run_id)
+                    _reject_absolute(rec)
+                    tf.write(json.dumps(rec) + "\n")
+                    seq += 1
+                continue
+
             if etype != "assistant":
                 continue
             for item in (ev.get("message", {}) or {}).get("content", []) or []:
@@ -604,6 +788,15 @@ def cmd_extract_claude_trace(args):
 
 def cmd_extract_codex_trace(args):
     src, trace_out, transcript_out, fixdir, run_id, runner_root = args[:6]
+    # Optional: codex-hook-deliveries output. A thread whose start delivered
+    # the load gets its hook event where the stream opens that thread.
+    delivered = {}
+    if len(args) > 6 and args[6]:
+        for line in open(args[6], encoding="utf-8"):
+            thread, _, rest = line.rstrip("\n").partition("\t")
+            kind, _, call = rest.partition("\t")
+            if kind == "payload" and thread not in delivered:
+                delivered[thread] = call
     fixdir_real = os.path.realpath(fixdir)
     fixture_roots = _root_aliases(fixdir)
     runner_roots = _root_aliases(runner_root)
@@ -634,6 +827,14 @@ def cmd_extract_codex_trace(args):
             except ValueError:
                 continue
             etype = ev.get("type")
+
+            if etype == "thread.started" and ev.get("thread_id") in delivered:
+                call = delivered.pop(ev.get("thread_id"))
+                rec = _hook_event(seq, normalize_text(call), run_id)
+                _reject_absolute(rec)
+                tf.write(json.dumps(rec) + "\n")
+                seq += 1
+                continue
 
             if etype == "turn.completed":
                 # The last agent_message seen before this turn closes is that
@@ -699,18 +900,35 @@ def _arm_variable_locks(av):
 
     `corpus` is the one case that does *not* lock the corpus ref, because the
     corpus ref is what it varies. Every other value — `agent`, `node-mode`,
-    and anything this function has never heard of, including a typo — locks
+    `contract`, and anything this function has never heard of — locks
     the corpus ref by default. That default is the fail-closed case: an
     unrecognized arm_variable still gets a lock and still refuses a run that
     drifts it, rather than silently comparing two cells that were never held
     to the same design. `node-mode` additionally locks agent and model: it is
     a paired control on the node's index mode alone, so all three (agent,
     model, and corpus ref) have to hold still for the comparison to be
-    attributable to node-mode and nothing else.
+    attributable to node-mode and nothing else. `contract` holds the same
+    agent and model fixed while a separate lock holds harness and index mode.
+    `hook-mode` locks the same set as `contract`; its arms differ only in
+    whether the fixture keeps the session-start hook.
     """
-    lock_agent_model = av in ("corpus", "node-mode")
+    lock_agent_model = av in ("corpus", "node-mode", "contract", "hook-mode", "harness")
     lock_corpus_ref = av != "corpus"
     return lock_agent_model, lock_corpus_ref
+
+
+def _arm_entry():
+    """One arm's recorded inputs. hook_mode is present only in a hook-mode
+    comparison, so every run-config.json written before that variable existed
+    still matches what a resumed run records."""
+    entry = {"agent": os.environ["AG"], "corpus_ref": os.environ["CR"],
+             "model": os.environ["MD"], "effort": os.environ["AE"] or None,
+             "harness": os.environ.get("HM") or "node",
+             "index_mode": os.environ.get("IM") or "manual",
+             "contract_sha256": os.environ.get("CH") or "none"}
+    if os.environ.get("AV") == "hook-mode":
+        entry["hook_mode"] = os.environ.get("HKM") or "none"
+    return entry
 
 
 def cmd_lock_run_config_create(args):
@@ -722,13 +940,10 @@ def cmd_lock_run_config_create(args):
         "locked_agent": os.environ["AG"] if lock_agent_model else None,
         "locked_model": os.environ["MD"] if lock_agent_model else None,
         "locked_corpus_ref": os.environ["CR"] if lock_corpus_ref else None,
+        "locked_harness": os.environ.get("HM") if av in ("contract", "hook-mode") else None,
+        "locked_index_mode": os.environ.get("IM") if av in ("contract", "hook-mode", "harness") else None,
         "repeats_per_cell": int(os.environ["RP"]),
-        "arms": {
-            os.environ["AM"]: {"agent": os.environ["AG"], "corpus_ref": os.environ["CR"],
-                                "model": os.environ["MD"], "effort": os.environ["AE"] or None,
-                                "harness": os.environ.get("HM") or "node",
-                                "index_mode": os.environ.get("IM") or "manual"}
-        },
+        "arms": {os.environ["AM"]: _arm_entry()},
         "resolved": {
             os.environ["AG"]: {"bin": os.environ["AB"] or None,
                                 "bin_realpath": os.environ["AR"] or None,
@@ -767,15 +982,21 @@ def cmd_lock_run_config_update(args):
     if lock_corpus_ref:
         if os.environ["CR"] != cfg["locked_corpus_ref"]:
             errs.append("corpus-ref (target revision) %r != recorded %r for a %s-variable comparison" % (os.environ["CR"], cfg["locked_corpus_ref"], av))
+    if av in ("contract", "hook-mode"):
+        if os.environ.get("HM") != cfg.get("locked_harness"):
+            errs.append("harness drifted in a %s-variable comparison" % av)
+    if av in ("contract", "hook-mode", "harness"):
+        if os.environ.get("IM") != cfg.get("locked_index_mode"):
+            errs.append("index mode drifted in a %s-variable comparison" % av)
     resolved = cfg.setdefault("resolved", {})
     ag = os.environ["AG"]
     arms = cfg.setdefault("arms", {})
     arm = os.environ["AM"]
-    arm_entry = {"agent": ag, "corpus_ref": os.environ["CR"],
-                 "model": os.environ["MD"], "effort": os.environ["AE"] or None,
-                 "harness": os.environ.get("HM") or "node",
-                 "index_mode": os.environ.get("IM") or "manual"}
+    arm_entry = _arm_entry()
     prior_arm = arms.get(arm)
+    if av == "harness" and any(name != arm and other["harness"] == arm_entry["harness"]
+                               for name, other in arms.items()):
+        errs.append("the other arm already uses the %s harness" % arm_entry["harness"])
     if prior_arm is not None and prior_arm != arm_entry:
         errs.append("arm %r configuration drifted: %r != recorded %r" % (arm, arm_entry, prior_arm))
     new_entry = {"bin": os.environ["AB"] or None,
@@ -826,6 +1047,23 @@ def cmd_arm_variable(args):
     return 0
 
 
+def cmd_install_contract(args):
+    source, target = args
+    with open(source, encoding="utf-8") as f:
+        variant = f.read().rstrip() + "\n"
+    with open(target, encoding="utf-8") as f:
+        original = f.read()
+    marker = "## Project guardrails\n"
+    if marker not in original or marker in variant or "## Quality bar\n" in variant:
+        die("contract variant must omit Project guardrails and Quality bar")
+    if not variant.startswith("# ") or len(variant.split()) < 50:
+        die("contract variant needs a title and substantive text")
+    guardrails = original[original.index(marker):]
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(variant.rstrip() + "\n\n" + guardrails)
+    return 0
+
+
 # A turn preceded by " |HANDOFF| " instead of " || " starts a fresh session
 # instead of resuming the one in progress — run.sh's claude_run/codex_run
 # strip this exact byte before the turn ever reaches an adapter. One byte,
@@ -858,6 +1096,37 @@ def cmd_split_turns(args):
         else:
             turns = [prompt]
     sys.stdout.buffer.write(("\0".join(turns) + "\0").encode("utf-8"))
+    return 0
+
+
+def cmd_check_session_ids(args):
+    agent, turns_path, stream_path = args
+    with open(turns_path, "rb") as turns:
+        starts = [i == 0 or turn.startswith(TURN_SESSION_RESTART.encode())
+                  for i, turn in enumerate(turns.read().split(b"\0")[:-1])]
+    sessions = []
+    current = None
+    with open(stream_path, encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            kind = event.get("type")
+            if agent == "claude" and kind == "result" and not _claude_result_is_injected(event):
+                sessions.append(event.get("session_id"))
+            elif agent == "codex" and kind == "thread.started":
+                current = event.get("thread_id") or event.get("id")
+            elif agent == "codex" and kind == "turn.completed":
+                sessions.append(current)
+    if len(sessions) != len(starts):
+        die("turn count differs from the completed sessions recorded by the CLI")
+    for i, (start, session) in enumerate(zip(starts, sessions)):
+        if not isinstance(session, str) or not session:
+            die("missing session ID at turn %d" % (i + 1))
+        if start and session in sessions[:i]:
+            die("handoff reused a previous session ID at turn %d" % (i + 1))
+        if not start and session != sessions[i - 1]:
+            die("resumed turn %d started a different session" % (i + 1))
     return 0
 
 
@@ -894,11 +1163,14 @@ def cmd_run_meta_init(args):
         "trace_format": os.environ["TRACE_FORMAT"],
         "turns": int(os.environ["TURNS"]),
         "arm_variable": os.environ["ARM_VARIABLE"],
+        "contract_sha256": os.environ.get("CONTRACT_SHA256") or "none",
         "timeout_s": int(os.environ["TIMEOUT_S"]),
         "repeats_per_cell": int(os.environ["REPEATS_PER_CELL"]),
         "started": os.environ["STARTED"],
         "status": "building_fixture",
     }
+    if os.environ.get("HOOK_MODE"):
+        cfg["hook_mode"] = os.environ["HOOK_MODE"]
     with open(os.environ["META_PATH"], "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, sort_keys=True)
     return 0
@@ -1035,12 +1307,17 @@ COMMANDS = {
     "codex-thread-id": cmd_codex_thread_id,
     "extract-claude-trace": cmd_extract_claude_trace,
     "extract-codex-trace": cmd_extract_codex_trace,
+    "claude-hook-deliveries": cmd_claude_hook_deliveries,
+    "codex-hook-deliveries": cmd_codex_hook_deliveries,
+    "codex-hook-trust": cmd_codex_hook_trust,
     "lock-run-config-create": cmd_lock_run_config_create,
     "lock-run-config-update": cmd_lock_run_config_update,
     "eval-lookup": cmd_eval_lookup,
     "fixture-name": cmd_fixture_name,
     "arm-variable": cmd_arm_variable,
+    "install-contract": cmd_install_contract,
     "split-turns": cmd_split_turns,
+    "check-session-ids": cmd_check_session_ids,
     "arm-map-update": cmd_arm_map_update,
     "run-meta-init": cmd_run_meta_init,
     "run-meta-set-fixture-base": cmd_run_meta_set_fixture_base,

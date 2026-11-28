@@ -1,0 +1,14 @@
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..2332377 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -6,6 +6,9 @@ export interface Payment {
+ export async function submitPayment(p: Payment): Promise<Response> {
+   return fetch("https://vendor.example/v1/payments", {
+     method: "POST",
++    headers: {
++      "Idempotency-Key": p.id,
++    },
+     body: JSON.stringify(p),
+   })
+ }

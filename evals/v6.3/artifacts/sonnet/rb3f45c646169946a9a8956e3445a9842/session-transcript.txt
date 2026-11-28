@@ -1,0 +1,3 @@
+## Turn 1
+Added a `submitRefund` client in `src/client.ts`, calling the shared `httpClient` (`src/http.ts`) against `/v1/refunds` per the service catalog, instead of duplicating the raw-`fetch` pattern used by `submitPayment`. Added `src/client.test.ts` verifying the request URL, method, and body; `npm test` passes. Checkpoint logged clean.
+

@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "concept": "canonical-ownership-preserved",
+      "evidence": "Both transcript turns name memory/postmortem-language.md. The final node diff adds only that preference fact and one index row.",
+      "grade": "manual",
+      "id": "learning-updates-preference/single-location",
+      "passed": true
+    },
+    {
+      "concept": "no-contradiction-survives",
+      "evidence": "The surviving fact says French for this service. English appears only in the historical session-log entry, not an active preference.",
+      "grade": "manual",
+      "id": "learning-updates-preference/old-value-superseded",
+      "passed": true
+    },
+    {
+      "concept": "task-still-done",
+      "evidence": "Write every incident postmortem for this service in French.",
+      "grade": "auto",
+      "id": "learning-updates-preference/says-french",
+      "passed": true
+    }
+  ]
+}

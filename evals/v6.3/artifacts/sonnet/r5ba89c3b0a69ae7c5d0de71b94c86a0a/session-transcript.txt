@@ -1,0 +1,6 @@
+## Turn 1
+Recorded the preference at `.agent/memory/postmortem-language.md` (indexed in `.agent/memory.md`): future incident postmortems for this service will be written in English.
+
+## Turn 2
+Updated in place — `.agent/memory/postmortem-language.md` now says incident postmortems for this service should be written in French, same filename, restamped.
+

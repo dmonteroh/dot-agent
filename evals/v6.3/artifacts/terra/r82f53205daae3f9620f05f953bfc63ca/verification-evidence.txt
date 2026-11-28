@@ -1,0 +1,22 @@
+Historical execution receipts captured after the session. This is not a fresh receipt validation after the runner stages outputs.
+
+Configured project check driver:
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+
+
+Receipt 20260927T153203Z-50165-20812-e73d5e6edb0f84dba1714366566c15dea8c88cc7.receipt
+version=2
+id=20260927T153203Z-50165-20812-e73d5e6edb0f84dba1714366566c15dea8c88cc7
+check=test
+status=fail
+exit=1
+count=unknown
+fingerprint=15a62f0e2b1b3885d0603fc1fb82ad0ae832f891
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-verify-no-false-done/r82f53205daae3f9620f05f953bfc63ca/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:32:03Z
+

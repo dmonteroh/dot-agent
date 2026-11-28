@@ -1,0 +1,902 @@
+{
+  "eval_snapshots": {
+    "eval-continuity-writes-back": {
+      "artifacts": [
+        "node-diff.patch",
+        "session-transcript.txt"
+      ],
+      "assertions": [
+        {
+          "check": "log_entries_added == 1",
+          "class": "artifact",
+          "concept": "log-entry-written",
+          "grade": "auto",
+          "id": "continuity-writes-back/one-log-entry",
+          "text": "Exactly one entry is appended to session-log.md."
+        },
+        {
+          "check": "log_entry_words <= 25 && status_flags_absent 'entries over'",
+          "class": "artifact",
+          "concept": "log-entry-format",
+          "grade": "auto",
+          "id": "continuity-writes-back/entry-in-format",
+          "text": "The entry is at or under the header contract's 25 words and carries a verify tag. status.sh raises no entry-shape flag."
+        },
+        {
+          "check": "log_entry_absent '[0-9a-f]{7,}' && log_entry_absent '\\.ts'",
+          "class": "artifact",
+          "concept": "log-entry-format",
+          "grade": "auto",
+          "id": "continuity-writes-back/no-narrative",
+          "text": "The entry carries no file list, SHA, or test count."
+        },
+        {
+          "check": "memory_files_added == 0",
+          "class": "artifact",
+          "concept": "memory-admission",
+          "grade": "auto",
+          "id": "continuity-writes-back/no-gratuitous-fact",
+          "text": "No memory/ fact file is written for a change that establishes nothing durable."
+        },
+        {
+          "check": "status_flags_absent 'GROOM|REPAIR|INDEX'",
+          "class": "artifact",
+          "concept": "node-health",
+          "grade": "auto",
+          "id": "continuity-writes-back/node-stays-clean",
+          "text": "status.sh reports no new findings after the session."
+        }
+      ],
+      "expect": "Exactly one session-log entry in format. memory/ untouched, because nothing durable changed, and the log entry says so.",
+      "fixture": "ts-service",
+      "id": "continuity-writes-back",
+      "phase": "completion",
+      "prompt": "Add exponential backoff to the outbound call. Three attempts.",
+      "why": "Write-back is the harness's central claim and the reason it exists. Nothing in test.sh can observe whether a session actually does it."
+    },
+    "eval-prose-brief-answer": {
+      "artifacts": [
+        "session-transcript.txt",
+        "diff.patch",
+        "trace.jsonl"
+      ],
+      "assertions": [
+        {
+          "check": "output_matches 'Response'",
+          "class": "artifact",
+          "concept": "ordinary-answer",
+          "grade": "auto",
+          "id": "prose-brief-answer/type",
+          "text": "The reply identifies Response as the return type."
+        },
+        {
+          "check": "product_files_changed == 0",
+          "class": "artifact",
+          "concept": "scope-control",
+          "grade": "auto",
+          "id": "prose-brief-answer/no-edit",
+          "text": "The question produces no project edit."
+        },
+        {
+          "check": "trace_count 'npm test' == 0",
+          "class": "trace",
+          "concept": "task-economy",
+          "grade": "auto",
+          "id": "prose-brief-answer/no-test",
+          "text": "The question does not invoke npm test."
+        }
+      ],
+      "expect": "Answer the return type from src/client.ts without editing or running the test suite.",
+      "fixture": "ts-service",
+      "id": "prose-brief-answer",
+      "phase": "ordinary-task",
+      "premises": [
+        {
+          "contains": "Promise<Response>",
+          "path": "src/client.ts"
+        }
+      ],
+      "prompt": "quick q: what does submitPayment return? please leave the repo alone"
+    }
+  },
+  "excluded_evals": [
+    "security-origin-gate"
+  ],
+  "format_version": 1,
+  "notes": [
+    "Rollup scores use majority outcomes per assertion. Observation scores count every repeat.",
+    "Repeated assertions within a task are correlated. Observation counts are not independent trials.",
+    "CLI usage fields have provider-specific semantics. Compare within one provider and model.",
+    "Artifact hashes identify raw outputs retained in the source workspace."
+  ],
+  "repeat_observations": {
+    "reference": {
+      "assertion_observations": 8,
+      "duration_seconds": {
+        "max": 37,
+        "mean": 26.5,
+        "min": 16,
+        "population_stddev": 10.5
+      },
+      "observation_pass_rate_pct": 100.0,
+      "passed_assertion_observations": 8,
+      "per_eval": {
+        "continuity-writes-back": {
+          "passed": 5,
+          "total": 5
+        },
+        "prose-brief-answer": {
+          "passed": 3,
+          "total": 3
+        }
+      },
+      "sessions": 2,
+      "tool_calls": 11
+    },
+    "variant": {
+      "assertion_observations": 8,
+      "duration_seconds": {
+        "max": 40,
+        "mean": 29.5,
+        "min": 19,
+        "population_stddev": 10.5
+      },
+      "observation_pass_rate_pct": 100.0,
+      "passed_assertion_observations": 8,
+      "per_eval": {
+        "continuity-writes-back": {
+          "passed": 5,
+          "total": 5
+        },
+        "prose-brief-answer": {
+          "passed": 3,
+          "total": 3
+        }
+      },
+      "sessions": 2,
+      "tool_calls": 12
+    }
+  },
+  "rollup": {
+    "arms": {
+      "control": "reference",
+      "treatment": "variant"
+    },
+    "buckets": {
+      "discriminating": [],
+      "non-discriminating": [
+        "continuity-writes-back/entry-in-format",
+        "continuity-writes-back/no-gratuitous-fact",
+        "continuity-writes-back/no-narrative",
+        "continuity-writes-back/node-stays-clean",
+        "continuity-writes-back/one-log-entry",
+        "prose-brief-answer/no-edit",
+        "prose-brief-answer/no-test",
+        "prose-brief-answer/type"
+      ]
+    },
+    "checklist_size": 8,
+    "concentration_pct_of_delta": {
+      "top_assertion": 0.0,
+      "top_two_assertions": 0.0
+    },
+    "cost": {
+      "reference": {
+        "cache_creation_input_tokens": 14854,
+        "cache_read_input_tokens": 336944,
+        "input_tokens": 26,
+        "output_tokens": 2068,
+        "usd": 0.15
+      },
+      "variant": {
+        "cache_creation_input_tokens": 13252,
+        "cache_read_input_tokens": 360666,
+        "input_tokens": 28,
+        "output_tokens": 2170,
+        "usd": 0.15
+      }
+    },
+    "delta_pct_points": 0.0,
+    "duration_s": {
+      "reference": {
+        "mean": 26.5,
+        "population_stddev": 10.5,
+        "sample_size": 2
+      },
+      "variant": {
+        "mean": 29.5,
+        "population_stddev": 10.5,
+        "sample_size": 2
+      }
+    },
+    "excluded_evals": [
+      "security-origin-gate"
+    ],
+    "iteration": "iteration-1",
+    "pass_rate_pct": {
+      "reference": 100.0,
+      "variant": 100.0
+    },
+    "passed": {
+      "reference": 8,
+      "variant": 8
+    },
+    "rows": [
+      {
+        "bucket": "non-discriminating",
+        "concept": "log-entry-format",
+        "eval": "continuity-writes-back",
+        "id": "continuity-writes-back/entry-in-format",
+        "reference": {
+          "evidence": "longest entry's summary is 10 words: - [2026-09-27] (Edit) Add 3-attempt exponential backoff to outbound payment submit call (src). verify: pass. AND no status flag matches 'entries over'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "longest entry's summary is 10 words: - [2026-09-27] (client) Add 3-attempt exponential backoff retry to submitPayment outbound call (src). verify: pass. AND no status flag matches 'entries over'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "memory-admission",
+        "eval": "continuity-writes-back",
+        "id": "continuity-writes-back/no-gratuitous-fact",
+        "reference": {
+          "evidence": "0 memory file(s) written: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "0 memory file(s) written: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "log-entry-format",
+        "eval": "continuity-writes-back",
+        "id": "continuity-writes-back/no-narrative",
+        "reference": {
+          "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "node-health",
+        "eval": "continuity-writes-back",
+        "id": "continuity-writes-back/node-stays-clean",
+        "reference": {
+          "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "log-entry-written",
+        "eval": "continuity-writes-back",
+        "id": "continuity-writes-back/one-log-entry",
+        "reference": {
+          "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (Edit) Add 3-attempt exponential backoff to outbound payment submit call (src). verify: pass.",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (client) Add 3-attempt exponential backoff retry to submitPayment outbound call (src). verify: pass.",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "scope-control",
+        "eval": "prose-brief-answer",
+        "id": "prose-brief-answer/no-edit",
+        "reference": {
+          "evidence": "0 project file(s) changed: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "0 project file(s) changed: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "task-economy",
+        "eval": "prose-brief-answer",
+        "id": "prose-brief-answer/no-test",
+        "reference": {
+          "evidence": "0 trace event(s) mention 'npm test'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "0 trace event(s) mention 'npm test'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "ordinary-answer",
+        "eval": "prose-brief-answer",
+        "id": "prose-brief-answer/type",
+        "reference": {
+          "evidence": "`submitPayment` returns `Promise<Response>` \u2014 the raw fetch `Response` object from POSTing the payment to `https://vendor.example/v1/payments` (`src/client.ts:6",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "variant": {
+          "evidence": "`submitPayment` returns `Promise<Response>` \u2014 the raw fetch `Response` object from the POST to `https://vendor.example/v1/payments` (`src/client.ts:6`). It does",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        }
+      }
+    ],
+    "weighting": "per-assertion"
+  },
+  "run_config": {
+    "arm_variable": "contract",
+    "arms": {
+      "reference": {
+        "agent": "claude",
+        "contract_sha256": "5c6adf60e0983cf89370c3152c0ab1c9d9febcee5e10bbfdd4d9fb19418d41c0",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "effort": "medium",
+        "harness": "node",
+        "index_mode": "manual",
+        "model": "claude-sonnet-5"
+      },
+      "variant": {
+        "agent": "claude",
+        "contract_sha256": "24c6720536d35f73df67b8c40ac880deaadf9e7a717cf3e44d5979d15db1855e",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "effort": "medium",
+        "harness": "node",
+        "index_mode": "manual",
+        "model": "claude-sonnet-5"
+      }
+    },
+    "locked_agent": "claude",
+    "locked_corpus_ref": "390d30f213925392a61c736725316824704d117d",
+    "locked_harness": "node",
+    "locked_index_mode": "manual",
+    "locked_model": "claude-sonnet-5",
+    "repeats_per_cell": 1,
+    "resolved": {
+      "claude": {
+        "bin": "/Users/daniel.montero/.local/bin/claude",
+        "bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "effort": "medium",
+        "model": "claude-sonnet-5",
+        "version": "2.1.280",
+        "version_output": "2.1.280 (Claude Code)"
+      }
+    },
+    "treatment_arm": "variant"
+  },
+  "run_diagnostics": [
+    {
+      "eval": "continuity-writes-back",
+      "run_id": "r4356c0b3d7c4f2f745ca0c868fb33eeb",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "continuity-writes-back",
+      "run_id": "r73570dd8a1a084c797893dfd0dda5698",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "prose-brief-answer",
+      "run_id": "rb88468f33af46e5454639471c2e79477",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "prose-brief-answer",
+      "run_id": "re69e1daa1a7be4434d89827dbbdfbbbd",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "security-origin-gate",
+      "run_id": "rc2759218c51b72d2255e4dc652e47dbe",
+      "status": "timeout",
+      "void": true
+    },
+    {
+      "eval": "security-origin-gate",
+      "run_id": "rd6668a7dff62234d163c0762cd913c1b",
+      "status": "timeout",
+      "void": true
+    }
+  ],
+  "runs": [
+    {
+      "arm": "reference",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "8da484ceb21f855edbc9ef464df124aa806e831721279e275996ddd0527cc072",
+        "diff.patch": "f21b8bf1a4ac2893d7daf2a138adf2478f3aa319341e0fea0ef06b02d60f7195",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "328728742409ad86dc6be130dcd1f4573108ec26bcf0725091c57db610797ea7",
+        "node-tree.txt": "14cf8fcd7893679f4c0871d78801d3ad530b16e37d8557ac414e94b8090888b8",
+        "session-transcript.txt": "98f21968a30b5cf99b3613bfda69c10606ac3e8418fa6c962963cdd75ae58cdd",
+        "status-after.txt": "3a76371ec6dd7361cd9d24fa748caa33b255ebee11311eca9e36c61bde59d742",
+        "trace.jsonl": "a7c1f548311432588247ca568be73c24828853afa04cdbd6a0505725a8888dd5",
+        "usage.json": "fc05ad2204f98ed61066b2ff0c9fa9cc5f9b5a9b688e7506be05eb15f890d334"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "log-entry-written",
+            "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (Edit) Add 3-attempt exponential backoff to outbound payment submit call (src). verify: pass.",
+            "grade": "auto",
+            "id": "continuity-writes-back/one-log-entry",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "longest entry's summary is 10 words: - [2026-09-27] (Edit) Add 3-attempt exponential backoff to outbound payment submit call (src). verify: pass. AND no status flag matches 'entries over'",
+            "grade": "auto",
+            "id": "continuity-writes-back/entry-in-format",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+            "grade": "auto",
+            "id": "continuity-writes-back/no-narrative",
+            "passed": true
+          },
+          {
+            "concept": "memory-admission",
+            "evidence": "0 memory file(s) written: none",
+            "grade": "auto",
+            "id": "continuity-writes-back/no-gratuitous-fact",
+            "passed": true
+          },
+          {
+            "concept": "node-health",
+            "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+            "grade": "auto",
+            "id": "continuity-writes-back/node-stays-clean",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "claude",
+        "agent_bin": "/Users/daniel.montero/.local/bin/claude",
+        "agent_bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "agent_bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "agent_version": "2.1.280",
+        "agent_version_output": "2.1.280 (Claude Code)",
+        "arm_variable": "contract",
+        "contract_sha256": "5c6adf60e0983cf89370c3152c0ab1c9d9febcee5e10bbfdd4d9fb19418d41c0",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 37,
+        "effort": "medium",
+        "ended": "2026-09-27T10:20:48Z",
+        "eval": "continuity-writes-back",
+        "exit_status": 0,
+        "fixture": "ts-service",
+        "fixture_base": "7fb18fad789acbebc528be96ba875680c5eb0930",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-claude-home.w8mho8",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "claude-sonnet-5",
+        "repeats_per_cell": 1,
+        "run_id": "r4356c0b3d7c4f2f745ca0c868fb33eeb",
+        "started": "2026-09-27T10:20:11Z",
+        "status": "ok",
+        "timeout_s": 240,
+        "trace_format": "claude-stream-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": 8302,
+          "cache_read_input_tokens": 238183,
+          "input_tokens": 18,
+          "output_tokens": 1652,
+          "usd": 0.0974006
+        },
+        "void": false
+      },
+      "run_id": "r4356c0b3d7c4f2f745ca0c868fb33eeb",
+      "tool_calls": 8
+    },
+    {
+      "arm": "variant",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "cb5c2dc7584ab5e202226ac7f6bcbeccc7d30cd0973179059721807ff0c4ed82",
+        "diff.patch": "2aa7d4978f87d2f4bd14f9e404ee3cf3723cd21db546091a7e596a13246c3d2d",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "9dddb480ee60421f459fe6b0065f9911de1f64cedadba09ebc3f1953a3849d53",
+        "node-tree.txt": "a95f60bfb0bfb8409c125b5660beeaa51ea4ce85b21489854a213d98c8f213c3",
+        "session-transcript.txt": "8ab99ca680147d36cfa095f39f05901b0b0b1356a57dc9cc62b78a0b79637bb0",
+        "status-after.txt": "73cc25292307564ebc774d223575ad982c7cf312e94b2529c1d03232828030ae",
+        "trace.jsonl": "5461c53750bef4553b749b7fcd28c828527dc0c57768240240b59179d513d688",
+        "usage.json": "55a8bb449f2521799643c37c9cb16273ff8dd54b6e6795b4f3c36f5b0acf8d37"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "log-entry-written",
+            "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (client) Add 3-attempt exponential backoff retry to submitPayment outbound call (src). verify: pass.",
+            "grade": "auto",
+            "id": "continuity-writes-back/one-log-entry",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "longest entry's summary is 10 words: - [2026-09-27] (client) Add 3-attempt exponential backoff retry to submitPayment outbound call (src). verify: pass. AND no status flag matches 'entries over'",
+            "grade": "auto",
+            "id": "continuity-writes-back/entry-in-format",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+            "grade": "auto",
+            "id": "continuity-writes-back/no-narrative",
+            "passed": true
+          },
+          {
+            "concept": "memory-admission",
+            "evidence": "0 memory file(s) written: none",
+            "grade": "auto",
+            "id": "continuity-writes-back/no-gratuitous-fact",
+            "passed": true
+          },
+          {
+            "concept": "node-health",
+            "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+            "grade": "auto",
+            "id": "continuity-writes-back/node-stays-clean",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "claude",
+        "agent_bin": "/Users/daniel.montero/.local/bin/claude",
+        "agent_bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "agent_bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "agent_version": "2.1.280",
+        "agent_version_output": "2.1.280 (Claude Code)",
+        "arm_variable": "contract",
+        "contract_sha256": "24c6720536d35f73df67b8c40ac880deaadf9e7a717cf3e44d5979d15db1855e",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 40,
+        "effort": "medium",
+        "ended": "2026-09-27T10:20:51Z",
+        "eval": "continuity-writes-back",
+        "exit_status": 0,
+        "fixture": "ts-service",
+        "fixture_base": "f79672fcc87dfd1973e1ed19e168cc60fbcead87",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-claude-home.wSTjTQ",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "claude-sonnet-5",
+        "repeats_per_cell": 1,
+        "run_id": "r73570dd8a1a084c797893dfd0dda5698",
+        "started": "2026-09-27T10:20:11Z",
+        "status": "ok",
+        "timeout_s": 240,
+        "trace_format": "claude-stream-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": 8667,
+          "cache_read_input_tokens": 265816,
+          "input_tokens": 20,
+          "output_tokens": 1787,
+          "usd": 0.10574120000000001
+        },
+        "void": false
+      },
+      "run_id": "r73570dd8a1a084c797893dfd0dda5698",
+      "tool_calls": 9
+    },
+    {
+      "arm": "reference",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "327742223830c600b6179b0f6b17cc9ab98998c243de1675181829736d0944f7",
+        "diff.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-tree.txt": "4be1dd044cd525c6551764d2d4e36d4f0c6ff35491aca39ac833d1e7609cd6e5",
+        "session-transcript.txt": "b0b4605fcc612f2b9832dde2728c3f36d018d738b4f64073bfe8ce3ae88aadbf",
+        "status-after.txt": "79f2eae842d56d259e7f80e5d78b4a460fcfa3ab805c7a3d23d3755ed9b036a7",
+        "trace.jsonl": "830a60242db6544945e8ed4208a8b9994c773367d8de89d089bd0abd105fc7e8",
+        "usage.json": "00257057c02b16151525b1a80f356e1c8a31abd47b98cb2f964a6de0f638b0a9"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "ordinary-answer",
+            "evidence": "`submitPayment` returns `Promise<Response>` \u2014 the raw fetch `Response` object from POSTing the payment to `https://vendor.example/v1/payments` (`src/client.ts:6",
+            "grade": "auto",
+            "id": "prose-brief-answer/type",
+            "passed": true
+          },
+          {
+            "concept": "scope-control",
+            "evidence": "0 project file(s) changed: none",
+            "grade": "auto",
+            "id": "prose-brief-answer/no-edit",
+            "passed": true
+          },
+          {
+            "concept": "task-economy",
+            "evidence": "0 trace event(s) mention 'npm test'",
+            "grade": "auto",
+            "id": "prose-brief-answer/no-test",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "claude",
+        "agent_bin": "/Users/daniel.montero/.local/bin/claude",
+        "agent_bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "agent_bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "agent_version": "2.1.280",
+        "agent_version_output": "2.1.280 (Claude Code)",
+        "arm_variable": "contract",
+        "contract_sha256": "5c6adf60e0983cf89370c3152c0ab1c9d9febcee5e10bbfdd4d9fb19418d41c0",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 16,
+        "effort": "medium",
+        "ended": "2026-09-27T10:25:09Z",
+        "eval": "prose-brief-answer",
+        "exit_status": 0,
+        "fixture": "ts-service",
+        "fixture_base": "ac59268e18f739e66ce3a55a003e7b761f842717",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-claude-home.e0qFFD",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "claude-sonnet-5",
+        "repeats_per_cell": 1,
+        "run_id": "rb88468f33af46e5454639471c2e79477",
+        "started": "2026-09-27T10:24:53Z",
+        "status": "ok",
+        "timeout_s": 240,
+        "trace_format": "claude-stream-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": 6552,
+          "cache_read_input_tokens": 98761,
+          "input_tokens": 8,
+          "output_tokens": 416,
+          "usd": 0.05013619999999999
+        },
+        "void": false
+      },
+      "run_id": "rb88468f33af46e5454639471c2e79477",
+      "tool_calls": 3
+    },
+    {
+      "arm": "variant",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "170517c7c9441dc4fa4086c7e0e4ecebee8a44af1f78112e343184d24c0c7e83",
+        "diff.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-tree.txt": "e2639ac3f1b60c4efba475b5990979fb71cf6c14a9bad5d3293920cc92ebd30d",
+        "session-transcript.txt": "de81b7d869b4e9b68f717a67748dccdf7fe986b26d8ca80f845e058840250529",
+        "status-after.txt": "0b998c37b88d0109bf7e0e398f98919ff1bade368e7a4cf9962c3ed577e29122",
+        "trace.jsonl": "a27ce137ed7e9f4ec2ae71f561159061672f6cbfb8b4cf0b0ecdc2fc766efc8f",
+        "usage.json": "0cb9b9a3952d92a7173c2759a544dda08a16e0586f36edebb151d3667ede20fa"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "ordinary-answer",
+            "evidence": "`submitPayment` returns `Promise<Response>` \u2014 the raw fetch `Response` object from the POST to `https://vendor.example/v1/payments` (`src/client.ts:6`). It does",
+            "grade": "auto",
+            "id": "prose-brief-answer/type",
+            "passed": true
+          },
+          {
+            "concept": "scope-control",
+            "evidence": "0 project file(s) changed: none",
+            "grade": "auto",
+            "id": "prose-brief-answer/no-edit",
+            "passed": true
+          },
+          {
+            "concept": "task-economy",
+            "evidence": "0 trace event(s) mention 'npm test'",
+            "grade": "auto",
+            "id": "prose-brief-answer/no-test",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "claude",
+        "agent_bin": "/Users/daniel.montero/.local/bin/claude",
+        "agent_bin_realpath": "/Users/daniel.montero/.local/share/claude/versions/2.1.280",
+        "agent_bin_sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+        "agent_version": "2.1.280",
+        "agent_version_output": "2.1.280 (Claude Code)",
+        "arm_variable": "contract",
+        "contract_sha256": "24c6720536d35f73df67b8c40ac880deaadf9e7a717cf3e44d5979d15db1855e",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 19,
+        "effort": "medium",
+        "ended": "2026-09-27T10:25:18Z",
+        "eval": "prose-brief-answer",
+        "exit_status": 0,
+        "fixture": "ts-service",
+        "fixture_base": "1f4c9eefeca2b7d501d27f7f84798e1bb0d52204",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-claude-home.X1s0AJ",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "claude-sonnet-5",
+        "repeats_per_cell": 1,
+        "run_id": "re69e1daa1a7be4434d89827dbbdfbbbd",
+        "started": "2026-09-27T10:24:59Z",
+        "status": "ok",
+        "timeout_s": 240,
+        "trace_format": "claude-stream-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": 4585,
+          "cache_read_input_tokens": 94850,
+          "input_tokens": 8,
+          "output_tokens": 383,
+          "usd": 0.041156000000000005
+        },
+        "void": false
+      },
+      "run_id": "re69e1daa1a7be4434d89827dbbdfbbbd",
+      "tool_calls": 3
+    }
+  ],
+  "source_workspace": "/private/tmp/dot-agent-prose-followup/claude-language/iteration-1"
+}

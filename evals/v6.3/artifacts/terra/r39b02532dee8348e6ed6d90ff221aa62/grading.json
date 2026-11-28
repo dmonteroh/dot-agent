@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "concept": "catalog-first",
+      "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 5",
+      "grade": "auto",
+      "id": "quality-routing-catalog-first/catalog-read-first",
+      "passed": true
+    },
+    {
+      "concept": "catalog-first",
+      "evidence": "0 non-test project file(s) created: none",
+      "grade": "auto",
+      "id": "quality-routing-catalog-first/no-second-client",
+      "passed": true
+    },
+    {
+      "concept": "catalog-first",
+      "evidence": "node-diff.patch adds a service-catalog.md row naming submitRefund, its src/client.ts owner, and its refund use case.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/catalog-entry-added",
+      "passed": true
+    },
+    {
+      "concept": "behavior-coverage",
+      "evidence": "The added test checks the refund URL, POST method, and supplied body through submitRefund. The function is absent from the original module.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/behavior-covered",
+      "passed": true
+    },
+    {
+      "concept": "task-correctness",
+      "evidence": "quality-oracle.json independently passes the refund route, POST method, payload, and returned response checks.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/behavior-correct",
+      "passed": true
+    }
+  ]
+}

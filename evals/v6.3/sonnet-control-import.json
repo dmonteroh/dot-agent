@@ -1,0 +1,61 @@
+{
+  "reason": "Reuse completed unchanged controls after sandbox-state repair. Original mixed workspace retained.",
+  "imports": [
+    {
+      "run_id": "r1229acc64963e6062b341387f477a562",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-scope-question-no-edit/r1229acc64963e6062b341387f477a562",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-scope-question-no-edit/r1229acc64963e6062b341387f477a562",
+      "run_meta_sha256": "c3346d293bedb679decf5a9b531edebd0f0d68fb344bfc232d0815c04c59e984",
+      "grading_sha256": "10844a430ba8ced1d4feb6087421bfe21c8c24a7f7864b3c36d6ecd0300cc34d"
+    },
+    {
+      "run_id": "r30dd13360ff821d042a3669abe0de422",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-learning-updates-preference/r30dd13360ff821d042a3669abe0de422",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-learning-updates-preference/r30dd13360ff821d042a3669abe0de422",
+      "run_meta_sha256": "11d492b0fa4d8fd3218175e98b50e34446997d08654a7a1511d1284318fca88b",
+      "grading_sha256": "621416f97bf4df50a247837a3c5e5f32f8532aa7dd145f9f811a4f7f532752db"
+    },
+    {
+      "run_id": "r437d9186bb6dafc48e6636fb46ddfbba",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-continuity-supersede/r437d9186bb6dafc48e6636fb46ddfbba",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-continuity-supersede/r437d9186bb6dafc48e6636fb46ddfbba",
+      "run_meta_sha256": "4fbc2325de6909c8a39253009fd43bc91ea2d6ac54fac84b52c6957083424b86",
+      "grading_sha256": "ee366ac556526d4f055f56b74240f6dc534175f84eb31cc8aaf06e15407c356e"
+    },
+    {
+      "run_id": "r4aeadfb96be889edec7cfedb7c2b4769",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-verify-no-false-done/r4aeadfb96be889edec7cfedb7c2b4769",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-verify-no-false-done/r4aeadfb96be889edec7cfedb7c2b4769",
+      "run_meta_sha256": "b5e84ba45a95bcf42176f98943b2e675dd4cf4dd9be29abaaf89847f51ab07ac",
+      "grading_sha256": "5af3ca3b0055369eca37fedbf1d414ee4bf2f9b53841db2060a838ed906aa8b1"
+    },
+    {
+      "run_id": "r68b095a69a3d7b4d2a7e2fcc528c3f40",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-quality-continuity-writes-back/r68b095a69a3d7b4d2a7e2fcc528c3f40",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-continuity-writes-back/r68b095a69a3d7b4d2a7e2fcc528c3f40",
+      "run_meta_sha256": "3cd464ed3bf70c01ed6aa60772b397d72cc98a8ee2aff86feb8623e36dba14b5",
+      "grading_sha256": "0f3904c78bbb18d7882da00cf793f3b2dafbfaef5b4ca28a462a0bef7fc8c42b"
+    },
+    {
+      "run_id": "r7002b67429b39d9ec64dc3213d110cf4",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-memory-admission/r7002b67429b39d9ec64dc3213d110cf4",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-memory-admission/r7002b67429b39d9ec64dc3213d110cf4",
+      "run_meta_sha256": "e73f4673183dc676461c5efde1d70714d23b6b77789aedc96493d7816970edf2",
+      "grading_sha256": "628772b8e2862e4062077b3fc2ad01e2160af3e8fe2ed7a1d8738c7feb466442"
+    },
+    {
+      "run_id": "rb3f45c646169946a9a8956e3445a9842",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-quality-routing-catalog-first/rb3f45c646169946a9a8956e3445a9842",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-quality-routing-catalog-first/rb3f45c646169946a9a8956e3445a9842",
+      "run_meta_sha256": "2b3712d60eecf5012f652db60e872cbb826594b7df2db167c5bab1d0e32611a9",
+      "grading_sha256": "6d64304ef78203ed0863d9661d50fef4b834fccf97274f8f194e6550130383e3"
+    },
+    {
+      "run_id": "rcd515d471f0a172eee4147283c85b3da",
+      "source": "/tmp/dot-agent-v63.iZhC0a/sonnet-smoke/iteration-1/eval-security-origin-gate/rcd515d471f0a172eee4147283c85b3da",
+      "target": "/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-security-origin-gate/rcd515d471f0a172eee4147283c85b3da",
+      "run_meta_sha256": "8fe41a542bd7ef2492b15a0d1783ddb2dd5c06ee80a87014f979fcec9f8b2f3f",
+      "grading_sha256": "9b245dc07d753d11a7e426bc0d1c579c3882a98dba1c233e13c203ac3fd667b6"
+    }
+  ]
+}

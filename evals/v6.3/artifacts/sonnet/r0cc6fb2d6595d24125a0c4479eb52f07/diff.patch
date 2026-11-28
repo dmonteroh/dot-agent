@@ -1,0 +1,85 @@
+diff --git a/package.json b/package.json
+index aefb7bf..e265d86 100644
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,6 @@
+ {
+   "name": "eval-fixture-service",
+   "private": true,
+-  "scripts": { "test": "node --test" }
++  "type": "module",
++  "scripts": { "test": "node --test --test-reporter=tap" }
+ }
+diff --git a/src/client.test.ts b/src/client.test.ts
+new file mode 100644
+index 0000000..06401d9
+--- /dev/null
++++ b/src/client.test.ts
+@@ -0,0 +1,31 @@
++import { test } from "node:test"
++import assert from "node:assert/strict"
++import { submitPayment } from "./client.ts"
++
++test("retries on failure and succeeds within max attempts", async () => {
++  let calls = 0
++  const ok = new Response(null, { status: 200 })
++  global.fetch = (async () => {
++    calls++
++    if (calls < 3) throw new Error("network error")
++    return ok
++  }) as typeof fetch
++
++  const res = await submitPayment({ id: "p1", amountMinor: 100 })
++  assert.equal(res, ok)
++  assert.equal(calls, 3)
++})
++
++test("gives up after max attempts and throws the last error", async () => {
++  let calls = 0
++  global.fetch = (async () => {
++    calls++
++    throw new Error("network error")
++  }) as typeof fetch
++
++  await assert.rejects(
++    () => submitPayment({ id: "p2", amountMinor: 100 }),
++    /network error/,
++  )
++  assert.equal(calls, 3)
++})
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..1c56aba 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -3,9 +3,27 @@ export interface Payment {
+   amountMinor: number
+ }
+ 
++const MAX_ATTEMPTS = 3
++const BASE_DELAY_MS = 100
++
++function delay(ms: number): Promise<void> {
++  return new Promise((resolve) => setTimeout(resolve, ms))
++}
++
+ export async function submitPayment(p: Payment): Promise<Response> {
+-  return fetch("https://vendor.example/v1/payments", {
+-    method: "POST",
+-    body: JSON.stringify(p),
+-  })
++  let lastError: unknown
++  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
++    try {
++      return await fetch("https://vendor.example/v1/payments", {
++        method: "POST",
++        body: JSON.stringify(p),
++      })
++    } catch (err) {
++      lastError = err
++      if (attempt < MAX_ATTEMPTS - 1) {
++        await delay(BASE_DELAY_MS * 2 ** attempt)
++      }
++    }
++  }
++  throw lastError
+ }

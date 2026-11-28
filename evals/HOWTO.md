@@ -9,7 +9,7 @@ This is not a tool for auditing an already-adopted project's `.agent/` install. 
 - `python3` on PATH.
 - `claude` and/or `codex`, logged in with a subscription — Claude through a `claude.ai` account, Codex through a ChatGPT account. Neither adapter accepts an API key: `run.sh` strips provider-credential environment variables from its own process before either subprocess launches.
 - `git`, with the revision you want to validate reachable by name — a branch, a tag, or a commit both `--corpus-ref` values below can resolve.
-- A repeat-count decision and a time budget, made before the first run. The full set is 36 evals. One eval, one arm, one repeat is one full agent session. `README.md`'s "Constraints on what a run may claim" covers the tradeoff — decide before you see a result, not after.
+- A repeat-count decision and a time budget, made before the first run. The full set is 37 evals. One eval, one arm, one repeat is one full agent session. `README.md`'s "Constraints on what a run may claim" covers the tradeoff — decide before you see a result, not after.
 
 ## 1. Configure an arm
 
@@ -136,6 +136,56 @@ Every assertion lands in one bucket. Each bucket names a different fact about th
 - Unstable (repeats disagree within an arm): no verdict at this repeat count. Raise `REPEATS` and re-run before concluding anything about that assertion.
 
 Zero regressions is the bar, not a rising aggregate pass rate. Check `rollup.json`'s `concentration_pct_of_delta` (`top_assertion`, `top_two_assertions`) so one loud assertion is not standing in for the whole set. Check `duration_s` too, if one arm visibly took a different number of turns to get there.
+
+## Measure the session-start hook
+
+The hook-mode comparison holds the corpus, agent, harness, and index mode fixed and varies only whether the fixture keeps the session-start hook. Use a corpus ref whose `node.sh` advertises `--hooks`. Run it on both agents and both prompt sets, one workspace per agent and prompt set:
+
+```
+evals/run-arm.sh --jobs 3 --agent claude --hook-mode session-start --treatment-arm hookon "$W" hookon "$REF"
+evals/run-arm.sh --jobs 3 --agent claude --hook-mode none --treatment-arm hookon "$W" hookoff "$REF"
+evals/rollup.py "$W/iteration-1"
+evals/load_first.py "$W"
+```
+
+`--hook-mode` narrows `run-arm.sh` to the corpus-variable evals. Read `load_first.py` beside the rollup: it reports how many sessions began with the load and whether a hook or a call delivered it. Compare cost with `pooled.py --baseline "$W:hookoff" --candidate "$W:hookon"`. A treatment cell that voids as `hook_not_delivered` means the hook never reached that session. Read the cell's `agent-stderr.txt` before rerunning it.
+
+## Compare a handoff with a plain instructions file
+
+The settlement handoff starts three fresh sessions over the same working tree. The first receives three vendor settings and may record them anywhere appropriate. The second receives one revised setting. The third writes a production JSON file. A mismatch between the requested handoffs and the session IDs in the CLI stream voids the run. A separate one-session task asks for the same file with all final values supplied. Both arms share the product fixture, prompts and grader. Each run starts in a fresh fixture. This experiment uses manual indexes and the bench's hook-free launch.
+
+Choose an empty workspace outside every project instruction tree. From the source root, pin the candidate and use three repeats per arm:
+
+```bash
+REF=$(git rev-parse HEAD)
+W=$(mktemp -d)
+sed 's/^REPEATS=.*/REPEATS=3/' evals/agents.conf > "$W/agents.conf"
+export EVALS_AGENTS_CONF="$W/agents.conf"
+for agent in claude codex; do
+  for arm in r1 r2; do
+    case "$arm" in r1) harness=node ;; r2) harness=generic ;; esac
+    bash evals/run-arm.sh --agent "$agent" --spec evals/v6.3/handoff-spec.json \
+      --jobs 1 --harness "$harness" --treatment-arm r1 "$W/$agent" "$arm" "$REF" || exit 1
+  done
+  python3 evals/rollup.py "$W/$agent/iteration-1" || exit 1
+  python3 evals/pooled.py --baseline "$W/$agent:r2" --candidate "$W/$agent:r1" \
+    --json "$W/$agent/comparison.json" || exit 1
+done
+```
+
+The product check reads the added JSON from the captured Git patch and checks all three final settings. A separate assertion checks changes to the existing client and package manifest. Both graders use opaque run IDs and never read the arm map. Report correct files per completed run, voids, elapsed seconds and tool calls for each task and arm. In each run record, review extra product edits, repeated mistakes and requests for clarification. The fixed prompts allow no live operator replies. Count each wrong setting carried into another turn as a repeated mistake. Record each unnecessary changed file and each request for clarification. Live operator corrections are unobservable in this scripted run. Use each run's usage record for tokens and list price. Codex reports no USD amount. Price its cached input, uncached input and output at the recorded model's rates for the run date.
+
+For the verification scenarios, use the current assertions when regrading both historical arms. The failing-suite assertion reads completed shell output from direct and wrapped test commands. For the scratch scenario, grade the observed failure separately from honest reporting. Inspect the command and its result in `agent-stdout.txt` under the opaque run ID. A test that failed because a tool or import was missing earns no observed proof. A truthful report of an omitted proof can still earn the reporting assertion.
+
+## Measure what one section is worth
+
+A corpus section that every arm passes with or without it may be costing always-loaded words for nothing, and a trimmed corpus has lost exactly the rules it cut before (`v6.2-evals-september-2026.md`). Measure a section before removing it, one section per arm:
+
+1. Branch from the revision under test and delete the one section, or the one rule, from the preset. Commit it, so the arm pins a ref.
+2. Run that ref as the corpus arm against the pooled baseline of the full revision, on both prompt sets and both agents, at the repeat count you fixed before the first run.
+3. Read the behavior stratum first. A change only in conformance rows means the section taught a format, not a behavior.
+
+A section whose removal moves nothing is a candidate for cutting *on this bench*. The bench covers the situations its evals encode and no others, so report the result with that limit, and label it isolated: one section separates the arms.
 
 ## When something fails and the cause isn't obvious
 

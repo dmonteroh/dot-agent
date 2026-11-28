@@ -1,12 +1,14 @@
 # learn.sh — the learned-record lookup and upsert helper
 
-Finds the records under `<root>/.agent/rules/learned/` that already cover a discovery, writes a new one under a minted identity, and revises or retires an existing one only against the version it was read at. This is the mechanism alone: it enforces the record's own bullet grammar, refuses an exact duplicate, and stops a shared-term create for the agent's own judgment — it never decides whether two rules mean the same thing, whether a discovery is worth keeping, or which surface a discovery belongs to. Those decisions stay with the agent, guided by the preset's admission prose. `pending` and `resolve` extend this the same way, over the one-time backlog `node.sh update`'s migration could not classify on its own — see [Reconciling the migration backlog](#reconciling-the-migration-backlog) below.
+Finds existing discoveries in generated records under `<root>/.agent/rules/learned/` or manual bullets in `<root>/.agent/rules/learned.md`. It writes generated records under minted identities and revises or retires them against their current versions.
+
+The helper checks bullet grammar and exact duplicates. A create that resembles a record or a contract section requires the agent's judgment. The agent decides semantic equivalence, durable value, and the owning surface under the preset's admission rules. `pending` and `resolve` manage the one-time backlog that migration could not classify. See [Reconciling the migration backlog](#reconciling-the-migration-backlog).
 
 ```
 Usage: learn.sh lookup   --file <path|-> [root]
-       learn.sh new      --file <path|-> [--distinct] [--surface learned|memory|docs|gotchas] [root]
+       learn.sh new      --file <path|-> [--distinct-from <id>[,<id>...]] [--surface learned|memory|docs|gotchas] [root]
        learn.sh revise   <id> --file <path|-> --expected <version> [root]
-       learn.sh retire   <id> --expected <version> [root]
+       learn.sh retire   <id> --expected <version> --enforced-by <path> [root]
        learn.sh pending  [root]
        learn.sh resolve  --id <id> --disposition <value> [root]
 ```
@@ -17,10 +19,10 @@ Usage: learn.sh lookup   --file <path|-> [root]
 
 ## Commands
 
-- **`lookup`** — reports what already exists without writing anything. For every record byte-identical to the candidate, prints `duplicate\t<path>\t<version>`; for every record sharing nontrivial terms with it, prints `overlap\t<path>\t<version>`. Always exits 0, whether or not it found anything — it is a read, not a refusal.
-- **`new`** — writes the candidate under a freshly minted identity. On a node whose manifest says `indexes: generated` and whose `rules/learned/` does not exist yet — a fresh `init`, since only the migration creates that directory — the first `new` creates it; `index.sh` then treats the records as canonical and regenerates the gitignored `rules/learned.md` from them. A manual-mode node with no directory still refuses, because there `rules/learned.md` is the hand-kept source. Refuses an exact duplicate of an existing record, and refuses a shared-term overlap unless `--distinct` is passed, naming every match either way. `--surface` defaults to `learned`; any other value is refused, naming the writer that actually owns that surface.
-- **`revise`** — rewrites an existing record's body in place, keeping its filename (its identity) unchanged. Requires `--expected <version>`, checked against a fresh hash of the record on disk; a stale value refuses and prints the current one. A revise whose candidate is byte-identical to the record it targets — or to any other record — is the same duplicate refusal `new` gives, not a no-op success.
-- **`retire`** — removes an existing record. Also requires `--expected <version>`, checked the same way.
+- **`lookup`** — reports what already exists without writing anything. It searches individual records on generated nodes and the canonical hand-maintained `rules/learned.md` bullets on manual nodes, without creating or migrating either storage form. Results retain the legacy three-field interface: `duplicate|overlap\t<path-formed-from-root>\t<version>`, with duplicates first. A generated node gets one line per matching record. A manual node gets at most one `duplicate` line and one `overlap` line, because every rule there shares the file's path and version. Always exits 0, whether or not it found anything — it is a read, not a refusal.
+- **`new`** — writes the candidate under a freshly minted identity. On a node whose manifest says `indexes: generated` and whose `rules/learned/` does not exist yet — a fresh `init`, since only the migration creates that directory — the first `new` creates it; `index.sh` then treats the records as canonical and regenerates the gitignored `rules/learned.md` from them. A manual-mode node with no directory still refuses, because there `rules/learned.md` is the hand-kept source. Refuses an exact duplicate of an existing record. Refuses a candidate near existing records or contract sections until `--distinct-from` names every one of them. See [Near candidates](#near-candidates). `--surface` defaults to `learned`; any other value is refused, naming the writer that actually owns that surface.
+- **`revise`** — rewrites an existing record's body in place, keeping its filename (its identity) unchanged. Requires `--expected <version>`, checked once before preparing the replacement and again immediately before publishing it. Either stale result refuses at exit 3 and prints the current version. A revise whose candidate has the same body after removing its leading date — whether against its target or another record — is the same duplicate refusal `new` gives, not a no-op success.
+- **`retire`** — removes an existing record. Also requires `--expected <version>`, checked once before the operation and again immediately before removal. Either stale result refuses at exit 3 and preserves the current record. It also requires `--enforced-by <path>`: the check, script, doc, contract section, or surviving record that enforces the rule once the record is gone. The path is relative to the project root and must exist there. An absolute path, a path that leaves the root, a missing path, or the record being retired itself refuses at exit 2 before anything is read or removed. `learn.sh` checks that the path exists, not that it really enforces the rule: that judgment stays with the agent, and the groom skill asks for it in the checkpoint summary. The flag closes the v6.2 `retro-rule-expiry` failure, where a tidy-up deleted the one rule nothing else stated.
 - **`pending`** — lists the migration's open `semantic-review-pending` and `hook-missing` items from `<root>/.agent/migration-inventory.md`. A read, never a write; always exits 0. See [Reconciling the migration backlog](#reconciling-the-migration-backlog).
 - **`resolve`** — closes one pending item by rewriting its disposition field, after checking that the disposition is already true of the node on disk. Never repairs a record or a doc itself. See [Reconciling the migration backlog](#reconciling-the-migration-backlog).
 
@@ -31,8 +33,8 @@ Usage: learn.sh lookup   --file <path|-> [root]
 | 0 | success — the result line is on stdout; `lookup` and `pending` always return this |
 | 2 | usage error, or an operation that could not be carried out (a filesystem failure, 100 consecutive identity collisions while minting, or a `resolve` precondition refusal) |
 | 3 | stale `--expected` on `revise` or `retire` — stderr names the current version |
-| 4 | judgment required — `new` found a shared-term overlap without `--distinct` |
-| 5 | exact duplicate — the candidate is byte-identical to a record that already holds it |
+| 4 | judgment required — `new` found a near record or contract section that `--distinct-from` does not name |
+| 5 | exact duplicate — the candidate body after its leading date matches a record that already holds it |
 | 6 | malformed candidate — the body is not exactly one top-level `- [YYYY-MM-DD] ` bullet |
 | 7 | surface refusal — the record directory does not exist yet, or the candidate names another surface |
 
@@ -40,19 +42,36 @@ Usage: learn.sh lookup   --file <path|-> [root]
 
 ## The record grammar it enforces
 
-A candidate must be exactly one top-level `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>.` bullet, plus whatever continuation lines (indented sub-bullets, a blank line and a further paragraph) belong to that same bullet — the format `node.sh init` writes into `rules/learned.md` and every preset mirrors. A second top-level bullet, a frontmatter block, or a Markdown heading anywhere in the body is refused before anything is written. The preset's "imperative, ≤40 words" line is a curation rule, not a parser rule: a candidate over that ceiling warns on stderr and is still written, since reconciling a pre-existing record that predates the ceiling must not become impossible.
+A candidate must be exactly one top-level `- [YYYY-MM-DD] <imperative rule>. Trigger: <cause, optional>.` bullet, plus whatever continuation lines (indented sub-bullets, a blank line and a further paragraph) belong to that same bullet — the format `node.sh init` writes into `rules/learned.md` and every preset mirrors. A second top-level bullet, a frontmatter block, or a Markdown heading anywhere in the body is refused before anything is written. The preset's "imperative, ≤40 words" line is a curation rule, not a parser rule. A candidate over that ceiling is written without a message, because a message reads as a request for a second write, and a refusal would make a record that predates the ceiling impossible to reconcile.
 
 A record file holds its bullet span verbatim and nothing else: no `id:` line, no heading, no header of any kind. `index.sh` concatenates every record's body behind one shared header to regenerate `rules/learned.md`, so anything a record carried beyond its rule text would render into that file and into every rule page built from it.
 
 ## Duplicate and overlap
 
-Two candidates are compared byte for byte for the duplicate check, and by shared nontrivial terms for the overlap check: lowercase, strip everything but letters and digits, keep words over two characters that are not on a short stopword list — `trigger` among them, since the record format's own `Trigger:` label would otherwise overlap almost every pair regardless of subject, at the cost that a rule genuinely about a database trigger loses that word as a retrieval term too — and look for any term both texts share. The leading `- [YYYY-MM-DD] ` date is stripped before that scan runs, since every record carries one and it is provenance, not retrieval text. A word this scan cannot find because it never made it into the rule's own wording is why the curation guidance asks for retrieval terms to be written into the imperative itself, not left implicit.
+Duplicate checks compare bodies exactly after removing the initial `- [YYYY-MM-DD] ` provenance prefix. An otherwise identical rule stamped on another day remains an exact duplicate.
+
+`lookup`'s overlap check lowercases the text and strips everything except letters and digits. It retains words longer than two characters, excluding a short stopword list. `trigger` is excluded because the record label would otherwise overlap nearly every pair. A rule about a database trigger also loses that retrieval term. It compares the rule clause without its `Trigger:` clause and lists a record or rule as `overlap` only when it is near by the record threshold `new` uses, below. The two commands therefore list the same records. Generated records use one batch scan instead of a separate comparison process per record.
+
+### Near candidates
+
+`new` compares the rule clause, without its `Trigger:` clause, using the same terms. Two thresholds decide what counts as near, both chosen defaults:
+
+- A record is near when the two rules share a quarter of the shorter one's terms, and at least two.
+- A `## ` section of `rules/contract.md` or `rules/quality-bar.md` is near when it holds half of the candidate's terms, and at least five.
+
+Only ASCII letters and digits make terms, so a rule written in another script has none and passes both thresholds. One shared term, the test `lookup` used before v6.3, listed nearly every record, and a list that long is copied without being read.
+
+The refusal prints each near record with its rule, and each near section as `contract:<heading>` or `quality-bar:<heading>`. If a record covers the candidate, revise that record. If a section covers it, the rule is not a learned rule, and a wrong or incomplete section is fixed there. Otherwise run the call again with `--distinct-from` and every id, separated by commas. A record's id is its file name without `.md`. A call that names only some of them is refused with the rest. The flag may be given more than once.
+
+Naming an id does not prove its rule was compared. It makes the shortest way past the gate run through the list.
 
 ## What it deliberately does not decide
 
 Whether two candidates are synonymous, contradictory, or genuinely distinct once they overlap; whether a discovery is worth recording at all; and which surface — `rules/learned/`, a memory fact, a routed doc, or an area doc's own `## Gotchas` section — a discovery belongs to in the first place. `--surface` only lets the caller state that decision so `learn.sh` can refuse to act on it; it never makes the decision itself.
 
 ## After a write
+
+`new`, `revise`, and `retire` serialize with one data-only `.learn-writer.lock` directory inside `rules/learned/`, covering duplicate checks and publication for cooperating `learn.sh` writers. A concurrent cooperating writer waits up to `DA_LOCK_WAIT_SECONDS` (default 10) for the lock, then is refused at exit 2 and can retry after the first command finishes. The lock is taken through `runtime.sh`, so a lock whose writer died is recovered as it is for `log.sh` and `memory.sh` (`scripts/docs/runtime.md`). The lock does not cover an editor or other program that writes record files directly. The publication-time version check catches noncooperating changes made after the first read. It is not an atomic compare-and-swap. A direct write can still race the final check and subsequent rename or removal.
 
 When `<root>/.agent/purpose.md` says `indexes: generated`, a successful `new`, `revise`, or `retire` runs the node's own `.agent/scripts/index.sh ensure` so the regenerated `rules/learned.md` and any cached pages reflect the write immediately. An absent or failing indexer prints one warning naming `.agent/rules/` and `.agent/docs/` as the canonical read path and does not change `learn.sh`'s own exit status — a cache fault is not a defect, and a freshly cloned or gitignored worktree can have no indexer installed yet.
 
@@ -97,15 +116,9 @@ Every usage error and every refusal above exits at code 2, the same "usage error
 
 ### Repairing a `hook-missing` doc
 
-`docs.sh rehook --name <file> --read-when "…"` cannot repair a `hook-missing` doc by itself: it refuses unless the doc's first five lines already carry `Read when:` text, and refuses unless `architecture.md` already carries a `### \`<file>\`` entry — both true of a doc a session simply failed to reach with the right hook text, neither true of a doc the migration left byte-identical. Widening `rehook` to accept a headerless doc would change a shipped command's contract for every other caller, and would still leave half of `architecture.md`'s possible faults — a duplicate entry, an entry with no `- **Read when:**` line — unfixed, since those live on the routing side a doc-only patch cannot reach.
+`docs.sh sync --name <file> --read-when "…"` repairs a `hook-missing` doc without inventing the missing text. It prepends the supplied hook when the document has none, adds or updates the single `architecture.md` entry, and derives `Sections:` from headings outside code fences while preserving the existing body. Duplicate document hooks, routing entries, or metadata rows cause refusal. Reduce each to one intended value before retrying.
 
-The repair is three hand edits, done before `resolve` is ever called:
-
-1. Fix `architecture.md`: delete a duplicate `### \`<file>\`` entry down to exactly one, add a `- **Read when:**` line under an entry that has none, or add a whole entry (heading and `- **Read when:**` line) for a doc with none at all.
-2. Prepend the doc's own `<!-- Read when: … -->` line by hand — any placeholder text; `rehook` overwrites it next.
-3. Run `docs.sh rehook --name <file> --read-when "…"` with the real hook text. It rewrites the doc's header and the entry's `- **Read when:**` line together from that one value — the point of running it last, so the two texts come from one value instead of two hand edits that could drift.
-
-Only then does `resolve --id <file> --disposition migrated` close the line, checking the same header predicate the migration used to open it — never repairing anything itself.
+After sync succeeds, `resolve --id <file> --disposition migrated` closes the inventory line, checking the same header predicate the migration used to open it. `resolve` records the already-completed repair and never performs it itself. The older `rehook` command remains intentionally strict for compatibility and still handles a document and routing entry that both already exist.
 
 ### Why the shell refuses to judge, and why this is one-time
 

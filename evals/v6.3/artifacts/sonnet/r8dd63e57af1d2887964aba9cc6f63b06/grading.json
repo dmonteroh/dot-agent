@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "concept": "memory-admission",
+      "evidence": "0 memory file(s) written: none",
+      "grade": "auto",
+      "id": "memory-admission/no-duplicate-fact",
+      "passed": true
+    },
+    {
+      "concept": "memory-admission",
+      "evidence": "The full reply says: Bootstrap loaded. What would you like me to do? It names no canonical source.",
+      "grade": "manual",
+      "id": "memory-admission/says-where-it-lives",
+      "passed": false
+    }
+  ]
+}

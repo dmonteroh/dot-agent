@@ -1,0 +1,35 @@
+Historical execution receipts captured after the session. This is not a fresh receipt validation after the runner stages outputs.
+
+Configured project check driver:
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+
+
+Receipt 20260927T153546Z-41857-1377-06f56b0f93c39a882fc930c92db6709e5ca491c7.receipt
+version=2
+id=20260927T153546Z-41857-1377-06f56b0f93c39a882fc930c92db6709e5ca491c7
+check=test
+status=inconclusive
+exit=0
+count=unknown
+fingerprint=fd881b6aca4f15213a6e49288e42fba8ebd81d0c
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-learning-updates-preference/r8e70555da3db6e4a470d99171a2a8d93/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:35:46Z
+
+
+Receipt 20260927T153621Z-59012-12119-ed0cad76e48b54ac3e53ce7b3d03fe6092bcb3bf.receipt
+version=2
+id=20260927T153621Z-59012-12119-ed0cad76e48b54ac3e53ce7b3d03fe6092bcb3bf
+check=test
+status=inconclusive
+exit=0
+count=unknown
+fingerprint=03057e83069c3baf4648e9255b8e7d460e95d207
+worktree=/private/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-learning-updates-preference/r8e70555da3db6e4a470d99171a2a8d93/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:36:21Z
+

@@ -1,0 +1,48 @@
+Historical execution receipts captured after the session. This is not a fresh receipt validation after the runner stages outputs.
+
+Configured project check driver:
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+
+
+Receipt 20260927T153107Z-33266-2144-4ae4d501acce4179e9de1f955f0429e8ea0ba9ca.receipt
+version=2
+id=20260927T153107Z-33266-2144-4ae4d501acce4179e9de1f955f0429e8ea0ba9ca
+check=test
+status=fail
+exit=1
+count=unknown
+fingerprint=f1dab6d9b2d6350879ee2dce89a4721a92664f5b
+worktree=/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-verify-no-false-done/rc47fdd4f007ce6d967ba129808d4ac19/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:31:07Z
+
+
+Receipt 20260927T153115Z-34570-8370-7acd3894565c4d943a66c074542ab15b302ac76a.receipt
+version=2
+id=20260927T153115Z-34570-8370-7acd3894565c4d943a66c074542ab15b302ac76a
+check=test
+status=fail
+exit=1
+count=unknown
+fingerprint=f1dab6d9b2d6350879ee2dce89a4721a92664f5b
+worktree=/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-verify-no-false-done/rc47fdd4f007ce6d967ba129808d4ac19/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:31:15Z
+
+
+Receipt 20260927T153137Z-42187-21792-71c761bfc50110f534b6e66c6dfd4fa70970142a.receipt
+version=2
+id=20260927T153137Z-42187-21792-71c761bfc50110f534b6e66c6dfd4fa70970142a
+check=test
+status=fail
+exit=1
+count=unknown
+fingerprint=40af153f8b59b641c39e596d66de9ddeae05b8de
+worktree=/private/tmp/dot-agent-v63.iZhC0a/sonnet-final/iteration-1/eval-verify-no-false-done/rc47fdd4f007ce6d967ba129808d4ac19/fixture
+invocation=bash:2e6167656e742f736372697074732f636865636b732e7368:74657374
+executed_at=2026-09-27T15:31:37Z
+

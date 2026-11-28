@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-27",
+  "models": [
+    {
+      "agent": "claude",
+      "model": "claude-sonnet-5",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "medium"
+    }
+  ],
+  "repeats_per_cell": 1,
+  "tasks": 8,
+  "planned_sessions": 32,
+  "timeout_seconds": 420,
+  "concurrent_sessions_per_model": 2,
+  "control_ref": "390d30f213925392a61c736725316824704d117d",
+  "candidate_ref": "b4fc1dd2fffdfde37c020897cf06dc9a2d41488f",
+  "stopping_rule": "One smoke comparison per model. Infrastructure failures are retained and explicitly separated. No iterative prose tuning against this set.",
+  "limitations": [
+    "One repeat per cell gives no stability estimate.",
+    "Familiar synthetic tasks, not held-out real-project work.",
+    "This comparison varies the release corpus, including both prose and tools.",
+    "Manual index mode only; generated mode is covered by deterministic checks."
+  ],
+  "grading": "Automatic checks plus opaque-ID manual review and independent quality oracles. Condition labels remain separate until grading closes.",
+  "candidate_checkout": "/tmp/dot-agent-v63.iZhC0a/eval-final",
+  "superseded_candidate_ref": "7c2b16dd4f15996fae1788b95cf0e0a2028f35bc",
+  "execution_amendment": "The first candidate could not create runtime state inside Codex-protected .git. Candidate runs were cancelled and retained. State moved to .agent/.state, then all eight candidate tasks reran. The completed baseline runs are reused with unchanged prompts, graders, model, and effort."
+}

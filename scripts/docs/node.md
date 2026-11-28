@@ -6,21 +6,26 @@ Run from the source repo. It is not copied into a node.
 
 ```
 Usage:
-  node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [root]
-  node.sh update [--indexes <manual|generated>] [root]
+  node.sh init --preset <name> --mode <mode> [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
+  node.sh update [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh finalize [root]
+  node.sh describe [root]
 ```
 
 - `<name>` matches a file in `presets/` (currently `software-development`, `academic-research`, `domain-knowledge`).
 - `<mode>` is one of `ignore-all`, `track-shared`, `track-all`.
 - `--indexes` is `manual` or `generated`. `init` defaults it to `manual`. `update` preserves the manifest value when the flag is omitted, adopts generated mode when requested, and refuses generated-to-manual conversion outside the procedure below.
+- `--hooks` is `session-start` or `none`. `init` defaults it to `session-start`. `update` preserves the manifest value when the flag is omitted, and records `session-start` for a manifest with no `hooks` line.
 - `root` defaults to `.` and the script reads and writes `<root>/.agent`.
+- `describe` writes nothing. It prints the node's manifest fields and the worker-load contract's commands as `KEY=value` lines, so an orchestrator reads what a node supports instead of comparing versions ([worker-contract.md](worker-contract.md#nodesh-describe)).
 
 Header contracts in `operating-model.md` remain the format authority: this script writes files that carry their own header contracts, and produces nothing a header contract does not already describe.
 
 ## What init writes
 
-The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the nine shipped scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`), and the three starter confs.
+The skeleton, the manifest, the gitignore for the chosen mode and index setting, the preset as `rules/contract.md`, the fifteen managed helpers listed by `SHIPPED_SCRIPTS`, six starter configurations, and the project-owned `checks.sh` driver. Unless `--hooks none` is given, it also runs `tools/hooks/install.sh`, which adds the session-start hook to the project's Claude Code and Codex settings ([session-start.md](session-start.md)).
+
+The manifest's `hooks` field records `session-start` or `none`. Every `update` applies it again: `session-start` adds the hook where it is missing, and `none` removes it. A node whose manifest predates the field gains `hooks: session-start` and the hook on its next `update`. The hook files sit outside `.agent/`, so the tracking mode decides who sees them: committed for the team in `track-shared` and `track-all`, personal in `ignore-all`, listed in `.git/info/exclude` rather than the shared `.gitignore`. A failed hook install is reported and never fails `init` or `update`, because the entry point still loads the node.
 
 The manifest's `indexes` field records `manual` or `generated`, next to `mode`. It defaults to `manual` when `--indexes` is omitted. A manifest with no `indexes` line at all — every node created before this field existed — reads as `manual` too, the same value an absent field already means. Nothing about such a node's behavior changes until it is turned on by hand. `generated` decides which lines `init` and `update` add to the gitignore and, at `update`, whether the learned-rules migration below runs. It also changes what a session reads: `status.sh` and `checkpoint.sh` read the manifest's `indexes` field themselves (each greps `purpose.md` for the `indexes:` line) and switch their own behavior on it, and `learn.sh` reads it to decide whether a write should also refresh the generated cache. The read-path wiring an agent installs is `templates/entry-point-generated.md`, the generated-mode counterpart to `templates/entry-point.md` (`scripts/docs/index.md`).
 
@@ -48,7 +53,7 @@ A node bootstrapped straight at `--indexes generated` has no `rules/learned/` di
 
 `.agent/scripts/` is excluded from git under both `ignore-all` and `track-shared` (under `ignore-all` nothing at all under `.agent/` is tracked). A fresh clone or a `git worktree add` checkout of a `track-shared` node therefore carries the manifest and `rules/` but no scripts, `index.sh` included, even when that node's `indexes` is `generated`.
 
-The fix is the same command that carries any node forward: run `node.sh update <root>` from the source repo, pointing `<root>` at the clone or worktree. On a node already at this script's current version — the ordinary fresh-clone case — `update` does not re-copy all nine shipped scripts. It copies `index.sh` alone, since that is the one script a version-current node can still be missing, and installs it without touching `rules/`, `docs/`, `memory/`, or anything else the node already holds. An explicit `--indexes generated` also installs `learn.sh`. A node whose manifest predates the current version instead takes the full migration path below, which refreshes all nine scripts by name as part of that migration.
+Run `node.sh update <root>` from this source checkout. Version-current nodes also receive every managed runtime helper. Each helper is replaced atomically. Existing check drivers, configuration, rules, docs, memory, and logs remain project-owned.
 
 A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh ensure` and gets a failed build, reads `.agent/rules/` and `.agent/docs/` directly — the same canonical sources `ensure` itself names on stderr when a build fails (`scripts/docs/index.md`). A missing or failing indexer never blocks a session. It only means the generated cache is unavailable until `index.sh` exists and builds one.
 
@@ -56,7 +61,9 @@ A session that finds no `.agent/scripts/index.sh` to run, or that runs `index.sh
 
 A version migration is two phases: `update` does the mechanical part and leaves the node mid-migration on purpose; `finalize` closes it out once the mechanical part and the agent's own reconciliation are both done. `version` changes at `finalize` only — `update` never writes it.
 
-`update` refreshes the shipped scripts from the source repo **by exactly their nine names** — `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`. Anything else under `scripts/` is the node's own and is never overwritten during a version migration. On a version-current node, the ordinary refresh installs `index.sh` only. Explicit generated-mode adoption also installs `learn.sh`. A missing starter conf is seeded — the one write that cannot clobber node content — and an existing one is never touched.
+`update` refreshes the managed helpers named by `SHIPPED_SCRIPTS`. It seeds missing configuration and `checks.sh`, while preserving existing copies. Before migration starts, `update` checks each helper name introduced in v6.3. A symlink or a file differing from the shipped helper stops migration. Relocate the custom helper and run the update again. Script replacement uses a temporary sibling and rename, so a running shell retains its original file.
+
+After the runtime and index updates succeed, `update` moves installed skills from `.agent/skills/` to `.agents/skills/`. A migration backup includes the skills at their original paths. The installer repoints a `.claude/skills` symlink that targeted the old location and removes a `.codex/skills` one, since Codex reads `.agents/skills/` itself. The installer checks all entries, including hidden files, for name collisions before moving any of them. On a collision it reports the names and leaves the entries in place. If updating a tool link fails, correct the permissions and run `update` again. No tracking mode ignores `.agents/skills/`, so the project decides whether the moved skills enter git.
 
 A manifest with no `indexes` line is backfilled as `manual` unless `update --indexes generated` selects generated mode. Omitting the flag preserves an existing value.
 
@@ -68,7 +75,7 @@ Every node with untracked memory is backed up first. Version migration uses `.ag
 
 A matching `migration_target` makes the version-migration backup resumable. Any other backup collision aborts without touching the node.
 
-A node already on the current version can still be shape-stale: version-current is not shape-current, so shape migrations run regardless, using the shape-refresh backup path above. This is also the branch that installs `index.sh` and backfills a missing `indexes` line (above). A version-current node has nothing to migrate, so it is the only path a fresh clone or worktree of such a node ever reaches — the one that closes the gap left by `.agent/scripts/` being untracked.
+A node already on the current version can still be shape-stale: version-current is not shape-current, so shape migrations run regardless, using the shape-refresh backup path above. This branch also refreshes managed helpers and backfills a missing `indexes` line. A version-current node has nothing to migrate, so it is the only path a fresh clone or worktree of such a node ever reaches — the one that closes the gap left by `.agent/scripts/` being untracked.
 
 ### Generated mode's migration step
 

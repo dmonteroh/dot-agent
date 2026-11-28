@@ -1,0 +1,7 @@
+## Turn 1
+Added `submitRefund`, which POSTs refund data to `/v1/refunds` through the shared `httpClient`.
+
+Also added a focused request test and configured Node’s TypeScript/TAP test mode. Updated the service catalog.
+
+Verification: `npm test` — 1 passing test.
+

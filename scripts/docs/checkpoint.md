@@ -1,52 +1,90 @@
-# checkpoint.sh — the hand-back call
+# checkpoint.sh — verify, review, and record
 
-The one command a session runs before handing back. It runs the comment gate, the status check, and the session-log writer in that order, each of which lives in its own script; on a node running generated indexes (`indexes: generated`) it also refreshes the index cache between the status check and the log entry. This one only sequences them and stops at the first refusal that blocks a hand-back — the cache refresh never does.
+Checkpoint coordinates verification evidence, diff review, node health, and the session log. It records unchanged completed content once. It does not infer user-turn boundaries or decide whether a task succeeded semantically.
 
+```sh
+checkpoint.sh --tool NAME --area NAME --summary TEXT \
+  [--checks CHECK[,CHECK...]] [--verification ID[,ID...]] \
+  [--verify fail|n/a] [--base REF] [--node-only] \
+  [--policy strict|completion] [--session ID] [ROOT]
 ```
-Usage: checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>] [root]
-```
 
-`root` defaults to `.` — the project root holding `.agent/`. `--tool`, `--area`, `--verify`, and `--summary` are passed through to `log.sh` unchanged and are held to its checks.
+`ROOT` defaults to the project root at `.`. Use `--help` or `--version` for the installed interface.
 
-## What it runs
+A root that holds no `.agent` and is a linked worktree of a checkout with a node is refused in one line: the change lives in this worktree, and the node is the main checkout's. That checkout's checkpoint cannot see the change, so the line asks for a link to the node, `ln -s <main>/.agent <root>/.agent`. The link makes a shared node (`scripts/docs/runtime.md`), and the call then reviews the worktree and logs to the main checkout's node.
 
-| Step | Runs | Stops when |
-|---|---|---|
-| 1 | `comments.sh <base>` from the project root | exit 1 (a `BLOCK:` finding) or exit 2 (could not run) |
-| 2 | `status.sh`, printing only its `GROOM:` / `REPAIR:` / `INDEX:` lines | any flag line stands, or the check could not be run cleanly |
-| 3 | on a node running generated indexes only: `index.sh ensure`, refreshing `.agent/indexes/` from this session's canonical writes | never |
-| 4 | `log.sh --tool … --area … --verify … --summary …` | `log.sh` refuses the entry |
+`--session` passes a session id from a runtime adapter to `log.sh`, which stamps it on the entry. See [log.md](log.md). The id is not part of the checkpoint identity, so a rerun over recorded content with another id still writes no second entry.
 
-A stop leaves no log entry behind. That ordering is the point: a log entry is a claim that the session finished, and it is not written over a diff the gate refused or a node still flagged. The session fixes what was named and runs the command again; the entry is appended once, on the clean run, so a second run never duplicates the first.
+## Verification
 
-A manual-mode node (`indexes: manual`, the default) runs no refresh step at all — step 3 exists only when the manifest reads `indexes: generated`. The cache is disposable: a missing `.agent/scripts/index.sh` or a failing `ensure` prints a warning to stderr naming the canonical `.agent/rules/` and `.agent/docs/` directories to read directly meanwhile, and changes neither the exit status below nor whether the log entry is written — the next successful `ensure` catches the cache back up.
+`--checks` runs named checks through `verify.sh`. `--verification` consumes existing receipts for unchanged inputs. Given both, a current receipt answers for the check it records, a missing or stale receipt is left out, and every named check with no current receipt runs. `--checks n/a` is read as `--verify n/a`, because `n/a` is no check name. Each of the two prints a line saying what was done.
 
-## The base ref
+Each check's output prints on stderr. The checks share one `OUTPUT_MAX_BYTES` limit equally, so their combined output fits one tool result. See [verify.md](verify.md) for how long output is trimmed.
 
-`--base <ref>` names the change's true parent for the gate — the branch base when the work is committed. Without it, uncommitted work is gated against `HEAD`. That matches `comments.sh`'s own refusal of `HEAD` over a clean tree: a run that reads nothing must not report as a pass.
+A valid receipt determines the recorded verification status. Known failures and inconclusive checks stop automatic publication, and the refusal names which of five things happened, as `verify.sh why` reports them. For a failed check, fix and retry, or add `--verification <id> --verify fail` to the same call to record a final failed outcome. For a check that exited 0 with no test count `verify.sh` reads, fix the check driver, and leave the project's own test command as it is. For the same under `TEST_COUNT_FORMAT=tap` or `none`, set `auto` when the runner is one `verify.sh` counts. For a check that ran 0 tests, add or select a test, or pass `--verify n/a` without `--checks` when nothing can be tested. For a check that ran while project files changed, or whose output was lost, run the call again. A bare `--verify pass` is refused. `--verify fail` and `--verify n/a` remain explicit reports for failed or manual-only work.
 
-## The unchanged tree
+Logging failed work is allowed. A successful checkpoint means the record was written, not that project tests passed. The output names the recorded verification status.
 
-A clean tree with no `--base` is a turn that changed nothing, and the script stops there: no gate to run, no verification to record, no entry written.
+Checkpoint validates receipts again before publishing the log. A source edit between verification and completion requires fresh evidence. See [verify.md](verify.md) for the fingerprint boundary and count limitations.
 
-The session log holds one entry per turn that changed files, not one per session — a stated design, not an unresolved tension the runtime is merely working around. The entry point scopes bootstrap to the conversation — one conversation is one session — but a hand-back happens on every message, and no stable session or conversation identifier reaches a tool call inside one to key the log on instead. Measured before this rule existed: a three-turn session on Codex ran `checkpoint.sh` three times and wrote three entries, two of them a question answered and nothing else — the evidence for why the boundary is "changed files," not "every hand-back." At a hundred messages without the rule that is a hundred entries, riding the printed tail into every future session.
+## Review and health
 
-The agent cannot observe the end of a session. It can observe whether the turn changed anything, so that is the boundary the script reads: a clean tree with no `--base`. That is not "an answering turn never logs" — a turn that only answers but follows uncommitted prior work still finds a dirty tree and still writes an entry. Committed work still logs — `--base <ref>` names its parent. A project that is not a git checkout gives no signal either way, so it keeps the old behavior: the gate is skipped, and the entry is written.
+Review and status run before verification. A finding that blocks stops checkpoint before any check runs, so a fix costs one check run rather than two. A check that changes the inputs they read records an inconclusive result, and receipts are validated again before logging.
 
-## Why one call
+For Git work, `review.sh` invokes the comment gate and reports catalog and coverage candidates, and `DOC_ROUTE` for each routed doc that cites a changed path. Its blocking or execution errors stop checkpoint. Advisory review candidates still need agent judgment.
 
-A session's cost scales with its tool calls, not its words: every call re-reads the whole context. The hand-back was three calls — gate, log entry, status re-check — and the bootstrap five; measured across every corpus size tried, USD per call was flat and the harness made three to four times the calls of a plain instructions file. Folding the hand-back into one call and the bootstrap into `status.sh --load` cut calls per session by a quarter with the rules unchanged. What each step does did not move: `comments.sh`, `status.sh`, and `log.sh` are unchanged and remain callable on their own.
+`status.sh --format tsv` supplies stable finding codes. The default `POLICY=strict` in `checkpoint.conf` blocks every actionable finding. `--policy completion` defers advisory maintenance while structural defects remain blocking. Informational tool notes do not block either policy.
+
+A status block ends with a line that names the next step: do what each finding's line says, then run the call again. When only advisory findings blocked under the strict policy, the line says that they block too and that the session handles them now, without asking first. The node's contract already assigns that maintenance to the current session, so the line saves a question and keeps a session from relaxing the policy to get past the block.
+
+A failed status command, unexpected stderr, or malformed finding is an inspection failure. Checkpoint writes no entry in that case.
+
+After the entry is logged, a `DROPPED:` line names each value `memory.sh supersede` let leave the node since the last checkpoint, by `--drop` or as a number no node file holds any more, so the report names it as no longer true. The list is then cleared.
+
+Generated-index nodes refresh their cache before logging. A missing or failed indexer remains advisory because canonical rules and docs remain available.
+
+## Bases and ignored nodes
+
+An uncommitted Git change is compared with `HEAD`. Aliases resolving to the same comparison base share the same checkpoint identity.
+
+Each recorded entry also records the worktree's commit, and a digest of its content, in `.agent/.state/checkpoint.head.<id>`. The id stands for the worktree's path, so worktrees that share one node keep separate marks. The digest covers the tracked files and the untracked files Git does not ignore, under the project root, with no commit and no index in it. It leaves out the session log and the generated indexes. Both values are taken before the review, so a file written while the checkpoint runs is still reviewed when a later call covers its commit. A call with neither `--base` nor `--node-only` is read against that mark, in this order:
+
+| Check | Meaning | Result |
+| --- | --- | --- |
+| The content digest is the marked one, or `HEAD` is the marked commit and nothing is uncommitted | The last checkpoint covers this tree | Prints `nothing to record since the last checkpoint` and exits 0, unless ignored node files changed. That is refused, and the message names `--node-only` |
+| No mark, or the marked commit is not an ancestor of `HEAD` | A first checkpoint, a rewritten history, or another branch | Uncommitted work is compared with `HEAD`. A clean tree is refused, and the message names `--base <the commit before your work>`. When `HEAD` is the first commit, nothing comes before it, so the base is Git's empty tree, the review reads the whole commit, and the output prints `using --base` with the empty tree's id |
+| `HEAD` is the marked commit | Only uncommitted work is new | Compares with `HEAD` |
+| `HEAD` moved | Commits landed since the last checkpoint | Uses the marked commit as the base, uncommitted work included, and prints `using --base <sha>` with the number of commits |
+
+Work recorded before its commit counts as recorded afterwards, because its content is the same. Only the base is applied. `--node-only` writes an entry for content Git cannot show, so it stays explicit. It reviews no commit, so it leaves the mark in place, and its entry answers only another `--node-only` call. Ignored node files are compared through a digest in `.agent/.state/checkpoint.node`, which belongs to the node, so a worktree is not asked to record what another worktree sharing the node recorded.
+
+Five limits follow from this:
+
+- A checkpoint over uncommitted work with no usable mark starts the mark at `HEAD`, so earlier commits count as recorded, a first commit included. Pass `--base` when they are part of the work.
+- A base inferred after a pull covers the pulled commits. When the review blocks on them, pass the commit before your own work with `--base`. The mark then moves to `HEAD`.
+- Work recorded and then committed is reviewed again with the next change, because the base is the marked commit. It is logged once. Deleting a leftover file that was recorded with it counts as a change.
+- A worktree holds one mark, so after a switch to another branch and a checkpoint there, a call back on the first branch can review and log its recorded work again.
+- A file Git is told not to compare, with `assume-unchanged` or `skip-worktree`, cannot be reviewed, so a change to it alone records nothing.
+
+`--base <ref>` overrides the inference. `--base 4b825dc642cb6eb9a060e54bf8d69288fbee4904`, Git's empty tree, reviews every file from nothing. A repository with no commit is refused with any base and told to make a first commit. `--node-only` refuses product changes the last checkpoint did not record. Non-Git and node-only work report that no product diff was inspected.
+
+An inherited dirty tree does not establish that the current turn changed anything. Call checkpoint only after changed work. Exact per-turn attribution still requires a runtime turn identifier or an explicit start snapshot.
+
+## Retry and recovery
+
+A private worktree lock serializes cooperating checkpoint and direct log writers. Checkpoint waits for a held lock as the record writers do, for up to `DA_LOCK_WAIT_SECONDS`. The checkpoint identity covers current inputs and the comparison base. Log output and runtime bookkeeping do not change that identity.
+
+Repeating a successful checkpoint for unchanged content returns `unchanged`, without another test run or log entry. Use `verify.sh run` directly when an unchanged project needs a new check.
+
+Log publication uses a sibling temporary file and atomic replacement. A private recovery record holds the intended log and its before/after digests. If publication was interrupted, the next invocation finishes that record once. Unexpected concurrent log edits stop recovery for inspection.
+
+Private state lives in the worktree's self-ignored `.agent/.state` directory, including non-Git nodes. It is never loaded as memory. See [runtime.md](runtime.md).
 
 ## Exit status
 
-| 0 | 1 |
-|---|---|
-| gate clean or skipped, no flag standing, entry written | the gate blocked or could not run, a flag stands, the status check itself failed to run cleanly (nonzero exit or unexpected stderr from `status.sh`), `log.sh` refused, or the tree was clean with no `--base` — read the line above the refusal; nothing was written |
+| Status | Meaning |
+| --- | --- |
+| 0 | Entry recorded, content already recorded, or nothing to record since the last checkpoint |
+| 1 | Refused, blocked, invalid input, or failed inspection. The last line says what was refused and the next step |
 
-An inspection that did not run is not a clean node: the log entry is a claim that the node's state was actually read, and a `status.sh` that crashed, exited nonzero, or wrote to stderr never made that claim true.
-
-The generated-mode cache refresh (step 3) sits outside this table: whatever it prints and however `index.sh` exits, the codes above are unaffected — only `comments.sh`, `status.sh`, and `log.sh` decide them.
-
-## Subagents
-
-Workers never run it. The orchestrator is the single session-log writer, and flags are the orchestrator's to handle; a worker that ran `checkpoint.sh` would write an entry for work it did not own.
+The session that owns the work owns checkpoint. Delegated workers write a lesson when they have one, through `learn.sh` or `memory.sh`, and never run checkpoint. The session-log entry is the owner's, one per integrated task. A worker in its own checkout writes its copy of the node, and the orchestrator merges it back with `absorb.sh` (`scripts/docs/absorb.md`).

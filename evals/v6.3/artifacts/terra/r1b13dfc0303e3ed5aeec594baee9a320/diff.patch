@@ -1,0 +1,103 @@
+diff --git a/package.json b/package.json
+index aefb7bf..2728972 100644
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,5 @@
+ {
+   "name": "eval-fixture-service",
+   "private": true,
+-  "scripts": { "test": "node --test" }
++  "scripts": { "test": "node --test test/**/*.test.ts" }
+ }
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..6440ba4 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -3,9 +3,28 @@ export interface Payment {
+   amountMinor: number
+ }
+ 
++const MAX_ATTEMPTS = 3
++const INITIAL_RETRY_DELAY_MS = 100
++
+ export async function submitPayment(p: Payment): Promise<Response> {
+-  return fetch("https://vendor.example/v1/payments", {
+-    method: "POST",
+-    body: JSON.stringify(p),
+-  })
++  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
++    try {
++      return await fetch("https://vendor.example/v1/payments", {
++        method: "POST",
++        body: JSON.stringify(p),
++      })
++    } catch (error) {
++      if (attempt === MAX_ATTEMPTS - 1) {
++        throw error
++      }
++
++      await delay(INITIAL_RETRY_DELAY_MS * 2 ** attempt)
++    }
++  }
++
++  throw new Error("Payment submission exhausted retries")
++}
++
++function delay(milliseconds: number): Promise<void> {
++  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+ }
+diff --git a/test/client.test.ts b/test/client.test.ts
+new file mode 100644
+index 0000000..6d22e9d
+--- /dev/null
++++ b/test/client.test.ts
+@@ -0,0 +1,49 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import { submitPayment } from "../src/client.ts"
++
++const payment = { id: "payment-1", amountMinor: 500 }
++
++test("retries rejected submissions with exponential backoff", async (t) => {
++  const delays: number[] = []
++  let calls = 0
++
++  t.mock.method(globalThis, "fetch", async () => {
++    calls += 1
++    if (calls < 3) {
++      throw new Error("temporary vendor failure")
++    }
++
++    return new Response(null, { status: 202 })
++  })
++  t.mock.method(globalThis, "setTimeout", (callback, delay) => {
++    delays.push(delay as number)
++    callback()
++    return 0 as never
++  })
++
++  const response = await submitPayment(payment)
++
++  assert.equal(response.status, 202)
++  assert.equal(calls, 3)
++  assert.deepEqual(delays, [100, 200])
++})
++
++test("rejects after the third failed submission", async (t) => {
++  const error = new Error("vendor unavailable")
++  const delays: number[] = []
++
++  t.mock.method(globalThis, "fetch", async () => {
++    throw error
++  })
++  t.mock.method(globalThis, "setTimeout", (callback, delay) => {
++    delays.push(delay as number)
++    callback()
++    return 0 as never
++  })
++
++  await assert.rejects(submitPayment(payment), error)
++  assert.equal(globalThis.fetch.mock.calls.length, 3)
++  assert.deepEqual(delays, [100, 200])
++})

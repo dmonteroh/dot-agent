@@ -1,0 +1,400 @@
+{
+  "analysis": "Post-hoc product-quality audit. Does not alter the frozen benchmark scores.",
+  "oracle_sha256": "0d263608a8008d6a6691f5acf1559b71f2dc6ff98f0da82e7b82418eea12912e",
+  "runtime": "v24.16.0",
+  "limits": [
+    "Only completed sessions included.",
+    "Retry oracle covers transport rejection and success, not HTTP retry policy or delay magnitude.",
+    "Refund oracle checks endpoint, method, payload, and response. Catalog checks establish shared-client use separately.",
+    "Changed test files are an audit signal, not proof of adequate test coverage."
+  ],
+  "runs": [
+    {
+      "model": "claude",
+      "run_id": "r4bdd221fd439b98a471ab451947121cd",
+      "arm": "short",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r77f6dd2082a12a06333870a64922a685",
+      "arm": "current",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r6901de720d0300a9fc52a1c9f4500341",
+      "arm": "current",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r5af6d9f912ae4d00969f7e498feb19fb",
+      "arm": "short",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "reeccb558782783f22712ab530b136819",
+      "arm": "short",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r5914336512c33b8d4f3df0f88ccca473",
+      "arm": "current",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r2009bc47a603a1111c7551a776fbea96",
+      "arm": "current",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r9f047ea058fdb1eed757ffb66bde7a03",
+      "arm": "current",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "rc2472d4c3f11a3c9a8467abd67dfea0f",
+      "arm": "short",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r0982c53d5c8a028741172a40cfe34688",
+      "arm": "short",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r855a78d37abfcbc596a5bb65462eaa37",
+      "arm": "current",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [
+        "test/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude",
+      "run_id": "r8c006ecb9a96ebac1bd386fd3c70f5dd",
+      "arm": "short",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "rf128051bad35662b97b6d54817b82a0a",
+      "arm": "short",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": false,
+        "error": "Cannot find module '/private/tmp/dot-agent-prose-followup/codex-isolated/iteration-1/eval-routing-catalog-first/rf128051bad35662b97b6d54817b82a0a/fixture/src/http' imported from /private/tmp/dot-agent-prose-followup/codex-isolated/iteration-1/eval-routing-catalog-first/rf128051bad35662b97b6d54817b82a0a/fixture/src/client.ts"
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r472db321d2a1f36322efa2258e9ddc39",
+      "arm": "current",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "test/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r6e9e8cd85c227b308b0e959264615218",
+      "arm": "short",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": false,
+        "error": "Cannot find module '/private/tmp/dot-agent-prose-followup/codex-isolated/iteration-1/eval-routing-catalog-first/r6e9e8cd85c227b308b0e959264615218/fixture/src/http' imported from /private/tmp/dot-agent-prose-followup/codex-isolated/iteration-1/eval-routing-catalog-first/r6e9e8cd85c227b308b0e959264615218/fixture/src/client.ts"
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r522769d0aae5a3e17c3b602aca8e5d1d",
+      "arm": "current",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "test/client.test.mjs"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r13a50acbf0458c95cb3f00aca0e8a59b",
+      "arm": "short",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": false,
+        "error": "Cannot find module '/private/tmp/dot-agent-prose-followup/codex-isolated/iteration-1/eval-routing-catalog-first/r13a50acbf0458c95cb3f00aca0e8a59b/fixture/src/http' imported from /private/tmp/dot-agent-prose-followup/codex-isolated/iteration-1/eval-routing-catalog-first/r13a50acbf0458c95cb3f00aca0e8a59b/fixture/src/client.ts"
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r49034f4110e1c9ca13650d813a9aaf45",
+      "arm": "current",
+      "eval": "routing-catalog-first",
+      "test_files_changed": [
+        "test/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "refund route",
+          "POST method",
+          "payload",
+          "response"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r99008ecd732cc5ba268709cf15bd99ab",
+      "arm": "short",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "rd3087f8a1196b47c25b666955964efc1",
+      "arm": "short",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "r05254af6e7f6f4afd8f1b6fdc23501a1",
+      "arm": "current",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [
+        "test/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "codex-isolated",
+      "run_id": "re3cc5cc834ec18c272651784f447cb95",
+      "arm": "short",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude-content-recovery",
+      "run_id": "rbec8ebf060d74ca3b36e1fa8e7678830",
+      "arm": "variant",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [
+        "src/client.test.ts"
+      ],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    },
+    {
+      "model": "claude-content-recovery",
+      "run_id": "r85ef57776b8f2967932827ca76be8b7f",
+      "arm": "reference",
+      "eval": "continuity-writes-back",
+      "test_files_changed": [],
+      "oracle": {
+        "passed": true,
+        "cases": [
+          "first success",
+          "third attempt success",
+          "three failures"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+## Turn 1
+Updated [vendor rate-limit memory](/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-continuity-supersede/r3a83d83400a65c750e0a40bb41bc146f/fixture/.agent/memory/vendor-rate-limit.md): production credentials, 50 rps. Checkpoint passed.
+

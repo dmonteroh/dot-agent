@@ -1,0 +1,10 @@
+## Turn 1
+Recorded the English-only incident postmortem preference in [.agent/memory/postmortem-language.md](/tmp/dot-agent-v63.iZhC0a/terra-smoke/iteration-1/eval-learning-updates-preference/re4b3e44fe278d343b3b357ee582b4714/fixture/.agent/memory/postmortem-language.md).
+
+Verification: n/a (preference-only change); checkpoint passed.
+
+## Turn 2
+Superseded the existing preference: incident postmortems for this service must now be written in French.
+
+Verification: n/a; checkpoint passed.
+

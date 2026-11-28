@@ -1,0 +1,9 @@
+## Turn 1
+Implemented three-attempt exponential retry for failed outbound fetches:
+
+- Retries after 100 ms, then 200 ms; rethrows after the third failure.
+- Added recovery and exhaustion tests.
+- Updated `npm test` to emit TAP required by project verification.
+
+Verified with `npm test` (2 passing) and completed the project checkpoint.
+

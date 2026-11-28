@@ -1,0 +1,131 @@
+{
+  "note": "Single Mac, warm 10 repetitions, concurrent local checks and evals. Manual-only checkpoint excludes project tests. Baseline lookup figures came from an earlier measurement, not this matched run.",
+  "checkpoint_metadata": {
+    "samples_ms": [
+      1154.16,
+      1182.65,
+      1287.58,
+      1183.22,
+      1205.55,
+      1200.34,
+      1192.03,
+      1111.65,
+      1120.08,
+      1040.31
+    ],
+    "median_ms": 1182.935,
+    "p95_ms": 1287.58
+  },
+  "unchanged_checkpoint": {
+    "samples_ms": [
+      375.96,
+      384.79,
+      380.06,
+      366.01,
+      525.55,
+      367.28,
+      396.26,
+      350.4,
+      358.3,
+      370.11
+    ],
+    "median_ms": 373.03499999999997,
+    "p95_ms": 525.55
+  },
+  "installed_contract_words": {
+    "baseline": 2882,
+    "final": 833
+  },
+  "helper_timings": {
+    "status": {
+      "repetitions": 10,
+      "median_ms": 178.20999999999998,
+      "p95_ms": 194.36,
+      "samples_ms": [
+        177.85,
+        181.58,
+        172.87,
+        194.36,
+        190.87,
+        189.9,
+        176.61,
+        178.57,
+        164.21,
+        167.62
+      ],
+      "output_bytes": 0
+    },
+    "load": {
+      "repetitions": 10,
+      "median_ms": 205.35000000000002,
+      "p95_ms": 220.31,
+      "samples_ms": [
+        220.31,
+        200.58,
+        189.85,
+        198.21,
+        210.97,
+        210.12,
+        216.1,
+        187.84,
+        190.48,
+        213.07
+      ],
+      "output_bytes": 8755
+    },
+    "canonical_lookup": {
+      "repetitions": 10,
+      "median_ms": 90.31,
+      "p95_ms": 95.12,
+      "samples_ms": [
+        95.12,
+        94.23,
+        91.4,
+        93.0,
+        93.31,
+        85.56,
+        85.25,
+        87.15,
+        83.14,
+        89.22
+      ],
+      "output_bytes": 187
+    },
+    "contract_words": 833,
+    "entrypoint_words": 259
+  },
+  "learn_lookup": {
+    "10": {
+      "samples_ms": [
+        20.13,
+        21.62,
+        20.16,
+        22.37,
+        20.46,
+        20.23,
+        18.69,
+        18.04,
+        19.1,
+        18.37
+      ],
+      "median_ms": 20.145,
+      "p95_ms": 22.37
+    },
+    "100": {
+      "samples_ms": [
+        33.0,
+        34.36,
+        32.45,
+        32.06,
+        33.61,
+        33.41,
+        32.74,
+        33.01,
+        31.81,
+        31.87
+      ],
+      "median_ms": 32.870000000000005,
+      "p95_ms": 34.36
+    }
+  }
+}

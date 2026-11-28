@@ -13,6 +13,7 @@
 #                    [--indexes <manual|generated>]
 #                    [--eval <eval-id>]
 #                    [--no-harness | --generic-claude]
+#                    [--hooks <none|session-start>]
 #        fixtures.sh <fixture> <destination> --corpus-dir <path>
 #        fixtures.sh --list
 
@@ -21,7 +22,7 @@ set -u
 selfdir=$(cd "$(dirname "$0")" && pwd)
 reporoot=$(cd "$selfdir/.." && pwd)
 
-FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration ts-service-learning"
+FIXTURES="ts-service ts-service-with-doc ts-service-with-fact ts-service-catalog ts-service-planted ts-service-flagged ts-service-failing ts-service-stale-rule cs-api ts-service-index-fault ts-service-no-indexer ts-service-branch-switched ts-service-partial-migration ts-service-learning ts-service-latent-bug"
 
 usage() {
   cat <<'EOF'
@@ -29,6 +30,7 @@ Usage: fixtures.sh <fixture> <destination> [--corpus-ref <ref>]
                    [--indexes <manual|generated>]
                    [--eval <eval-id>]
                    [--no-harness | --generic-claude]
+                   [--hooks <none|session-start>]
        fixtures.sh <fixture> <destination> --corpus-dir <path>
        fixtures.sh --list
 
@@ -53,6 +55,12 @@ AGENTS.md) in its place — a plausible non-dot-agent alternative rather than
 nothing. The moved-aside node is outside the fixture's git repository and
 outside the agent's working directory; it is kept rather than deleted so the
 built arm stays inspectable after the run.
+
+--hooks defaults to none: the node is built without the session-start hook
+whatever the corpus defaults to, so the load arrives the way it always has.
+session-start keeps the hook node.sh installs in .claude/settings.json and
+.codex/hooks.json. It is the treatment of the hook-mode comparison, needs a
+corpus whose node.sh advertises --hooks, and needs the node harness.
 
 Fixtures:
   ts-service                a TypeScript service with an outbound HTTP client
@@ -82,6 +90,8 @@ Fixtures:
                             exchange-rate cache, three paginated admin
                             endpoints, a generated webhook schema, a
                             diagnostic script, and a rename checklist
+  ts-service-latent-bug     a defect in the payment client that its passing
+                            suite does not catch
 EOF
 }
 
@@ -105,6 +115,8 @@ harness_mode="node"
 # manual unless asked, so every fixture built with no flag at all stays
 # byte-identical to what this builder produced before --indexes existed.
 indexes="manual"
+# none (the default) or session-start — node.sh's own --hooks value.
+hooks="none"
 eval_id=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -117,6 +129,12 @@ while [ $# -gt 0 ]; do
     *) echo "fixtures.sh: --indexes must be manual or generated (got '${2:-}')" >&2; exit 2 ;;
     esac
     indexes="$2"; shift 2 ;;
+  --hooks)
+    case "${2:-}" in
+    none | session-start) ;;
+    *) echo "fixtures.sh: --hooks must be none or session-start (got '${2:-}')" >&2; exit 2 ;;
+    esac
+    hooks="$2"; shift 2 ;;
   --no-harness)
     [ "$harness_mode" = node ] || {
       echo "fixtures.sh: --no-harness and --generic-claude are mutually exclusive" >&2; exit 2; }
@@ -128,6 +146,10 @@ while [ $# -gt 0 ]; do
   *) echo "fixtures.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+if [ "$hooks" = session-start ] && [ "$harness_mode" != node ]; then
+  echo "fixtures.sh: --hooks session-start needs the node harness" >&2; exit 2
+fi
 
 case " $FIXTURES " in
 *" $fixture "*) ;;
@@ -176,7 +198,7 @@ mkdir -p "$dest" || exit 1
 dest=$(cd "$dest" && pwd)
 
 case "$fixture" in
-ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration | ts-service-learning)
+ts-service | ts-service-with-doc | ts-service-with-fact | ts-service-catalog | ts-service-planted | ts-service-flagged | ts-service-failing | ts-service-stale-rule | ts-service-index-fault | ts-service-no-indexer | ts-service-branch-switched | ts-service-partial-migration | ts-service-learning | ts-service-latent-bug)
   mkdir -p "$dest/src"
   cat >"$dest/package.json" <<'EOF'
 {
@@ -213,6 +235,19 @@ EOF
 esac
 
 node_help=$("$corpus/scripts/node.sh" --help 2>&1 || true)
+# Fixtures stay hook-free unless --hooks asks otherwise, whatever the corpus
+# defaults to: a session-start hook changes how the load arrives, so it is an
+# arm of its own, never a side effect of the corpus revision.
+node_hooks_args=""
+case "$node_help" in
+*--hooks*) node_hooks_args="--hooks $hooks" ;;
+*)
+  if [ "$hooks" = session-start ]; then
+    echo "fixtures.sh: corpus $corpus_sha does not support session-start hooks" >&2
+    exit 1
+  fi
+  ;;
+esac
 node_indexes_flag=""
 case "$node_help" in
 *--indexes*) node_indexes_flag="--indexes" ;;
@@ -226,13 +261,13 @@ esac
 
 if [ -n "$node_indexes_flag" ]; then
   "$corpus/scripts/node.sh" init --preset software-development --mode track-all \
-    --indexes "$indexes" "$dest" >/dev/null || {
+    --indexes "$indexes" $node_hooks_args "$dest" >/dev/null || {
     echo "fixtures.sh: node.sh init failed" >&2
     exit 1
   }
 else
   "$corpus/scripts/node.sh" init --preset software-development --mode track-all \
-    "$dest" >/dev/null || {
+    $node_hooks_args "$dest" >/dev/null || {
     echo "fixtures.sh: node.sh init failed" >&2
     exit 1
   }
@@ -253,6 +288,19 @@ awk '/^## Quality bar/ { q = 1 } q && /^## / && !/^## Quality bar/ { q = 0 } q' 
 mv "$contract.body" "$contract"
 
 "$selfdir/fixture_seed.py" fill-contract "$contract" || exit 1
+# The contract names tmp/scratch/ as the scratch folder Git ignores.
+printf 'tmp/\n' >>"$dest/.gitignore"
+
+if [ -f "$dest/.agent/scripts/verify.sh" ]; then
+  cat >"$dest/.agent/scripts/checks.sh" <<'CHECKS'
+#!/usr/bin/env bash
+case "${1:-}" in
+  test) exec npm test ;;
+  *) echo 'checks.sh: this fixture provides the test check only' >&2; exit 2 ;;
+esac
+CHECKS
+  chmod +x "$dest/.agent/scripts/checks.sh"
+fi
 
 # entry-point-generated.md carries indexer-specific bootstrap steps in place
 # of the <Routing:...> placeholder, so it has no such placeholder to fill —
@@ -274,7 +322,16 @@ fi
 cp "$dest/CLAUDE.md" "$dest/AGENTS.md"
 
 mkdir -p "$dest/.claude"
-printf '{\n  "autoMemoryEnabled": false\n}\n' >"$dest/.claude/settings.json"
+if [ "$hooks" = session-start ]; then
+  # node.sh wrote this file with the hook and autoMemoryEnabled:false. Keep it
+  # as installed: the installed wiring is what the arm measures.
+  grep -q '"autoMemoryEnabled": false' "$dest/.claude/settings.json" 2>/dev/null \
+    && grep -qF '.agent/scripts/session-start.sh' "$dest/.claude/settings.json" \
+    && grep -qF '.agent/scripts/session-start.sh' "$dest/.codex/hooks.json" 2>/dev/null \
+    || { echo "fixtures.sh: node.sh did not install the session-start hook" >&2; exit 1; }
+else
+  printf '{\n  "autoMemoryEnabled": false\n}\n' >"$dest/.claude/settings.json"
+fi
 
 if [ "$fixture" = "ts-service-with-doc" ]; then
   # The trap: a routed doc the session is supposed to reach, whose hook does
@@ -421,6 +478,50 @@ test("legacy currency rounding", () => {
 })
 
 function round(n) { return Math.round(n * 100) / 100 }
+EOF
+  ;;
+ts-service-latent-bug)
+  # node --test runs a *.test.ts file wherever it sits, Git-ignored or not.
+  # The shared driver's test check therefore runs one left under tmp/scratch/.
+  cat >"$dest/src/client.ts" <<'EOF'
+export interface Payment {
+  id: string
+  amountMinor: number
+  currency: string
+}
+
+const MINOR_UNIT_DIGITS: Record<string, number> = {
+  EUR: 2,
+  USD: 2,
+  JPY: 2,
+}
+
+export function toMinorUnits(amount: number, currency: string): number {
+  const digits = MINOR_UNIT_DIGITS[currency]
+  if (digits === undefined) throw new RangeError(`unsupported currency: ${currency}`)
+  return Math.round(amount * 10 ** digits)
+}
+
+export async function submitPayment(id: string, amount: number, currency: string): Promise<Response> {
+  const p: Payment = { id, amountMinor: toMinorUnits(amount, currency), currency }
+  return fetch("https://vendor.example/v1/payments", {
+    method: "POST",
+    body: JSON.stringify(p),
+  })
+}
+EOF
+  cat >"$dest/src/client.test.ts" <<'EOF'
+import test from "node:test"
+import assert from "node:assert/strict"
+import { toMinorUnits } from "./client.ts"
+
+test("a euro amount is sent in cents", () => {
+  assert.equal(toMinorUnits(12.5, "EUR"), 1250)
+})
+
+test("an unsupported currency is refused", () => {
+  assert.throws(() => toMinorUnits(10, "XXX"), RangeError)
+})
 EOF
   ;;
 ts-service-stale-rule)
@@ -895,6 +996,7 @@ fixtures.sh: built $fixture at $dest
   corpus sha:  $corpus_sha
   harness:     $harness_label
   indexes:     $indexes${idx_entry:+ (entry: $idx_entry)}
+  hooks:       $hooks
   fixture base: $(git -C "$dest" rev-parse HEAD)
 
 Record both shas in run-config.json. The fixture base is the ref every

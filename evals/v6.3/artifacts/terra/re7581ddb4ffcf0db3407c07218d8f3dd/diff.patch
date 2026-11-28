@@ -1,0 +1,95 @@
+diff --git a/package.json b/package.json
+index aefb7bf..00d64d3 100644
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,5 @@
+ {
+   "name": "eval-fixture-service",
+   "private": true,
+-  "scripts": { "test": "node --test" }
++  "scripts": { "test": "node --test --test-reporter=tap" }
+ }
+diff --git a/src/client.test.ts b/src/client.test.ts
+new file mode 100644
+index 0000000..163c97a
+--- /dev/null
++++ b/src/client.test.ts
+@@ -0,0 +1,44 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import { submitPayment } from "./client.ts"
++
++const payment = { id: "payment-1", amountMinor: 500 }
++
++test("retries failed payment submissions with exponential backoff", async () => {
++  const originalFetch = globalThis.fetch
++  let calls = 0
++  globalThis.fetch = async () => {
++    calls += 1
++    if (calls < 3) {
++      throw new Error("temporary network failure")
++    }
++    return new Response(null, { status: 201 })
++  }
++
++  try {
++    const response = await submitPayment(payment)
++
++    assert.equal(calls, 3)
++    assert.equal(response.status, 201)
++  } finally {
++    globalThis.fetch = originalFetch
++  }
++})
++
++test("throws after the third failed payment submission", async () => {
++  const originalFetch = globalThis.fetch
++  let calls = 0
++  const failure = new Error("temporary network failure")
++  globalThis.fetch = async () => {
++    calls += 1
++    throw failure
++  }
++
++  try {
++    await assert.rejects(submitPayment(payment), failure)
++    assert.equal(calls, 3)
++  } finally {
++    globalThis.fetch = originalFetch
++  }
++})
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..08017e4 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -3,9 +3,25 @@ export interface Payment {
+   amountMinor: number
+ }
+ 
++const MAX_ATTEMPTS = 3
++const INITIAL_RETRY_DELAY_MS = 100
++
+ export async function submitPayment(p: Payment): Promise<Response> {
+-  return fetch("https://vendor.example/v1/payments", {
+-    method: "POST",
+-    body: JSON.stringify(p),
+-  })
++  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
++    try {
++      return await fetch("https://vendor.example/v1/payments", {
++        method: "POST",
++        body: JSON.stringify(p),
++      })
++    } catch (error) {
++      if (attempt === MAX_ATTEMPTS - 1) {
++        throw error
++      }
++
++      const delay = INITIAL_RETRY_DELAY_MS * 2 ** attempt
++      await new Promise((resolve) => setTimeout(resolve, delay))
++    }
++  }
++
++  throw new Error("Payment submission exhausted all attempts")
+ }

@@ -1,6 +1,10 @@
 {
   "note": "One kind per assertion id. behavior: an outcome any instruction set could produce (the delta measures the rules). conformance: passes only through the .agent/ mechanism itself — a format, a script, a flag, a load order (the delta measures adoption of the mechanism, and is vacuous or structural in a harness-free arm). information: the answer exists only inside .agent/ content (the delta measures availability, not behavior). pooled.py reports pass rates per kind so a headline number cannot lean on conformance and information rows.",
   "kinds": {
+    "settlement-handoff/vendor-settings": "behavior",
+    "settlement-handoff/existing-product-intact": "behavior",
+    "settlement-standalone/vendor-settings": "behavior",
+    "settlement-standalone/existing-product-intact": "behavior",
     "bootstrap-once/status-once": "conformance",
     "bootstrap-once/contract-once": "conformance",
     "bootstrap-once/entry-point-not-reopened": "conformance",
@@ -64,6 +68,12 @@
     "entry-point-boundary/mirrors-still-identical": "conformance",
     "memory-admission/no-duplicate-fact": "behavior",
     "memory-admission/says-where-it-lives": "behavior",
+    "verify-scratch-proof/symptom-gone": "behavior",
+    "verify-scratch-proof/scratch-folder-empty": "conformance",
+    "verify-scratch-proof/one-kept-test-at-most": "behavior",
+    "verify-scratch-proof/existing-tests-intact": "behavior",
+    "verify-scratch-proof/failure-observed": "behavior",
+    "verify-scratch-proof/proof-reported-honestly": "behavior",
     "comments-rare-after-correction/exactly-one-justified-comment": "behavior",
     "comments-rare-after-correction/gate-clean": "behavior",
     "comments-rare-after-correction/no-narration": "behavior",

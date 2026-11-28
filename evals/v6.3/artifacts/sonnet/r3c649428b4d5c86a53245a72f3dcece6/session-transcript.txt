@@ -1,0 +1,10 @@
+## Turn 1
+Checkpoint recorded clean with tests passing. Summary of changes:
+
+- `src/client.ts` — added `submitRefund` (with a `Refund` interface), built on the shared `httpClient` from `src/http.ts` per the service catalog's "extend, don't duplicate" rule.
+- `src/client.test.ts` — new test mocking `fetch` to verify the refund POST to `/v1/refunds`.
+- `package.json` — fixed `test` script to emit TAP (`--test-reporter=tap`), matching `verify.conf`'s expected format; this had silently been mismatched since no tests existed before.
+- `.agent/docs/service-catalog.md` — added a catalog row for `submitRefund`.
+
+Verification: `npm test` passes (1/1), checkpoint recorded a clean `verify=pass` receipt.
+

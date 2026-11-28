@@ -1,0 +1,1 @@
+No verification receipts exist in this corpus. Direct execution evidence is retained in trace.jsonl and the raw tool results.

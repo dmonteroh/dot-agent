@@ -1,0 +1,16 @@
+{
+  "reason": "Resolve incomplete comparisons after 240-second runtime limits. Preserve earlier attempts. No contract or prompt tuning.",
+  "repeats": 1,
+  "timeout_seconds": 600,
+  "max_concurrent_sessions_per_model": 2,
+  "terra_tasks": [
+    "continuity-writes-back",
+    "continuity-supersede",
+    "security-origin-gate"
+  ],
+  "sonnet_pairs": [
+    "content",
+    "language"
+  ],
+  "stopping_rule": "One bounded rerun. Report remaining failures without another retry."
+}

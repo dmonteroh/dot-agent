@@ -3,21 +3,58 @@
 set -u
 unset CDPATH
 
-TARGET_VERSION="6.2"
+TARGET_VERSION="6.3"
 SOURCE_URL="https://github.com/dmonteroh/dot-agent"
 
 selfdir=$(cd "$(dirname "$0")" && pwd)
 srcroot=$(cd "$selfdir/.." && pwd)
 
+V63_HELPERS=(runtime.sh verify.sh review.sh capture.sh absorb.sh session-start.sh)
+SHIPPED_SCRIPTS=(status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh "${V63_HELPERS[@]}")
+SHIPPED_CONFIGS=(comments.conf status.conf log.conf checkpoint.conf verify.conf review.conf)
+
+# The worker-load contract's two lists, as scripts/docs/worker-contract.md
+# states them. test.sh holds the page and these to the same text.
+WORKER_MAY_RUN=("status.sh" "links.sh" "comments.sh" "review.sh" "index.sh check" "log.sh" "memory.sh" "learn.sh" "docs.sh")
+ORCHESTRATOR_ONLY=("checkpoint.sh" "verify.sh" "index.sh ensure" "absorb.sh")
+
+install_node_scripts() {
+  local target script conf temp
+  target="$1/scripts"
+  mkdir -p "$target" || return 1
+  for script in "${SHIPPED_SCRIPTS[@]}"; do
+    temp="$target/.$script.update.$$"
+    if ! cp "$srcroot/scripts/$script" "$temp" || ! chmod +x "$temp" || ! mv -f "$temp" "$target/$script"; then
+      rm -f "$temp"
+      echo "node.sh: could not refresh $script" >&2
+      return 1
+    fi
+  done
+  for conf in "${SHIPPED_CONFIGS[@]}" checks.sh; do
+    [ ! -e "$target/$conf" ] || continue
+    temp="$target/.$conf.update.$$"
+    cp "$srcroot/scripts/$conf" "$temp" && mv -f "$temp" "$target/$conf" || {
+      rm -f "$temp"; echo "node.sh: could not seed $conf" >&2; return 1;
+    }
+    [ "$conf" != checks.sh ] || chmod +x "$target/$conf"
+  done
+}
+
 usage() {
   cat <<'EOF'
 Usage:
-  node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [root]
-  node.sh update [--indexes <manual|generated>] [root]
+  node.sh init --preset <software-development|academic-research|domain-knowledge> --mode <ignore-all|track-shared|track-all> [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
+  node.sh update [--indexes <manual|generated>] [--hooks <session-start|none>] [root]
   node.sh finalize [root]
+  node.sh describe [root]
 
-init defaults --indexes to manual. update preserves the manifest value when
---indexes is omitted. root defaults to . — the script operates on <root>/.agent
+describe prints the node's manifest fields and the worker-load contract's
+commands as KEY=value lines (scripts/docs/worker-contract.md).
+
+init defaults --indexes to manual and --hooks to session-start.
+update preserves the manifest value when either flag is omitted, and
+records session-start for a manifest with no hooks line. root defaults
+to . — the script operates on <root>/.agent
 EOF
 }
 
@@ -92,6 +129,71 @@ write_indexes() {
   mv "$wi_new" "$wi_purpose"
 }
 
+write_hooks() {
+  wh_purpose="$1"
+  wh_value="$2"
+  wh_new="$(dirname "$wh_purpose")/.purpose.md.new"
+  wh_old_lines=$(wc -l <"$wh_purpose" 2>/dev/null || echo 0)
+  if grep -q '^  hooks:' "$wh_purpose"; then
+    wh_line=$(grep -n -m1 '^  hooks:' "$wh_purpose" | cut -d: -f1)
+    sed -E "${wh_line}s/^(  hooks:).*/\1 $wh_value        # session-start | none/" "$wh_purpose" >"$wh_new"
+    wh_rc=$?
+    wh_expect_lines="$wh_old_lines"
+  else
+    wh_line=$(grep -n -m1 '^  indexes:' "$wh_purpose" | cut -d: -f1)
+    [ -n "$wh_line" ] || wh_line=$(grep -n -m1 '^  mode:' "$wh_purpose" | cut -d: -f1)
+    awk -v n="$wh_line" -v val="$wh_value" \
+      'NR==n { print; print "  hooks: " val "        # session-start | none"; next } { print }' \
+      "$wh_purpose" >"$wh_new"
+    wh_rc=$?
+    wh_expect_lines=$((wh_old_lines + 1))
+  fi
+  wh_new_lines=$(wc -l <"$wh_new" 2>/dev/null || echo 0)
+  if [ "$wh_rc" -ne 0 ] || [ ! -s "$wh_new" ] \
+    || [ "$wh_new_lines" -ne "$wh_expect_lines" ] \
+    || ! grep -qF "hooks: $wh_value" "$wh_new"; then
+    [ -f "$wh_new" ] && rm -f "$wh_new"
+    return 1
+  fi
+  mv "$wh_new" "$wh_purpose"
+}
+
+# Harness hooks are optional wiring: a failure here is reported, and the node
+# still works through its entry point.
+apply_hooks() {
+  ah_root="$1"
+  ah_value="$2"
+  ah_installer="$srcroot/tools/hooks/install.sh"
+  if [ ! -f "$ah_installer" ]; then
+    echo "node.sh: hooks: $ah_installer is missing, so no harness hook was changed"
+    return 0
+  fi
+  if [ "$ah_value" = none ]; then
+    bash "$ah_installer" --remove "$ah_root" | sed 's/^/node.sh: /'
+  else
+    bash "$ah_installer" "$ah_root" | sed 's/^/node.sh: /'
+  fi
+  [ "${PIPESTATUS[0]}" -eq 0 ] \
+    || echo "node.sh: hooks: not every harness file was updated; the entry point still loads the node"
+  return 0
+}
+
+# Records the hooks value update settles on and applies it.
+reconcile_hooks() {
+  rh_root="$1"
+  rh_purpose="$2"
+  if [ -z "$hooks_line" ] || [ "$desired_hooks" != "$hooks" ]; then
+    write_hooks "$rh_purpose" "$desired_hooks" \
+      || { echo "node.sh: failed to record hooks in $rh_purpose" >&2; return 1; }
+    if [ -z "$hooks_line" ]; then
+      echo "node.sh: hooks: $desired_hooks backfilled into $rh_purpose"
+    else
+      echo "node.sh: hooks: $desired_hooks recorded in $rh_purpose"
+    fi
+  fi
+  apply_hooks "$rh_root" "$desired_hooks"
+}
+
 write_version() {
   wv_purpose="$1"
   wv_value="$2"
@@ -129,7 +231,7 @@ remove_migration_target() {
 write_session_log_header() {
   cat >"$1" <<'EOF'
 # Session log
-<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag is this change's own verification result: a baseline failure that predates the change goes in the summary text, not the tag. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git, and `log.sh --session <id>` stamps `session: <id>.` after it. -->
 EOF
 }
 
@@ -225,6 +327,7 @@ session_log_header_stale() {
   slh_log="$1"
   [ -f "$slh_log" ] || return 1
   grep -qF 'One entry per turn that changed files, newest last.' "$slh_log" || return 0
+  grep -qF 'The verify tag records the observed check outcome.' "$slh_log" || return 0
   return 1
 }
 
@@ -514,14 +617,57 @@ enable_generated_indexes() {
   return 0
 }
 
+# Before 6.3, skills were installed inside the node at .agent/skills/ and read
+# through per-tool symlinks. Most agent tools now read .agents/skills/ beside
+# the node, and one of those symlink locations is no longer read at all.
+migrate_skills_location() (
+  local root="$1" old="$1/.agent/skills" new="$1/.agents/skills" entry name link clashes=""
+  [ -d "$old" ] && [ ! -L "$old" ] || return 0
+  if [ -L "$root/.agents" ] || [ -L "$new" ] || { [ -e "$new" ] && [ ! -d "$new" ]; }; then
+    echo "node.sh: skills stay at $old — $new is not a plain directory" >&2
+    return 0
+  fi
+  shopt -s dotglob nullglob
+  set -- "$old"/*
+  for entry do
+    name=${entry##*/}
+    if [ -e "$new/$name" ] || [ -L "$new/$name" ]; then clashes="$clashes $name"; fi
+  done
+  if [ -n "$clashes" ]; then
+    echo "node.sh: skills stay at $old — these names already exist in $new:$clashes. Keep one copy of each, then re-run update" >&2
+    return 0
+  fi
+  mkdir -p "$new" || return 1
+  for entry do
+    mv -- "$entry" "$new/" || { echo "node.sh: moving $entry to $new failed. Check the directory permissions and re-run update" >&2; return 1; }
+  done
+  # Keep the original directory until both links are settled so a retry can identify them.
+  for link in "$root/.claude/skills" "$root/.codex/skills"; do
+    [ -L "$link" ] && [ "$link" -ef "$old" ] || continue
+    if [ "$link" = "$root/.claude/skills" ]; then
+      ln -sfn ../.agents/skills "$link" || return 1
+      echo "node.sh: repointed $link to ../.agents/skills"
+    else
+      rm -f "$link" || return 1
+      echo "node.sh: removed $link — that tool reads .agents/skills/ itself"
+    fi
+  done
+  rmdir "$old" || { echo "node.sh: could not remove $old. Inspect its contents and re-run update" >&2; return 1; }
+  echo "node.sh: moved installed skills from .agent/skills/ to .agents/skills/ — no tracking mode ignores them there, so decide whether they enter git"
+)
+
 case "$cmd" in
 init)
   preset=""
   mode=""
   indexes=""
+  hooks=""
   root="."
   while [ $# -gt 0 ]; do
     case "$1" in
+    --hooks)
+      [ $# -ge 2 ] || { echo "node.sh: --hooks needs a value" >&2; usage >&2; exit 1; }
+      hooks="$2"; shift 2 ;;
     --preset)
       [ $# -ge 2 ] || { echo "node.sh: --preset needs a value" >&2; usage >&2; exit 1; }
       preset="$2"; shift 2 ;;
@@ -566,6 +712,14 @@ init)
     usage >&2
     exit 1 ;;
   esac
+  hooks="${hooks:-session-start}"
+  case "$hooks" in
+  session-start | none) ;;
+  *)
+    echo "node.sh: unknown --hooks: '$hooks' (must be session-start or none)" >&2
+    usage >&2
+    exit 1 ;;
+  esac
 
   agent="$root/.agent"
   if [ -e "$agent" ]; then
@@ -597,6 +751,7 @@ dot-agent:
   preset: $preset
   mode: $mode        # ignore-all | track-shared | track-all
   indexes: $indexes        # manual | generated
+  hooks: $hooks        # session-start | none
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 
@@ -608,15 +763,7 @@ EOF
   cp "$srcroot/presets/$preset.md" "$agent/rules/contract.md" \
     || { echo "node.sh: preset copy into rules/contract.md failed" >&2; exit 1; }
 
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
-    cp "$srcroot/scripts/$script" "$agent/scripts/$script" \
-      || { echo "node.sh: script copy failed: $script" >&2; exit 1; }
-    chmod +x "$agent/scripts/$script"
-  done
-  for conffile in comments.conf status.conf log.conf; do
-    cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile" \
-      || { echo "node.sh: $conffile copy failed" >&2; exit 1; }
-  done
+  install_node_scripts "$agent" || exit 1
 
   if [ "$(cd "$root" && pwd -P)" = "$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" ]; then
     { [ "$mode" = "track-all" ] && [ "$indexes" != generated ]; } \
@@ -668,16 +815,23 @@ EOF
   esac
   fi
 
-  echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes)"
+  [ "$hooks" = none ] || apply_hooks "$root" "$hooks"
+
+  echo "node.sh: initialized $agent (preset=$preset, mode=$mode, indexes=$indexes, hooks=$hooks)"
+  echo 'node.sh: configure scripts/checks.sh and verify.conf for project checks; existing drivers and configuration survive updates'
   exit 0
   ;;
 
 update)
   requested_indexes=""
+  requested_hooks=""
   root="."
   root_seen=0
   while [ $# -gt 0 ]; do
     case "$1" in
+    --hooks)
+      [ $# -ge 2 ] || { echo "node.sh: --hooks needs a value" >&2; usage >&2; exit 1; }
+      requested_hooks="$2"; shift 2 ;;
     --indexes)
       [ $# -ge 2 ] || { echo "node.sh: --indexes needs a value" >&2; usage >&2; exit 1; }
       requested_indexes="$2"; shift 2 ;;
@@ -694,6 +848,13 @@ update)
   "" | manual | generated) ;;
   *)
     echo "node.sh: unknown --indexes: '$requested_indexes' (must be manual or generated)" >&2
+    usage >&2
+    exit 1 ;;
+  esac
+  case "$requested_hooks" in
+  "" | session-start | none) ;;
+  *)
+    echo "node.sh: unknown --hooks: '$requested_hooks' (must be session-start or none)" >&2
     usage >&2
     exit 1 ;;
   esac
@@ -723,6 +884,9 @@ EOF
   indexes_line=$(grep -m1 '^  indexes:' "$purpose")
   indexes=$(printf '%s\n' "$indexes_line" | sed -E 's/^[[:space:]]*indexes:[[:space:]]*([A-Za-z-]+).*/\1/')
   [ -n "$indexes" ] || indexes=manual
+  hooks_line=$(grep -m1 '^  hooks:' "$purpose")
+  hooks=$(printf '%s\n' "$hooks_line" | sed -E 's/^[[:space:]]*hooks:[[:space:]]*([A-Za-z-]+).*/\1/')
+  desired_hooks="${requested_hooks:-${hooks:-session-start}}"
   migration_target_line=$(grep -m1 '^  migration_target:' "$purpose")
   migration_target=$(printf '%s\n' "$migration_target_line" | sed -E 's/^[[:space:]]*migration_target:[[:space:]]*"?([^"[:space:]]*)"?.*/\1/')
 
@@ -742,13 +906,34 @@ EOF
   fi
   desired_indexes="${requested_indexes:-$indexes}"
 
-  lowest=$(printf '%s\n%s\n' "$oldversion" "$TARGET_VERSION" | sort -V | head -n1)
-  if [ "$lowest" != "$oldversion" ]; then
+  version_order=$(awk -v old="$oldversion" -v target="$TARGET_VERSION" 'BEGIN {
+    a=split(old,x,"."); b=split(target,y,"."); n=(a>b?a:b)
+    for(i=1;i<=n;i++) {
+      if((x[i]+0)<(y[i]+0)) {print -1; exit}
+      if((x[i]+0)>(y[i]+0)) {print 1; exit}
+    }
+    print 0
+  }') || { echo 'node.sh: version comparison failed' >&2; exit 1; }
+  case "$version_order" in
+  -1|0|1) ;;
+  *) echo 'node.sh: version comparison returned an invalid result' >&2; exit 1 ;;
+  esac
+  if [ "$version_order" -gt 0 ]; then
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
 
-  if [ "$oldversion" = "$TARGET_VERSION" ]; then
+  if [ "$version_order" -lt 0 ] && [ "$migration_target" != "$TARGET_VERSION" ]; then
+    for new_helper in "${V63_HELPERS[@]}"; do
+      existing="$agent/scripts/$new_helper"
+      if [ -L "$existing" ] || { [ -e "$existing" ] && ! cmp -s "$existing" "$srcroot/scripts/$new_helper"; }; then
+        echo "node.sh: $existing occupies a new managed helper name; preserve and relocate the custom helper before updating" >&2
+        exit 1
+      fi
+    done
+  fi
+
+  if [ "$version_order" -eq 0 ]; then
     shape_stale=0
     if memory_headers_stale "$agent" || doc_headers_stale "$agent" || session_log_header_stale "$agent/session-log.md"; then
       shape_stale=1
@@ -780,6 +965,11 @@ EOF
       fi
     fi
 
+    if [ "$shape_stale" -eq 1 ] && [ "$mode" != track-all ]; then
+      cp -R "$agent" "$shape_backup" || { echo "node.sh: shape backup failed" >&2; exit 1; }
+      echo "node.sh: backed up node to $shape_backup"
+    fi
+
     if [ -z "$indexes_line" ] || [ "$desired_indexes" != "$indexes" ]; then
       write_indexes "$purpose" "$desired_indexes" \
         || { echo "node.sh: failed to record indexes in $purpose — aborting before touching node content" >&2; exit 1; }
@@ -791,26 +981,15 @@ EOF
       indexes="$desired_indexes"
     fi
 
-    mkdir -p "$agent/scripts" \
-      || { echo "node.sh: could not create $agent/scripts" >&2; exit 1; }
-    cp "$srcroot/scripts/index.sh" "$agent/scripts/index.sh" \
-      || { echo "node.sh: index.sh copy failed" >&2; exit 1; }
-    chmod +x "$agent/scripts/index.sh"
+    install_node_scripts "$agent" || exit 1
+    reconcile_hooks "$root" "$purpose" || exit 1
 
     if [ "$requested_indexes" = generated ]; then
-      cp "$srcroot/scripts/learn.sh" "$agent/scripts/learn.sh" \
-        || { echo "node.sh: learn.sh copy failed" >&2; exit 1; }
-      chmod +x "$agent/scripts/learn.sh"
       enable_generated_indexes "$root" "$agent" "$mode" || exit 1
       echo "node.sh: generated indexes adopted for $agent"
     fi
 
     if [ "$shape_stale" -eq 1 ]; then
-      if [ "$mode" != "track-all" ]; then
-        cp -R "$agent" "$shape_backup" \
-          || { echo "node.sh: backup to $shape_backup failed — aborting before touching the node" >&2; exit 1; }
-        echo "node.sh: backed up node to $shape_backup"
-      fi
       migrate_memory_headers "$agent"
       echo "node.sh: $migrate_note"
       migrate_doc_headers "$agent"
@@ -818,6 +997,7 @@ EOF
       migrate_session_log_header "$agent"
       echo "node.sh: $migrate_log_note"
     fi
+    migrate_skills_location "$root" || exit 1
     echo "node.sh: node is current (version $oldversion)"
     exit 0
   fi
@@ -904,26 +1084,20 @@ EOF
   migrate_session_log_header "$agent"
   header_note="$migrate_note; $migrate_doc_note; $migrate_log_note"
 
-  mkdir -p "$agent/scripts"
-  for script in status.sh log.sh memory.sh docs.sh links.sh comments.sh checkpoint.sh index.sh learn.sh; do
-    cp "$srcroot/scripts/$script" "$agent/scripts/$script"
-    chmod +x "$agent/scripts/$script"
-  done
-  for conffile in comments.conf status.conf log.conf; do
-    if [ ! -f "$agent/scripts/$conffile" ]; then
-      cp "$srcroot/scripts/$conffile" "$agent/scripts/$conffile"
-      echo "node.sh: $conffile seeded with the starter (node-owned from here on)"
-    fi
-  done
+  install_node_scripts "$agent" || exit 1
+  reconcile_hooks "$root" "$purpose" || exit 1
 
   if [ "$indexes" = generated ]; then
     enable_generated_indexes "$root" "$agent" "$mode" || exit 1
   fi
 
+  migrate_skills_location "$root" || exit 1
   echo "node.sh: migrated $agent from version $oldversion toward $TARGET_VERSION (migration_target set; version unchanged)"
   echo "node.sh: $split_note"
   echo "node.sh: $header_note"
-  echo "node.sh: status.sh, log.sh, memory.sh, docs.sh, links.sh, comments.sh, checkpoint.sh, index.sh, and learn.sh refreshed from source repo"
+  echo "node.sh: runtime scripts refreshed atomically: ${SHIPPED_SCRIPTS[*]}"
+  echo 'node.sh: check driver and existing configuration preserved'
+  echo 'node.sh: configure checks.sh and verify.conf, reconcile entry-point checkpoint flags, and retain customized contract rules'
   echo "node.sh: remaining for the agent — split memory/legacy.md into fact files (status.sh flags it with GROOM), reconcile rules/contract.md and docs/ against the current presets and operating model, then run finalize to stamp version $TARGET_VERSION"
   exit 0
   ;;
@@ -986,6 +1160,56 @@ EOF
     || { echo "node.sh: version is now $migration_target but failed to remove the pending migration_target marker from $purpose — re-run finalize to retry" >&2; exit 1; }
 
   echo "node.sh: finalized $agent — version is now $migration_target"
+  exit 0
+  ;;
+
+describe)
+  root="${1:-.}"
+  if [ ! -d "$root/.agent" ]; then
+    echo "node.sh: no .agent directory at $root/.agent — run from the node's project root, or pass that root as an argument" >&2
+    exit 1
+  fi
+  root=$(cd "$root" && pwd -P)
+  agent="$root/.agent"
+  purpose="$agent/purpose.md"
+  if [ ! -f "$purpose" ] || ! head -n 10 "$purpose" | grep -qF "dot-agent:"; then
+    echo "node.sh: no dot-agent manifest found at $purpose" >&2
+    exit 1
+  fi
+  manifest_field() { sed -nE "s/^  $1:[[:space:]]*\"?([^\"[:space:]#]*)\"?.*/\1/p" "$purpose" | head -n 1; }
+  printf 'ROOT=%s\n' "$root"
+  printf 'VERSION=%s\n' "$(manifest_field version)"
+  printf 'PRESET=%s\n' "$(manifest_field preset)"
+  printf 'MODE=%s\n' "$(manifest_field mode)"
+  describe_indexes=$(manifest_field indexes)
+  printf 'INDEXES=%s\n' "${describe_indexes:-manual}"
+  printf 'HOOKS=%s\n' "$(manifest_field hooks)"
+  describe_target=$(manifest_field migration_target)
+  [ -z "$describe_target" ] || printf 'MIGRATION_TARGET=%s\n' "$describe_target"
+  # The contract revision is read from the node's own status.sh, never from
+  # this repository, so it describes the scripts the node actually runs.
+  describe_contract=$(sed -n 's/^WORKER_CONTRACT=//p' "$agent/scripts/status.sh" 2>/dev/null | head -n 1)
+  printf 'WORKER_CONTRACT=%s\n' "${describe_contract:-0}"
+  if grep -qF -- '--load' "$agent/scripts/status.sh" 2>/dev/null; then
+    home=$(cd "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)
+    load='--load'
+    ! grep -qF -- '--tail' "$agent/scripts/status.sh" || load='--load --tail 0'
+    if [ -n "$home" ] && [ "$root" = "$home" ]; then
+      printf 'BOOTSTRAP=bash ~/.agent/scripts/status.sh %s ~\n' "$load"
+    else
+      printf 'BOOTSTRAP=bash .agent/scripts/status.sh %s\n' "$load"
+    fi
+  fi
+  describe_list() { # $@: commands — prints those whose script the node holds
+    local out="" c
+    for c in "$@"; do
+      [ -f "$agent/scripts/${c%% *}" ] || continue
+      out="${out:+$out, }$c"
+    done
+    printf '%s' "$out"
+  }
+  printf 'WORKER_MAY_RUN=%s\n' "$(describe_list "${WORKER_MAY_RUN[@]}")"
+  printf 'ORCHESTRATOR_ONLY=%s\n' "$(describe_list "${ORCHESTRATOR_ONLY[@]}")"
   exit 0
   ;;
 

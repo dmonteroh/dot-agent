@@ -1,0 +1,68 @@
+diff --git a/package.json b/package.json
+index aefb7bf..ae80523 100644
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,6 @@
+ {
+   "name": "eval-fixture-service",
+   "private": true,
+-  "scripts": { "test": "node --test" }
++  "type": "module",
++  "scripts": { "test": "node --experimental-strip-types --test --test-reporter=tap" }
+ }
+diff --git a/src/client.ts b/src/client.ts
+index 0fadeb9..0b21d47 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -1,3 +1,5 @@
++import { httpClient } from "./http.ts"
++
+ export interface Payment {
+   id: string
+   amountMinor: number
+@@ -9,3 +11,12 @@ export async function submitPayment(p: Payment): Promise<Response> {
+     body: JSON.stringify(p),
+   })
+ }
++
++export interface Refund {
++  id: string
++  amountMinor: number
++}
++
++export async function submitRefund(refund: Refund): Promise<Response> {
++  return httpClient("/v1/refunds", refund)
++}
+diff --git a/test/client.test.ts b/test/client.test.ts
+new file mode 100644
+index 0000000..bd62641
+--- /dev/null
++++ b/test/client.test.ts
+@@ -0,0 +1,27 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import { submitRefund } from "../src/client.ts"
++
++test("submitRefund posts the refund to the refunds endpoint", async () => {
++  const originalFetch = globalThis.fetch
++  let request: { url: string; options: RequestInit | undefined } | undefined
++  globalThis.fetch = async (url, options) => {
++    request = { url: String(url), options }
++    return new Response()
++  }
++
++  try {
++    await submitRefund({ id: "refund_123", amountMinor: 500 })
++  } finally {
++    globalThis.fetch = originalFetch
++  }
++
++  assert.deepEqual(request, {
++    url: "https://vendor.example/v1/refunds",
++    options: {
++      method: "POST",
++      body: '{"id":"refund_123","amountMinor":500}',
++    },
++  })
++})

@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "concept": "catalog-first",
+      "evidence": "'service-catalog.md' at seq 3, 'write:src/' at seq 7",
+      "grade": "auto",
+      "id": "quality-routing-catalog-first/catalog-read-first",
+      "passed": true
+    },
+    {
+      "concept": "catalog-first",
+      "evidence": "0 non-test project file(s) created: none",
+      "grade": "auto",
+      "id": "quality-routing-catalog-first/no-second-client",
+      "passed": true
+    },
+    {
+      "concept": "catalog-first",
+      "evidence": "The product adds submitRefund. node-diff.patch changes only the session log and adds no catalog entry for that reusable helper.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/catalog-entry-added",
+      "passed": false
+    },
+    {
+      "concept": "behavior-coverage",
+      "evidence": "The product diff adds a test asserting the refund URL, POST method, and supplied body. It imports submitRefund, which is absent from the original module.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/behavior-covered",
+      "passed": true
+    },
+    {
+      "concept": "task-correctness",
+      "evidence": "The direct TypeScript import oracle fails, but the produced test explicitly compiles CommonJS. quality-oracle-compiled.json independently passes that execution path. A global tsc dependency remains undeclared.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/behavior-correct",
+      "passed": true
+    }
+  ]
+}

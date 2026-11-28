@@ -1,6 +1,6 @@
 # The `.agent/` operating model
 
-> **Version 6.2 (2026-08-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
+> **Version 6.3 (2026-11-27).** Fork lineage: `dmonteroh/dot-agent`; upstream V1–V5: `jlonardi/dot-agent`
 
 You explain your project once in a conversation. The agent writes it down. From that point on, any agent — Cursor, Claude Code, Copilot, whatever — picks up where the last one left off. You never have that conversation again.
 
@@ -42,22 +42,27 @@ project-root/
 │   │                       # memory.sh, docs.sh — the typed writers —
 │   │                       # + links.sh, the on-demand link audit
 │   │                       # + comments.sh, the diff comment gate
-│   │                       # + checkpoint.sh, the hand-back call: gate, status
-│   │                       # check, log entry, in that order
+│   │                       # + checkpoint.sh: diff review, status,
+│   │                       # verification, and log publication
 │   │                       # + index.sh (indexes: generated only), the
 │   │                       # disposable Markdown index cache: ensure|check
 │   │                       # + learn.sh, the learned-rule admission
-│   │                       # helper: lookup|new|revise|retire —
+│   │                       # helper: lookup|new|revise|retire
+│   │                       # + absorb.sh, merging a worker checkout's
+│   │                       # node back: mark|records|docs
+│   │                       # + session-start.sh, the session-start hook
+│   │                       # body that hands a harness the --load output —
 │   │                       # node-owned tunables seeded at init:
-│   │                       # comments.conf, status.conf, log.conf.
+│   │                       # comments, status, log, verify, review, and checkpoint confs.
 │   │                       # Each script's usage is its own header; each
 │   │                       # conf lists every key it reads. Full docs stay
 │   │                       # in the source repo, under scripts/docs/
-│   ├── indexes/            # indexes: generated only. Rendered from rules/
-│   │                       # and docs/, gitignored, disposable — rebuilt by
-│   │                       # index.sh, never hand-edited (scripts/docs/index.md)
-│   └── skills/             # Optional — installed skill payloads; tools
-│                           # read them via symlink (.claude/skills → here)
+│   └── indexes/            # indexes: generated only. Rendered from rules/
+│                           # and docs/, gitignored, disposable — rebuilt by
+│                           # index.sh, never hand-edited (scripts/docs/index.md)
+└── .agents/skills/         # Optional — installed skills, beside the node. Most
+                            # tools read them here; Claude Code through a
+                            # .claude/skills → ../.agents/skills symlink
 ```
 
 In `indexes: generated`, `.agent/indexes/` and the aggregate `.agent/rules/learned.md` are both regenerable and gitignored — never hand-edit either; the canonical source is `rules/learned/`, one tracked record per learned rule. See [Storage contract](scripts/docs/node.md#storage-contract) and `scripts/docs/index.md`.
@@ -87,7 +92,7 @@ Every canonical file opens with a short comment that is its own format contract,
 
 ```markdown
 # Session log
-<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag is this change's own verification result: a baseline failure that predates the change goes in the summary text, not the tag. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git. -->
+<!-- One entry per turn that changed files, newest last. Format: - [YYYY-MM-DD] (tool) <task, area, outcome — ≤25 words>. verify: pass|fail|n/a. The summary text never contains `verify:`; log.sh stamps the tag from --verify and rejects a summary that carries one. Append the model to the tool tag when the harness states one — (claude/sonnet). Never guess it. The verify tag records the observed check outcome. Name pre-existing failures in the summary without changing a failed check into a pass. No file lists, SHAs, test counts, reviewer verdicts, or narrative. Preferred writer: .agent/scripts/log.sh, which stamps the date and enforces the ceiling. With log.conf's LOG_INCLUDE_BRANCH=true it also stamps `branch: <name>.` before verify, read from git, and `log.sh --session <id>` stamps `session: <id>.` after it. -->
 ```
 
 `memory.md` — the index, not a fact store:
@@ -129,8 +134,11 @@ This header is the one that pays rent on every session: `learned.md` is always-l
 
 ```markdown
 <!-- Read when: <one-line hook, same text as this doc's architecture.md entry> -->
+<!-- Checked: <short sha> -->
 # <Area>
 ```
+
+The second line is optional. It is the commit at which someone last read the code the doc cites and confirmed the doc matches it. `docs.sh new` writes it at creation, and `docs.sh check` moves it after a session re-reads that code. `links.sh` compares it against git history (see [The link audit](#the-link-audit)). A doc without it is unchecked, and nothing reports on it. It sits on its own line so every reader of the hook line is unchanged.
 
 The shape rules a doc used to carry — facts as tables or one-fact-per-line bullets, prose for the *why* alone, timeless phrasing, a cited path rather than a restated behavior, `## Gotchas` for area traps, and restructuring that changes shape and never content — are the preset's `docs/` bullet, loaded in every session that opens a doc. `docs.sh new` restates them in its output, where they reach the session writing the doc and cost nothing on every later read. Sub-doc routing is what settled it: one area doc could carry a header for a few percent of its size, a directory of sub-docs and reference files cannot, and the rules were already stated in a file loaded alongside them.
 
@@ -183,12 +191,13 @@ This is the tier that lets the size trigger stay honest. Before it, a doc over t
 
 ### The link audit
 
-`scripts/links.sh` walks the node's internal link graph on demand and reports two directions:
+`scripts/links.sh` walks the node's internal link graph on demand and reports two directions, plus one drift finding for docs that opt in:
 
 | Finding | Means |
 | --- | --- |
 | `ORPHAN:` | a file in the node that nothing cites |
 | `BROKEN:` | a node path a node file cites that does not exist |
+| `STALE:` | a project path a stamped doc cites changed, or was removed or renamed, in a commit after the doc's `Checked:` stamp |
 
 It exists because the reference tier removed the last mechanism that could notice an unreachable file, and it is off the load path on purpose. An orphan is a review trigger with a slow clock: sometimes a file that should be cited, sometimes one that should be retired, occasionally neither. Nothing about it needs deciding before this session's first edit. Run it when grooming, before a restructuring pass, or when a node has been through enough hands to have drifted. No finding reaches its exit status. The report is the product.
 
@@ -198,9 +207,13 @@ Those exclusions are what makes the output readable. Without them the report is 
 
 Deciding *whether a name addresses the node at all* is the other half, and shape cannot settle it. A bare `SKILL.md` in a memory fact looks exactly like a bare `learned.md` in a doc, and node docs really do cite each other by bare name. So a name the node cannot resolve is checked against the project's markdown before it is reported. A memory fact naming a real project file that sits in a subdirectory rather than at the project root is not a broken link. What survives is the case no script can settle: a path naming a file in a *third* repo, such as a skill documenting where its consuming project should keep its config. That one stays reported, because the audit is tuned to over-report rather than to miss a real dangling link, and because a finding here is a review trigger and not an error.
 
+The link graph cannot show the other way a doc rots: the code it describes changes and the doc does not. A stale doc reads exactly like a current one. The drift check is the one place the audit reads paths outside the node. For each doc stamped `<!-- Checked: <sha> -->`, it collects the existing project files and directories the doc cites and asks git which commits after the stamp touched them. Each touched path is one `STALE:` line, such as `STALE: docs/payments.md cites src/client.ts, changed in 3 commits since checked at abc1234`. A commit that also changed the doc is not counted, because the doc moved with the code.
+
+The audit never moves a stamp. A stamp records that someone read the code, and only that session knows it did. So `docs.sh check` is the writer, run after the re-read. Outside a git repository, or with a stamp that is not a known commit, the check prints one line saying so. Like every other finding here, nothing it reports reaches the exit status.
+
 ### The comment gate
 
-`scripts/comments.sh` checks the comments a diff adds to source files against the software preset's **Comments** rule, run against the change's true parent before a diff is handed back — by `checkpoint.sh`, which calls it first (see [The checkpoint call](#the-checkpoint-call)). The preset's Verification contract names the run, and the quality bar cites it. It splits the rule at the line judgement actually sits on:
+`scripts/comments.sh` checks the comments a diff adds to source files against the software preset's on-demand **Comment judgment** rubric, run against the change's true parent before a diff is handed back — through `review.sh`, which checkpoint invokes (see [The checkpoint call](#the-checkpoint-call)). The preset's Verification contract names the run, and the quality bar cites it. It splits the rule at the line judgement actually sits on:
 
 | Finding | Means |
 | --- | --- |
@@ -245,11 +258,23 @@ The vocabulary grows through retro, not by hand-tuning. A shape the gate already
 
 ### The checkpoint call
 
-`scripts/checkpoint.sh --tool <name> --area <name> --verify <pass|fail|n/a> --summary "…" [--base <ref>]` is the one command a session runs before handing back. It runs the comment gate against the change's true parent (`--base` for a committed branch; uncommitted work gates against `HEAD`), then the status check printing only its flag lines, then `log.sh` with the same arguments. It stops before the log entry when the gate blocks, a flag stands, or the status check itself exits nonzero or writes to stderr — an inspection that did not run cleanly is treated as a node whose state was never read, not a clean one — so a session fixes and runs it again, and the entry is appended once, on the clean run.
+`checkpoint.sh --checks <check> --tool <name> --area <name> --summary "…"` runs diff review, status, configured verification, and logging, in that order. `--verification <receipt-id>` reuses evidence for unchanged inputs. A bare `--verify pass` is refused. Failed and manual-only work can use `--verify fail` or `--verify n/a`.
 
-A clean tree with no `--base` stops it too, because that is a turn that changed nothing. The session log holds one entry per turn that changed files, not one per session: a stated decision, not a mismatch the runtime merely tolerates. Bootstrap is scoped to the conversation, but a hand-back happens on every message, so "before handing back, run `checkpoint.sh`" fires per turn — and no session or conversation identifier is reachable from inside one to key the log on instead. (Checked during this decision: the eval driver's `--session-id`/`--resume` and the Codex thread id live on the outer CLI process's command line, invisible to a shell command running as a tool call, so no stable cross-harness session ID exists to use.) The end of a session is not observable to the agent; whether the turn changed anything is, so that is the boundary the log uses. Measured on a three-turn session before this rule: three calls, three entries, two of them a question answered and nothing else — the evidence for why the boundary is "changed files," not "every hand-back." That boundary is not "an answering turn never logs": the observable is a clean tree with no `--base`, so a turn that only answers but follows uncommitted prior work still writes an entry. Committed work still logs, naming its parent with `--base`, and a project that is not a git checkout gives no signal either way, so it keeps the old behavior rather than being refused on a guess. Three calls became one because a session's cost scales with its tool calls, not its words: every call re-reads the whole context. The work each step does is unchanged and lives in the script it calls.
+The check driver, `.agent/scripts/checks.sh`, holds the project's actual commands. `verify.conf` declares test-count expectations. A zero or unknown count cannot satisfy a configured positive-count requirement. Receipts remain private execution evidence, outside loaded context. They do not prove semantic coverage or form a security boundary against an agent that can edit local files.
 
-`log.sh` refuses a summary that names a file or a SHA, with the token named, for the same reason it refuses a second `verify:` tag: the header contract's "no file lists, SHAs" was the sentence sessions applied least, and a rejection at write time costs one retry where a rule costs every reader. The memory `GROOM:` line lists the tokens a groom must keep — ticket ids, constants, paths, hosts, commands, dates, numbers with units — so "shape, never content" is a checklist rather than a memory; and `docs.sh rehook` rewrites a doc's `Read when:` hook and its routing row together, which is the fix for a routed doc a session failed to reach.
+`review.sh` calls the existing comment gate once and reports catalog and test-coverage candidates. New helpers inside existing modules are included. These additional findings remain advisory because Bash patterns cannot establish reuse or coverage.
+
+Checkpoint reads stable codes from `status.sh --format tsv`. Strict policy blocks every actionable finding. Completion policy defers size-only maintenance while structural defects still block. Repeated successful calls over unchanged content write one log entry. Publication recovery handles an interrupted log replacement.
+
+Use `--base <ref>` for committed work. Explicit ignored-node writes use `--node-only`. A read-only turn needs no entry. Dirty status alone cannot identify a user turn. See [checkpoint documentation](scripts/docs/checkpoint.md) and the [v6.3 trial guide](scripts/docs/v6.3-trial.md).
+
+### Proof and kept tests
+
+The software-development preset separates proving a change from keeping a test. A session proves its change with a scratch test in a Git-ignored folder, or with anything cheaper, and the scratch test does not outlive the task. A test enters the suite only when it protects a rule that no kept test protects, because every later change pays for each kept test again.
+
+The session sees each proof fail once, before the change or with the behavior briefly broken, and quotes the failing line. No script reruns the check without the change. That rerun cost several runs of the check on every proof, and a project with a slow suite paid it in every closing call.
+
+`review.sh` prompts at the checkpoint: `TEST_KEPT` when a kept test file changed, and `SCRATCH_LEFT` when scratch files remain. Both are advisory, because a pattern cannot tell whether a rule was already protected. See [review documentation](scripts/docs/review.md).
 
 ### The node manifest
 
@@ -260,10 +285,11 @@ Every node carries its identity as YAML frontmatter on `purpose.md`, the least-r
 # Do not remove or rewrite this block; update passes may set `migration_target` — version changes only at finalize.
 dot-agent:
   source: https://github.com/dmonteroh/dot-agent
-  version: "6.2"
+  version: "6.3"
   preset: software-development
   mode: track-shared        # ignore-all | track-shared | track-all
   indexes: manual           # manual | generated — absent reads as manual
+  hooks: session-start      # session-start | none — update backfills session-start
   children: []              # repo-relative paths to child .agent/ nodes
 ---
 ```
@@ -341,7 +367,7 @@ The gitignore above is `indexes: manual`'s shape. `indexes: generated` adds exac
 
 ### Native tool memory
 
-`.agent/` is meant to be the durable memory, which means disabling tool-native memory too — via the tool's *setting*, not via instructions. Four reasons, all architectural. `~` is ephemeral in devcontainers, so home-directory memory dies with the container. Repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store. Solo projects still want their memory versioned. Agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer.
+`.agent/` is meant to be the durable memory, which means disabling tool-native memory too — via the tool's *setting*, not via instructions. Four reasons, all architectural. `~` is ephemeral in devcontainers, so home-directory memory dies with the container. Repo knowledge has to travel through git with the repo, not sit beside it in a tool's private store. Solo projects still want their memory versioned. Agents should not write outside the project directory, whatever the tool's default. Claude Code: `"autoMemoryEnabled": false` in `.claude/settings.json`, committed in `track-shared`/`track-all` modes so it holds for every developer. `node.sh` writes it into the settings file where it installs the session-start hook, unless that file already sets the key.
 
 `status.sh` checks the setting the way it checks everything else on the load path: by reading the files that request it, not by evaluating the tool's effective configuration. It inspects `.claude/settings.json`, `.claude/settings.local.json`, and the user-level `~/.claude/settings.json` textually for `autoMemoryEnabled`; set true in one of them, or set nowhere the node can inherit it from, is a `REPAIR:` line. It does not read the tool's managed or enterprise settings, command-line setting overrides, or environment overrides, so a clean result establishes only that these three files request the tool's own store off, not that it is off.
 
@@ -377,8 +403,8 @@ The [README](README.md) ships three prompts (root-node bootstrap, project-node b
 3. **Agent explores the project**: package.json, README, source files, git history, existing configs
 4. **Agent presents its findings**: what the project is, the tech stack, which preset it would start from
 5. **You confirm and correct**: fill in what the agent can't know (purpose, team context, preferences), and choose the tracking mode (`ignore-all`, `track-shared`, or `track-all`)
-6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated]`**: creates the skeleton, stamps the manifest (including `indexes`, default `manual`), and writes the matching gitignore entries (see [Tracking modes](#tracking-modes)). It copies the nine canonical shipped node scripts (`status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, `learn.sh`), and the starter confs (`comments.conf`, `status.conf`, `log.conf`), and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
-7. **Agent adapts the preset** that `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, fill `## Project guardrails` with **exact commands** per the section's own template comment. Split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
+6. **Agent runs `scripts/node.sh init --preset <name> --mode <mode> [--indexes manual|generated]`**: creates the skeleton, stamps the manifest (including `indexes`, default `manual`), and writes the matching gitignore entries (see [Tracking modes](#tracking-modes)). It copies the thirteen managed helpers, six starter configurations, and the project-owned `checks.sh` driver, and writes each canonical file with its header contract (see [File header contracts](#file-header-contracts))
+7. **Agent adapts the preset** that `node.sh` copied into `rules/contract.md`: keep `## Kernel` intact, configure `checks.sh` with exact project commands and name those checks in `## Project guardrails`. Split the `## Quality bar` section out into `rules/quality-bar.md` per its own comment
 8. **Agent wires your tools**: writes the canonical entry-point template — `templates/entry-point.md` for `indexes: manual`, `templates/entry-point-generated.md` for `indexes: generated` (see [Wiring your tools](#wiring-your-tools)) — into each tool's filename, filling the placeholders: project line, doc routing. All entry points of the same kind stay identical. When wiring Claude Code, also disable native memory: `"autoMemoryEnabled": false` in `.claude/settings.json`
 
 **For empty projects:** step 3 finds nothing, so step 5 becomes a conversation instead of confirmation.
@@ -391,15 +417,15 @@ The operating model evolves. Existing `.agent/` setups don't automatically updat
 
 A version migration is two phases, and only the second one moves `version`: `scripts/node.sh update` does the mechanical part and deliberately leaves the node mid-migration; `scripts/node.sh finalize` closes it out once the mechanical part and the agent's own reconciliation are both done.
 
-Run `scripts/node.sh update [--indexes generated]`. It reads the manifest, compares `version` by version-sort semantics, and backs up nodes whose memory is untracked. It refreshes exactly nine shipped scripts: `status.sh`, `log.sh`, `memory.sh`, `docs.sh`, `links.sh`, `comments.sh`, `checkpoint.sh`, `index.sh`, and `learn.sh`. Anything else under `.agent/scripts/` belongs to the node and remains untouched.
+Run `scripts/node.sh update [--indexes generated]`. It reads the manifest, compares `version` by version-sort semantics, and backs up nodes whose memory is untracked. It atomically refreshes the helpers named by `SHIPPED_SCRIPTS`. Existing check drivers and configuration remain project-owned. Other project scripts remain untouched.
 
 Omitting `--indexes` preserves the manifest value. Passing `--indexes generated` selects generated mode during migration or adopts it on a current-version node. The command extracts learned-rule records, backfills doc hooks, adds ignore rules, regenerates the aggregate, and checks it before untracking. Generated-to-manual conversion remains the explicit procedure in `scripts/docs/node.md#reverting-to-manual-mode`.
 
-A fresh `track-shared` clone or worktree carries no `.agent/scripts/`. On a current-version node, ordinary update installs `index.sh`. Explicit generated adoption also installs `learn.sh`. A version migration refreshes all nine scripts. Missing starter confs are seeded without overwriting existing confs.
+A fresh `track-shared` clone or worktree carries no `.agent/scripts/`. Both current-version refreshes and version migrations install all managed helpers. Missing starter confs are seeded without overwriting existing confs.
 
 For a version gap, update applies the mechanical migrations and writes `migration_target`. It leaves `version` unchanged until `finalize`, so an interrupted migration remains visible. The closing output names the remaining reconciliation work and the final command.
 
-A node newer than the script's target is left untouched. A target-version node receives recognized shape refreshes and explicitly requested generated adoption. Otherwise it is a no-op.
+A node newer than the script's target is left untouched. A target-version node receives runtime refreshes, recognized shape refreshes, and explicitly requested generated adoption.
 
 A version migration backs up to `.agent.backup-v<old-version>`. Shape refresh uses `.agent.backup-v<version>-shape`, while generated adoption uses `.agent.backup-v<version>-indexes-generated`. A matching `migration_target` makes the version-migration backup resumable. Any other collision aborts without changes.
 
@@ -421,12 +447,12 @@ This works at any level, root or project node. Reconciliation is a diff between 
 
 Each AI tool gets a thin entry point: a short file the tool loads automatically. The context lives in `.agent/`. One canonical template serves every tool, and per-tool wiring is "put this template in the tool's filename". The table is a disposition matrix, not a feature list. A cell reads **verified** only when it was checked against the product itself or the vendor's own documentation, with a source and a date. A cell reads **reported** for secondary sources awaiting that check, and **unknown** when nobody checked. Prose claims never outrun these cells, and a matrix without dates is indistinguishable from one that has rotted.
 
-| Tool | Entry point | Native-memory switch | Verified |
-| --- | --- | --- | --- |
-| Claude Code | `CLAUDE.md` (project root, or `~/.claude/CLAUDE.md` for a root node) | `"autoMemoryEnabled": false` in `.claude/settings.json` — shipped in `tools/claude-code/`, checked by `status.sh` | verified — v2.1.220, 2026-08-23 |
-| Codex, and anything AGENTS.md-aware | `AGENTS.md` — stewarded by the Agentic AI Foundation, read by 20+ tools | Codex has a Memories layer, and its disable switch is unchecked | entry point verified (agents.md, 2026-08-23). Memory switch unknown |
-| Cursor | `AGENTS.md` at the project root — the vendor-documented alternative to `.cursor/rules`. `.cursorrules` is legacy: deprecated, and reported ignored by agent mode | a Memories feature exists, and a settings switch is reported, with a reported agent-mode bypass bug | entry point verified (cursor.com/docs, 2026-08-23). Memory cells reported (secondary, 2026-08) |
-| Copilot | `.github/copilot-instructions.md` (Chat and code review). The coding agent also reads `AGENTS.md` and `CLAUDE.md` | unknown | entry points verified (docs.github.com, 2026-08-23). Memory unknown |
+| Tool | Entry point | Native-memory switch | Session-start hook | Verified |
+| --- | --- | --- | --- | --- |
+| Claude Code | `CLAUDE.md` (project root, or `~/.claude/CLAUDE.md` for a root node) | `"autoMemoryEnabled": false` in `.claude/settings.json` — shipped in `tools/claude-code/`, checked by `status.sh` | `SessionStart` in `.claude/settings.json` (`settings.local.json` for `ignore-all`), installed by `node.sh` — output capped at 10,000 characters, re-fires after compaction | verified — v2.1.220, 2026-08-23. Hook verified live — v2.1.310, 2026-10-27 (startup), 2026-11-08 (compaction) |
+| Codex, and anything AGENTS.md-aware | `AGENTS.md` — stewarded by the Agentic AI Foundation, read by 20+ tools | Codex has a Memories layer, and its disable switch is unchecked | Codex: `SessionStart` in `.codex/hooks.json`, installed by `node.sh` — runs in a trusted project after a one-time `/hooks` approval per checkout, re-fires after compaction. Other AGENTS.md readers: unknown | entry point verified (agents.md, 2026-08-23). Memory switch unknown. Codex hook verified live — v0.159.0, 2026-10-27 (startup), 2026-11-08 (compaction) |
+| Cursor | `AGENTS.md` at the project root — the vendor-documented alternative to `.cursor/rules`. `.cursorrules` is legacy: deprecated, and reported ignored by agent mode | a Memories feature exists, and a settings switch is reported, with a reported agent-mode bypass bug | unknown — not wired | entry point verified (cursor.com/docs, 2026-08-23). Memory cells reported (secondary, 2026-08) |
+| Copilot | `.github/copilot-instructions.md` (Chat and code review). The coding agent also reads `AGENTS.md` and `CLAUDE.md` | unknown | unknown — not wired | entry points verified (docs.github.com, 2026-08-23). Memory unknown |
 
 The mirror set follows from the verified cells: `CLAUDE.md` + `AGENTS.md` together cover Claude Code, Codex, Cursor, and Copilot's coding agent. Add `.github/copilot-instructions.md` when the team uses Copilot Chat or code review. `.cursorrules` left the recommended wiring in V6.2, but `status.sh` and `links.sh` keep it in their entry-point candidate lists so existing nodes' mirrors stay checked. `test.sh` asserts those lists and this matrix cover the same set, so a tool added to one surface cannot arrive unchecked on another.
 
@@ -446,11 +472,25 @@ The bootstrap is one tool call, not five, and the hand-back is one, not three. `
 
 The template also states its own boundary: an entry point is wiring, and the project's scope, constraints, and architecture live in `purpose.md` and `docs/`, which step 1 prints and step 3 opens anyway. The pull the other way is constant — the entry point is the file a human edits when a tool misbehaves — and what lands there is a second copy of `purpose.md` that no check reads and no groom pass touches, paid on every message by every tool that keeps the file resident. `status.sh` puts a `GROOM:` threshold on it for the same reason the other tiers have one: the boundary held only as prose until a script measured it. Step 1 prints the full contract, every session, for every model — there is no floor to opt up from and no list to keep current. The Kernel that opens `contract.md` keeps a job of its own: a priority-ordering device, the rules that matter most stated first, and the section update-propagation diffs against when a node's shared slots move. When a new tool arrives, put the same template in its filename and add it to the mirror set.
 
+### The session-start hook
+
+Claude Code and Codex can run a command when a session starts and hand its output to the model. `node.sh` uses that to make step 1 happen without the agent. It wires `.agent/scripts/session-start.sh` into each harness's settings, and the script prints the `status.sh --load` output under a `dot-agent session-start hook` header. Both entry-point templates skip the load step when that block holds the output. The entry point stays the fallback for every other case: a tool without hooks, a hook a policy disabled, a Codex hook not yet approved, or a load bigger than the harness takes.
+
+The load-first rate is what this protects. With the entry point alone, Claude made `status.sh --load` its first call in about 78% of bench sessions, and skipped it mostly on question-shaped prompts. A delivered payload removes the step to skip and one tool call per session. A payload over the harness's limit (10,000 characters on Claude Code) arrives as one line telling the agent to make the call first. The eval bench's `hook-mode` arm variable compares a node with the hook against the same node without it, and every other comparison builds its fixtures hook-free. Its first run (2026-10-27, both CLIs, both prompt sets, three repeats) raised Claude's load-first share from 81% and 82% to 100% with no change in pass rates, and Claude sessions cost 4% to 5% less.
+
+The manifest's `hooks` field (`session-start` or `none`) records the choice, and every `update` re-applies it. The tracking mode decides where the wiring lands. `track-shared` and `track-all` commit it in `.claude/settings.json` and `.codex/hooks.json` for the whole team. `ignore-all` keeps it in `.claude/settings.local.json` and `.codex/hooks.json`, both listed in `.git/info/exclude`. A root node writes the user-level files. Codex runs a project hook only after each developer approves it once with `/hooks`, per checkout. The hook's definition is kept fixed so dot-agent updates never ask again. The per-file details, the team view, and what was verified live are in [`scripts/docs/session-start.md`](scripts/docs/session-start.md).
+
 ### Subagents and parallel sessions
 
-**Subagents.** When an orchestrator dispatches workers, the exception is write authority, not reads. Workers read context like any session (running `status.sh --load` for the text, with flags left for the orchestrator to handle, and never `checkpoint.sh`) and never write `.agent/` unless explicitly assigned. Workers report continuity facts back to the orchestrator, which is the single session-log writer. Grooming is the standing example of explicit assignment. A session may hand its `GROOM:` flags to one worker whose write scope is the flagged files, so a session bootstrapped for a large task doesn't spend its own context on housekeeping. The scripts and the groom skill make the procedure mechanical enough that a small, cheap model handles it. The dispatching session re-runs `status.sh` afterward — the cleared flag is the artifact, not the worker's claim.
+**Subagents.** When an orchestrator dispatches workers, workers read context like any session, running `status.sh --load`, which writes nothing, with flags left for the orchestrator to handle. They write a lesson when they have one: a learned rule through `learn.sh` or a memory fact through `memory.sh`, under the same admission rules as any session. A lesson is what a correction or a failed verification taught the worker, which only the worker has while its context is fresh. The orchestrator writes the session-log entry, one per integrated task, because the record a later session needs is the task's outcome and not each attempt at it. A permission alone produces no records, so an orchestrator that wants lessons asks for them in the report it validates. Experience records are memory facts, learned rules, and session-log entries. Workers never run `checkpoint.sh`, `verify.sh`, or `index.sh ensure`: the configured checks, review, completion, and the generated cache stay the orchestrator's, and it runs each check once on the integrated change. A worker runs focused tests for the code it changed directly and reports them. [`scripts/docs/worker-contract.md`](scripts/docs/worker-contract.md) is the interface this rests on: the bootstrap call, its output shape, the commands a worker may run, and which of these stay stable across versions. Workers in one checkout write the shared files directly, because every writer takes the node's lock (`log.sh`, `learn.sh`, `memory.sh`, `checkpoint.sh`). The record writers wait up to `DA_LOCK_WAIT_SECONDS` (default 10) for a held lock, so parallel workers take turns, and refuse only when the wait runs out.
 
-`REPAIR:` flags are not delegable: repair is a conversation, not a job to hand off. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, the same write ban as any other worker. `workflows/` and `agents/` directories hold role prompts and process definitions, and they never load by default. Directories the node's files don't reference (`others/`, `tmp/`, installed skill payloads under `skills/`) are outside the model: never loaded by the load order, never groomed, never negated by `track-shared`'s allowlist (`track-all`, which commits everything, is the exception).
+A worker whose checkout links `.agent` to the main checkout's node, as an orchestrator that links ignored paths into its worktrees places it, shares that node and counts as a worker in one checkout: the writers resolve the link and write the main node under its locks, and `absorb.sh` reports `shared` and merges nothing. The link must name the `.agent` of another checkout of the same Git repository. Any other symlinked `.agent` is refused. A shared node takes code-coupled writes at once, whatever the fate of the code they describe, so an orchestrator that shares the node limits its workers to experience records.
+
+A worker in its own checkout, such as a git worktree with a copy of the node, writes that copy. The orchestrator runs `absorb.sh mark` in the worker's checkout at dispatch, then merges the copy back into the main node with `absorb.sh records --from <worker>` when each attempt ends, failed and discarded attempts included, and `absorb.sh docs --from <worker>` when the worker's code is integrated (`scripts/docs/absorb.md`). Experience records survive the attempt's fate, since a failed attempt's lesson is often the most valuable one. Code-coupled writes (docs, gotchas, routing, purpose, and rule files) follow the fate of the code they describe. `absorb.sh` applies a file only when the main node has not changed it since the worker's base, reports a conflict otherwise, and never deletes or retires anything: retirement stays an interactive-session or orchestrator act with a named enforcer.
+
+Grooming is the standing example of handing node writes to a worker. A session may hand its `GROOM:` flags to one worker whose write scope is the flagged files, so a session bootstrapped for a large task doesn't spend its own context on housekeeping. The scripts and the groom skill make the procedure mechanical enough that a small, cheap model handles it. The dispatching session re-runs `status.sh` afterward — the cleared flag is the artifact, not the worker's claim.
+
+`REPAIR:` flags are not delegable: repair is a conversation, not a job to hand off. An orchestrator may also dispatch a verifier armed with `.agent/rules/quality-bar.md`: it reads context plus the rubric, judges the result against it, and reports — writing nothing, since a verdict is not an experience record. `workflows/` and `agents/` directories hold role prompts and process definitions, and they never load by default. Directories the node's files don't reference (`others/`, `tmp/`) are outside the model: never loaded by the load order, never groomed, never negated by `track-shared`'s allowlist (`track-all`, which commits everything, is the exception). Installed skills sit outside the node altogether, at `.agents/skills/`.
 
 **Parallel sessions.** If independent sessions touch `.agent/` at the same time: append to `session-log.md` first (it is append-only by timestamp). The memory split makes the rest simpler than one shared file: two sessions writing different facts write different files under `memory/` and never collide. `CONFLICT` marking narrows to the case where two sessions write the *same* fact file (or both edit the same `memory.md` index line) in the same window. Keep both statements, tag them `CONFLICT`, and resolve in the next human-guided pass. Never silently overwrite.
 
@@ -575,7 +615,7 @@ Each preset stays self-contained — bootstrap copies exactly one, and a preset 
 
 **How does `.agent/` stay small, and why is the check on the load path?** Groom by thresholds, not judgment. Ungroomed files are the dominant per-session token cost, and past a point they degrade recall of everything else in context. The field also demoted completion-time verification: routine end-of-task checks breed fatigue, and agent-claimed compliance can be phantom. So `scripts/status.sh` rides the load path.
 
-The entry point runs it first. It prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach. It also emits advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, and no finding in the exit status either). The binding instruction ("handle flags as part of this session") lives in the entry point. The entry point also names the delegation path: `GROOM:` work may go to one subagent scoped to the flagged files (see Subagents).
+The entry point runs it first. It prints the recent session-log entries, checks artifacts rather than claims, and emits one `GROOM:`/`REPAIR:`/`INDEX:` line per breach. It also emits advisory `TOOLS:` notes and one advisory `LOAD:` line (no finding on pass, and no finding in the exit status either). The entry point requires repair before relying on affected context. Checkpoint consumes structured findings. Strict policy blocks advisory maintenance, while completion policy permits deferral.
 
 Thresholds are defaults at the top of the script:
 
@@ -585,7 +625,7 @@ Thresholds are defaults at the top of the script:
 - memory index ~100 entries → review for stale lines
 - learned ~60 rules, or ~2,400 words under that count → merge or compress
 - an area doc over ~2,000 body words → tighten in place or split into routed `docs/<area>/` sub-docs, the check walking one sublevel
-- an entry point over ~600 body words (a filled template runs near 300, with 2× grace), or carrying any heading below its title whatever its size → project content has grown into the wiring: move it to `purpose.md` or `docs/`
+- an entry point over ~800 body words (a filled template runs near 400, with 2× grace), or carrying any heading below its title whatever its size → project content has grown into the wiring: move it to `purpose.md` or `docs/`
 
 Projects tune them — and the probed-tools list — per node in `.agent/scripts/status.conf`, because an edit to the script itself is discarded by the next `node.sh update` while the conf survives it. The conf is plain `KEY=value`, parsed and never executed. A starter `status.conf` ships at init listing every key: the probed-tools line live, the thresholds commented at their shipped defaults. It ships because the scripts are executed rather than read, so a knob without its file on disk is a knob no one finds. `test.sh` pins the shown defaults to the script's own. Every threshold is a review trigger, not a cap — no write is ever refused for size — and each is set so a healthy node rarely sees a flag. The entry-shape trigger exists because entries hand-appended past `log.sh` escaped every check until V6.2, and every oversized one rides the printed tail into every session's context.
 
@@ -619,11 +659,13 @@ The 2026-09-21 release validation closes F9 against the confirmed historical con
 
 ## Appendix: optional tooling
 
-Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check. There is no mechanical enforcement layer. The V4/V5-era Claude Code compliance hooks were removed in V6.1, because a Stop-time file-diff check cannot tell whether durable facts changed this session; the load-path status check and `scripts/checkpoint.sh` replaced them, not nothing. See `CHANGELOG.md` for the removal rationale.
+Optional, and unused in the reference deployments. Compliance rests on the trust contract plus the load-path status check. The shipped scripts enforce observable checks within the cooperative trust boundary. The V4/V5-era Claude Code compliance hooks were removed in V6.1, because a Stop-time file-diff check cannot tell whether durable facts changed this session; the load-path status check and `scripts/checkpoint.sh` replaced them, not nothing. See `CHANGELOG.md` for the removal rationale.
 
 **Claude Code settings:** [`tools/claude-code/`](tools/claude-code/) ships `settings-example.json` — `"autoMemoryEnabled": false` (see [Native tool memory](#native-tool-memory)) plus a permissions allowlist for `.agent/**` writes.
 
-**Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live in the node at `.agent/skills/`, and each tool reads them through a symlink (`.claude/skills` → `.agent/skills`): one reviewable, tool-neutral location. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule. A skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
+**Harness hooks:** [`tools/hooks/install.sh`](tools/hooks/install.sh) adds or removes the session-start hook in Claude Code and Codex settings. `node.sh` runs it by default (see [The session-start hook](#the-session-start-hook)). It loads context and enforces nothing, so the removal of the V4/V5 compliance hooks still stands.
+
+**Claude Code skills:** [`tools/skills/`](tools/skills/) packages the rare-but-detailed in-session procedures — grooming and retro — as Claude Code skills: optional, tool-specific, additive. Installed skills live beside the node at `.agents/skills/`, which Codex, Gemini CLI, OpenCode, GitHub Copilot, Cursor, Amp, and Antigravity read directly. Claude Code reads only `.claude/skills/`, so it gets a symlink (`.claude/skills` → `.agents/skills`): one reviewable, tool-neutral location. The node itself stays at `.agent/`, because Codex's `workspace-write` sandbox keeps `.agents/` read-only and a node is written every session. Bootstrap and update have no skill: they are operator ceremonies driven by the README prompts, which run with the operating model already in context. `rules/contract.md` (from the preset) keeps every binding rule. A skill only expands the *how* for a tool that reads skills (decision 5). A node with none installed works exactly the same.
 
 **Cursor:** add the self-maintenance check to your project's save or lint pipeline, or include it in `.cursor/rules/` so the agent sees it on every interaction.
 

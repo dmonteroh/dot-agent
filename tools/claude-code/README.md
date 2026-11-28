@@ -11,6 +11,6 @@ Claude Code is the wiring matrix's fully verified column (see the operating mode
 
 Merge the relevant sections into your `~/.claude/settings.json` (user-level) or the project's `.claude/settings.json` (committed in `track-shared`/`track-all` modes so the setting holds for every developer).
 
-Compliance rests on the trust contract plus the load-path status check (`scripts/status.sh`). There is no mechanical enforcement layer. V6.1 removed the V4/V5-era compliance hooks. See `CHANGELOG.md` if you're looking for them.
+Compliance rests on the trust contract plus the load-path status check (`scripts/status.sh`). There is no mechanical enforcement layer. V6.1 removed the V4/V5-era compliance hooks. See `CHANGELOG.md` if you're looking for them. The session-start hook that `node.sh` now installs ([`tools/hooks/`](../hooks/)) loads the node and enforces nothing. It also writes `autoMemoryEnabled: false` into the settings file it creates.
 
 For the optional skills that package the rare in-session procedures (grooming, retro), see [`tools/skills/`](../skills/).

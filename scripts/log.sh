@@ -2,39 +2,50 @@
 
 set -u
 
+selfdir=$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
+[ -f "$selfdir/runtime.sh" ] || { echo 'log.sh: runtime.sh is missing. Update this node with node.sh update from the dot-agent repository' >&2; exit 1; }
+# shellcheck source=runtime.sh
+. "$selfdir/runtime.sh"
+
 SUMMARY_MAX_WORDS=25
 LOG_INCLUDE_BRANCH=false
 
 usage() {
   cat <<'EOF'
-Usage: log.sh --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [root]
+Usage: log.sh [--print-entry] --tool <name, no parentheses> --area <name, no parentheses> --verify <pass|fail|n/a> --summary "…" [--session <id>] [root]
 
 root defaults to . — appends to <root>/.agent/session-log.md
+--session stamps the id a runtime adapter supplies, the same id capture.sh --id takes.
 EOF
 }
+
+refuse() { da_refuse "$@"; exit $?; }
+refuse_usage() { usage >&2; refuse "$@"; }
 
 tool=""
 area=""
 verify=""
 summary=""
+session=""
 root="."
+print_entry=0
 
 need_value() {
   case "${2-}" in
-  --tool|--area|--verify|--summary)
-    echo "log.sh: $1 needs a value, got the flag $2" >&2
-    usage >&2
-    exit 1 ;;
+  --tool|--area|--verify|--summary|--session)
+    refuse_usage "$1 needs a value, got the flag $2" "Pass a value after $1" ;;
   esac
   if [ $# -lt 2 ]; then
-    echo "log.sh: $1 needs a value" >&2
-    usage >&2
-    exit 1
+    refuse_usage "$1 needs a value" "Pass a value after $1"
   fi
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
+  --print-entry)
+    print_entry=1; shift ;;
+  --version)
+    echo 'dot-agent log 6.3'; exit 0 ;;
   --tool)
     need_value "$@"
     tool="$2"; shift 2 ;;
@@ -47,51 +58,34 @@ while [ $# -gt 0 ]; do
   --summary)
     need_value "$@"
     summary="$2"; shift 2 ;;
+  --session)
+    need_value "$@"
+    session="$2"; shift 2 ;;
   -h | --help)
     usage; exit 0 ;;
   --*)
-    echo "log.sh: unknown flag: $1" >&2; usage >&2; exit 1 ;;
+    refuse_usage "unknown flag: $1" 'Pass only the flags listed above' ;;
   *)
     root="$1"; shift ;;
   esac
 done
 
 if [ -z "$tool" ] || [ -z "$area" ] || [ -z "$verify" ] || [ -z "$summary" ]; then
-  echo "log.sh: --tool, --area, --verify, and --summary are all required" >&2
-  usage >&2
-  exit 1
+  refuse_usage '--tool, --area, --verify, and --summary are all required' 'Run this call again with all four'
 fi
 
 case "$verify" in
 pass | fail | n/a) ;;
 *)
-  echo "log.sh: --verify must be pass, fail, or n/a (got '$verify')" >&2
-  exit 1 ;;
+  refuse "--verify must be pass, fail, or n/a (got '$verify')" 'Run this call again with one of those' ;;
 esac
 
 summary_lc=$(printf '%s' "$summary" \
   | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')
 case "$summary_lc" in
 *verify:*)
-  echo "log.sh: --summary must not contain 'verify:' — the entry already carries one verify tag; state the outcome in words instead" >&2
-  exit 1 ;;
+  refuse "--summary must not contain 'verify:', because the entry already carries one verify tag" 'State the outcome in words and run this call again' ;;
 esac
-
-bad_token=$(printf '%s' "$summary" | awk '
-  {
-    for (i = 1; i <= NF; i++) {
-      t = $i
-      gsub(/^[`"'"'"'(\[]+|[`"'"'"')\],.;:!?]+$/, "", t)
-      if (t == "") continue
-      if (t ~ /\.(ts|tsx|js|jsx|mjs|cjs|cs|java|kt|go|rs|rb|py|sh|bash|css|scss|less|html|vue|svelte|json|yaml|yml|toml|md|sql|c|h|cc|cpp|hpp|swift|php|lock)$/) { print t; exit }
-      if (t ~ /\// && t ~ /\.[A-Za-z0-9]+$/) { print t; exit }
-      if (length(t) >= 7 && length(t) <= 40 && t ~ /^[0-9a-f]+$/ && t ~ /[a-f]/ && t ~ /[0-9]/) { print t; exit }
-    }
-  }')
-if [ -n "$bad_token" ]; then
-  echo "log.sh: --summary names a file or a SHA ($bad_token) — the entry records task, area, and outcome; files and SHAs live in git. Reword without it" >&2
-  exit 1
-fi
 
 conf="$root/.agent/scripts/log.conf"
 conf_get() { sed -n "s/^$1=//p" "$conf" 2>/dev/null | head -n 1 | sed 's/[[:space:]]*$//'; }
@@ -100,8 +94,7 @@ if [ -f "$conf" ]; then
   if [ -n "$v" ]; then
     case "$v" in
     *[!0-9]*)
-      echo "log.sh: log.conf SUMMARY_MAX_WORDS=$v is not a whole number — fix the line, which takes digits only (no inline comment, no units)" >&2
-      exit 1 ;;
+      refuse "log.conf SUMMARY_MAX_WORDS=$v is not a whole number" 'Fix that line in .agent/scripts/log.conf, which takes digits only with no inline comment and no units, then run this call again' ;;
     esac
     SUMMARY_MAX_WORDS="$v"
   fi
@@ -110,8 +103,7 @@ if [ -f "$conf" ]; then
     case "$v" in
     true | false) LOG_INCLUDE_BRANCH="$v" ;;
     *)
-      echo "log.sh: log.conf LOG_INCLUDE_BRANCH=$v is not true or false — fix the line (no inline comment)" >&2
-      exit 1 ;;
+      refuse "log.conf LOG_INCLUDE_BRANCH=$v is not true or false" 'Fix that line in .agent/scripts/log.conf, with no inline comment, then run this call again' ;;
     esac
   fi
 fi
@@ -120,19 +112,25 @@ nl='
 '
 case "$tool$area$summary" in
 *"$nl"*)
-  echo "log.sh: --tool, --area, and --summary must be single-line" >&2
-  exit 1 ;;
+  refuse '--tool, --area, and --summary must be single-line' 'Remove the line breaks and run this call again' ;;
 esac
 case "$tool$area" in
 *"("* | *")"*)
-  echo "log.sh: --tool and --area must not contain parentheses — they become the (tool) and (area) tags" >&2
-  exit 1 ;;
+  refuse '--tool and --area must not contain parentheses, because they become the (tool) and (area) tags' 'Remove them and run this call again' ;;
 esac
+# The rule capture.sh applies to the same adapter-supplied id. It also keeps
+# spaces, line breaks, and parentheses out of the entry.
+if [ -n "$session" ]; then
+  case "$session" in
+  *[!A-Za-z0-9_.-]* | . | ..)
+    refuse "--session must hold only letters, digits, '.', '_', and '-' (got '$session')" 'Pass the id the runtime adapter supplied, or drop --session, and run this call again' ;;
+  esac
+  [ "${#session}" -le 128 ] || refuse '--session is over 128 characters' 'Pass the id the runtime adapter supplied, or drop --session, and run this call again'
+fi
 case "$summary" in
 *[![:space:]]*) ;;
 *)
-  echo "log.sh: --summary must not be blank" >&2
-  exit 1 ;;
+  refuse '--summary must not be blank' 'State the task and its outcome and run this call again' ;;
 esac
 
 summary_words=$(printf '%s' "$summary" \
@@ -149,14 +147,15 @@ summary_words=$(printf '%s' "$summary" \
       print n
     }')
 if [ "$summary_words" -gt "$SUMMARY_MAX_WORDS" ]; then
-  echo "log.sh: --summary is $summary_words words, over the $SUMMARY_MAX_WORDS-word ceiling" >&2
-  exit 1
+  over=$((summary_words - SUMMARY_MAX_WORDS))
+  noun=words
+  [ "$over" -ne 1 ] || noun=word
+  refuse "--summary is $summary_words words, over the $SUMMARY_MAX_WORDS-word ceiling" "Shorten it by $over $noun and run this call again"
 fi
 
 log="$root/.agent/session-log.md"
 if [ ! -f "$log" ]; then
-  echo "log.sh: $log does not exist — refusing to write outside an initialized node" >&2
-  exit 1
+  refuse "$log does not exist, and log.sh writes only to an initialized node" 'Pass the folder that holds .agent/ as the last argument'
 fi
 
 date_stamp=$(date +%Y-%m-%d)
@@ -164,11 +163,20 @@ branch=""
 if [ "$LOG_INCLUDE_BRANCH" = "true" ]; then
   branch=$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null || true)
 fi
-if [ -n "$branch" ]; then
-  printf -- '- [%s] (%s) %s (%s). branch: %s. verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$branch" "$verify" >>"$log"
-else
-  printf -- '- [%s] (%s) %s (%s). verify: %s.\n' "$date_stamp" "$tool" "$summary" "$area" "$verify" >>"$log"
+stamps=""
+[ -z "$branch" ] || stamps=" branch: $branch."
+[ -z "$session" ] || stamps="$stamps session: $session."
+entry=$(printf -- '- [%s] (%s) %s (%s).%s verify: %s.' "$date_stamp" "$tool" "$summary" "$area" "$stamps" "$verify")
+
+if [ "$print_entry" -eq 1 ]; then
+  printf '%s\n' "$entry"
+  exit 0
 fi
+state=$(da_state_dir "$root") || exit 1
+log_lock="$state/checkpoint.lock"
+da_lock_wait "$log_lock" || exit 1
+trap 'da_unlock "$log_lock"' EXIT
+printf '%s\n' "$entry" >>"$log" || refuse 'could not append the entry' 'Check that .agent/session-log.md is writable, then run this call again'
 
 echo "log.sh: appended session-log entry for $date_stamp"
 exit 0

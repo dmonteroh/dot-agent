@@ -1,0 +1,1065 @@
+{
+  "eval_snapshots": {
+    "eval-quality-continuity-writes-back": {
+      "artifacts": [
+        "node-diff.patch",
+        "session-transcript.txt",
+        "quality-oracle.json"
+      ],
+      "assertions": [
+        {
+          "check": "log_entries_added == 1",
+          "class": "artifact",
+          "concept": "log-entry-written",
+          "grade": "auto",
+          "id": "quality-continuity-writes-back/one-log-entry",
+          "text": "Exactly one entry is appended to session-log.md."
+        },
+        {
+          "check": "log_entry_words <= 25 && status_flags_absent 'entries over'",
+          "class": "artifact",
+          "concept": "log-entry-format",
+          "grade": "auto",
+          "id": "quality-continuity-writes-back/entry-in-format",
+          "text": "The entry is at or under the header contract's 25 words and carries a verify tag. status.sh raises no entry-shape flag."
+        },
+        {
+          "check": "log_entry_absent '[0-9a-f]{7,}' && log_entry_absent '\\.ts'",
+          "class": "artifact",
+          "concept": "log-entry-format",
+          "grade": "auto",
+          "id": "quality-continuity-writes-back/no-narrative",
+          "text": "The entry carries no file list, SHA, or test count."
+        },
+        {
+          "check": "memory_files_added == 0",
+          "class": "artifact",
+          "concept": "memory-admission",
+          "grade": "auto",
+          "id": "quality-continuity-writes-back/no-gratuitous-fact",
+          "text": "No memory/ fact file is written for a change that establishes nothing durable."
+        },
+        {
+          "check": "status_flags_absent 'GROOM|REPAIR|INDEX'",
+          "class": "artifact",
+          "concept": "node-health",
+          "grade": "auto",
+          "id": "quality-continuity-writes-back/node-stays-clean",
+          "text": "status.sh reports no new findings after the session."
+        },
+        {
+          "class": "artifact",
+          "concept": "behavior-coverage",
+          "grade": "manual",
+          "id": "quality-continuity-writes-back/behavior-covered",
+          "text": "The product diff adds tests for the requested behavior. The tests would fail against the original implementation."
+        },
+        {
+          "class": "artifact",
+          "concept": "task-correctness",
+          "grade": "manual",
+          "id": "quality-continuity-writes-back/behavior-correct",
+          "text": "submitPayment attempts at most three calls, retries failures, and stops after success. A deterministic independent check confirms these cases."
+        }
+      ],
+      "expect": "Exactly one session-log entry in format. memory/ untouched, because nothing durable changed, and the log entry says so.",
+      "fixture": "ts-service",
+      "id": "quality-continuity-writes-back",
+      "phase": "completion",
+      "prompt": "Add exponential backoff to the outbound call. Three attempts.",
+      "why": "Write-back is the harness's central claim and the reason it exists. Nothing in test.sh can observe whether a session actually does it."
+    },
+    "eval-quality-routing-catalog-first": {
+      "artifacts": [
+        "diff.patch",
+        "trace.jsonl",
+        "quality-oracle.json"
+      ],
+      "assertions": [
+        {
+          "check": "trace_order 'service-catalog.md' before 'write:src/'",
+          "class": "trace",
+          "concept": "catalog-first",
+          "grade": "auto",
+          "id": "quality-routing-catalog-first/catalog-read-first",
+          "text": "docs/service-catalog.md is read before the first write to src/. Its hook is unconditional, so task size is no excuse."
+        },
+        {
+          "check": "product_modules_added == 0",
+          "class": "artifact",
+          "concept": "catalog-first",
+          "grade": "auto",
+          "id": "quality-routing-catalog-first/no-second-client",
+          "text": "No new non-test module is created. The catalog says to extend httpClient, so a correct run adds zero new modules; a test file beside the change does not count."
+        },
+        {
+          "class": "artifact",
+          "concept": "catalog-first",
+          "grade": "manual",
+          "id": "quality-routing-catalog-first/catalog-entry-added",
+          "text": "If a reusable block was added, its one-line catalog entry landed in the same change."
+        },
+        {
+          "class": "artifact",
+          "concept": "behavior-coverage",
+          "grade": "manual",
+          "id": "quality-routing-catalog-first/behavior-covered",
+          "text": "The product diff adds tests for the requested behavior. The tests would fail against the original implementation."
+        },
+        {
+          "class": "artifact",
+          "concept": "task-correctness",
+          "grade": "manual",
+          "id": "quality-routing-catalog-first/behavior-correct",
+          "text": "The added refund entry point invokes the shared HTTP transport with the refunds route and supplied payload. A deterministic independent check confirms the call."
+        }
+      ],
+      "expect": "The area catalog is read before anything is built, and the existing http client it lists is extended rather than a second one written.",
+      "fixture": "ts-service-catalog",
+      "id": "quality-routing-catalog-first",
+      "phase": "pre-work",
+      "premises": [
+        {
+          "contains": "httpClient",
+          "path": ".agent/docs/service-catalog.md"
+        },
+        {
+          "exists": true,
+          "path": "src/http.ts"
+        }
+      ],
+      "prompt": "We need to call the refunds endpoint. Add a client for it.",
+      "why": "The operating model states this failure passes tests, passes lint, and survives review, so nothing else in the model catches it. That makes it the eval with the least redundant coverage in the set."
+    }
+  },
+  "excluded_evals": [],
+  "format_version": 1,
+  "notes": [
+    "Rollup scores use majority outcomes per assertion. Observation scores count every repeat.",
+    "Repeated assertions within a task are correlated. Observation counts are not independent trials.",
+    "CLI usage fields have provider-specific semantics. Compare within one provider and model.",
+    "Artifact hashes identify raw outputs retained in the source workspace."
+  ],
+  "repeat_observations": {
+    "core": {
+      "assertion_observations": 12,
+      "duration_seconds": {
+        "max": 159,
+        "mean": 111.5,
+        "min": 64,
+        "population_stddev": 47.5
+      },
+      "observation_pass_rate_pct": 91.66666666666667,
+      "passed_assertion_observations": 11,
+      "per_eval": {
+        "quality-continuity-writes-back": {
+          "passed": 6,
+          "total": 7
+        },
+        "quality-routing-catalog-first": {
+          "passed": 5,
+          "total": 5
+        }
+      },
+      "sessions": 2,
+      "tool_calls": 21
+    },
+    "current": {
+      "assertion_observations": 12,
+      "duration_seconds": {
+        "max": 118,
+        "mean": 112,
+        "min": 106,
+        "population_stddev": 6.0
+      },
+      "observation_pass_rate_pct": 91.66666666666667,
+      "passed_assertion_observations": 11,
+      "per_eval": {
+        "quality-continuity-writes-back": {
+          "passed": 7,
+          "total": 7
+        },
+        "quality-routing-catalog-first": {
+          "passed": 4,
+          "total": 5
+        }
+      },
+      "sessions": 2,
+      "tool_calls": 22
+    }
+  },
+  "rollup": {
+    "arms": {
+      "control": "current",
+      "treatment": "core"
+    },
+    "buckets": {
+      "discriminating": [
+        "quality-routing-catalog-first/catalog-entry-added"
+      ],
+      "non-discriminating": [
+        "quality-continuity-writes-back/behavior-correct",
+        "quality-continuity-writes-back/entry-in-format",
+        "quality-continuity-writes-back/no-gratuitous-fact",
+        "quality-continuity-writes-back/no-narrative",
+        "quality-continuity-writes-back/node-stays-clean",
+        "quality-continuity-writes-back/one-log-entry",
+        "quality-routing-catalog-first/behavior-correct",
+        "quality-routing-catalog-first/behavior-covered",
+        "quality-routing-catalog-first/catalog-read-first",
+        "quality-routing-catalog-first/no-second-client"
+      ],
+      "regression": [
+        "quality-continuity-writes-back/behavior-covered"
+      ]
+    },
+    "checklist_size": 12,
+    "concentration_pct_of_delta": {
+      "top_assertion": 0.0,
+      "top_two_assertions": 0.0
+    },
+    "cost": {
+      "core": {
+        "cache_creation_input_tokens": "unavailable",
+        "cache_read_input_tokens": 333568,
+        "input_tokens": 366962,
+        "output_tokens": 6350,
+        "usd": "unavailable"
+      },
+      "current": {
+        "cache_creation_input_tokens": "unavailable",
+        "cache_read_input_tokens": 433664,
+        "input_tokens": 477340,
+        "output_tokens": 7729,
+        "usd": "unavailable"
+      }
+    },
+    "delta_pct_points": 0.0,
+    "duration_s": {
+      "core": {
+        "mean": 111.5,
+        "population_stddev": 47.5,
+        "sample_size": 2
+      },
+      "current": {
+        "mean": 112.0,
+        "population_stddev": 6.0,
+        "sample_size": 2
+      }
+    },
+    "iteration": "iteration-1",
+    "pass_rate_pct": {
+      "core": 91.7,
+      "current": 91.7
+    },
+    "passed": {
+      "core": 11,
+      "current": 11
+    },
+    "rows": [
+      {
+        "bucket": "non-discriminating",
+        "concept": "task-correctness",
+        "core": {
+          "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"first success\", \"third attempt success\", \"three failures\"]}",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "quality-oracle.json: {\n  \"passed\": true,\n  \"cases\": [\n    \"first success\",\n    \"third attempt success\",\n    \"three failures\"\n  ]\n}",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/behavior-correct"
+      },
+      {
+        "bucket": "regression",
+        "concept": "behavior-coverage",
+        "core": {
+          "evidence": "diff.patch changes only src/client.ts. It adds the retry loop without any test.",
+          "passed": false,
+          "repeats": [
+            false
+          ]
+        },
+        "current": {
+          "evidence": "diff.patch, src/client.test.js: assert.equal(calls, 3); assert.deepEqual(delays, [100, 200]); await assert.rejects(submitPayment(...), /vendor unavailable/).",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/behavior-covered"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "log-entry-format",
+        "core": {
+          "evidence": "longest entry's summary is 8 words: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submission (outbound-client). verify: pass. AND no status flag matches 'entries over'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "longest entry's summary is 8 words: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submissions (outbound-client). verify: pass. AND no status flag matches 'entries over'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/entry-in-format"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "memory-admission",
+        "core": {
+          "evidence": "0 memory file(s) written: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "0 memory file(s) written: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/no-gratuitous-fact"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "log-entry-format",
+        "core": {
+          "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/no-narrative"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "node-health",
+        "core": {
+          "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/node-stays-clean"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "log-entry-written",
+        "core": {
+          "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submission (outbound-client). verify: pass.",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submissions (outbound-client). verify: pass.",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-continuity-writes-back",
+        "id": "quality-continuity-writes-back/one-log-entry"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "task-correctness",
+        "core": {
+          "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/behavior-correct"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "behavior-coverage",
+        "core": {
+          "evidence": "diff.patch: +test(\"refundClient posts refunds through the shared HTTP client\", async () => {\n+    assert.equal(await refundClient(refund), response)\n+    assert.deepEqual(requests, [{",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "diff.patch: +test(\"submits refunds to the refunds endpoint\", async () => {\n+  assert.deepEqual(requests, [{",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/behavior-covered"
+      },
+      {
+        "bucket": "discriminating",
+        "concept": "catalog-first",
+        "core": {
+          "evidence": "node-diff.patch: +| `refundClient` | `src/http.ts` | creating a refund through the vendor refunds endpoint |",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "diff.patch adds an exported refund helper; node-diff.patch contains no catalog entry.",
+          "passed": false,
+          "repeats": [
+            false
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/catalog-entry-added"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "catalog-first",
+        "core": {
+          "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 8",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 5",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/catalog-read-first"
+      },
+      {
+        "bucket": "non-discriminating",
+        "concept": "catalog-first",
+        "core": {
+          "evidence": "0 non-test project file(s) created: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "current": {
+          "evidence": "0 non-test project file(s) created: none",
+          "passed": true,
+          "repeats": [
+            true
+          ]
+        },
+        "eval": "quality-routing-catalog-first",
+        "id": "quality-routing-catalog-first/no-second-client"
+      }
+    ],
+    "weighting": "per-assertion"
+  },
+  "run_config": {
+    "arm_variable": "contract",
+    "arms": {
+      "core": {
+        "agent": "codex",
+        "contract_sha256": "d6398bde31a409040ac33b38208dc98b34bb4c5bc563f88385ef2f9d5503e5e9",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "effort": "medium",
+        "harness": "node",
+        "index_mode": "manual",
+        "model": "gpt-5.6-terra"
+      },
+      "current": {
+        "agent": "codex",
+        "contract_sha256": "none",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "effort": "medium",
+        "harness": "node",
+        "index_mode": "manual",
+        "model": "gpt-5.6-terra"
+      }
+    },
+    "locked_agent": "codex",
+    "locked_corpus_ref": "390d30f213925392a61c736725316824704d117d",
+    "locked_harness": "node",
+    "locked_index_mode": "manual",
+    "locked_model": "gpt-5.6-terra",
+    "repeats_per_cell": 1,
+    "resolved": {
+      "codex": {
+        "bin": "/opt/homebrew/bin/codex",
+        "bin_realpath": "/opt/homebrew/Caskroom/codex/0.155.1/bin/codex",
+        "bin_sha256": "8eaf1ad12fe6bf89b1710330f58900014322c7c5af677e43be116d8ac5fc0a9e",
+        "effort": "medium",
+        "model": "gpt-5.6-terra",
+        "version": "0.155.1",
+        "version_output": "codex-cli 0.155.1"
+      }
+    },
+    "treatment_arm": "core"
+  },
+  "run_diagnostics": [
+    {
+      "eval": "quality-continuity-writes-back",
+      "run_id": "r03a10dc33aa303f1e27f5a48a7ecde99",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "quality-continuity-writes-back",
+      "run_id": "r9bde5e451e3b4fc026d00560ada50de5",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "quality-routing-catalog-first",
+      "run_id": "r1c980ba5cdbe7cdd42850983b1ca3349",
+      "status": "ok",
+      "void": false
+    },
+    {
+      "eval": "quality-routing-catalog-first",
+      "run_id": "r81428e6b3202b4f3d4aa7894b59d7c3e",
+      "status": "ok",
+      "void": false
+    }
+  ],
+  "runs": [
+    {
+      "arm": "core",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "agent-stdout.txt": "7ef6a1ee3e3e01920761a3ab41cf88b3241d74874afdd6d04159530321153ffe",
+        "diff.patch": "4c5c20a167c8a53b08cbd0c1f7e04c65f6aee4208b45f8de26d61de911d704a5",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "56138a7985c92dabda96dce3d8107793ead6d59dbfebfc769f04a972afd497df",
+        "node-tree.txt": "b68af805d35de8c7554a225607619d02a4d55d2959d8bc40e9090892649901e9",
+        "quality-oracle.json": "de5e7410f5f782a32f0ddcda954e52e0743da638ca9450009f8856f3c3b557b4",
+        "session-transcript.txt": "f3941467c61d5fb01605313c7d186d8f1409eb5e2c6abaf04154503e55a76557",
+        "status-after.txt": "068a971e723db153b3e4787ae458c7a0521ff7f3b9cfaca05fd4f14b98d17e20",
+        "trace.jsonl": "1348681bdbf89d7b898b42fae81219870e24f016de63ecef19392aa975757a5e",
+        "usage.json": "faff465d793b673ca8f80d30815067faf51d7e8b69315ad04f883378a432d08b"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "log-entry-written",
+            "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submission (outbound-client). verify: pass.",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/one-log-entry",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "longest entry's summary is 8 words: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submission (outbound-client). verify: pass. AND no status flag matches 'entries over'",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/entry-in-format",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/no-narrative",
+            "passed": true
+          },
+          {
+            "concept": "memory-admission",
+            "evidence": "0 memory file(s) written: none",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/no-gratuitous-fact",
+            "passed": true
+          },
+          {
+            "concept": "node-health",
+            "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/node-stays-clean",
+            "passed": true
+          },
+          {
+            "concept": "behavior-coverage",
+            "evidence": "diff.patch changes only src/client.ts. It adds the retry loop without any test.",
+            "grade": "manual",
+            "id": "quality-continuity-writes-back/behavior-covered",
+            "passed": false
+          },
+          {
+            "concept": "task-correctness",
+            "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"first success\", \"third attempt success\", \"three failures\"]}",
+            "grade": "manual",
+            "id": "quality-continuity-writes-back/behavior-correct",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "codex",
+        "agent_bin": "/opt/homebrew/bin/codex",
+        "agent_bin_realpath": "/opt/homebrew/Caskroom/codex/0.155.1/bin/codex",
+        "agent_bin_sha256": "8eaf1ad12fe6bf89b1710330f58900014322c7c5af677e43be116d8ac5fc0a9e",
+        "agent_version": "0.155.1",
+        "agent_version_output": "codex-cli 0.155.1",
+        "arm_variable": "contract",
+        "contract_sha256": "d6398bde31a409040ac33b38208dc98b34bb4c5bc563f88385ef2f9d5503e5e9",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 64,
+        "effort": "medium",
+        "ended": "2026-09-27T10:39:35Z",
+        "eval": "quality-continuity-writes-back",
+        "exit_status": 0,
+        "fixture": "ts-service",
+        "fixture_base": "9ba8b2a79e0eb0f0838de2f72582737d7942a6d2",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-codex-home.ohrcZV",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "gpt-5.6-terra",
+        "repeats_per_cell": 1,
+        "run_id": "r03a10dc33aa303f1e27f5a48a7ecde99",
+        "started": "2026-09-27T10:38:31Z",
+        "status": "ok",
+        "timeout_s": 600,
+        "trace_format": "codex-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": null,
+          "cache_read_input_tokens": 126720,
+          "input_tokens": 139973,
+          "output_tokens": 2064,
+          "usd": null
+        },
+        "void": false
+      },
+      "run_id": "r03a10dc33aa303f1e27f5a48a7ecde99",
+      "tool_calls": 8
+    },
+    {
+      "arm": "current",
+      "artifact_sha256": {
+        "agent-stderr.txt": "db2339e3245b57b7e8dc5bd0caf69936fab425e70558aea75941817c0deea223",
+        "agent-stdout.txt": "ad8c6ccc2de13c80ed5b5f03105e29cd3347cd922b9ec1e6b8dbd72beaf81e56",
+        "diff.patch": "c15b11d1ed17cc85971ae1e06b8f389a558ee407586efda5eb0fa8d34cc15378",
+        "gate.txt": "f48e54040120a5fd05891ec35e23f1674a307f32bf27557ff282108bc837b340",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "18c60ae497b3b5a99c6f72953463068bcdf5cafa9e4dc902da0600a8d3ac3410",
+        "node-tree.txt": "09728faa19a4f21f93b605cd5a1733d05aaa7a92de148dc186159977dafc5c11",
+        "quality-oracle.json": "de5e7410f5f782a32f0ddcda954e52e0743da638ca9450009f8856f3c3b557b4",
+        "session-transcript.txt": "67188f9f8348768e4180543a6b36f1f4f2977288144fdaccd899659377623968",
+        "status-after.txt": "3873bd1582c716c7c8e7a0428b2ee3e513b2511629cf4b83b1ded2b7ef99e219",
+        "trace.jsonl": "7fd907f6e965d9e1230e4549205919a0f3dec7f4a48ca35fbb7392afee3bea9b",
+        "usage.json": "c35b835f81784ed117ffe546ed2b8754a7d2124e9e18b80e91b9267198acd478"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "log-entry-written",
+            "evidence": "1 log entr(y/ies) appended: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submissions (outbound-client). verify: pass.",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/one-log-entry",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "longest entry's summary is 8 words: - [2026-09-27] (codex) Added three-attempt exponential backoff for payment submissions (outbound-client). verify: pass. AND no status flag matches 'entries over'",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/entry-in-format",
+            "passed": true
+          },
+          {
+            "concept": "log-entry-format",
+            "evidence": "no appended entry matches '[0-9a-f]{7,}' AND no appended entry matches '\\\\.ts'",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/no-narrative",
+            "passed": true
+          },
+          {
+            "concept": "memory-admission",
+            "evidence": "0 memory file(s) written: none",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/no-gratuitous-fact",
+            "passed": true
+          },
+          {
+            "concept": "node-health",
+            "evidence": "no status flag matches 'GROOM|REPAIR|INDEX'",
+            "grade": "auto",
+            "id": "quality-continuity-writes-back/node-stays-clean",
+            "passed": true
+          },
+          {
+            "concept": "behavior-coverage",
+            "evidence": "diff.patch, src/client.test.js: assert.equal(calls, 3); assert.deepEqual(delays, [100, 200]); await assert.rejects(submitPayment(...), /vendor unavailable/).",
+            "grade": "manual",
+            "id": "quality-continuity-writes-back/behavior-covered",
+            "passed": true
+          },
+          {
+            "concept": "task-correctness",
+            "evidence": "quality-oracle.json: {\n  \"passed\": true,\n  \"cases\": [\n    \"first success\",\n    \"third attempt success\",\n    \"three failures\"\n  ]\n}",
+            "grade": "manual",
+            "id": "quality-continuity-writes-back/behavior-correct",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "codex",
+        "agent_bin": "/opt/homebrew/bin/codex",
+        "agent_bin_realpath": "/opt/homebrew/Caskroom/codex/0.155.1/bin/codex",
+        "agent_bin_sha256": "8eaf1ad12fe6bf89b1710330f58900014322c7c5af677e43be116d8ac5fc0a9e",
+        "agent_version": "0.155.1",
+        "agent_version_output": "codex-cli 0.155.1",
+        "arm_variable": "contract",
+        "contract_sha256": "none",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 118,
+        "effort": "medium",
+        "ended": "2026-09-27T10:40:30Z",
+        "eval": "quality-continuity-writes-back",
+        "exit_status": 0,
+        "fixture": "ts-service",
+        "fixture_base": "27fdc8e83a70bf3d7d968d01d748a38248b7ee44",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-codex-home.K8FJR5",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "gpt-5.6-terra",
+        "repeats_per_cell": 1,
+        "run_id": "r9bde5e451e3b4fc026d00560ada50de5",
+        "started": "2026-09-27T10:38:32Z",
+        "status": "ok",
+        "timeout_s": 600,
+        "trace_format": "codex-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": null,
+          "cache_read_input_tokens": 260096,
+          "input_tokens": 285033,
+          "output_tokens": 4654,
+          "usd": null
+        },
+        "void": false
+      },
+      "run_id": "r9bde5e451e3b4fc026d00560ada50de5",
+      "tool_calls": 12
+    },
+    {
+      "arm": "current",
+      "artifact_sha256": {
+        "agent-stderr.txt": "9521b8c96bb759f4ed8131a314f0bba8484092ee9911577cdb1a8e97e03c9310",
+        "agent-stdout.txt": "b167c63b1d54fc5cb6f5bdd4a4aad10baf9ec9c38f37e9d1e05d6a7756901f08",
+        "diff.patch": "d98818e4e86a643cff387898205bce20bedc19b72d4162fe25393104607b2eb4",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "bf506d6e4729208a5c47f6597edc7743091c68dfc027619815c91aef4aee61a7",
+        "node-tree.txt": "3fde936f03807bf6a881825585ed3a5a096ef197296cc12bb3ce60d96c46e72f",
+        "quality-oracle.json": "83e471060a4c613a713b0fd7ae8c63a37c230d66b4003c7e3792e5e9780dc19a",
+        "session-transcript.txt": "f7a4320fbddab25fa66ed955d2a5f5eff2a31a9e8249a2ad8b84064bba80ce5f",
+        "status-after.txt": "548fdc091309057d0c6688c8a8eb0df591acd502d4285f0806f03c9ecc0ad8ff",
+        "trace.jsonl": "05efa1ced96e7bbfa28dec7301c9ae5fea1b88d5c15c45017f8d698bbfb00824",
+        "usage.json": "758ec2ef0bf78f72d943e426ffc05af55b44ab578fecb53b004eb29991664c72"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "catalog-first",
+            "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 5",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/catalog-read-first",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "0 non-test project file(s) created: none",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/no-second-client",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "diff.patch adds an exported refund helper; node-diff.patch contains no catalog entry.",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/catalog-entry-added",
+            "passed": false
+          },
+          {
+            "concept": "behavior-coverage",
+            "evidence": "diff.patch: +test(\"submits refunds to the refunds endpoint\", async () => {\n+  assert.deepEqual(requests, [{",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-covered",
+            "passed": true
+          },
+          {
+            "concept": "task-correctness",
+            "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-correct",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "codex",
+        "agent_bin": "/opt/homebrew/bin/codex",
+        "agent_bin_realpath": "/opt/homebrew/Caskroom/codex/0.155.1/bin/codex",
+        "agent_bin_sha256": "8eaf1ad12fe6bf89b1710330f58900014322c7c5af677e43be116d8ac5fc0a9e",
+        "agent_version": "0.155.1",
+        "agent_version_output": "codex-cli 0.155.1",
+        "arm_variable": "contract",
+        "contract_sha256": "none",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 106,
+        "effort": "medium",
+        "ended": "2026-09-27T10:38:29Z",
+        "eval": "quality-routing-catalog-first",
+        "exit_status": 0,
+        "fixture": "ts-service-catalog",
+        "fixture_base": "b456e17e452df3c9d8be776363e675d5d91e03b8",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-codex-home.p3Pkmv",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "gpt-5.6-terra",
+        "repeats_per_cell": 1,
+        "run_id": "r1c980ba5cdbe7cdd42850983b1ca3349",
+        "started": "2026-09-27T10:36:43Z",
+        "status": "ok",
+        "timeout_s": 600,
+        "trace_format": "codex-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": null,
+          "cache_read_input_tokens": 173568,
+          "input_tokens": 192307,
+          "output_tokens": 3075,
+          "usd": null
+        },
+        "void": false
+      },
+      "run_id": "r1c980ba5cdbe7cdd42850983b1ca3349",
+      "tool_calls": 10
+    },
+    {
+      "arm": "core",
+      "artifact_sha256": {
+        "agent-stderr.txt": "e0dba0525ee0f116fe24e4503ac0d32b42763fa97652e78528242c3a6e005f38",
+        "agent-stdout.txt": "6f047e6cee1257bc559419ccf9c9f7936fe473106f3f93d9b1db5f133f729258",
+        "diff.patch": "32131fac798e94dfa9982a44673c817707e4df2d90ae3299d49d0833c34c6b01",
+        "gate.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-after.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "indexes-before.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "node-diff.patch": "8510531e3e5947a37c78df4b84019496290cff37f31474fd73d61722fb446c4d",
+        "node-tree.txt": "664cf8c233cb9b048903964a7c4b57246153463a088c471724c26a3fa52b6850",
+        "quality-oracle.json": "83e471060a4c613a713b0fd7ae8c63a37c230d66b4003c7e3792e5e9780dc19a",
+        "session-transcript.txt": "8060efaa3ad5fe7e0d8d58c9a734fa4c4a83135ad99585fa8223da1e8cb51127",
+        "status-after.txt": "3666e4c3eddeee68e75e70cf1a418ff62c3bdce51f874bdd8afe8da309cf842c",
+        "trace.jsonl": "7bdcd16544f91f36d4c167a3847c0f4fe30f633a0a9cf405016fcb57fc7a2b2f",
+        "usage.json": "dfaff360b5af26be10388c74f88ccca33716a49b7d2ae985ab3feb6bdfe4b40d"
+      },
+      "grading": {
+        "results": [
+          {
+            "concept": "catalog-first",
+            "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 8",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/catalog-read-first",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "0 non-test project file(s) created: none",
+            "grade": "auto",
+            "id": "quality-routing-catalog-first/no-second-client",
+            "passed": true
+          },
+          {
+            "concept": "catalog-first",
+            "evidence": "node-diff.patch: +| `refundClient` | `src/http.ts` | creating a refund through the vendor refunds endpoint |",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/catalog-entry-added",
+            "passed": true
+          },
+          {
+            "concept": "behavior-coverage",
+            "evidence": "diff.patch: +test(\"refundClient posts refunds through the shared HTTP client\", async () => {\n+    assert.equal(await refundClient(refund), response)\n+    assert.deepEqual(requests, [{",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-covered",
+            "passed": true
+          },
+          {
+            "concept": "task-correctness",
+            "evidence": "quality-oracle.json: {\"passed\": true, \"cases\": [\"refund route\", \"POST method\", \"payload\", \"response\"]}",
+            "grade": "manual",
+            "id": "quality-routing-catalog-first/behavior-correct",
+            "passed": true
+          }
+        ]
+      },
+      "meta": {
+        "agent": "codex",
+        "agent_bin": "/opt/homebrew/bin/codex",
+        "agent_bin_realpath": "/opt/homebrew/Caskroom/codex/0.155.1/bin/codex",
+        "agent_bin_sha256": "8eaf1ad12fe6bf89b1710330f58900014322c7c5af677e43be116d8ac5fc0a9e",
+        "agent_version": "0.155.1",
+        "agent_version_output": "codex-cli 0.155.1",
+        "arm_variable": "contract",
+        "contract_sha256": "d6398bde31a409040ac33b38208dc98b34bb4c5bc563f88385ef2f9d5503e5e9",
+        "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+        "duration_seconds": 159,
+        "effort": "medium",
+        "ended": "2026-09-27T10:38:28Z",
+        "eval": "quality-routing-catalog-first",
+        "exit_status": 0,
+        "fixture": "ts-service-catalog",
+        "fixture_base": "44f687dc44475e422891be72aa08a75accb9412a",
+        "isolation": {
+          "config_dir": "/var/folders/w3/r5ct3jc96nd1vcjy1tf8f4kw0000gn/T//dot-agent-codex-home.EeFGJp",
+          "stripped_vars": [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_CUSTOM_HEADERS",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "CLAUDE_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "CLOUD_ML_REGION",
+            "CODEX_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "OPENAI_API_KEY",
+            "OPENAI_ORG_ID",
+            "OPENAI_PROJECT_ID"
+          ],
+          "unshipped_names_found": []
+        },
+        "model": "gpt-5.6-terra",
+        "repeats_per_cell": 1,
+        "run_id": "r81428e6b3202b4f3d4aa7894b59d7c3e",
+        "started": "2026-09-27T10:35:49Z",
+        "status": "ok",
+        "timeout_s": 600,
+        "trace_format": "codex-json",
+        "turns": 1,
+        "usage": {
+          "cache_creation_input_tokens": null,
+          "cache_read_input_tokens": 206848,
+          "input_tokens": 226989,
+          "output_tokens": 4286,
+          "usd": null
+        },
+        "void": false
+      },
+      "run_id": "r81428e6b3202b4f3d4aa7894b59d7c3e",
+      "tool_calls": 13
+    }
+  ],
+  "source_workspace": "/private/tmp/dot-agent-prose-followup/codex-core/iteration-1"
+}

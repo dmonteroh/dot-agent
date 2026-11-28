@@ -1,0 +1,64 @@
+{
+  "date": "2026-09-27",
+  "iteration": "followup-1",
+  "corpus_ref": "390d30f213925392a61c736725316824704d117d",
+  "control": "current installed software-development contract",
+  "treatment": "short-protocol-report.md",
+  "models": [
+    {
+      "agent": "claude",
+      "model": "claude-sonnet-5",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "medium"
+    }
+  ],
+  "spec": "spec.json",
+  "spec_sha256": "2ff7f1a58bffd427297657bad6e7166f24949fefbec697bf6db54fd63a3e31e7",
+  "treatment_sha256": "5c6adf60e0983cf89370c3152c0ab1c9d9febcee5e10bbfdd4d9fb19418d41c0",
+  "repeats_per_cell": 3,
+  "tasks": 9,
+  "planned_sessions": 108,
+  "timeout_seconds_per_session": 240,
+  "stopping_rule": "One frozen baseline comparison per model. Report failures without tuning against this round. Exploratory learning and prose-axis comparisons are separate iterations.",
+  "sampling": "Provider defaults. Temperature, top-p and seed unpinned.",
+  "grading": "Deterministic automatic checks and label-blind manual artifact review. Opaque run IDs. Output style and contract vocabulary remain residual cues.",
+  "limitations": [
+    "Small synthetic projects",
+    "One CLI version per model",
+    "No proof about larger models",
+    "Current versus short changes both length and content"
+  ],
+  "previous_results": [
+    "results/terra-short-round1.json",
+    "results/terra-security-repair.json"
+  ],
+  "infrastructure_revision": {
+    "reason": "The first Terra round encountered remote plugin sync and app MCP startup failures despite its disposable home. Interrupted before completion.",
+    "restart_workspace": "/tmp/dot-agent-prose-followup/codex-isolated",
+    "unchanged": [
+      "corpus_ref",
+      "spec",
+      "candidate",
+      "model",
+      "effort",
+      "repeats",
+      "timeout"
+    ],
+    "process_overrides": [
+      "features.apps=false",
+      "features.plugins=false",
+      "features.remote_plugin=false"
+    ],
+    "grader_policy": "grading-policy.json"
+  },
+  "runner_sha256": {
+    "evals/run.sh": "f4889b9aa85a77068eaa2101b2c879b4b3e810f7f79304e035da895c25dd30f1",
+    "evals/run_lib.py": "820d493f47887273fff794c52bdf5aa6e8f003b7414a6471b383e08689c9ca0c",
+    "evals/fixtures.sh": "4970b3a206eeb298c684207c82f76fa7b47fb4bf0085412d14578940dd42fc0d",
+    "evals/grade.py": "4cdc59abe1ad93f3fcd76c5e252c4af5243b5aeffd21862c8d003e7e10ad4ecb"
+  }
+}

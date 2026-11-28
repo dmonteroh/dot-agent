@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "concept": "catalog-first",
+      "evidence": "'service-catalog.md' at seq 2, 'write:src/' at seq 4",
+      "grade": "auto",
+      "id": "quality-routing-catalog-first/catalog-read-first",
+      "passed": true
+    },
+    {
+      "concept": "catalog-first",
+      "evidence": "0 non-test project file(s) created: none",
+      "grade": "auto",
+      "id": "quality-routing-catalog-first/no-second-client",
+      "passed": true
+    },
+    {
+      "concept": "catalog-first",
+      "evidence": "The product adds submitRefund. node-diff.patch changes only the session log and adds no catalog entry for that reusable helper.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/catalog-entry-added",
+      "passed": false
+    },
+    {
+      "concept": "behavior-coverage",
+      "evidence": "The product diff adds a test asserting the refund URL, POST method, and supplied body. It imports submitRefund, which is absent from the original module.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/behavior-covered",
+      "passed": true
+    },
+    {
+      "concept": "task-correctness",
+      "evidence": "quality-oracle.json independently confirms the refunds route, POST method, payload, and returned response through shared httpClient.",
+      "grade": "manual",
+      "id": "quality-routing-catalog-first/behavior-correct",
+      "passed": true
+    }
+  ]
+}

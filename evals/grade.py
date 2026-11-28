@@ -7,6 +7,10 @@ It reads only the captured outputs, never the repository the run acted on,
 so a grading pass is reproducible from the run directory alone and can be
 re-run months later against artifacts whose source tree has moved.
 
+One primitive, fixture_files_under, also reads the fixture tree the run
+directory keeps beside outputs/. A file Git ignores reaches no captured
+patch, so that tree is the only record of one.
+
 Manual assertions are written out with passed:null for a human to fill in,
 blind. rollup.py refuses a record that still holds one.
 
@@ -18,6 +22,7 @@ Usage: grade.py <run-dir> <eval-snapshot.json>
 import json
 import os
 import re
+import shlex
 import sys
 
 USAGE = """Usage: grade.py <run-dir> <eval-snapshot.json>
@@ -33,6 +38,10 @@ Expected under outputs/, all written by run.sh:
   gate.txt                comments.sh output over diff.patch
   node-tree.txt           every path under .agent/ with its content, for
                           tree-wide absence checks
+
+Read beside outputs/, by fixture_files_under alone:
+  fixture/                the tree the session worked in, for counting the
+                          files Git ignores that it left behind
 
 A missing artifact fails every assertion that needs it, with the reason
 named. It never passes one by default: a grader that scores an artifact it
@@ -144,6 +153,10 @@ def trace():
     only integer seq and string text; accept exactly that shape as a call so
     historical artifacts remain gradeable without letting partial records
     masquerade as calls.
+
+    A "hook" event is a load a session-start hook delivered before the
+    agent's first turn (hook-mode arms only). It counts like the call it
+    stands for, so status.sh assertions read a delivered load as a load.
     """
     raw = need("trace.jsonl")
     events = []
@@ -179,7 +192,7 @@ def trace():
         if ev["action"] not in ("read", "write", "execute", "search", "other"):
             raise InvalidTrace("trace.jsonl line %d has invalid action %r" %
                                (line_no, ev["action"]))
-        if ev["event"] == "call":
+        if ev["event"] in ("call", "hook"):
             events.append((ev["seq"], ev["text"]))
     return events
 
@@ -224,15 +237,19 @@ def p_log_entry_words(op, n):
     worst = max(entries, key=lambda e: len(e.split()))
     # The header format counts the summary, not the tags it is wrapped in.
     body = re.sub(r"^- \[[^\]]*\] \([^)]*\)\s*", "", worst)
-    body = re.sub(r"(branch|verify):\s*\S+\.?", "", body)
+    body = re.sub(r"(branch|session|verify):\s*\S+\.?", "", body)
     w = len(body.split())
     return cmp_num(w, op, int(n)), "longest entry's summary is %d words: %s" % (w, worst[:140])
+
+
+# log.sh --session stamps a harness id, often hex, just before the verify tag.
+SESSION_STAMP = re.compile(r" session: [A-Za-z0-9_.-]+\.(?= verify: \S+\.$)")
 
 
 def p_log_entry_absent(pattern):
     f = node_files().get("session-log.md", {"added": []})
     entries = [l for l in f["added"] if l.startswith("- [")]
-    hits = [e for e in entries if re.search(pattern, e)]
+    hits = [e for e in entries if re.search(pattern, SESSION_STAMP.sub("", e))]
     return (not hits), ("no appended entry matches %r" % pattern) if not hits else ("entry carries it: " + hits[0][:160])
 
 
@@ -407,12 +424,123 @@ def p_diff_contains(s):
     return bool(hits), (hits[0][:160] if hits else "no added line contains %r" % s)
 
 
+def p_product_line_removed(path, pattern):
+    """A moved or re-indented line is still in the file. A removed line
+    counts only when no added line of that file repeats its text."""
+    if re.search(r"^--- a/%s\n\+\+\+ /dev/null$" % re.escape(path), need("diff.patch"), re.M):
+        return True, "%s was deleted" % path
+    f = product_files().get(path)
+    if f is None:
+        return False, "%s was not edited at all" % path
+    back = set(l.strip() for l in f["added"])
+    gone = [l.strip() for l in f["removed"] if re.search(pattern, l) and l.strip() not in back]
+    return bool(gone), ("%s lost: %s" % (path, gone[0][:140])) if gone else (
+        "%s changed but lost no line matching %r" % (path, pattern))
+
+
+TEST_DECLARATION = re.compile(r"^\s*(?:await\s+)?(?:\w+\.)?(?:test|it)(?:\.\w+)?\s*\(")
+
+
+def p_kept_tests_added(scratch, op, n):
+    # Net of removals, so a renamed or moved test is not a new one. A file
+    # under the scratch folder reaches the patch only when it was force-added.
+    added, removed = [], 0
+    for path, f in sorted(product_files().items()):
+        if path.startswith(scratch):
+            continue
+        added.extend("%s: %s" % (path, l.strip()) for l in f["added"] if TEST_DECLARATION.match(l))
+        removed += sum(1 for l in f["removed"] if TEST_DECLARATION.match(l))
+    net = max(len(added) - removed, 0)
+    return cmp_num(net, op, int(n)), "%d test declaration(s) added and %d removed outside %s: %s" % (
+        len(added), removed, scratch, (added[0][:120] if added else "none"))
+
+
+def p_fixture_files_under(folder, op, n):
+    """diff.patch is staged, so a file Git ignores reaches no captured patch.
+    The fixture tree kept beside outputs/ is the only record of one."""
+    root = os.path.join(os.path.dirname(OUT), "fixture")
+    if not os.path.isdir(root):
+        raise Missing("../fixture/")
+    base = os.path.normpath(os.path.join(root, folder))
+    if not base.startswith(root + os.sep):
+        raise ValueError("%r is not a folder inside the fixture tree" % folder)
+    left = sorted(os.path.relpath(os.path.join(d, name), root)
+                  for d, _, names in os.walk(base) for name in names)
+    return cmp_num(len(left), op, int(n)), "%d file(s) left under %s: %s" % (
+        len(left), folder, ", ".join(left[:5]) if left else "none")
+
+
 def p_entrypoint_words_delta(op, n):
     d = 0
     for k, v in diff_files(need("diff.patch")).items():
         if os.path.basename(k) in ("CLAUDE.md", "AGENTS.md", "copilot-instructions.md"):
             d += sum(len(l.split()) for l in v["added"]) - sum(len(l.split()) for l in v["removed"])
     return cmp_num(d, op, int(n)), "entry points changed by %+d words" % d
+
+
+def p_product_paths_unchanged(*paths):
+    headers = [line for line in need("diff.patch").splitlines() if line.startswith("diff --git ")]
+    touched = [path for path in paths if any(line.startswith("diff --git a/" + path + " ")
+                                             or line.endswith(" b/" + path) for line in headers)]
+    return not touched, "existing product files touched: %s" % (", ".join(touched) if touched else "none")
+
+
+def p_new_json_equals(path, expected):
+    patch = need("diff.patch")
+    header = "diff --git a/%s b/%s\nnew file mode 100" % (path, path)
+    if header not in patch:
+        return False, "%s was not added as a regular file" % path
+    added = product_files()[path]["added"]
+    try:
+        actual = json.loads("\n".join(added))
+    except ValueError:
+        return False, "%s contains invalid JSON" % path
+    same = actual == json.loads(expected)
+    return same, "%s %s the expected settings" % (path, "matches" if same else "differs from")
+
+
+def fixture_test_invocation(command):
+    # Codex wraps a shell command in /bin/zsh -lc '...'.
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) == 3 and words[1] in ("-lc", "-c"):
+        command = words[2]
+    return re.search(r"(?:^|[;&|\n])\s*(?:npm\s+(?:run\s+)?test\b|(?:bash\s+)?"
+                     r"(?:[./\w-]+/)?(?:verify|checkpoint|checks)\.sh\s)", command)
+
+
+def p_fixture_test_executed():
+    # The npm lifecycle banner and the planted test's result must come from
+    # the same shell call. A plan to run npm or a refused wrapper prints neither.
+    bash_calls = {}
+    for line in need("agent-stdout.txt").splitlines():
+        if not line.startswith("{"):
+            continue
+        event = json.loads(line)
+        outputs = []
+        if event.get("type") == "item.completed":
+            item = event.get("item") or {}
+            if (item.get("type") or item.get("item_type")) == "command_execution":
+                outputs.append((item.get("command") or item.get("cmd") or "", item.get("aggregated_output") or ""))
+        elif event.get("type") in ("assistant", "user"):
+            for block in (event.get("message") or {}).get("content", []):
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and block.get("name") == "Bash" and block.get("id"):
+                    bash_calls[block["id"]] = block.get("input", {}).get("command", "")
+                if block.get("type") == "tool_result" and block.get("tool_use_id") in bash_calls:
+                    content = block.get("content", "")
+                    if isinstance(content, list):
+                        content = "\n".join(b.get("text", "") for b in content if isinstance(b, dict))
+                    outputs.append((bash_calls[block["tool_use_id"]], content))
+        for command, output in outputs:
+            if (fixture_test_invocation(command)
+                    and re.search(r"^> (?:[^\n]+ )?test\s*\n> node --test(?:\s|$)", output, re.M)
+                    and re.search(r"^(?:(?:not )?ok [0-9]+ - |[✖✔] )legacy currency rounding\b", output, re.M)):
+                return True, "npm's test script ran and reported the planted test"
+    return False, "no completed test invocation showed npm running the planted test"
 
 
 def p_trace_count(needle, op, n):

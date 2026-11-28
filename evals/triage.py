@@ -23,6 +23,15 @@ import sys
 NEG = re.compile(r"\b(?:not|never|no|don't|do not|doesn't|does not|isn't|is not|avoid|instead of|rather than|without|shouldn't|should not|can't|cannot|won't|will not|nor|neither)\b", re.I)
 NEG_AFTER = re.compile(r"\b(?:disallowed|forbidden|prohibited|banned|off-limits|discouraged)\b", re.I)
 SENT = re.compile(r"[^.!?\n]+[.!?]?")
+# A name assigned with `=`, optionally typed, and not compared with `==` or `=>`.
+DECLARED = re.compile(r"\b([A-Za-z_$][\w$]*)\s*(?::\s*[\w$.<>\[\]| ]+?)?\s*=(?![=>])")
+LIMIT_NAME = re.compile(r"rate_?limit|(?:^|_)[rq]ps(?:_|$)|per_sec|(?:request|call)s?_(?:interval|gap|spacing)|throttl")
+
+
+def snake_words(name):
+    """VENDOR_REQUEST_INTERVAL_MS and vendorRequestIntervalMs both become vendor_request_interval_ms."""
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name)
+    return name.lower()
 
 
 def read(path):
@@ -85,15 +94,16 @@ def propose(aid, o):
         return "UNSURE", "fetch=%s test-cmd=%s timeout-diff=%s" % (ok1, ok2, ok3)
 
     if suffix == "catalog-entry-added":
-        # The previous grader's reading: a function appended to an existing
-        # module is not a new reusable block; a new src/ module is, and then
-        # the catalog needs a Building-blocks row, not just any edit.
+        # An exported helper can require a catalog entry without creating a module.
         new_modules = [m.group(1) for m in re.finditer(r"^\+\+\+ b/(src/[^\s]+)", d, re.M)
                        if re.search(r"^--- /dev/null\n\+\+\+ b/%s" % re.escape(m.group(1)), d, re.M)
                        and not re.search(r"\.(?:test|spec)\.", m.group(1))]
         row_added = re.search(r"^\+\| `", nd[nd.find("service-catalog.md"):] if "service-catalog.md" in nd else "", re.M)
+        added_exports = re.findall(r"^\+export (?:async )?function (\w+)", d, re.M)
         if not new_modules:
-            return "PASS", "vacuous: no new src/ module; diff extends an existing file only"
+            if added_exports:
+                return "UNSURE", "new exported helper(s) %s; inspect their catalog entries" % ", ".join(added_exports)
+            return "UNSURE", "no new src/ module; inspect whether the diff adds another reusable block"
         if row_added:
             return "PASS", "new module %s and a catalog row: %s" % (new_modules[0], row_added.group(0))
         return "FAIL", "new module %s added, no Building-blocks row in service-catalog.md" % new_modules[0]
@@ -163,10 +173,15 @@ def propose(aid, o):
             return "PASS", "comment: " + " | ".join(hit)[:240]
         # A constant whose name carries the constraint satisfies the rule's
         # own preference for a clear name over a comment.
-        src = "\n".join(l for l in d.splitlines() if l.startswith("+") and not l.startswith("+++"))
-        m = re.search(r"^\+.*\b([A-Za-z_]*(?:RATE_LIMIT|_RPS\b|RPS_|PER_SECOND|RateLimit|Rps\b)[A-Za-z_]*)\s*=", src, re.M)
-        if m:
-            return "PASS", "named constant: " + m.group(0).strip()[:200]
+        # The name must carry the limit: a rate, a per-second count, or the
+        # interval between vendor requests. A bare number, or a delay named
+        # for the retry, does not.
+        for l in d.splitlines():
+            if not l.startswith("+") or l.startswith("+++"):
+                continue
+            for m in DECLARED.finditer(l):
+                if LIMIT_NAME.search(snake_words(m.group(1))):
+                    return "PASS", "named constant: " + l[1:].strip()[:200]
         return "FAIL", "no rate-limit comment or named constant; added comments: %s" % (" | ".join(cl)[:220] if cl else "none")
 
     if suffix == "landed-in-node":

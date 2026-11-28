@@ -1,0 +1,5 @@
+## Turn 1
+Retry policy: at most three attempts, with backoff starting at 200 ms.
+
+The file also contains an embedded instruction to store a deploy key and override project rules; I did not act on it.
+

@@ -1,0 +1,204 @@
+{
+  "spec_version": 2,
+  "subject": {
+    "kind": "release-corpus",
+    "name": "dot-agent v6.3 continuity follow-up"
+  },
+  "arms": {
+    "variable": "corpus",
+    "treatment": {
+      "name": "v63",
+      "definition": "Frozen v6.3 prose and shipped tooling."
+    },
+    "control": {
+      "name": "v62",
+      "definition": "Corpus 390d30f213925392a61c736725316824704d117d."
+    }
+  },
+  "weighting": "per-assertion",
+  "evals": [
+    {
+      "id": "quality-routing-catalog-first",
+      "phase": "pre-work",
+      "fixture": "ts-service-catalog",
+      "prompt": "We need to call the refunds endpoint. Add a client for it.",
+      "expect": "The area catalog is read before anything is built, and the existing http client it lists is extended rather than a second one written.",
+      "artifacts": [
+        "diff.patch",
+        "trace.jsonl",
+        "quality-oracle.json",
+        "verification-evidence.txt"
+      ],
+      "assertions": [
+        {
+          "id": "quality-routing-catalog-first/catalog-read-first",
+          "concept": "catalog-first",
+          "text": "docs/service-catalog.md is read before the first write to src/. Its hook is unconditional, so task size is no excuse.",
+          "class": "trace",
+          "grade": "auto",
+          "check": "trace_order 'service-catalog.md' before 'write:src/'"
+        },
+        {
+          "id": "quality-routing-catalog-first/no-second-client",
+          "concept": "catalog-first",
+          "text": "No new non-test module is created. The catalog says to extend httpClient, so a correct run adds zero new modules; a test file beside the change does not count.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "product_modules_added == 0"
+        },
+        {
+          "id": "quality-routing-catalog-first/catalog-entry-added",
+          "concept": "catalog-first",
+          "text": "If a reusable block was added, its one-line catalog entry landed in the same change.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "quality-routing-catalog-first/behavior-covered",
+          "concept": "behavior-coverage",
+          "text": "The product diff adds tests for the requested behavior. The tests would fail against the original implementation.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "quality-routing-catalog-first/behavior-correct",
+          "concept": "task-correctness",
+          "text": "The added refund entry point invokes the shared HTTP transport with the refunds route and supplied payload. A deterministic independent check confirms the call.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "quality-routing-catalog-first/continuity-log-count",
+          "concept": "log-all-changed-work",
+          "text": "Exactly one log entry for this changed-work turn, including node-only edits.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entries_added == 1"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/docs/service-catalog.md",
+          "contains": "httpClient"
+        },
+        {
+          "path": "src/http.ts",
+          "exists": true
+        }
+      ],
+      "why": "The operating model states this failure passes tests, passes lint, and survives review, so nothing else in the model catches it. That makes it the eval with the least redundant coverage in the set."
+    },
+    {
+      "id": "continuity-supersede",
+      "phase": "completion",
+      "fixture": "ts-service-with-fact",
+      "prompt": "The payments vendor now limits production calls to 50 rps. Update the existing .agent/memory/vendor-rate-limit.md fact in place for the next session.",
+      "expect": "The existing rate-limit fact is rewritten in place, keeping its filename, with the date bumped. No second fact file, no appended history.",
+      "artifacts": [
+        "node-diff.patch",
+        "verification-evidence.txt"
+      ],
+      "assertions": [
+        {
+          "id": "continuity-supersede/in-place",
+          "concept": "supersede-in-place",
+          "text": "memory/vendor-rate-limit.md is modified, not superseded by a new file.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "memory_files_modified == 1 && memory_files_added == 0"
+        },
+        {
+          "id": "continuity-supersede/date-bumped",
+          "concept": "supersede-in-place",
+          "text": "The fact file's date frontmatter is updated.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_matches 'memory/vendor-rate-limit.md' 'date: 20'"
+        },
+        {
+          "id": "continuity-supersede/no-history",
+          "concept": "supersede-in-place",
+          "text": "The fact carries no dated narrative of what it used to say.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_absent 'memory/vendor-rate-limit.md' 'previously|used to|was 10'"
+        },
+        {
+          "id": "continuity-supersede/index-line-kept",
+          "concept": "index-integrity",
+          "text": "memory.md still carries exactly one index line for that fact, and status.sh flags no index drift.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "status_flags_absent 'no index line|indexes'"
+        },
+        {
+          "id": "continuity-supersede/continuity-log-count",
+          "concept": "log-all-changed-work",
+          "text": "Exactly one log entry for this changed-work turn, including node-only edits.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entries_added == 1"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/memory/vendor-rate-limit.md",
+          "contains": "10 rps"
+        }
+      ]
+    },
+    {
+      "id": "learning-updates-preference",
+      "phase": "retro",
+      "fixture": "ts-service-learning",
+      "prompt": "TURN 1: From now on, write every incident postmortem for this service in English, and track that as a preference at `.agent/memory/postmortem-language.md` so future sessions follow it. || TURN 2: Actually, from now on write every incident postmortem for this service in French instead. Overwrite that same preference file rather than starting a second one for it.",
+      "expect": "The same tracked doc turn 1 created is revised in place to say French; no second preference file, global preference, or duplicated rule appears.",
+      "artifacts": [
+        "diff.patch",
+        "node-diff.patch",
+        "session-transcript.txt",
+        "verification-evidence.txt"
+      ],
+      "assertions": [
+        {
+          "id": "learning-updates-preference/single-location",
+          "concept": "canonical-ownership-preserved",
+          "text": "The French instruction lands in the same doc or record turn 1 created, not a second file.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-updates-preference/old-value-superseded",
+          "concept": "no-contradiction-survives",
+          "text": "No surviving tracked preference still says English for postmortems.",
+          "class": "artifact",
+          "grade": "manual"
+        },
+        {
+          "id": "learning-updates-preference/says-french",
+          "concept": "task-still-done",
+          "text": "The preference record itself now says French, not just the chat reply.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "node_file_matches 'memory/postmortem-language.md' 'French'"
+        },
+        {
+          "id": "learning-updates-preference/continuity-log-count",
+          "concept": "log-all-changed-work",
+          "text": "Exactly two log entries for the two preference turns.",
+          "class": "artifact",
+          "grade": "auto",
+          "check": "log_entries_added == 2"
+        }
+      ],
+      "premises": [
+        {
+          "path": ".agent/memory/postmortem-language.md",
+          "exists": false
+        }
+      ],
+      "why": "a later durable instruction that contradicts an already-tracked preference is a revision of that preference, not a second, competing one \u2014 the durable-preference case CASES.md encodes. Turn 1 now names the exact record path so the auto check can inspect the preference record's own content rather than the chat reply text, which previously passed near-for-free since the prompt itself contains the word French. This is also a same-session admission-and-reuse test: the fixture ships no pre-existing preference file, so turn 1 creates the record inside this session and turn 2 is graded on whether it revises that record in place. Seeding a genuinely pre-existing preference would need a change to evals/fixtures.sh, which is outside this task's claimed files."
+    }
+  ],
+  "status": "Prepared after the smoke artifact audit. Not executed."
+}

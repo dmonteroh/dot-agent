@@ -1,0 +1,5 @@
+## Turn 1
+No—concurrent calls can submit duplicate payments.
+
+`submitPayment` sends a fresh POST on every invocation and provides no idempotency key or deduplication mechanism ([src/client.ts](/tmp/dot-agent-v63.iZhC0a/terra-final/iteration-1/eval-scope-question-no-edit/r0ae4079741bd23d4bff8ca5675934f06/fixture/src/client.ts:6)). It has no shared local mutable state, but two simultaneous calls with the same payment can both reach the vendor.
+

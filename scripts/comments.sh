@@ -80,10 +80,19 @@ exclude_re="$EXCLUDE_RE"
 set --
 for ext in $EXTENSIONS; do set -- "$@" "*.${ext}"; done
 
-mb=$(git merge-base "$base" HEAD) || {
-  echo "comments.sh: no merge base between '$base' and HEAD" >&2
+# Git's empty tree is the base of a first commit, and no commit is.
+empty_tree=$(git hash-object -t tree /dev/null) || {
+  echo "comments.sh: git could not name the empty tree" >&2
   exit 2
 }
+if [ "$(git rev-parse --verify -q "$base")" = "$empty_tree" ]; then
+  mb=$empty_tree
+else
+  mb=$(git merge-base "$base" HEAD) || {
+    echo "comments.sh: no merge base between '$base' and HEAD" >&2
+    exit 2
+  }
+fi
 
 head_sha=$(git rev-parse HEAD 2>/dev/null)
 head_rc=$?
