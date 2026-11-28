@@ -996,7 +996,7 @@ capture:*/dot-agent-eval-verifiers.*/status.sh) block=1 ;;
 esac
 if [ "$block" -eq 1 ]; then
   printf 'ready\n' >"$FAKE_PHASE_READY"
-  while [ ! -e "$FAKE_PHASE_RELEASE" ]; do sleep 0.05; done
+  kill -TERM "$PPID" || exit 1
 fi
 exec "$FAKE_REAL_BASH" "$@"
 SH
@@ -1030,7 +1030,7 @@ fi
 # process boundary is intercepted here rather than in the Bash wrapper.
 if [ "${FAKE_RUN_PHASE:-}" = grading ] && [ "$1" = "${FAKE_GRADE_PATH:-}" ]; then
   printf 'ready\n' >"$FAKE_PHASE_READY"
-  while [ ! -e "$FAKE_PHASE_RELEASE" ]; do sleep 0.05; done
+  kill -TERM "$PPID" || exit 1
 fi
 if [ "${FAKE_INFRA_FAIL:-}" = grading ] && [ "$1" = "${FAKE_GRADE_PATH:-}" ]; then
   exit 75
@@ -1800,39 +1800,31 @@ else
   fail "evals: same-path executable replacement between repeats voids the affected repeat (rc=$rc44repeat_replace)"
 fi
 
+# The capture and grading wrappers are direct runner children. Sending TERM there
+# exercises the selected phase even when fixture setup or the agent takes longer.
 for run_phase in capture grading; do
   phase_workspace="$evfake/claude workspace-signal-$run_phase"
   phase_conf="$evfake/agents-signal-$run_phase.conf"
   phase_ready="$evfake/$run_phase-ready"
-  phase_release="$evfake/$run_phase-release"
-  rm -f "$phase_ready" "$phase_release"
+  rm -f "$phase_ready"
   eval_conf_write "$phase_conf" "$fake_claude" "$evfake/no-such-codex" 1 60
   PATH="$phase_bin:$PATH" FAKE_REAL_BASH="$real_bash" FAKE_REAL_GIT="$real_git" \
     FAKE_REAL_PYTHON="$real_python" FAKE_REAL_CHMOD="$real_chmod" FAKE_REAL_CAT="$real_cat" \
     FAKE_RUN_PHASE="$run_phase" \
     FAKE_GRADE_PATH="$evroot/grade.py" FAKE_PHASE_READY="$phase_ready" \
-    FAKE_PHASE_RELEASE="$phase_release" EVALS_AGENTS_CONF="$phase_conf" \
+    EVALS_AGENTS_CONF="$phase_conf" \
     FAKE_CLAUDE_MODE=ok FAKE_CLAUDE_TURNS=1 \
     "$evsh" --eval scope-question-no-edit --arm treat --treatment-arm treat \
     --agent claude --corpus-ref "$corpus_ref_test" --workspace "$phase_workspace" >/dev/null 2>&1 &
-  phase_runner_pid=$!
-  phase_wait=0
-  while [ ! -s "$phase_ready" ] && [ "$phase_wait" -lt 100 ]; do
-    sleep 0.1
-    phase_wait=$((phase_wait + 1))
-  done
-  kill -TERM "$phase_runner_pid" 2>/dev/null
-  : >"$phase_release"
-  wait "$phase_runner_pid" 2>/dev/null
+  wait "$!" 2>/dev/null
   phase_rc=$?
   phase_run=$(find "$phase_workspace/iteration-1/eval-scope-question-no-edit" \
     -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
-  if [ "$phase_rc" -ne 0 ] && [ -s "$phase_ready" ] \
+  if [ "$phase_rc" -eq 143 ] && [ -s "$phase_ready" ] \
     && eval_void_clean "$phase_workspace" scope-question-no-edit \
     && grep -q '"status": "cancelled"' "$phase_run/run-meta.json" 2>/dev/null; then
     pass "evals: TERM during $run_phase retains cancelled metadata and no outputs or grading"
   else
-    kill -KILL "$phase_runner_pid" 2>/dev/null
     fail "evals: TERM during $run_phase retains cancelled metadata and no outputs or grading (rc=$phase_rc)"
   fi
 done
