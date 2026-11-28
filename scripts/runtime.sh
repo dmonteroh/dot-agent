@@ -394,17 +394,16 @@ da_lock() {
     '') echo "runtime.sh: lock has no demonstrable owner: $da_lk_path. A lock left with no owner for a whole wait is taken over. Run this call again" >&2; return 1 ;;
     *[!0-9]*) echo "runtime.sh: lock has an invalid owner: $da_lk_path. If no node script is running, remove that directory and run this call again" >&2; return 2 ;;
   esac
-  if kill -0 "$da_lk_owner" 2>/dev/null; then
+  if da_lk_signal=$(LC_ALL=C kill -0 "$da_lk_owner" 2>&1); then
     echo "runtime.sh: lock is held by live pid $da_lk_owner: $da_lk_path. Another writer is running. Wait for it and run this call again" >&2; return 1
   fi
-  ps -p "$da_lk_owner" -o pid= >/dev/null 2>&1
-  da_lk_ps=$?
-  if [ "$da_lk_ps" -eq 0 ]; then
-    echo "runtime.sh: lock owner pid $da_lk_owner exists but cannot be signalled: $da_lk_path. Another writer is running. Wait for it and run this call again" >&2; return 1
-  fi
-  if [ "$da_lk_ps" -ne 1 ]; then
-    echo "runtime.sh: cannot demonstrate that lock owner pid $da_lk_owner is dead: $da_lk_path. If no node script is running, remove that directory and run this call again" >&2; return 2
-  fi
+  case "$da_lk_signal" in
+    *"No such process") ;;
+    *"Operation not permitted"|*"Permission denied")
+      echo "runtime.sh: lock owner pid $da_lk_owner exists but cannot be signalled: $da_lk_path. Another writer is running. Wait for it and run this call again" >&2; return 1 ;;
+    *)
+      echo "runtime.sh: cannot demonstrate that lock owner pid $da_lk_owner is dead: $da_lk_path. If no node script is running, remove that directory and run this call again" >&2; return 2 ;;
+  esac
   # A holder that released the lock and exited also reads as dead, and another
   # writer may hold the lock by now: recover only a lock that still names the
   # dead pid.
